@@ -304,7 +304,7 @@ export function FullscreenPhotoLightbox({
             }`}
           >
             <Maximize2 className="h-3.5 w-3.5" />
-            <span>В экран</span>
+            <span>По размеру экрана</span>
           </button>
 
           <button
@@ -323,11 +323,12 @@ export function FullscreenPhotoLightbox({
             href={currentOriginalSrc}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => setActual100Pct()}
             className="h-8 px-2.5 rounded-[9px] bg-white/10 hover:bg-white/20 text-white text-[11.5px] font-semibold inline-flex items-center gap-1.5 transition"
-            title="Открыть полный оригинал в новой вкладке без сжатия"
+            title="Показать исходное изображение без ограничения размера превью"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Оригинал</span>
+            <span>Открыть оригинал</span>
           </a>
 
           <a

@@ -2,18 +2,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft,
-  Edit3,
-  Printer,
   MoreHorizontal,
-  Copy,
-  Trash2,
   Upload,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
   FileText,
-  ZoomIn,
   Download,
   ExternalLink,
   Eye,
@@ -21,40 +12,34 @@ import {
   X,
   BarChart3,
   Table as TableIcon,
-  ShieldCheck,
-  Clock,
-  Package,
-  Wallet,
-  Layers,
   History,
+  Star,
+  ArrowLeft,
+  ArrowRight,
+  Trash2,
 } from 'lucide-react';
 import {
   AttachedModelPdf,
   GrowthScenarioDef,
   MONTHS_SHORT_RU,
+  ModelPassportStageStatus,
   ScenarioModelSpec,
   computeModelScenarioMetrics,
 } from '@/lib/scenarioData';
+import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
-  PO_STATUS_LABELS_RU,
   VALUE_STATUS_LABELS_RU,
-  approveRecommendedBatch,
   computeFinancialPnL,
   computeProcurementPlan,
-  createCustomPurchaseOrder,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
   getModelChannelSplit,
   importStructuredScenarioPlan,
   parseStructuredPlanCsvOrJson,
-  removeApprovedPurchaseOrder,
-  serializePurchaseOrdersToCsv,
   serializeStructuredPlanToCsv,
-  updateApprovedPurchaseOrder,
-  type ApprovedPurchaseOrder,
   type ModelAuditEntry,
-  type StructuredPlanRowV11,
+  type ModelScalingStage,
   type ValueStatusCode,
 } from '@/lib/unifiedBusinessEngine';
 import { FullscreenPhotoLightbox } from '@/components/sections/FullscreenPhotoLightbox';
@@ -79,6 +64,17 @@ interface ScenarioModelCardScreenProps {
   onOpenPdfModal: () => void;
   notify: (type: 'success' | 'warning' | 'error', title: string, desc?: string) => void;
 }
+
+const STAGE_STATUS_OPTIONS: ModelPassportStageStatus[] = [
+  'Идея',
+  'В разработке',
+  'Тест',
+  'Масштабирование',
+  'Действующий',
+  'Приостановлен',
+];
+
+const DEFAULT_BRAND_OPTIONS = ['BORNERS', 'FUKAI', 'НА ТЕЛЕ'];
 
 function StatusPill({ status }: { status: ValueStatusCode }) {
   const styles: Record<ValueStatusCode, string> = {
@@ -110,6 +106,26 @@ function normalizeAssetUrl(url?: string): string {
   return url.replace(/^\/(images|docs)\//, '$1/');
 }
 
+function deriveModelStageStatus(model: ScenarioModelSpec): ModelPassportStageStatus {
+  if (model.modelStageStatus) return model.modelStageStatus;
+  const acting = getActingSkuByWbOrVendor(model.code, model.title);
+  if (acting) return 'Действующий';
+  const sc = model.sharedSupplyAndFact?.scalingStage;
+  if (sc === 'hypothesis') return 'Идея';
+  if (sc === 'test') return 'Тест';
+  if (model.launchStatus === 'В разработке') return 'В разработке';
+  if (model.launchStatus === 'В архиве') return 'Приостановлен';
+  return 'Масштабирование';
+}
+
+function mapStageStatusToScalingStage(
+  stageStatus: ModelPassportStageStatus
+): ModelScalingStage {
+  if (stageStatus === 'Идея' || stageStatus === 'В разработке') return 'hypothesis';
+  if (stageStatus === 'Тест') return 'test';
+  return 'scaling';
+}
+
 export function ScenarioModelCardScreen({
   model: rawModel,
   scenario,
@@ -126,7 +142,7 @@ export function ScenarioModelCardScreen({
   const model = useMemo(() => ensureModelUnifiedV11(rawModel), [rawModel]);
   const shared = model.sharedSupplyAndFact!;
 
-  // Четыре вкладки карточки (Раздел 02 и 03 ТЗ v1.1): Продукт / Продажи / Закупки / Финансы
+  // Четыре вкладки без технических номеров (Стр. 2 ТЗ): «Продукт» / «Продажи» / «Закупки» / «Финансы»
   const [activeTab, setActiveTab] = useState<
     'product' | 'sales' | 'procurement' | 'finance'
   >(() => {
@@ -155,51 +171,36 @@ export function ScenarioModelCardScreen({
     scenario.targetMonthIdx ?? 11
   );
   const [salesViewMode, setSalesViewMode] = useState<'table' | 'chart'>('table');
+  const [showSalesExtraTools, setShowSalesExtraTools] = useState<boolean>(false);
   const [selectedGalleryId, setSelectedGalleryId] = useState<string>(
     () => model.gallery.find((g) => g.isMain)?.id || model.gallery[0]?.id || 'g-1'
   );
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [hasUnsavedDraft, setHasUnsavedDraft] = useState(false);
+  const [savedBannerText, setSavedBannerText] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [formulaOpenKey, setFormulaOpenKey] = useState<string | null>(null);
+
+  // Создание нового бренда в форме редактирования (Стр. 3 ТЗ)
+  const [creatingBrandOpen, setCreatingBrandOpen] = useState(false);
+  const [newBrandDraft, setNewBrandDraft] = useState('');
+
+  // Состояния вкладки «Финансы» (Стр. 5 и 6 ТЗ)
+  const [financePeriodMode, setFinancePeriodMode] = useState<'month' | 'year'>('year');
+  const [showDetailedFinanceCalc, setShowDetailedFinanceCalc] = useState(false);
+  const [showProcurementCashDetails, setShowProcurementCashDetails] = useState(false);
 
   const [pdfUrlsById, setPdfUrlsById] = useState<Record<string, string>>({});
   const [previewPdfId, setPreviewPdfId] = useState<string | null>(null);
 
-  // Состояния рабочего контура «Закупки» (ручной конструктор PO + правка рекомендованных партий перед утверждением)
-  const [customPoOpen, setCustomPoOpen] = useState(false);
-  const [draftPoPacks, setDraftPoPacks] = useState<number>(
-    () => Math.max(shared.factoryParams.moqPacks || 1000, 500)
-  );
-  const [draftPoCost, setDraftPoCost] = useState<number>(() => model.unitCostRub || 0);
-  const [draftPoFactory, setDraftPoFactory] = useState<string>(
-    () => shared.factoryParams.factoryName || 'Фабрика-партнёр BORNERS (КНР)'
-  );
-  const [draftPoMonthIdx, setDraftPoMonthIdx] = useState<number>(0);
-  const [draftPoStatus, setDraftPoStatus] =
-    useState<ApprovedPurchaseOrder['status']>('approved');
-  const [draftPoNote, setDraftPoNote] = useState<string>('');
-  const [batchOverrides, setBatchOverrides] = useState<
-    Record<
-      number,
-      {
-        packsQty?: number;
-        unitCostRub?: number;
-        arrivalMonthIdx?: number;
-        factoryName?: string;
-      }
-    >
-  >({});
-
   const importPlanInputRef = useRef<HTMLInputElement | null>(null);
+  const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSelectedGalleryId(
       model.gallery.find((g) => g.isMain)?.id || model.gallery[0]?.id || 'g-1'
     );
-    setDraftPoCost(model.unitCostRub || 0);
-    setDraftPoFactory(shared.factoryParams.factoryName || 'Фабрика-партнёр BORNERS (КНР)');
-    setBatchOverrides({});
+    setHasUnsavedDraft(false);
     if (typeof window !== 'undefined') {
       try {
         const requestedTab = window.sessionStorage.getItem(
@@ -262,6 +263,29 @@ export function ScenarioModelCardScreen({
   const plan = baseMetrics.plan;
   const channelSplit = getModelChannelSplit(model, scenario.id);
   const brandPortfolioLabel = detectModelBrandPortfolioLabel(model);
+  const currentStageStatus = deriveModelStageStatus(model);
+  const actingSkuRef = useMemo(
+    () => getActingSkuByWbOrVendor(model.code, model.title),
+    [model.code, model.title]
+  );
+  const effectiveWbArticle =
+    model.wbArticle !== undefined
+      ? model.wbArticle
+      : actingSkuRef?.wbSku || '';
+
+  const availableBrandOptions = useMemo(() => {
+    const set = new Set<string>(DEFAULT_BRAND_OPTIONS);
+    if (model.customBrandLabel && model.customBrandLabel.trim()) {
+      set.add(model.customBrandLabel.trim());
+    }
+    for (const b of shared.customBrandOptions || []) {
+      if (b && b.trim()) set.add(b.trim());
+    }
+    if (brandPortfolioLabel && brandPortfolioLabel !== 'Подтвердить бренд') {
+      set.add(brandPortfolioLabel);
+    }
+    return Array.from(set);
+  }, [model.customBrandLabel, shared.customBrandOptions, brandPortfolioLabel]);
 
   const filteredGallery = useMemo(
     () => model.gallery.filter((g) => Boolean(g.url || g.originalUrl)),
@@ -281,7 +305,16 @@ export function ScenarioModelCardScreen({
       ''
   );
 
-  // Добавление записи в журнал истории изменений (Audit Trail, Раздел 06 ТЗ v1.1)
+  const triggerSavedFeedback = (text = 'Изменения сохранены') => {
+    const time = new Date().toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    setSavedBannerText(`✓ ${text} (${time})`);
+  };
+
+  // Запись изменений в единую модель + журнал аудита
   const commitWithAudit = (
     nextModel: ScenarioModelSpec,
     category: ModelAuditEntry['category'],
@@ -313,50 +346,199 @@ export function ScenarioModelCardScreen({
         auditHistory: [entry, ...baseS.auditHistory].slice(0, 50),
       },
     });
+    triggerSavedFeedback('Изменения сохранены');
   };
 
-  // Загрузка оригинальной фотографии с сохранением полного оригинала без потери разрешения
-  const handleUploadOriginalPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const originalDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Read error'));
-        reader.readAsDataURL(file);
-      });
-      const previewUrl =
-        file.size > 350_000
-          ? await compressImageFileToDataUrl(file, 1400, 0.9)
-          : originalDataUrl;
+  const handleBackClick = () => {
+    if (
+      hasUnsavedDraft &&
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        'В форме есть незавершённые изменения. Выйти из режима редактирования и вернуться к списку моделей?'
+      )
+    ) {
+      return;
+    }
+    onBackToScenarios();
+  };
 
-      const newItemId = `gal-${Date.now()}`;
-      const isFirst = model.gallery.filter((g) => Boolean(g.url)).length === 0;
-      const nextGallery = [
-        ...model.gallery,
-        {
+  const handleSaveButtonClick = () => {
+    setIsEditing(false);
+    setHasUnsavedDraft(false);
+    setCreatingBrandOpen(false);
+    triggerSavedFeedback('Изменения сохранены в паспорте модели');
+    notify(
+      'success',
+      'Изменения сохранены',
+      `Паспорт модели ${model.code} (${brandPortfolioLabel}) сохранён для всех сценариев.`
+    );
+  };
+
+  // Смена бренда модели (BORNERS / FUKAI / НА ТЕЛЕ / свой бренд, Стр. 3 ТЗ)
+  const handleBrandSelectChange = (nextBrandLabel: string) => {
+    if (nextBrandLabel === '__CREATE_NEW__') {
+      setCreatingBrandOpen(true);
+      return;
+    }
+    const clean = nextBrandLabel.trim();
+    if (!clean) return;
+    const nextBrandId: ScenarioModelSpec['brandId'] =
+      clean === 'НА ТЕЛЕ' ? 'NA_TELE' : 'BORNERS';
+    commitWithAudit(
+      {
+        ...model,
+        brandId: nextBrandId,
+        customBrandLabel: clean,
+      },
+      'product',
+      'Изменён бренд в карточке товара',
+      brandPortfolioLabel,
+      clean,
+      true
+    );
+  };
+
+  const handleCreateCustomBrand = () => {
+    const clean = newBrandDraft.trim();
+    if (!clean) return;
+    const nextCustomList = Array.from(
+      new Set([...(shared.customBrandOptions || []), clean])
+    );
+    const nextBrandId: ScenarioModelSpec['brandId'] =
+      clean.toUpperCase() === 'НА ТЕЛЕ' ? 'NA_TELE' : 'BORNERS';
+    commitWithAudit(
+      {
+        ...model,
+        brandId: nextBrandId,
+        customBrandLabel: clean,
+        sharedSupplyAndFact: {
+          ...shared,
+          customBrandOptions: nextCustomList,
+        },
+      },
+      'product',
+      `Создан и назначен бренд «${clean}»`,
+      brandPortfolioLabel,
+      clean,
+      true
+    );
+    setNewBrandDraft('');
+    setCreatingBrandOpen(false);
+  };
+
+  // Смена статуса жизненного цикла модели (Стр. 3 ТЗ)
+  const handleStageStatusChange = (nextStatus: ModelPassportStageStatus) => {
+    const nextScaling = mapStageStatusToScalingStage(nextStatus);
+    const nextLaunchStatus: ScenarioModelSpec['launchStatus'] =
+      nextStatus === 'Приостановлен'
+        ? 'В архиве'
+        : nextStatus === 'Действующий' || nextStatus === 'Масштабирование'
+        ? 'Утверждено'
+        : nextStatus === 'В разработке' || nextStatus === 'Тест'
+        ? 'В разработке'
+        : 'В плане';
+
+    commitWithAudit(
+      {
+        ...model,
+        modelStageStatus: nextStatus,
+        launchStatus: nextLaunchStatus,
+        sharedSupplyAndFact: {
+          ...shared,
+          scalingStage: nextScaling,
+        },
+      },
+      'product',
+      'Изменён статус модели',
+      currentStageStatus,
+      nextStatus,
+      true
+    );
+  };
+
+  // Смена количества изделий в комплекте с подтверждением (Стр. 3 ТЗ)
+  const handleUnitsInPackChange = (nextUnitsRaw: number) => {
+    const clean = Math.max(1, Math.min(24, Math.round(nextUnitsRaw || 1)));
+    if (clean === model.unitsInPack) return;
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Изменить комплектацию с ${model.unitsInPack} на ${clean} изд. в комплекте? Это пересчитает физические единицы в продажах и закупках.`
+      )
+    ) {
+      return;
+    }
+    commitWithAudit(
+      {
+        ...model,
+        unitsInPack: clean,
+      },
+      'product',
+      'Изменено количество изделий в комплекте',
+      `${model.unitsInPack} шт.`,
+      `${clean} шт.`,
+      true
+    );
+  };
+
+  // Загрузка одной или нескольких фотографий сразу с сохранением оригинала и превью (Стр. 3 ТЗ)
+  const handleUploadOriginalPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    try {
+      const addedItems: ScenarioModelSpec['gallery'] = [];
+      let existingHasMain = model.gallery.some(
+        (g) => g.isMain && Boolean(g.url || g.originalUrl)
+      );
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const originalDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Read error'));
+          reader.readAsDataURL(file);
+        });
+        const previewUrl =
+          file.size > 350_000
+            ? await compressImageFileToDataUrl(file, 1400, 0.92)
+            : originalDataUrl;
+
+        const newItemId = `gal-${Date.now()}-${i}`;
+        const makeMain = !existingHasMain && i === 0;
+        if (makeMain) existingHasMain = true;
+
+        addedItems.push({
           id: newItemId,
           category: 'pack' as const,
           label: file.name.replace(/\.[^.]+$/, ''),
           url: previewUrl,
-          originalUrl: previewUrl,
-          isMain: isFirst,
-        },
-      ];
+          originalUrl: originalDataUrl || previewUrl,
+          isMain: makeMain,
+        });
+      }
+
+      const nextGallery = [...model.gallery, ...addedItems];
       commitWithAudit(
         { ...model, gallery: nextGallery },
         'product',
-        `Добавлено фото «${file.name}»`,
+        addedItems.length === 1
+          ? `Добавлено фото «${files[0].name}»`
+          : `Добавлено фотографий: ${addedItems.length} шт.`,
         undefined,
-        file.name,
+        files.map((f) => f.name).join(', '),
         true
       );
-      setSelectedGalleryId(newItemId);
+      if (addedItems[0]) {
+        setSelectedGalleryId(addedItems[0].id);
+      }
       notify(
         'success',
-        'Фотография добавлена в паспорт модели',
-        'Отражена во всех сценариях без дублирования товара.'
+        addedItems.length === 1
+          ? 'Фотография добавлена в карточку'
+          : `Загружено фотографий: ${addedItems.length} шт.`,
+        'Сохранены превью и оригинал без изменения цветов и логотипов.'
       );
     } catch {
       notify('error', 'Не удалось прочитать файл изображения');
@@ -364,36 +546,74 @@ export function ScenarioModelCardScreen({
     e.target.value = '';
   };
 
+  // Сделать выбранное фото главным (Стр. 3 ТЗ)
+  const handleSetMainGalleryPhoto = (photoId: string) => {
+    const target = model.gallery.find((g) => g.id === photoId);
+    if (!target) return;
+    const reordered = [
+      { ...target, isMain: true },
+      ...model.gallery
+        .filter((g) => g.id !== photoId)
+        .map((g) => ({ ...g, isMain: false })),
+    ];
+    setSelectedGalleryId(photoId);
+    commitWithAudit(
+      { ...model, gallery: reordered },
+      'product',
+      `Назначено главное фото модели (${target.label || photoId})`,
+      undefined,
+      target.label || photoId,
+      true
+    );
+  };
+
+  // Перестановка миниатюр местами (Стр. 3 ТЗ)
+  const handleMoveGalleryPhoto = (photoId: string, direction: -1 | 1) => {
+    const idx = filteredGallery.findIndex((g) => g.id === photoId);
+    if (idx < 0) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= filteredGallery.length) return;
+    const nextList = [...filteredGallery];
+    const [moved] = nextList.splice(idx, 1);
+    nextList.splice(targetIdx, 0, moved);
+    const normalized = nextList.map((item, i) => ({
+      ...item,
+      isMain: i === 0,
+    }));
+    commitWithAudit(
+      { ...model, gallery: normalized },
+      'product',
+      'Изменён порядок фотографий в галерее'
+    );
+  };
+
+  // Удаление фото с подтверждением (Стр. 3 ТЗ)
   const handleRemoveGalleryPhoto = (photoId: string) => {
-    if (filteredGallery.length <= 1) return;
-    const nextGallery = model.gallery.filter((g) => g.id !== photoId);
+    if (filteredGallery.length <= 1) {
+      notify('warning', 'В карточке должна оставаться хотя бы одна фотография');
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Удалить эту фотографию из карточки модели?')
+    ) {
+      return;
+    }
+    const remaining = model.gallery.filter((g) => g.id !== photoId);
+    const hasMain = remaining.some((g) => g.isMain);
+    const nextGallery = remaining.map((g, idx) => ({
+      ...g,
+      isMain: hasMain ? g.isMain : idx === 0,
+    }));
     const nextSel =
       nextGallery.find((g) => Boolean(g.url || g.originalUrl))?.id || 'g-1';
     setSelectedGalleryId(nextSel);
     commitWithAudit(
       { ...model, gallery: nextGallery },
       'product',
-      'Удалён кадр из галереи модели'
+      'Удалена фотография из галереи модели'
     );
     notify('success', 'Фотография удалена из галереи');
-  };
-
-  const handleDownloadModelOrdersCsv = () => {
-    if (procurement.approvedOrders.length === 0) {
-      notify('warning', 'Нет утверждённых заказов PO для выгрузки');
-      return;
-    }
-    const csv = serializePurchaseOrdersToCsv(
-      procurement.approvedOrders.map((po) => ({ model, po }))
-    );
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `PO_${model.code.replace(/\s+/g, '_')}_2027.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify('success', `Выгружен реестр заказов PO (${procurement.approvedOrders.length})`);
   };
 
   // Загрузка фабричного PDF
@@ -425,6 +645,12 @@ export function ScenarioModelCardScreen({
   };
 
   const handleRemovePdf = async (pdfId: string) => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Удалить прикреплённый PDF-файл из карточки?')
+    ) {
+      return;
+    }
     await deletePdfBlobFromIdb(pdfId);
     const nextList = (model.attachedPdfs || []).filter((p) => p.id !== pdfId);
     commitWithAudit(
@@ -437,7 +663,7 @@ export function ScenarioModelCardScreen({
     }
   };
 
-  // Обновление цены в текущем сценарии (без перезаписи других сценариев!)
+  // Обновление цены в текущем сценарии
   const handleScenarioPriceChange = (nextPriceRub: number) => {
     const clean = Math.max(0, Math.round(nextPriceRub));
     const prevPrice = plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub;
@@ -456,13 +682,13 @@ export function ScenarioModelCardScreen({
         },
       },
       'sales',
-      `Изменена плановая цена в ${scenario.title}`,
+      `Изменена цена комплекта в ${scenario.title}`,
       `${prevPrice} ₽`,
       `${clean} ₽`
     );
   };
 
-  // Обновление целевой себестоимости комплекта (Тест-кейс №6: меняются затраты, маржа и бюджет закупок; выкупы НЕ меняются!)
+  // Обновление закупочной себестоимости комплекта
   const handleUnitCostChange = (nextCostRub: number) => {
     const clean = Math.max(0, Math.round(nextCostRub));
     const prev = model.unitCostRub;
@@ -476,13 +702,13 @@ export function ScenarioModelCardScreen({
         },
       },
       'finance',
-      'Изменена целевая закупочная себестоимость комплекта (выкупы неизменны)',
+      'Изменена закупочная себестоимость комплекта (выкупы неизменны)',
       `${prev} ₽`,
-      `${clean} ₽`
+      clean > 0 ? `${clean} ₽` : 'Не заполнено'
     );
   };
 
-  // Обновление плановых выкупов конкретного месяца (Тест-кейс №2: август на Sorbet -> меняются выручка, сценарий, остатки и закупки!)
+  // Обновление плановых выкупов конкретного месяца
   const handleMonthBuyoutsChange = (monthIdx: number, nextPacks: number) => {
     const clean = Math.max(0, Math.round(nextPacks));
     const prev = plan.monthlyPacks[monthIdx] || 0;
@@ -508,7 +734,7 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Обновление фактических продаж месяца (общее для всех сценариев!)
+  // Обновление фактических продаж месяца
   const handleMonthActualSaleChange = (
     monthIdx: number,
     actualPacksRaw: string,
@@ -580,7 +806,7 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Импорт плана из JSON / CSV без потери и двойного счёта (Тест-кейс №9)
+  // Импорт плана из JSON / CSV
   const handleImportSkuPlanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -593,20 +819,14 @@ export function ScenarioModelCardScreen({
         commitWithAudit(
           res.updatedModels[0],
           'sales',
-          `Импортирован план из файла ${file.name} (${res.importedRowsCount} мес., пропущено дублей: ${res.duplicatesSkipped})`
+          `Импортирован план из файла ${file.name} (${res.importedRowsCount} мес.)`
         );
         notify(
           'success',
-          `Импортировано ${res.importedRowsCount} периодов по ${model.code}`,
-          res.duplicatesSkipped > 0
-            ? `Защита от двойного счёта: отсеяно ${res.duplicatesSkipped} дублирующихся строк.`
-            : 'Идентификатор SKU, цены, выкупы и статусы применены.'
+          `Импортировано ${res.importedRowsCount} периодов по ${model.code}`
         );
       } else {
-        notify(
-          'warning',
-          `В файле не найдено строк для артикула ${model.code}`
-        );
+        notify('warning', `В файле не найдено строк для артикула ${model.code}`);
       }
     } catch {
       notify('error', 'Ошибка чтения файла плана (поддерживаются JSON и CSV)');
@@ -614,7 +834,7 @@ export function ScenarioModelCardScreen({
     e.target.value = '';
   };
 
-  // Выбранный месяц для первого экрана карточки
+  // Выбранный месяц для первого экрана карточки и переключателя «Месяц / Год» во вкладке «Финансы»
   const selMonthAct = shared.actualSalesByMonth[selectedMonthIdx];
   const selMonthPacks =
     selMonthAct && selMonthAct.actualBuyoutsPacks !== null
@@ -636,14 +856,48 @@ export function ScenarioModelCardScreen({
 
   const maxSalesBarRub = Math.max(1, ...baseMetrics.monthlyRevenuesRub);
 
+  // Расчёт показателей для Блока Б («Результат за выбранный период: Месяц / Год», Стр. 5 ТЗ)
+  const periodPacks =
+    financePeriodMode === 'month' ? selMonthPacks : pnl.annualBuyoutsPacks;
+  const periodRevenueRub =
+    financePeriodMode === 'month' ? selMonthRevRub : pnl.annualRevenueRub;
+  const periodCogsRub =
+    pnl.unitCostPerPackRub !== null ? periodPacks * pnl.unitCostPerPackRub : null;
+
+  const unitSalesAndWorkExpenseRub =
+    pnl.logisticsFilled && pnl.unitMpCommissionRub !== null
+      ? (pnl.unitMpCommissionRub || 0) +
+        (pnl.unitLogisticsRub || 0) +
+        (pnl.unitAdsRub || 0) +
+        (pnl.unitOtherVarRub || 0) +
+        (pnl.unitAllocatedOpexRub || 0)
+      : null;
+
+  const periodSalesAndWorkExpenseRub =
+    unitSalesAndWorkExpenseRub !== null
+      ? periodPacks * unitSalesAndWorkExpenseRub
+      : null;
+
+  const periodOperatingProfitRub =
+    pnl.unitOperatingProfitRub !== null
+      ? periodPacks * pnl.unitOperatingProfitRub
+      : null;
+
+  const openProcurementTab = () => {
+    setActiveTab('procurement');
+    if (tabsAnchorRef.current) {
+      tabsAnchorRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
-    <div className="space-y-5">
-      {/* ПОЛНОЭКРАННАЯ ГАЛЕРЕЯ С ZOOM / PAN / 100% / ОРИГИНАЛОМ (Раздел 02 ТЗ v1.1) */}
+    <div className="space-y-4">
+      {/* ПОЛНОЭКРАННАЯ ГАЛЕРЕЯ С ZOOM / PAN / 100% / ПО РАЗМЕРУ ЭКРАНА / ОТКРЫТЬ ОРИГИНАЛ (Стр. 3 ТЗ) */}
       <FullscreenPhotoLightbox
         open={lightboxOpen}
         items={
-          model.gallery.filter((g) => Boolean(g.url || g.originalUrl)).length > 0
-            ? model.gallery
+          filteredGallery.length > 0
+            ? filteredGallery
             : [
                 {
                   id: 'fallback-main',
@@ -662,137 +916,496 @@ export function ScenarioModelCardScreen({
         onClose={() => setLightboxOpen(false)}
       />
 
-      {/* 1. КОМПАКТНАЯ ШАПКА КАРТОЧКИ С ЧЁТКИМИ ГРАНИЦАМИ БЕЗ ЛИШНИХ ИКОНОК */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] px-5 py-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)] flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={onBackToScenarios}
-            className="h-9 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
-          >
-            ← Сценарии
-          </button>
-
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2 py-0.5 rounded-[6px] bg-[#141413] text-white font-mono text-[11px] font-semibold">
-                {model.code}
-              </span>
-              <span className="px-2 py-0.5 rounded-[6px] bg-[#F4F4F0] text-[#262624] border border-[#CECDC4] text-[11px] font-semibold">
-                {brandPortfolioLabel}
-              </span>
-              <span className="px-2 py-0.5 rounded-[6px] bg-[#F4F4F0] text-[#262624] border border-[#CECDC4] text-[11px] font-semibold">
-                {model.launchStatus}
-              </span>
-              <span className="text-[11px] text-[#5E5D58]">
-                Паспорт v{shared.passportVersion} · {model.unitsInPack} изд. в комплекте
-              </span>
-            </div>
-            <h1 className="text-[19px] md:text-[22px] font-bold tracking-[-0.02em] text-[#141413] truncate mt-0.5">
-              {model.title}
-            </h1>
-          </div>
-        </div>
-
-        {/* Переключатель активного сценария + чистые текстовые кнопки */}
-        <div className="flex flex-wrap items-center gap-2">
-          {allScenarios.length > 0 && onSelectScenario ? (
-            <div className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4]">
-              <span className="text-[11px] font-semibold text-[#5E5D58]">Сценарий:</span>
-              <select
-                value={scenario.id}
-                onChange={(e) => onSelectScenario(Number(e.target.value))}
-                className="bg-transparent text-[12px] font-bold text-[#141413] focus:outline-none cursor-pointer"
-              >
-                {allScenarios.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.title} ({sc.monthlyTargetMln} млн ₽/мес)
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <span className="h-9 px-3 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] inline-flex items-center">
-              {scenario.title} · {scenario.monthlyTargetMln} млн ₽/мес
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsEditing((v) => !v)}
-            className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer ${
-              isEditing
-                ? 'bg-[#157347] text-white border-[#157347]'
-                : 'bg-white hover:border-[#141413] text-[#141413] border-[#CECDC4]'
-            }`}
-          >
-            {isEditing ? 'Сохранить' : 'Редактировать'}
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenPdfModal}
-            className="h-9 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12.5px] font-semibold transition cursor-pointer"
-          >
-            Экспорт ТЗ PDF
-          </button>
-
-          <div className="relative">
+      {/* 1. ШАПКА КАРТОЧКИ (Стр. 2 ТЗ): Код · Название · Редактируемый бренд · Статус · Сценарий · Годовой итог · Редактировать / Сохранить / Экспорт PDF */}
+      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] px-5 py-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)] space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
             <button
               type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-label="Дополнительные действия"
-              className="h-9 w-9 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] flex items-center justify-center text-[#141413] cursor-pointer"
+              onClick={handleBackClick}
+              className="h-9 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              ← Сценарии
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-1.5 w-56 rounded-[14px] bg-white border-[1.5px] border-[#141413] shadow-[0_18px_44px_rgba(20,20,19,0.16)] py-1.5 z-30 text-[12.5px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenSalesPlan();
-                  }}
-                  className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer"
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-[6px] bg-[#141413] text-white font-mono text-[11px] font-semibold">
+                  {model.code}
+                </span>
+
+                {/* Быстрый выбор бренда прямо в шапке или форме */}
+                <select
+                  aria-label="Бренд модели"
+                  value={brandPortfolioLabel}
+                  onChange={(e) => handleBrandSelectChange(e.target.value)}
+                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-bold cursor-pointer"
                 >
-                  Матрица продаж (12 мес.)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDuplicateModel(model);
-                  }}
-                  className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer"
+                  {availableBrandOptions.map((b) => (
+                    <option key={b} value={b}>
+                      Бренд: {b}
+                    </option>
+                  ))}
+                  <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                </select>
+
+                {/* Статус жизненного цикла модели (Идея / В разработке / Тест / Масштабирование / Действующий / Приостановлен) */}
+                <select
+                  aria-label="Статус модели"
+                  value={currentStageStatus}
+                  onChange={(e) =>
+                    handleStageStatusChange(e.target.value as ModelPassportStageStatus)
+                  }
+                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-semibold cursor-pointer"
                 >
-                  Создать цветовой вариант
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDeleteOrArchiveModel(model);
-                  }}
-                  className="w-full px-3.5 py-2 text-left hover:bg-[#FFF2F2] text-[#B42318] font-medium cursor-pointer"
-                >
-                  Удалить / В архив
-                </button>
+                  {STAGE_STATUS_OPTIONS.map((st) => (
+                    <option key={st} value={st}>
+                      Статус: {st}
+                    </option>
+                  ))}
+                </select>
+
+                {effectiveWbArticle && (
+                  <span className="px-2 py-0.5 rounded-[6px] bg-[#F7F7F4] border border-[#DFDED6] font-mono text-[11px] text-[#3F3E3A]">
+                    WB: {effectiveWbArticle}
+                  </span>
+                )}
+
+                <span className="text-[11px] text-[#5E5D58]">
+                  {model.unitsInPack} изд. в компл. · ID: {model.id}
+                </span>
               </div>
+
+              <div className="flex flex-wrap items-baseline gap-3 mt-1">
+                <h1 className="text-[19px] md:text-[22px] font-bold tracking-[-0.02em] text-[#141413] truncate">
+                  {model.title}
+                </h1>
+                {/* Годовой итог компактной строкой в верхней части (Стр. 2 ТЗ: без дублирования внутри месячной карточки) */}
+                <span className="text-[12px] text-[#5E5D58]">
+                  За 12 мес. ({scenario.year}):{' '}
+                  <strong className="text-[#141413]">
+                    {formatMln(pnl.annualRevenueRub)}
+                  </strong>{' '}
+                  ({pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} компл. /{' '}
+                  {pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} изд.)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Переключатель сценария + кнопки «Редактировать», «Сохранить», «Экспорт ТЗ PDF» */}
+          <div className="flex flex-wrap items-center gap-2">
+            {savedBannerText && (
+              <span className="px-2.5 py-1 rounded-[8px] bg-[#EAF6F0] border border-[#CBEAD9] text-[#157347] text-[11.5px] font-semibold">
+                {savedBannerText}
+              </span>
             )}
+
+            {allScenarios.length > 0 && onSelectScenario ? (
+              <div className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4]">
+                <span className="text-[11px] font-semibold text-[#5E5D58]">Сценарий:</span>
+                <select
+                  aria-label="Выбор сценария"
+                  value={scenario.id}
+                  onChange={(e) => onSelectScenario(Number(e.target.value))}
+                  className="bg-transparent text-[12px] font-bold text-[#141413] focus:outline-none cursor-pointer"
+                >
+                  {allScenarios.map((sc) => (
+                    <option key={sc.id} value={sc.id}>
+                      {sc.title} ({sc.monthlyTargetMln} млн ₽/мес)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <span className="h-9 px-3 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] inline-flex items-center">
+                {scenario.title} · {scenario.monthlyTargetMln} млн ₽/мес
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsEditing((v) => !v)}
+              className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer ${
+                isEditing
+                  ? 'bg-[#141413] text-white border-[#141413]'
+                  : 'bg-white hover:border-[#141413] text-[#141413] border-[#CECDC4]'
+              }`}
+            >
+              Редактировать
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveButtonClick}
+              className="h-9 px-3.5 rounded-[9px] bg-[#157347] hover:bg-[#115C39] text-white text-[12.5px] font-semibold border-[1.5px] border-[#157347] transition cursor-pointer"
+            >
+              Сохранить
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenPdfModal}
+              className="h-9 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12.5px] font-semibold transition cursor-pointer"
+            >
+              Экспорт ТЗ PDF
+            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Дополнительные действия"
+                className="h-9 w-9 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] flex items-center justify-center text-[#141413] cursor-pointer"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1.5 w-56 rounded-[14px] bg-white border-[1.5px] border-[#141413] shadow-[0_18px_44px_rgba(20,20,19,0.16)] py-1.5 z-30 text-[12.5px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenSalesPlan();
+                    }}
+                    className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer"
+                  >
+                    Сводная матрица портфеля (12 мес.)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDuplicateModel(model);
+                    }}
+                    className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer"
+                  >
+                    Создать цветовой вариант
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDeleteOrArchiveModel(model);
+                    }}
+                    className="w-full px-3.5 py-2 text-left hover:bg-[#FFF2F2] text-[#B42318] font-medium cursor-pointer"
+                  >
+                    Удалить / В архив
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Быстрое создание нового бренда (если нажали «+ Создать бренд...») */}
+        {creatingBrandOpen && (
+          <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-[#F7F7F4] border border-[#CECDC4] px-3.5 py-2.5 text-[12.5px]">
+            <span className="font-semibold text-[#141413]">Новый бренд:</span>
+            <input
+              type="text"
+              value={newBrandDraft}
+              onChange={(e) => setNewBrandDraft(e.target.value)}
+              placeholder="Введите название бренда..."
+              className="h-8 w-56 rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-semibold text-[#141413]"
+            />
+            <button
+              type="button"
+              onClick={handleCreateCustomBrand}
+              className="h-8 px-3 rounded-[8px] bg-[#141413] text-white font-semibold cursor-pointer"
+            >
+              Создать и выбрать
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreatingBrandOpen(false)}
+              className="h-8 px-2.5 rounded-[8px] bg-white border border-[#CECDC4] text-[#5E5D58] font-semibold cursor-pointer"
+            >
+              Отмена
+            </button>
+          </div>
+        )}
+
+        {/* ФОРМА «РЕДАКТИРОВАТЬ» (Раздел 03 ТЗ, Стр. 3): Бренд, Название, Код, Артикул WB, Статус, Комплектация и Характеристики */}
+        {isEditing && (
+          <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#141413] p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DFDED6] pb-2.5">
+              <div>
+                <div className="text-[13.5px] font-bold text-[#141413]">
+                  Форма редактирования паспорта модели
+                </div>
+                <div className="text-[11.5px] text-[#5E5D58]">
+                  Системный идентификатор неизменяем:{' '}
+                  <span className="font-mono font-semibold text-[#141413]">
+                    {model.id}
+                  </span>{' '}
+                  · Все изменения едины для всех сценариев и сохраняются при обновлении страницы (F5).
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreatingBrandOpen(true)}
+                className="h-8 px-3 rounded-[8px] bg-white hover:border-[#141413] border border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
+              >
+                + Создать бренд
+              </button>
+            </div>
+
+            {/* Поля 1–5 из таблицы на Стр. 3 ТЗ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">1. Бренд</span>
+                <select
+                  value={brandPortfolioLabel}
+                  onChange={(e) => handleBrandSelectChange(e.target.value)}
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-bold text-[#141413]"
+                >
+                  {availableBrandOptions.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                  <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                </select>
+              </label>
+
+              <label className="space-y-1 lg:col-span-2">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  2. Название модели
+                </span>
+                <input
+                  type="text"
+                  value={model.title}
+                  onChange={(e) => {
+                    setHasUnsavedDraft(true);
+                    commitWithAudit(
+                      { ...model, title: e.target.value },
+                      'product',
+                      'Изменено название модели',
+                      model.title,
+                      e.target.value,
+                      true
+                    );
+                  }}
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-semibold text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Внутренний код
+                </span>
+                <input
+                  type="text"
+                  value={model.code}
+                  onChange={(e) => {
+                    setHasUnsavedDraft(true);
+                    commitWithAudit(
+                      { ...model, code: e.target.value },
+                      'product',
+                      'Изменён внутренний код модели',
+                      model.code,
+                      e.target.value,
+                      true
+                    );
+                  }}
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-mono font-semibold text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Артикул WB
+                </span>
+                <input
+                  type="text"
+                  value={effectiveWbArticle}
+                  placeholder="Напр. 244995893"
+                  onChange={(e) => {
+                    setHasUnsavedDraft(true);
+                    commitWithAudit(
+                      { ...model, wbArticle: e.target.value },
+                      'product',
+                      'Изменён артикул WB',
+                      effectiveWbArticle || 'Не задан',
+                      e.target.value || 'Не задан',
+                      true
+                    );
+                  }}
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-mono font-semibold text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">3. Статус</span>
+                <select
+                  value={currentStageStatus}
+                  onChange={(e) =>
+                    handleStageStatusChange(e.target.value as ModelPassportStageStatus)
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-semibold text-[#141413]"
+                >
+                  {STAGE_STATUS_OPTIONS.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {/* Комплектация + Характеристики (Ткань, Состав, Плотность, Посадка, Конструкция, Резинка, Описание) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  4. Изделий в компл.
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={model.unitsInPack}
+                    onChange={(e) => handleUnitsInPackChange(Number(e.target.value))}
+                    className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-mono font-bold text-[#141413]"
+                  />
+                  <span className="text-[11px] text-[#5E5D58] shrink-0">компл.</span>
+                </div>
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  5. Состав ткани
+                </span>
+                <input
+                  type="text"
+                  value={model.fabric.composition}
+                  onChange={(e) =>
+                    commitWithAudit(
+                      {
+                        ...model,
+                        fabric: { ...model.fabric, composition: e.target.value },
+                      },
+                      'product',
+                      'Обновлён состав ткани',
+                      model.fabric.composition,
+                      e.target.value,
+                      true
+                    )
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-medium text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Плотность и плетение
+                </span>
+                <input
+                  type="text"
+                  value={model.fabric.density}
+                  onChange={(e) =>
+                    commitWithAudit(
+                      {
+                        ...model,
+                        fabric: { ...model.fabric, density: e.target.value },
+                      },
+                      'product',
+                      'Обновлена плотность ткани',
+                      model.fabric.density,
+                      e.target.value,
+                      true
+                    )
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-medium text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Конструкция и посадка
+                </span>
+                <input
+                  type="text"
+                  value={model.construction.fit}
+                  onChange={(e) =>
+                    commitWithAudit(
+                      {
+                        ...model,
+                        construction: { ...model.construction, fit: e.target.value },
+                      },
+                      'product',
+                      'Обновлена посадка модели',
+                      model.construction.fit,
+                      e.target.value,
+                      true
+                    )
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-medium text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Резинка / пояс
+                </span>
+                <input
+                  type="text"
+                  value={model.waistband.type}
+                  onChange={(e) =>
+                    commitWithAudit(
+                      {
+                        ...model,
+                        waistband: { ...model.waistband, type: e.target.value },
+                      },
+                      'product',
+                      'Обновлён тип резинки/пояса',
+                      model.waistband.type,
+                      e.target.value,
+                      true
+                    )
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-medium text-[#141413]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="font-semibold text-[#3F3E3A] block">
+                  Описание / подзаголовок
+                </span>
+                <input
+                  type="text"
+                  value={model.description ?? model.subtitle}
+                  onChange={(e) =>
+                    commitWithAudit(
+                      {
+                        ...model,
+                        subtitle: e.target.value,
+                        description: e.target.value,
+                      },
+                      'product',
+                      'Обновлено описание модели',
+                      model.subtitle,
+                      e.target.value,
+                      true
+                    )
+                  }
+                  className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-medium text-[#141413]"
+                />
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 2. ПЕРВЫЙ ЭКРАН: ЛЕВАЯ КОЛОНКА (ОРИГИНАЛЬНОЕ ФОТО БЕЗ ОБРЕЗКИ) + ПРАВАЯ КОЛОНКА (5 КЛЮЧЕВЫХ МЕТРИК) */}
+      {/* 2. ПЕРВЫЙ ЭКРАН (Стр. 2 ТЗ): ЛЕВАЯ КОЛОНКА (ГАЛЕРЕЯ ФОТО) + ПРАВАЯ КОЛОНКА (РОВНО 4 КАРТОЧКИ 2×2 + СТРОКА НАЛИЧИЯ) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* ЛЕВАЯ КОЛОНКА: Чистая фотогалерея без лишних плашек и комментариев */}
+        {/* ЛЕВАЯ КОЛОНКА: Большое фото без фильтров + ряд миниатюр + «+ Загрузить фото» */}
         <div className="lg:col-span-6 rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 flex flex-col justify-between space-y-3">
-          {/* Крупное фото целиком без обрезки (object-contain) */}
           <div
             onClick={() => mainImageSrc && setLightboxOpen(true)}
-            title="Нажмите для полноэкранного просмотра фото"
-            className="relative rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-[#DFDED6] h-[330px] md:h-[390px] flex items-center justify-center p-3 overflow-hidden group cursor-zoom-in"
+            title="Нажмите для полноэкранного просмотра фотографии (Zoom, 100%, По размеру экрана, Оригинал)"
+            className="relative rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-[#DFDED6] h-[310px] md:h-[360px] flex items-center justify-center p-3 overflow-hidden group cursor-zoom-in"
           >
             {mainImageSrc ? (
               /* eslint-disable-next-line @next/next/no-img-element */
@@ -808,9 +1421,9 @@ export function ScenarioModelCardScreen({
             )}
           </div>
 
-          {/* Чистые миниатюры кадров + загрузка фото */}
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+          {/* Горизонтальный ряд миниатюр + управление главным фото / порядком / удалением + кнопка «+ Загрузить фото» */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+            <div className="flex items-center gap-2 overflow-x-auto py-1">
               {filteredGallery.map((g, idx) => {
                 const isSel = g.id === activeGalleryItem?.id;
                 const src = normalizeAssetUrl(g.url || g.originalUrl || '');
@@ -819,6 +1432,11 @@ export function ScenarioModelCardScreen({
                     <button
                       type="button"
                       onClick={() => setSelectedGalleryId(g.id)}
+                      onDoubleClick={() => {
+                        setSelectedGalleryId(g.id);
+                        setLightboxOpen(true);
+                      }}
+                      title="Клик — выбрать фото · Двойной клик — полноэкранный просмотр"
                       aria-label={`Фото ${idx + 1}`}
                       className={`rounded-[9px] p-1 border-[1.5px] transition cursor-pointer block ${
                         isSel
@@ -833,49 +1451,112 @@ export function ScenarioModelCardScreen({
                         className="h-12 w-14 object-contain rounded-[5px] bg-[#F5F5F1]"
                       />
                     </button>
-                    {filteredGallery.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveGalleryPhoto(g.id);
-                        }}
-                        title="Удалить фото"
-                        className="hidden group-hover/thumb:flex absolute -top-1.5 -right-1.5 h-4.5 w-4.5 rounded-full bg-[#141413] text-white text-[10px] items-center justify-center shadow cursor-pointer"
-                      >
-                        ×
-                      </button>
-                    )}
+
+                    {/* Панель действий над миниатюрой: Главное / Влево / Вправо / Удалить */}
+                    <div className="hidden group-hover/thumb:flex items-center gap-0.5 absolute -bottom-1 left-1/2 -translate-x-1/2 bg-[#141413]/90 text-white rounded-md px-1 py-0.5 shadow z-10">
+                      {idx > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMainGalleryPhoto(g.id);
+                          }}
+                          title="Сделать главным фото"
+                          className="p-0.5 hover:text-amber-300 cursor-pointer"
+                        >
+                          <Star className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                      {idx > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveGalleryPhoto(g.id, -1);
+                          }}
+                          title="Сдвинуть влево"
+                          className="p-0.5 hover:text-emerald-300 cursor-pointer"
+                        >
+                          <ArrowLeft className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                      {idx < filteredGallery.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveGalleryPhoto(g.id, 1);
+                          }}
+                          title="Сдвинуть вправо"
+                          className="p-0.5 hover:text-emerald-300 cursor-pointer"
+                        >
+                          <ArrowRight className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                      {filteredGallery.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveGalleryPhoto(g.id);
+                          }}
+                          title="Удалить фото"
+                          className="p-0.5 hover:text-rose-300 cursor-pointer"
+                        >
+                          <Trash2 className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] inline-flex items-center shrink-0 cursor-pointer transition">
-              <span>+ Загрузить фото</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleUploadOriginalPhoto}
-                className="hidden"
-              />
-            </label>
+            <div className="flex items-center gap-2 shrink-0">
+              {mainImageSrc && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer transition"
+                >
+                  Во весь экран
+                </button>
+              )}
+              <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] inline-flex items-center shrink-0 cursor-pointer transition">
+                <span>+ Загрузить фото</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadOriginalPhotos}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА: Строго 5 ключевых показателей с единицами, периодом, статусом и формулой (Раздел 02 и 06 ТЗ v1.1) */}
-        <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-3.5 content-start">
-          {/* Метрика 1: Выручка выбранного месяца (на всю ширину правой колонки) */}
-          <div className="sm:col-span-2 rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+        {/* ПРАВАЯ КОЛОНКА (Стр. 2 ТЗ): РОВНО ЧЕТЫРЕ КАРТОЧКИ (2×2) + ОДНА КОМПАКТНАЯ СТРОКА НАЛИЧИЯ ТОВАРА НИЖЕ */}
+        <div className="lg:col-span-6 flex flex-col justify-between gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {/* Карточка 1: Выручка выбранного месяца (без дублирования годовой выручки внутри карточки) */}
+            <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-[#3F3E3A]">
-                  01 · Выручка месяца
+                  Выручка выбранного месяца
                 </span>
+                <StatusPill status={selMonthStatus} />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
+                  {formatMln(selMonthRevRub)}
+                </div>
                 <select
+                  aria-label="Месяц выручки"
                   value={selectedMonthIdx}
                   onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
-                  className="h-6.5 px-2 rounded-[6px] bg-[#F5F5F1] border border-[#CECDC4] text-[11.5px] font-bold text-[#141413] cursor-pointer"
+                  className="h-7 px-2 rounded-[6px] bg-[#F5F5F1] border border-[#CECDC4] text-[11.5px] font-bold text-[#141413] cursor-pointer"
                 >
                   {MONTHS_SHORT_RU.map((mName, idx) => (
                     <option key={mName} value={idx}>
@@ -885,241 +1566,183 @@ export function ScenarioModelCardScreen({
                 </select>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <StatusPill status={selMonthStatus} />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormulaOpenKey(formulaOpenKey === 'rev' ? null : 'rev')
-                  }
-                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] border border-[#CECDC4] text-[10.5px] font-bold text-[#3F3E3A] cursor-pointer"
-                >
-                  Формула
-                </button>
+              <div className="text-[11.5px] text-[#5E5D58]">
+                {formatRub(selMonthRevRub)} · Выкупы:{' '}
+                <strong className="text-[#141413]">
+                  {selMonthPacks.toLocaleString('ru-RU')} компл.
+                </strong>{' '}
+                ({selMonthUnits.toLocaleString('ru-RU')} изд.)
               </div>
             </div>
 
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <div>
-                <div className="text-[26px] font-bold tracking-[-0.02em] text-[#141413]">
-                  {formatMln(selMonthRevRub)}
+            {/* Карточка 2: Цена комплекта */}
+            <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-[#3F3E3A]">
+                  Цена комплекта
+                </span>
+                <StatusPill status={pnl.revenueStatus} />
+              </div>
+
+              {isEditing ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub}
+                    onChange={(e) => handleScenarioPriceChange(Number(e.target.value))}
+                    className="h-9 w-full rounded-[8px] border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[16px] font-bold text-[#141413]"
+                  />
+                  <span className="text-[13px] font-semibold text-[#5E5D58]">₽</span>
                 </div>
-                <div className="text-[12px] text-[#5E5D58]">
-                  {formatRub(selMonthRevRub)} · Выкупы:{' '}
-                  <strong className="text-[#141413]">
-                    {selMonthPacks.toLocaleString('ru-RU')} компл.
-                  </strong>{' '}
-                  ({selMonthUnits.toLocaleString('ru-RU')} изд.)
+              ) : (
+                <div className="text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
+                  {formatRub(pnl.avgRealizedPricePerPackRub)}
                 </div>
+              )}
+
+              <div className="text-[11.5px] text-[#5E5D58]">
+                За 1 компл. ({model.unitsInPack} шт.) ·{' '}
+                <strong className="text-[#141413]">
+                  {formatRub(pnl.avgRealizedPricePerUnitRub)} / изд.
+                </strong>
+              </div>
+            </div>
+
+            {/* Карточка 3: Себестоимость под ключ (если неизвестна — показывать «Не заполнено», не подставлять 0 ₽) */}
+            <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-[#3F3E3A]">
+                  Себестоимость под ключ
+                </span>
+                <StatusPill status={pnl.costStatus} />
               </div>
 
-              <div className="text-right">
-                <div className="text-[11px] text-[#5E5D58]">Сумма 12 мес. {scenario.year}</div>
-                <div className="text-[15px] font-bold text-[#141413]">
-                  {formatMln(pnl.annualRevenueRub)}
+              {isEditing ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={model.unitCostRub > 0 ? model.unitCostRub : ''}
+                    placeholder="Не заполнено"
+                    onChange={(e) => handleUnitCostChange(Number(e.target.value))}
+                    className="h-9 w-full rounded-[8px] border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[16px] font-bold text-[#141413]"
+                  />
+                  <span className="text-[13px] font-semibold text-[#5E5D58]">₽</span>
                 </div>
-                <div className="text-[11px] text-[#5E5D58]">
-                  {pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} компл. ·{' '}
-                  {pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} изд.
+              ) : pnl.unitCostPerPackRub !== null ? (
+                <div className="text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
+                  {formatRub(pnl.unitCostPerPackRub)}
                 </div>
+              ) : (
+                <div className="text-[17px] font-bold text-[#B91C1C]">
+                  Не заполнено
+                </div>
+              )}
+
+              <div className="text-[11.5px] text-[#5E5D58]">
+                {pnl.unitCostPerSingleItemRub !== null
+                  ? `За 1 компл. · ${pnl.unitCostPerSingleItemRub.toLocaleString('ru-RU')} ₽ / изд.`
+                  : 'Себестоимость не указана (0 ₽ не подставляется)'}
               </div>
             </div>
 
-            {formulaOpenKey === 'rev' && (
-              <div className="rounded-[10px] bg-[#F5F5F1] border border-[#CECDC4] px-3 py-2 text-[11.5px] text-[#262624]">
-                <strong>Формула:</strong> Выкупленные комплекты ({selMonthPacks.toLocaleString('ru-RU')}{' '}
-                компл.) × Средняя цена реализации комплекта ({selMonthPrice.toLocaleString('ru-RU')} ₽) ={' '}
-                {formatRub(selMonthRevRub)}. Изделия в комплекте ({model.unitsInPack} шт.) учитываются справочно и не умножают выручку повторно.
-              </div>
-            )}
-          </div>
-
-          {/* Метрика 2: Цена реализации */}
-          <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-bold text-[#3F3E3A]">
-                02 · Цена комплекта
-              </span>
-              <StatusPill status={pnl.revenueStatus} />
-            </div>
-
-            {isEditing ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub}
-                  onChange={(e) => handleScenarioPriceChange(Number(e.target.value))}
-                  className="h-9 w-full rounded-[8px] border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[16px] font-bold text-[#141413]"
-                />
-                <span className="text-[13px] font-semibold text-[#5E5D58]">₽</span>
-              </div>
-            ) : (
-              <div className="text-[22px] font-bold text-[#141413]">
-                {formatRub(pnl.avgRealizedPricePerPackRub)}
-              </div>
-            )}
-
-            <div className="text-[11.5px] text-[#5E5D58]">
-              За 1 компл. ({model.unitsInPack} шт.) ·{' '}
-              <span className="font-semibold text-[#141413]">
-                {formatRub(pnl.avgRealizedPricePerUnitRub)} / изд.
-              </span>
-            </div>
-          </div>
-
-          {/* Метрика 3: Себестоимость под ключ */}
-          <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-bold text-[#3F3E3A]">
-                03 · Себестоимость под ключ
-              </span>
-              <StatusPill status={pnl.costStatus} />
-            </div>
-
-            {isEditing ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={model.unitCostRub || ''}
-                  placeholder="Не заполнено"
-                  onChange={(e) => handleUnitCostChange(Number(e.target.value))}
-                  className="h-9 w-full rounded-[8px] border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[16px] font-bold text-[#141413]"
-                />
-                <span className="text-[13px] font-semibold text-[#5E5D58]">₽</span>
-              </div>
-            ) : pnl.unitCostPerPackRub !== null ? (
-              <div className="text-[22px] font-bold text-[#141413]">
-                {formatRub(pnl.unitCostPerPackRub)}
-              </div>
-            ) : (
-              <div className="text-[16px] font-bold text-[#9F2D2D]">
-                Не заполнено
-              </div>
-            )}
-
-            <div className="text-[11.5px] text-[#5E5D58]">
-              {pnl.unitCostPerSingleItemRub !== null
-                ? `За 1 компл. · ${pnl.unitCostPerSingleItemRub.toLocaleString('ru-RU')} ₽ / изд.`
-                : 'Укажите себестоимость для расчёта маржи и бюджета партий'}
-            </div>
-          </div>
-
-          {/* Метрика 4: Обеспеченность товаром (единый реальный остаток + утверждённые PO!) */}
-          <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-bold text-[#3F3E3A]">
-                04 · Обеспеченность
-              </span>
-              <button
-                type="button"
-                onClick={() => setActiveTab('procurement')}
-                className="text-[11px] font-bold text-[#141413] underline hover:opacity-75 cursor-pointer"
-              >
-                К партиям →
-              </button>
-            </div>
-
-            <div
-              className={`text-[15px] font-bold leading-snug ${
-                procurement.supplyStatusTone === 'danger'
-                  ? 'text-[#B42318]'
-                  : procurement.supplyStatusTone === 'warning'
-                  ? 'text-[#9A5B00]'
-                  : procurement.supplyStatusTone === 'success'
-                  ? 'text-[#157347]'
-                  : 'text-[#141413]'
-              }`}
-            >
-              {procurement.hasDeficit
-                ? `Дефицит ${procurement.totalDeficitPacks.toLocaleString('ru-RU')} компл.`
-                : procurement.annualDemandPacks > 0
-                ? 'Обеспечено запасом и PO'
-                : 'Спрос не задан'}
-            </div>
-
-            <div className="text-[11.5px] text-[#5E5D58]">
-              Склад: <strong className="text-[#141413]">{procurement.netOpeningAvailablePacks}</strong> компл. · PO:{' '}
-              <strong className="text-[#141413]">{procurement.totalApprovedReceiptsPacks}</strong> компл. · К заказу:{' '}
-              <strong className="text-[#141413]">{procurement.recommendedBatches.length} парт.</strong>
-            </div>
-          </div>
-
-          {/* Метрика 5: Операционная прибыль (Тест-кейс №8: честное «Не рассчитана» без ложных 75%!) */}
-          <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-bold text-[#3F3E3A]">
-                05 · Операционная прибыль
-              </span>
-              <div className="flex items-center gap-1">
+            {/* Карточка 4: Прибыль с комплекта (если себестоимость или логистика не заполнены — показывать «Не рассчитано») */}
+            <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-[#3F3E3A]">
+                  Прибыль с комплекта
+                </span>
                 <StatusPill status={pnl.operatingProfitStatus} />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormulaOpenKey(formulaOpenKey === 'op' ? null : 'op')
-                  }
-                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] border border-[#CECDC4] text-[10.5px] font-bold text-[#3F3E3A] cursor-pointer"
-                >
-                  Формула
-                </button>
               </div>
+
+              {pnl.unitOperatingProfitRub !== null ? (
+                <>
+                  <div
+                    className={`text-[23px] font-bold tracking-[-0.02em] ${
+                      pnl.unitOperatingProfitRub >= 0
+                        ? 'text-[#157347]'
+                        : 'text-[#B42318]'
+                    }`}
+                  >
+                    {pnl.unitOperatingProfitRub >= 0 ? '+' : ''}
+                    {formatRub(pnl.unitOperatingProfitRub)}{' '}
+                    <span className="text-[13px] font-semibold">
+                      ({pnl.operatingMarginPct}%)
+                    </span>
+                  </div>
+                  <div className="text-[11.5px] text-[#5E5D58]">
+                    Остаётся с 1 компл. · За год:{' '}
+                    <strong className="text-[#141413]">
+                      {formatMln(pnl.annualOperatingProfitRub || 0)}
+                    </strong>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[14.5px] font-bold text-[#B91C1C] leading-snug">
+                    {!pnl.logisticsFilled && pnl.unitCostPerPackRub !== null
+                      ? 'Не рассчитано, пока не заполнена логистика'
+                      : 'Не рассчитано'}
+                  </div>
+                  <div className="text-[11px] text-[#5E5D58] leading-snug">
+                    {pnl.operatingProfitNotCalculatedReason}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* НИЖЕ ЧЕТЫРЁХ КАРТОЧЕК — ОДНА КОМПАКТНАЯ СТРОКА НАЛИЧИЯ ТОВАРА (Стр. 2 ТЗ) */}
+          <div
+            className={`rounded-[14px] border-[1.5px] px-4 py-3 flex flex-wrap items-center justify-between gap-3 ${
+              procurement.hasDeficit
+                ? 'bg-[#FEF2F2] border-[#FECACA]'
+                : 'bg-[#EAF6F0] border-[#CBEAD9]'
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <span
+                className={`font-bold ${
+                  procurement.hasDeficit ? 'text-[#B42318]' : 'text-[#157347]'
+                }`}
+              >
+                {procurement.hasDeficit
+                  ? `Наличие товара: дефицит ${procurement.totalDeficitPacks.toLocaleString('ru-RU')} комплектов`
+                  : 'Наличие товара: достаточно'}
+              </span>
+              <span className="text-[12px] text-[#52524E]">
+                (Склад: {procurement.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл. · Утв. PO:{' '}
+                {procurement.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.)
+              </span>
             </div>
 
-            {pnl.annualOperatingProfitRub !== null ? (
-              <>
-                <div
-                  className={`text-[20px] font-bold ${
-                    pnl.annualOperatingProfitRub >= 0
-                      ? 'text-[#157347]'
-                      : 'text-[#B42318]'
-                  }`}
-                >
-                  {formatMln(pnl.annualOperatingProfitRub)}{' '}
-                  <span className="text-[13px] font-semibold">
-                    ({pnl.operatingMarginPct}%)
-                  </span>
-                </div>
-                <div className="text-[11.5px] text-[#5E5D58]">
-                  За 2027 г. · {formatRub(pnl.unitOperatingProfitRub || 0)} / компл. (после MP, рекламы и OPEX)
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-[15px] font-bold text-[#9F2D2D]">
-                  Не рассчитана
-                </div>
-                <div className="text-[11px] text-[#5E5D58] leading-snug">
-                  {pnl.operatingProfitNotCalculatedReason}
-                </div>
-              </>
-            )}
-
-            {formulaOpenKey === 'op' && (
-              <div className="rounded-[10px] bg-[#F5F5F1] border border-[#CECDC4] px-2.5 py-1.5 text-[11px] text-[#262624]">
-                Выручка − Себестоимость − Комиссии MP − Логистика − Реклама − Постоянные OPEX. При незаполненных расходах ложный % не выводится.
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={openProcurementTab}
+              className="text-[12.5px] font-bold text-[#141413] underline hover:opacity-75 cursor-pointer shrink-0"
+            >
+              Открыть закупки →
+            </button>
           </div>
         </div>
       </div>
 
-      {/* 3. ПЕРЕКЛЮЧАТЕЛЬ 4 КОНТУРОВ ВНУТРИ ПАСПОРТА SKU (01 Продукт -> 02 Продажи -> 03 Закупки -> 04 Финансы) */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      {/* 3. НИЖНЯЯ ЧАСТЬ: ЧЕТЫРЕ ВКЛАДКИ БЕЗ ТЕХНИЧЕСКИХ НОМЕРОВ («Продукт» / «Продажи» / «Закупки» / «Финансы») */}
+      <div
+        ref={tabsAnchorRef}
+        className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden shadow-[0_2px_10px_rgba(20,20,19,0.03)]"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-6 py-3 bg-[#F7F7F4] border-b-[1.5px] border-[#DFDED6]">
           <div className="inline-flex flex-wrap items-center gap-1 rounded-[10px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5">
             {(
               [
-                { id: 'product', step: '01', label: 'Продукт' },
-                { id: 'sales', step: '02', label: 'Продажи (12 мес.)' },
-                {
-                  id: 'procurement',
-                  step: '03',
-                  label: `Закупки (${procurement.recommendedBatches.length} рек. / ${procurement.approvedOrders.length} PO)`,
-                },
-                { id: 'finance', step: '04', label: 'Финансы (P&L и капитал)' },
+                { id: 'product', label: 'Продукт' },
+                { id: 'sales', label: 'Продажи' },
+                { id: 'procurement', label: 'Закупки' },
+                { id: 'finance', label: 'Финансы' },
               ] as const
             ).map((tab) => {
               const isAct = activeTab === tab.id;
@@ -1128,100 +1751,50 @@ export function ScenarioModelCardScreen({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`h-8.5 px-3.5 rounded-[8px] text-[12px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  className={`h-8.5 px-4 rounded-[8px] text-[12.5px] font-semibold inline-flex items-center transition cursor-pointer ${
                     isAct
                       ? 'bg-[#141413] text-white shadow-2xs'
                       : 'text-[#3F3E3A] hover:text-[#141413] hover:bg-white'
                   }`}
                 >
-                  <span
-                    className={`font-mono text-[10.5px] ${
-                      isAct ? 'text-white/75' : 'text-[#686762]'
-                    }`}
-                  >
-                    {tab.step}
-                  </span>
                   <span>{tab.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <span className="text-[11px] font-medium text-[#5E5D58]">
-            Единый SKU · паспорт, остатки и PO общие для всех сценариев
+          <span className="text-[11.5px] font-medium text-[#5E5D58]">
+            Единая карточка товара во всех сценариях · отдельные планы продаж для Сценария №1 / №2 / №3
           </span>
         </div>
 
-        {/* ==================== ВКЛАДКА 1: ПРОДУКТ ==================== */}
+        {/* ==================== ВКЛАДКА «ПРОДУКТ» ==================== */}
         {activeTab === 'product' && (
           <div className="p-5 md:p-6 space-y-6">
-            {/* Спецификация ткани, конструкции, пояса и комплектности */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
                 <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                  Ткань и плотность
+                  Ткань, состав и плотность
                 </div>
-                {isEditing ? (
-                  <div className="space-y-2 text-[12.5px]">
-                    <label className="block">
-                      <span className="text-[#5E5D58] text-[11px]">Состав</span>
-                      <input
-                        type="text"
-                        value={model.fabric.composition}
-                        onChange={(e) =>
-                          commitWithAudit(
-                            {
-                              ...model,
-                              fabric: { ...model.fabric, composition: e.target.value },
-                            },
-                            'product',
-                            'Обновлён состав ткани (новая версия паспорта PDF)',
-                            model.fabric.composition,
-                            e.target.value,
-                            true
-                          )
-                        }
-                        className="mt-0.5 w-full h-8 px-2.5 rounded-[8px] border-[1.5px] border-[#CECDC4] bg-white"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[#5E5D58] text-[11px]">Плотность</span>
-                      <input
-                        type="text"
-                        value={model.fabric.density}
-                        onChange={(e) =>
-                          commitWithAudit(
-                            {
-                              ...model,
-                              fabric: { ...model.fabric, density: e.target.value },
-                            },
-                            'product',
-                            'Обновлена плотность ткани',
-                            model.fabric.density,
-                            e.target.value,
-                            true
-                          )
-                        }
-                        className="mt-0.5 w-full h-8 px-2.5 rounded-[8px] border-[1.5px] border-[#CECDC4] bg-white"
-                      />
-                    </label>
+                <div className="space-y-1.5 text-[13px] text-[#141413]">
+                  <div>
+                    <span className="text-[#5E5D58]">Состав:</span>{' '}
+                    <strong>{model.fabric.composition}</strong>
                   </div>
-                ) : (
-                  <div className="space-y-1.5 text-[13px] text-[#141413]">
-                    <div>
-                      <span className="text-[#5E5D58]">Состав:</span>{' '}
-                      <strong>{model.fabric.composition}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[#5E5D58]">Плотность:</span>{' '}
-                      <strong>{model.fabric.density}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[#5E5D58]">Переплетение:</span>{' '}
-                      {model.fabric.knitType}
-                    </div>
+                  <div>
+                    <span className="text-[#5E5D58]">Плотность:</span>{' '}
+                    <strong>{model.fabric.density}</strong>
                   </div>
-                )}
+                  <div>
+                    <span className="text-[#5E5D58]">Переплетение:</span>{' '}
+                    {model.fabric.knitType}
+                  </div>
+                  {model.description && (
+                    <div className="pt-1 text-[12px] text-[#5E5D58]">
+                      {model.description}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
@@ -1230,7 +1803,7 @@ export function ScenarioModelCardScreen({
                 </div>
                 <div className="space-y-1.5 text-[13px] text-[#141413]">
                   <div>
-                    <span className="text-[#5E5D58]">Тип и комплект:</span>{' '}
+                    <span className="text-[#5E5D58]">Комплектация:</span>{' '}
                     <strong>
                       {model.construction.type} ({model.unitsInPack} изд. = 1 компл.)
                     </strong>
@@ -1251,7 +1824,7 @@ export function ScenarioModelCardScreen({
 
               <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
                 <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                  Резинка / пояс и размеры
+                  Резинка / пояс и размерная сетка
                 </div>
                 <div className="space-y-1.5 text-[13px] text-[#141413]">
                   <div>
@@ -1266,7 +1839,7 @@ export function ScenarioModelCardScreen({
                   </div>
                   <div className="pt-1">
                     <span className="text-[#5E5D58] text-[12px]">
-                      Размерная матрица партии (%):
+                      Размерная сетка (S–XXL):
                     </span>
                     <div className="flex flex-wrap gap-1.5 mt-1">
                       {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
@@ -1287,10 +1860,10 @@ export function ScenarioModelCardScreen({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-[15px] font-bold text-[#141413]">
-                  Комплектация цветов и Pantone ({model.unitsInPack} изд. в 1 комплекте)
+                  Цвета комплекта и Pantone ({model.unitsInPack} изд. в 1 комплекте)
                 </h3>
                 <span className="text-[11.5px] text-[#5E5D58]">
-                  Изменение цвета создаёт новую версию паспорта PDF, не меняя старые утверждённые PO
+                  Нажмите «Редактировать» в шапке карточки для изменения цветов и характеристик
                 </span>
               </div>
 
@@ -1366,13 +1939,13 @@ export function ScenarioModelCardScreen({
               </div>
             </div>
 
-            {/* Оригинальные PDF техкарты фабрики */}
+            {/* Фабричные PDF */}
             <div className="rounded-[16px] bg-[#FAF8F4] border border-[#E6E0D4] p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-[#8B6F47]" />
                   <h3 className="text-[14px] font-bold text-[#1D1D1F]">
-                    Оригиналы и фабричные техкарты PDF ({(model.attachedPdfs || []).length})
+                    Фабричные файлы и техкарты PDF ({(model.attachedPdfs || []).length})
                   </h3>
                 </div>
 
@@ -1439,7 +2012,7 @@ export function ScenarioModelCardScreen({
                               </a>
                             </>
                           )}
-                          {isEditing && !pdf.staticUrl && (
+                          {!pdf.staticUrl && (
                             <button
                               type="button"
                               onClick={() => handleRemovePdf(pdf.id)}
@@ -1464,14 +2037,14 @@ export function ScenarioModelCardScreen({
               )}
             </div>
 
-            {/* История изменений паспорта, прогнозов и заказов (Раздел 06 ТЗ v1.1) */}
-            <div className="rounded-[16px] border border-[#E6E0D4] p-4 space-y-2.5">
-              <div className="flex items-center gap-2 text-[13.5px] font-bold text-[#1D1D1F]">
+            {/* Компактная история изменений */}
+            <div className="rounded-[16px] border border-[#E6E0D4] p-4 space-y-2">
+              <div className="flex items-center gap-2 text-[13px] font-bold text-[#1D1D1F]">
                 <History className="h-4 w-4 text-[#6E6E73]" />
-                <span>История изменений и версий (Audit Log · v{shared.passportVersion})</span>
+                <span>История изменений карточки (v{shared.passportVersion})</span>
               </div>
-              <div className="max-h-44 overflow-y-auto divide-y divide-[#EFECE4] text-[12px]">
-                {shared.auditHistory.slice(0, 12).map((entry) => (
+              <div className="max-h-36 overflow-y-auto divide-y divide-[#EFECE4] text-[12px]">
+                {shared.auditHistory.slice(0, 8).map((entry) => (
                   <div
                     key={entry.id}
                     className="py-1.5 flex flex-wrap items-center justify-between gap-2"
@@ -1487,7 +2060,6 @@ export function ScenarioModelCardScreen({
                     </div>
                     <span className="text-[11px] text-[#8E8A82]">
                       {entry.author} · {entry.timestamp}
-                      {entry.passportVersion ? ` · PDF v${entry.passportVersion}` : ''}
                     </span>
                   </div>
                 ))}
@@ -1496,91 +2068,118 @@ export function ScenarioModelCardScreen({
           </div>
         )}
 
-        {/* ==================== ВКЛАДКА 2: ПРОДАЖИ (12 МЕСЯЦЕВ) ==================== */}
+        {/* ==================== ВКЛАДКА «ПРОДАЖИ» (Раздел 04 ТЗ, Стр. 4) ==================== */}
         {activeTab === 'sales' && (
-          <div className="p-5 md:p-6 space-y-5">
-            {/* Панель каналов, переключения График/Таблица и Экспорта/Импорта */}
+          <div className="p-5 md:p-6 space-y-4">
+            {/* Верхняя строка вкладки «Продажи»: Источник прогноза («Прогноз — гипотеза» или «На базе истории продаж») + кнопка «Дополнительно» */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-[10px] bg-[#FAF8F4] border border-[#DED8CC] p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setSalesViewMode('table')}
-                    className={`h-8 px-3 rounded-[8px] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
-                      salesViewMode === 'table'
-                        ? 'bg-[#1D1D1F] text-white'
-                        : 'text-[#5A564F]'
-                    }`}
-                  >
-                    <TableIcon className="h-3.5 w-3.5" />
-                    <span>Таблица 12 мес.</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSalesViewMode('chart')}
-                    className={`h-8 px-3 rounded-[8px] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
-                      salesViewMode === 'chart'
-                        ? 'bg-[#1D1D1F] text-white'
-                        : 'text-[#5A564F]'
-                    }`}
-                  >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    <span>График</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-[11.5px] text-[#5A564F] bg-[#FAF8F4] border border-[#E6E0D4] rounded-[10px] px-3 py-1.5">
-                  <span>Каналы продаж:</span>
-                  <strong>WB {channelSplit.wb}%</strong>
-                  <span>·</span>
-                  <strong>Другие MP {channelSplit.otherMp}%</strong>
-                  <span>·</span>
-                  <strong>Сайт {channelSplit.website}%</strong>
-                </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h3 className="text-[15px] font-bold text-[#141413]">
+                  План продаж на 12 месяцев ({scenario.title} · {scenario.year})
+                </h3>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold border ${
+                    actingSkuRef
+                      ? 'bg-[#EAF6F0] text-[#157347] border-[#CBEAD9]'
+                      : 'bg-[#F6F6F4] text-[#3F3E3A] border-[#CECDC4]'
+                  }`}
+                >
+                  {actingSkuRef ? 'На базе истории продаж' : 'Прогноз — гипотеза'}
+                </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleExportSkuPlan('csv')}
-                  className="h-8 px-3 rounded-[9px] bg-[#FAF8F4] hover:bg-[#EFECE4] border border-[#DED8CC] text-[12px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => setShowSalesExtraTools((v) => !v)}
+                  className="h-8 px-3 rounded-[8px] bg-[#F5F5F1] hover:border-[#141413] border border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
                 >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Экспорт CSV</span>
+                  {showSalesExtraTools ? 'Скрыть дополнительно ▴' : 'График, факт и CSV ▾'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleExportSkuPlan('json')}
-                  className="h-8 px-3 rounded-[9px] bg-[#FAF8F4] hover:bg-[#EFECE4] border border-[#DED8CC] text-[12px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Экспорт JSON</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => importPlanInputRef.current?.click()}
-                  className="h-8 px-3 rounded-[9px] bg-[#1D1D1F] hover:bg-[#323236] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  <span>Импорт плана</span>
-                </button>
-                <input
-                  ref={importPlanInputRef}
-                  type="file"
-                  accept=".json,.csv"
-                  onChange={handleImportSkuPlanFile}
-                  className="hidden"
-                />
               </div>
             </div>
 
-            {salesViewMode === 'chart' ? (
+            {/* Дополнительные инструменты (свёрнуты по умолчанию, чтобы таблица 12 месяцев была максимально чистой) */}
+            {showSalesExtraTools && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] bg-[#FAF8F4] border border-[#E6E0D4] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-[9px] bg-white border border-[#DED8CC] p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setSalesViewMode('table')}
+                      className={`h-7.5 px-3 rounded-[7px] text-[11.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                        salesViewMode === 'table'
+                          ? 'bg-[#1D1D1F] text-white'
+                          : 'text-[#5A564F]'
+                      }`}
+                    >
+                      <TableIcon className="h-3.5 w-3.5" />
+                      <span>Таблица 12 мес.</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSalesViewMode('chart')}
+                      className={`h-7.5 px-3 rounded-[7px] text-[11.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                        salesViewMode === 'chart'
+                          ? 'bg-[#1D1D1F] text-white'
+                          : 'text-[#5A564F]'
+                      }`}
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      <span>График</span>
+                    </button>
+                  </div>
+
+                  <span className="text-[11.5px] text-[#5A564F] px-2">
+                    Каналы: <strong>WB {channelSplit.wb}%</strong> · Другие MP{' '}
+                    <strong>{channelSplit.otherMp}%</strong> · Сайт{' '}
+                    <strong>{channelSplit.website}%</strong>
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportSkuPlan('csv')}
+                    className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Экспорт CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportSkuPlan('json')}
+                    className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Экспорт JSON</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => importPlanInputRef.current?.click()}
+                    className="h-7.5 px-2.5 rounded-[8px] bg-[#1D1D1F] text-white text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    <span>Импорт плана</span>
+                  </button>
+                  <input
+                    ref={importPlanInputRef}
+                    type="file"
+                    accept=".json,.csv"
+                    onChange={handleImportSkuPlanFile}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            )}
+
+            {salesViewMode === 'chart' && showSalesExtraTools ? (
               <div className="rounded-[16px] bg-[#FAF8F4] border border-[#E6E0D4] p-5 space-y-4">
                 <div className="flex items-center justify-between text-[12.5px] text-[#5A564F]">
                   <span>
                     Помесячная динамика выручки и выкупов ({scenario.title} · {scenario.year})
                   </span>
-                  <strong>Годовой итог: {formatMln(pnl.annualRevenueRub)}</strong>
+                  <strong>Итоги за год: {formatMln(pnl.annualRevenueRub)}</strong>
                 </div>
                 <div className="grid grid-cols-12 gap-2 items-end h-52 pt-4">
                   {MONTHS_SHORT_RU.map((mLabel, mIdx) => {
@@ -1597,10 +2196,8 @@ export function ScenarioModelCardScreen({
                         </span>
                         <div
                           style={{ height: `${hPct}%` }}
-                          className="w-full max-w-[34px] rounded-t-[8px] bg-[#4E6A85] transition-all"
-                          title={`${mLabel}: ${packs.toLocaleString('ru-RU')} компл. (${(
-                            packs * model.unitsInPack
-                          ).toLocaleString('ru-RU')} изд.) = ${formatRub(rev)}`}
+                          className="w-full max-w-[34px] rounded-t-[8px] bg-[#141413] transition-all"
+                          title={`${mLabel}: ${packs.toLocaleString('ru-RU')} компл. = ${formatRub(rev)}`}
                         />
                         <span className="text-[11px] font-semibold text-[#1D1D1F]">
                           {mLabel}
@@ -1612,18 +2209,21 @@ export function ScenarioModelCardScreen({
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-[16px] border border-[#E6E0D4]">
-                <table className="w-full text-left border-collapse text-[12.5px]">
+              /* ЧИСТАЯ ТАБЛИЦА 12 МЕСЯЦЕВ (Стр. 4 ТЗ): Месяц · Цена, ₽ · Выкупы, комплектов · Выручка, ₽ + Итоги за год */
+              <div className="overflow-x-auto rounded-[16px] border-[1.5px] border-[#C8C7BE]">
+                <table className="w-full text-left border-collapse text-[13px]">
                   <thead>
-                    <tr className="bg-[#FAF8F4] border-b border-[#E6E0D4] text-[11px] uppercase tracking-wider text-[#6E6E73]">
-                      <th className="py-2.5 px-3">Месяц</th>
-                      <th className="py-2.5 px-3">План цены (₽/компл.)</th>
-                      <th className="py-2.5 px-3">План выкупов (компл.)</th>
-                      <th className="py-2.5 px-3">Физические изделия (шт.)</th>
-                      <th className="py-2.5 px-3">Плановая выручка</th>
-                      <th className="py-2.5 px-3">Факт выкупов (компл.)</th>
-                      <th className="py-2.5 px-3">Отклонение</th>
-                      <th className="py-2.5 px-3">Статус</th>
+                    <tr className="bg-[#F7F7F4] border-b-[1.5px] border-[#DFDED6] text-[11px] uppercase tracking-wider text-[#5E5D58]">
+                      <th className="py-2.5 px-4">Месяц</th>
+                      <th className="py-2.5 px-4">Цена, ₽</th>
+                      <th className="py-2.5 px-4">Выкупы, комплектов</th>
+                      <th className="py-2.5 px-4">Выручка, ₽</th>
+                      {showSalesExtraTools && (
+                        <>
+                          <th className="py-2.5 px-4">Факт выкупов (компл.)</th>
+                          <th className="py-2.5 px-4">Статус</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EFECE4]">
@@ -1635,118 +2235,108 @@ export function ScenarioModelCardScreen({
                       const planRev = baseMetrics.monthlyRevenuesRub[mIdx] || 0;
                       const actRec = shared.actualSalesByMonth[mIdx];
                       const actPacks = actRec?.actualBuyoutsPacks ?? null;
-                      const diffPacks =
-                        actPacks !== null ? actPacks - planPacks : null;
                       const rowStatus: ValueStatusCode =
                         actPacks !== null ? 'fact' : pnl.revenueStatus;
 
                       return (
-                        <tr key={mLabel} className="hover:bg-[#FAF8F4]/60">
-                          <td className="py-2 px-3 font-semibold text-[#1D1D1F]">
+                        <tr key={mLabel} className="hover:bg-[#F7F7F4]/70">
+                          <td className="py-2 px-4 font-semibold text-[#141413]">
                             {mLabel} {scenario.year}
                           </td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="number"
-                              min={0}
-                              step={10}
-                              value={planPrice}
-                              onChange={(e) => {
-                                const val = Math.max(0, Math.round(Number(e.target.value)));
-                                const nextPrices = plan.monthlyPricesRub.map((pr, idx) =>
-                                  idx === mIdx ? val : pr
-                                );
-                                commitWithAudit(
-                                  {
-                                    ...model,
-                                    plansByScenario: {
-                                      ...model.plansByScenario,
-                                      [scenario.id]: {
-                                        ...plan,
-                                        scenarioId: scenario.id,
-                                        monthlyPricesRub: nextPrices,
+                          <td className="py-2 px-4">
+                            <div className="inline-flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min={0}
+                                step={10}
+                                value={planPrice}
+                                onChange={(e) => {
+                                  const val = Math.max(
+                                    0,
+                                    Math.round(Number(e.target.value))
+                                  );
+                                  const nextPrices = plan.monthlyPricesRub.map((pr, idx) =>
+                                    idx === mIdx ? val : pr
+                                  );
+                                  commitWithAudit(
+                                    {
+                                      ...model,
+                                      plansByScenario: {
+                                        ...model.plansByScenario,
+                                        [scenario.id]: {
+                                          ...plan,
+                                          scenarioId: scenario.id,
+                                          monthlyPricesRub: nextPrices,
+                                        },
                                       },
                                     },
-                                  },
-                                  'sales',
-                                  `Изменена цена ${mLabel} (${scenario.title})`,
-                                  `${planPrice} ₽`,
-                                  `${val} ₽`
-                                );
-                              }}
-                              className="h-7 w-24 rounded-[7px] border border-[#DED8CC] bg-white px-2 font-medium text-[#1D1D1F]"
-                            />
+                                    'sales',
+                                    `Изменена цена ${mLabel} (${scenario.title})`,
+                                    `${planPrice} ₽`,
+                                    `${val} ₽`
+                                  );
+                                }}
+                                className="h-7.5 w-24 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-semibold text-[#141413]"
+                              />
+                              <span className="text-[11px] text-[#5E5D58]">₽</span>
+                            </div>
                           </td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="number"
-                              min={0}
-                              step={50}
-                              value={planPacks}
-                              onChange={(e) =>
-                                handleMonthBuyoutsChange(mIdx, Number(e.target.value))
-                              }
-                              className="h-7 w-24 rounded-[7px] border border-[#DED8CC] bg-white px-2 font-semibold text-[#1D1D1F]"
-                            />
+                          <td className="py-2 px-4">
+                            <div className="inline-flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                step={50}
+                                value={planPacks}
+                                onChange={(e) =>
+                                  handleMonthBuyoutsChange(mIdx, Number(e.target.value))
+                                }
+                                className="h-7.5 w-28 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-bold text-[#141413]"
+                              />
+                              <span className="text-[11.5px] text-[#5E5D58]">
+                                компл. ({planUnits.toLocaleString('ru-RU')} изд.)
+                              </span>
+                            </div>
                           </td>
-                          <td className="py-2 px-3 text-[#5A564F]">
-                            {planUnits.toLocaleString('ru-RU')} изд.
-                          </td>
-                          <td className="py-2 px-3 font-semibold text-[#1D1D1F]">
+                          <td className="py-2 px-4 font-mono font-bold text-[#141413]">
                             {formatRub(planRev)}
                           </td>
-                          <td className="py-2 px-3">
-                            <input
-                              type="number"
-                              min={0}
-                              placeholder="Не заполнено"
-                              value={actPacks === null ? '' : actPacks}
-                              onChange={(e) =>
-                                handleMonthActualSaleChange(mIdx, e.target.value)
-                              }
-                              className="h-7 w-28 rounded-[7px] border border-[#DED8CC] bg-[#FAF8F4] px-2 text-[12px]"
-                            />
-                          </td>
-                          <td className="py-2 px-3 text-[12px]">
-                            {diffPacks === null ? (
-                              <span className="text-[#8E8A82]">—</span>
-                            ) : (
-                              <span
-                                className={
-                                  diffPacks >= 0
-                                    ? 'font-semibold text-[#17643A]'
-                                    : 'font-semibold text-[#B42318]'
-                                }
-                              >
-                                {diffPacks >= 0 ? `+${diffPacks}` : diffPacks} компл.
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3">
-                            <StatusPill status={rowStatus} />
-                          </td>
+                          {showSalesExtraTools && (
+                            <>
+                              <td className="py-2 px-4">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  placeholder="Не заполнено"
+                                  value={actPacks === null ? '' : actPacks}
+                                  onChange={(e) =>
+                                    handleMonthActualSaleChange(mIdx, e.target.value)
+                                  }
+                                  className="h-7.5 w-28 rounded-[7px] border border-[#DED8CC] bg-[#FAF8F4] px-2 text-[12px]"
+                                />
+                              </td>
+                              <td className="py-2 px-4">
+                                <StatusPill status={rowStatus} />
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-[#FAF8F4] border-t border-[#DED8CC] font-bold text-[#1D1D1F]">
-                      <td className="py-2.5 px-3">ИТОГО 12 мес.</td>
-                      <td className="py-2.5 px-3">
+                    <tr className="bg-[#F7F7F4] border-t-[1.5px] border-[#C8C7BE] font-bold text-[#141413]">
+                      <td className="py-3 px-4">Итоги за год ({scenario.year})</td>
+                      <td className="py-3 px-4 font-mono">
                         ср. {formatRub(pnl.avgRealizedPricePerPackRub)}
                       </td>
-                      <td className="py-2.5 px-3">
-                        {baseMetrics.annualPacks.toLocaleString('ru-RU')} компл.
+                      <td className="py-3 px-4 font-mono">
+                        {baseMetrics.annualPacks.toLocaleString('ru-RU')} компл. ({baseMetrics.annualUnits.toLocaleString('ru-RU')} изд.)
                       </td>
-                      <td className="py-2.5 px-3">
-                        {baseMetrics.annualUnits.toLocaleString('ru-RU')} изд.
+                      <td className="py-3 px-4 font-mono text-[14px]">
+                        {formatRub(baseMetrics.annualRevenueRub)} ({formatMln(baseMetrics.annualRevenueRub)})
                       </td>
-                      <td className="py-2.5 px-3">
-                        {formatRub(baseMetrics.annualRevenueRub)}
-                      </td>
-                      <td className="py-2.5 px-3" colSpan={3}>
-                        Изменение плана пересчитывает сценарий, остатки и партии закупок
-                      </td>
+                      {showSalesExtraTools && <td className="py-3 px-4" colSpan={2} />}
                     </tr>
                   </tfoot>
                 </table>
@@ -1755,7 +2345,7 @@ export function ScenarioModelCardScreen({
           </div>
         )}
 
-        {/* ==================== ВКЛАДКА 3: ЗАКУПКИ (УПРОЩЁННЫЙ 3-ЗОННЫЙ ИНТЕРФЕЙС ПО ТЗ MVP) ==================== */}
+        {/* ==================== ВКЛАДКА «ЗАКУПКИ» (Раздел 06 ТЗ, Стр. 6) ==================== */}
         {activeTab === 'procurement' && (
           <div className="p-4 md:p-6">
             <SkuProcurementMvpWorkbench
@@ -1768,407 +2358,857 @@ export function ScenarioModelCardScreen({
           </div>
         )}
 
-        {/* ==================== ВКЛАДКА 4: ФИНАНСЫ (КАСКАДНЫЙ P&L И КАПИТАЛ, РАЗДЕЛ 05 ТЗ v1.1) ==================== */}
+        {/* ==================== ВКЛАДКА «ФИНАНСЫ» (Раздел 05 ТЗ, Стр. 5 и 6) ==================== */}
         {activeTab === 'finance' && (
           <div className="p-5 md:p-6 space-y-6">
-            {/* Редактор операционных расходов и OPEX */}
-            <div className="rounded-[16px] bg-[#FAF8F4] border border-[#E6E0D4] p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[14px] font-bold text-[#1D1D1F]">
-                  Параметры себестоимости, комиссий MP, логистики, рекламы и постоянных OPEX
+            {/* ВЕРХНЯЯ СЕТКА: БЛОК А (Сколько остаётся с одного комплекта) + БЛОК Б (Результат за выбранный период) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* БЛОК А. Сколько остаётся с одного комплекта (Стр. 5 ТЗ) */}
+              <div className="lg:col-span-6 rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
+                  <div>
+                    <h3 className="text-[15px] font-bold text-[#141413]">
+                      Блок А. Сколько остаётся с одного комплекта
+                    </h3>
+                    <p className="text-[11.5px] text-[#5E5D58]">
+                      Последовательный расчёт расходов на 1 комплект ({model.unitsInPack} изд.)
+                    </p>
+                  </div>
+                  <StatusPill status={pnl.operatingProfitStatus} />
                 </div>
-                <span className="text-[11.5px] text-[#6E6E73]">
-                  Если расходы не заполнены — операционная прибыль отображается как «Не рассчитана»
-                </span>
-              </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-[12px]">
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Себестоимость (₽/компл.)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    value={model.unitCostRub || ''}
-                    placeholder="Не заполнено"
-                    onChange={(e) => handleUnitCostChange(Number(e.target.value))}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Комиссия MP (%)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={60}
-                    step={0.5}
-                    value={model.marketplaceFeePct}
-                    onChange={(e) => {
-                      const val = Math.max(0, Number(e.target.value));
-                      commitWithAudit(
-                        {
-                          ...model,
-                          marketplaceFeePct: val,
-                          sharedSupplyAndFact: {
-                            ...shared,
-                            expensesFilled:
-                              val > 0 || model.logisticsRub > 0 || model.adsPct > 0,
-                          },
-                        },
-                        'finance',
-                        'Обновлена комиссия маркетплейса',
-                        `${model.marketplaceFeePct}%`,
-                        `${val}%`
-                      );
-                    }}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Логистика (₽/компл.)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={model.logisticsRub}
-                    onChange={(e) => {
-                      const val = Math.max(0, Math.round(Number(e.target.value)));
-                      commitWithAudit(
-                        {
-                          ...model,
-                          logisticsRub: val,
-                          sharedSupplyAndFact: {
-                            ...shared,
-                            expensesFilled:
-                              val > 0 || model.marketplaceFeePct > 0 || model.adsPct > 0,
-                          },
-                        },
-                        'finance',
-                        'Обновлена стоимость логистики за комплект',
-                        `${model.logisticsRub} ₽`,
-                        `${val} ₽`
-                      );
-                    }}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Реклама ДРР (%)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    step={0.5}
-                    value={model.adsPct}
-                    onChange={(e) => {
-                      const val = Math.max(0, Number(e.target.value));
-                      commitWithAudit(
-                        {
-                          ...model,
-                          adsPct: val,
-                          sharedSupplyAndFact: {
-                            ...shared,
-                            expensesFilled:
-                              val > 0 || model.marketplaceFeePct > 0 || model.logisticsRub > 0,
-                          },
-                        },
-                        'finance',
-                        'Обновлена доля рекламных расходов (ДРР)',
-                        `${model.adsPct}%`,
-                        `${val}%`
-                      );
-                    }}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Прочие перем. (₽/компл.)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={shared.otherVariableRubPerPack}
-                    onChange={(e) => {
-                      const val = Math.max(0, Math.round(Number(e.target.value)));
-                      commitWithAudit(
-                        {
-                          ...model,
-                          sharedSupplyAndFact: {
-                            ...shared,
-                            otherVariableRubPerPack: val,
-                          },
-                        },
-                        'finance',
-                        'Обновлены прочие переменные расходы',
-                        `${shared.otherVariableRubPerPack} ₽`,
-                        `${val} ₽`
-                      );
-                    }}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#6E6E73] block">Постоянные OPEX (₽/компл.)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={
-                      shared.allocatedFixedOpexRubPerPack === null
-                        ? ''
-                        : shared.allocatedFixedOpexRubPerPack
-                    }
-                    placeholder="Не задано"
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      const val =
-                        raw.trim() === ''
-                          ? null
-                          : Math.max(0, Math.round(Number(raw)));
-                      commitWithAudit(
-                        {
-                          ...model,
-                          sharedSupplyAndFact: {
-                            ...shared,
-                            allocatedFixedOpexRubPerPack: val,
-                          },
-                        },
-                        'finance',
-                        'Обновлены распределённые постоянные расходы OPEX',
-                        shared.allocatedFixedOpexRubPerPack === null
-                          ? 'Не задано'
-                          : `${shared.allocatedFixedOpexRubPerPack} ₽`,
-                        val === null ? 'Не задано' : `${val} ₽`
-                      );
-                    }}
-                    className="h-8 w-full rounded-[8px] border border-[#DED8CC] bg-white px-2.5 font-semibold"
-                  />
-                </label>
-              </div>
-            </div>
-
-            {/* Каскадная таблица P&L: 1 комплект vs Год 2027 */}
-            <div className="overflow-x-auto rounded-[16px] border border-[#E6E0D4]">
-              <table className="w-full text-left border-collapse text-[13px]">
-                <thead>
-                  <tr className="bg-[#FAF8F4] border-b border-[#E6E0D4] text-[11px] uppercase text-[#6E6E73]">
-                    <th className="py-2.5 px-4">Показатель P&L</th>
-                    <th className="py-2.5 px-4">Формула расчёта</th>
-                    <th className="py-2.5 px-4">На 1 комплект</th>
-                    <th className="py-2.5 px-4">За 2027 год</th>
-                    <th className="py-2.5 px-4">Доля от выручки</th>
-                    <th className="py-2.5 px-4">Статус</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EFECE4]">
-                  <tr>
-                    <td className="py-2.5 px-4 font-bold text-[#1D1D1F]">1. Выручка</td>
-                    <td className="py-2.5 px-4 text-[12px] text-[#6E6E73]">
-                      Выкупленные комплекты × средняя реализованная цена
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold">
+                <div className="divide-y divide-[#EFECE4] text-[13px]">
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="font-semibold text-[#141413]">
+                      Цена продажи комплекта
+                    </span>
+                    <span className="font-mono font-bold text-[#141413]">
                       {formatRub(pnl.avgRealizedPricePerPackRub)}
-                    </td>
-                    <td className="py-2.5 px-4 font-bold text-[#1D1D1F]">
-                      {formatRub(pnl.annualRevenueRub)}
-                    </td>
-                    <td className="py-2.5 px-4">100%</td>
-                    <td className="py-2.5 px-4">
-                      <StatusPill status={pnl.revenueStatus} />
-                    </td>
-                  </tr>
+                    </span>
+                  </div>
 
-                  <tr>
-                    <td className="py-2.5 px-4 font-medium text-[#5A564F]">
-                      − Себестоимость выкупленного товара
-                    </td>
-                    <td className="py-2.5 px-4 text-[12px] text-[#6E6E73]">
-                      Выкупленные комплекты × себестоимость под ключ
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {pnl.unitCostPerPackRub !== null
-                        ? formatRub(pnl.unitCostPerPackRub)
-                        : 'Не заполнено'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {pnl.annualCogsRub !== null
-                        ? formatRub(pnl.annualCogsRub)
-                        : 'Не заполнено'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {pnl.annualCogsRub !== null && pnl.annualRevenueRub > 0
-                        ? `${Math.round((pnl.annualCogsRub / pnl.annualRevenueRub) * 1000) / 10}%`
-                        : '—'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <StatusPill status={pnl.costStatus} />
-                    </td>
-                  </tr>
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">Закупочная себестоимость</span>
+                    {pnl.unitCostPerPackRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitCostPerPackRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
 
-                  <tr className="bg-[#FAF8F4]/70">
-                    <td className="py-2.5 px-4 font-bold text-[#1D1D1F]">
-                      2. Валовая прибыль (не операционная)
-                    </td>
-                    <td className="py-2.5 px-4 text-[12px] text-[#6E6E73]">
-                      Выручка − себестоимость выкупленного товара
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold">
-                      {pnl.unitGrossProfitRub !== null
-                        ? formatRub(pnl.unitGrossProfitRub)
-                        : 'Не рассчитана'}
-                    </td>
-                    <td className="py-2.5 px-4 font-bold">
-                      {pnl.annualGrossProfitRub !== null
-                        ? formatRub(pnl.annualGrossProfitRub)
-                        : 'Не рассчитана'}
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold">
-                      {pnl.grossMarginPct !== null ? `${pnl.grossMarginPct}%` : '—'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <StatusPill
-                        status={pnl.annualGrossProfitRub !== null ? 'plan' : 'not_filled'}
-                      />
-                    </td>
-                  </tr>
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">
+                      Комиссия маркетплейса, % ({model.marketplaceFeePct}%)
+                    </span>
+                    {pnl.unitMpCommissionRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitMpCommissionRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
 
-                  <tr>
-                    <td className="py-2.5 px-4 font-medium text-[#5A564F]">
-                      − Комиссии MP, логистика, реклама и перем. расходы
-                    </td>
-                    <td className="py-2.5 px-4 text-[12px] text-[#6E6E73]">
-                      MP {model.marketplaceFeePct}% + лог. {model.logisticsRub} ₽ + рекл.{' '}
-                      {model.adsPct}% + проч. {shared.otherVariableRubPerPack} ₽
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {pnl.expensesFilled
-                        ? formatRub(
-                            (pnl.unitMpCommissionRub || 0) +
-                              (pnl.unitLogisticsRub || 0) +
-                              (pnl.unitAdsRub || 0) +
-                              (pnl.unitOtherVarRub || 0)
-                          )
-                        : 'Не заполнено'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {pnl.expensesFilled
-                        ? formatRub(
-                            (pnl.annualMpCommissionRub || 0) +
-                              (pnl.annualLogisticsRub || 0) +
-                              (pnl.annualAdsRub || 0) +
-                              (pnl.annualOtherVarRub || 0)
-                          )
-                        : 'Не заполнено'}
-                    </td>
-                    <td className="py-2.5 px-4">—</td>
-                    <td className="py-2.5 px-4">
-                      <StatusPill status={pnl.marginStatus} />
-                    </td>
-                  </tr>
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">Доставка и обработка заказа</span>
+                    {pnl.logisticsFilled && pnl.unitLogisticsRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitLogisticsRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
 
-                  <tr className="bg-[#FAF8F4]/70">
-                    <td className="py-2.5 px-4 font-bold text-[#1D1D1F]">
-                      3. Маржинальная прибыль
-                    </td>
-                    <td className="py-2.5 px-4 text-[12px] text-[#6E6E73]">
-                      Валовая прибыль − комиссии MP − логистика − реклама
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold">
-                      {pnl.unitContributionMarginRub !== null
-                        ? formatRub(pnl.unitContributionMarginRub)
-                        : 'Не рассчитана'}
-                    </td>
-                    <td className="py-2.5 px-4 font-bold">
-                      {pnl.annualContributionMarginRub !== null
-                        ? formatRub(pnl.annualContributionMarginRub)
-                        : 'Не рассчитана'}
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold">
-                      {pnl.contributionMarginPct !== null
-                        ? `${pnl.contributionMarginPct}%`
-                        : '—'}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <StatusPill status={pnl.marginStatus} />
-                    </td>
-                  </tr>
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">
+                      Реклама, % от выручки ({model.adsPct}%)
+                    </span>
+                    {pnl.unitAdsRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitAdsRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
 
-                  <tr className="bg-[#F4F8F5]">
-                    <td className="py-3 px-4 font-bold text-[#1D1D1F]">
-                      4. Операционная прибыль
-                    </td>
-                    <td className="py-3 px-4 text-[12px] text-[#6E6E73]">
-                      Маржинальная прибыль − распределённые постоянные расходы OPEX
-                    </td>
-                    <td className="py-3 px-4 font-bold">
-                      {pnl.unitOperatingProfitRub !== null
-                        ? formatRub(pnl.unitOperatingProfitRub)
-                        : 'Не рассчитана'}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-[#17643A]">
-                      {pnl.annualOperatingProfitRub !== null
-                        ? formatRub(pnl.annualOperatingProfitRub)
-                        : pnl.operatingProfitNotCalculatedReason}
-                    </td>
-                    <td className="py-3 px-4 font-bold">
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">Прочие расходы на продажу</span>
+                    {pnl.unitOtherVarRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitOtherVarRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
+
+                  <div className="py-2 flex items-center justify-between gap-2">
+                    <span className="text-[#3F3E3A]">Постоянные расходы (доля на компл.)</span>
+                    {pnl.unitAllocatedOpexRub !== null ? (
+                      <span className="font-mono font-semibold text-[#141413]">
+                        −{formatRub(pnl.unitAllocatedOpexRub)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[#B91C1C]">Не заполнено</span>
+                    )}
+                  </div>
+
+                  {/* Итог Блока А */}
+                  <div className="pt-3 mt-1 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-[#141413]">
+                      Остаётся с продажи комплекта
+                    </span>
+                    {pnl.unitOperatingProfitRub !== null ? (
+                      <span
+                        className={`font-mono text-[17px] font-extrabold ${
+                          pnl.unitOperatingProfitRub >= 0
+                            ? 'text-[#157347]'
+                            : 'text-[#B42318]'
+                        }`}
+                      >
+                        {pnl.unitOperatingProfitRub >= 0 ? '+' : ''}
+                        {formatRub(pnl.unitOperatingProfitRub)}
+                      </span>
+                    ) : (
+                      <span className="text-[13px] font-bold text-[#B91C1C]">
+                        {!pnl.logisticsFilled && pnl.unitCostPerPackRub !== null
+                          ? 'Не рассчитано, пока не заполнена логистика'
+                          : pnl.operatingProfitNotCalculatedReason}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between gap-2 text-[12px]">
+                    <span className="text-[#5E5D58]">
+                      Сколько остаётся после расходов на продажу, %
+                    </span>
+                    <span className="font-mono font-bold text-[#141413]">
                       {pnl.operatingMarginPct !== null
                         ? `${pnl.operatingMarginPct}%`
-                        : '—'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <StatusPill status={pnl.operatingProfitStatus} />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                        : 'Не рассчитано'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* БЛОК Б. Результат за выбранный период (переключатель «Месяц / Год», Стр. 5 ТЗ) */}
+              <div className="lg:col-span-6 rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 flex flex-col justify-between space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
+                  <div>
+                    <h3 className="text-[15px] font-bold text-[#141413]">
+                      Блок Б. Результат за выбранный период
+                    </h3>
+                    <p className="text-[11.5px] text-[#5E5D58]">
+                      {financePeriodMode === 'month'
+                        ? `Месяц: ${MONTHS_SHORT_RU[selectedMonthIdx]} ${scenario.year} (${periodPacks.toLocaleString('ru-RU')} компл.)`
+                        : `Весь ${scenario.year} год (${periodPacks.toLocaleString('ru-RU')} компл.)`}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {financePeriodMode === 'month' && (
+                      <select
+                        value={selectedMonthIdx}
+                        onChange={(e) => setSelectedMonthIdx(Number(e.target.value))}
+                        className="h-8 px-2 rounded-[8px] bg-[#F5F5F1] border border-[#CECDC4] text-[12px] font-bold text-[#141413] cursor-pointer"
+                      >
+                        {MONTHS_SHORT_RU.map((mName, idx) => (
+                          <option key={mName} value={idx}>
+                            {mName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border border-[#CECDC4] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setFinancePeriodMode('month')}
+                        className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold cursor-pointer ${
+                          financePeriodMode === 'month'
+                            ? 'bg-[#141413] text-white'
+                            : 'text-[#3F3E3A]'
+                        }`}
+                      >
+                        Месяц
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFinancePeriodMode('year')}
+                        className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold cursor-pointer ${
+                          financePeriodMode === 'year'
+                            ? 'bg-[#141413] text-white'
+                            : 'text-[#3F3E3A]'
+                        }`}
+                      >
+                        Год
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Четыре показателя Блока Б */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                    <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                      1. Выручка
+                    </span>
+                    <div className="font-mono text-[19px] font-bold text-[#141413]">
+                      {formatMln(periodRevenueRub)}
+                    </div>
+                    <div className="text-[11px] text-[#5E5D58]">
+                      {formatRub(periodRevenueRub)} · {periodPacks.toLocaleString('ru-RU')} компл.
+                    </div>
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                    <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                      2. Стоимость проданного товара
+                    </span>
+                    {periodCogsRub !== null ? (
+                      <>
+                        <div className="font-mono text-[19px] font-bold text-[#141413]">
+                          {formatMln(periodCogsRub)}
+                        </div>
+                        <div className="text-[11px] text-[#5E5D58]">
+                          {formatRub(periodCogsRub)} (по {formatRub(pnl.unitCostPerPackRub || 0)}/компл.)
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[14px] font-bold text-[#B91C1C] pt-1">
+                        Не заполнено
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                    <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                      3. Расходы на продажи и работу
+                    </span>
+                    {periodSalesAndWorkExpenseRub !== null ? (
+                      <>
+                        <div className="font-mono text-[19px] font-bold text-[#141413]">
+                          {formatMln(periodSalesAndWorkExpenseRub)}
+                        </div>
+                        <div className="text-[11px] text-[#5E5D58]">
+                          {formatRub(periodSalesAndWorkExpenseRub)} (комиссия, доставка, реклама, постоянные)
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[13px] font-bold text-[#B91C1C] pt-1">
+                        Не рассчитано, пока не заполнена логистика
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                    <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                      4. Расчётная операционная прибыль
+                    </span>
+                    {periodOperatingProfitRub !== null ? (
+                      <>
+                        <div
+                          className={`font-mono text-[19px] font-bold ${
+                            periodOperatingProfitRub >= 0
+                              ? 'text-[#157347]'
+                              : 'text-[#B42318]'
+                          }`}
+                        >
+                          {formatMln(periodOperatingProfitRub)}
+                        </div>
+                        <div className="text-[11px] text-[#5E5D58]">
+                          {formatRub(periodOperatingProfitRub)} · остаётся {pnl.operatingMarginPct}%
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[13px] font-bold text-[#B91C1C] pt-1">
+                        {!pnl.logisticsFilled && pnl.unitCostPerPackRub !== null
+                          ? 'Не рассчитано, пока не заполнена логистика'
+                          : pnl.operatingProfitNotCalculatedReason}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Кнопка открытия Блока В («Показать подробный расчёт», Стр. 5 ТЗ) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span className="text-[11.5px] text-[#5E5D58]">
+                    Чтобы изменить комиссию маркетплейса, логистику, рекламу или постоянные расходы — откройте подробный расчёт.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDetailedFinanceCalc((v) => !v)}
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer shrink-0"
+                  >
+                    {showDetailedFinanceCalc
+                      ? 'Скрыть подробный расчёт ▴'
+                      : 'Показать подробный расчёт ▾'}
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Потребность в капитале и график платежей */}
-            <div className="rounded-[16px] border border-[#E6E0D4] p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-[14px] font-bold text-[#1D1D1F]">
-                    5. Потребность в оборотном капитале и денежный поток закупок
+            {/* БЛОК В. Подробности (свёрнут по умолчанию, раскрывается по кнопке «Показать подробный расчёт», Стр. 5 ТЗ) */}
+            {showDetailedFinanceCalc && (
+              <div className="rounded-[16px] bg-[#FAF8F4] border-[1.5px] border-[#C8C7BE] p-4 md:p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-[14px] font-bold text-[#141413]">
+                      Блок В. Настройка исходных расходов и таблица «Доходы и расходы»
+                    </h4>
+                    <p className="text-[11.5px] text-[#5E5D58]">
+                      Все поля редактируемые. Если логистика не заполнена — система честно пишет «Не рассчитано, пока не заполнена логистика».
+                    </p>
                   </div>
-                  <div className="text-[12px] text-[#6E6E73]">
-                    Учитывает график предоплаты ({shared.factoryParams.prepaymentPct}%) и доплаты (
-                    {shared.factoryParams.balancePaymentPct}%) за партии vs поступления от продаж
-                  </div>
+
+                  {model.logisticsRub > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        commitWithAudit(
+                          { ...model, logisticsRub: 0 },
+                          'finance',
+                          'Очищено поле логистики (проверка защиты от ложной прибыли)',
+                          `${model.logisticsRub} ₽`,
+                          'Не заполнено'
+                        )
+                      }
+                      className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[11.5px] font-semibold cursor-pointer"
+                    >
+                      Очистить поле логистики
+                    </button>
+                  )}
                 </div>
-                <div className="text-right">
-                  <div className="text-[11px] text-[#6E6E73]">Пиковый кассовый дефицит</div>
-                  <div className="text-[18px] font-bold text-[#B42318]">
-                    {pnl.peakCapitalDeficitRub > 0
-                      ? formatRub(pnl.peakCapitalDeficitRub)
-                      : '0 ₽ (самоокупаемость)'}
-                  </div>
+
+                {/* Редактируемые поля с человеческими названиями и пояснением под каждым полем */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Закупочная себестоимость, ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={model.unitCostRub > 0 ? model.unitCostRub : ''}
+                      placeholder="Не заполнено"
+                      onChange={(e) => handleUnitCostChange(Number(e.target.value))}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Цена фабрики с доставкой в РФ за 1 компл.
+                    </span>
+                  </label>
+
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Комиссия маркетплейса, %
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      step={0.5}
+                      value={model.marketplaceFeePct}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value));
+                        commitWithAudit(
+                          {
+                            ...model,
+                            marketplaceFeePct: val,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              expensesFilled:
+                                val > 0 || model.logisticsRub > 0 || model.adsPct > 0,
+                            },
+                          },
+                          'finance',
+                          'Обновлена комиссия маркетплейса, %',
+                          `${model.marketplaceFeePct}%`,
+                          `${val}%`
+                        );
+                      }}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Удержание площадки с цены продажи
+                    </span>
+                  </label>
+
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Доставка и обработка заказа, ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={model.logisticsRub > 0 ? model.logisticsRub : ''}
+                      placeholder="Не заполнено"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const val =
+                          raw.trim() === ''
+                            ? 0
+                            : Math.max(0, Math.round(Number(raw)));
+                        commitWithAudit(
+                          {
+                            ...model,
+                            logisticsRub: val,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              expensesFilled:
+                                val > 0 || model.marketplaceFeePct > 0 || model.adsPct > 0,
+                            },
+                          },
+                          'finance',
+                          'Обновлена доставка и обработка заказа',
+                          model.logisticsRub > 0 ? `${model.logisticsRub} ₽` : 'Не заполнено',
+                          val > 0 ? `${val} ₽` : 'Не заполнено'
+                        );
+                      }}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Логистика WB до клиента с учётом возвратов
+                    </span>
+                  </label>
+
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Реклама, % от выручки
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      step={0.5}
+                      value={model.adsPct}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value));
+                        commitWithAudit(
+                          {
+                            ...model,
+                            adsPct: val,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              expensesFilled:
+                                val > 0 || model.marketplaceFeePct > 0 || model.logisticsRub > 0,
+                            },
+                          },
+                          'finance',
+                          'Обновлена реклама, % от выручки',
+                          `${model.adsPct}%`,
+                          `${val}%`
+                        );
+                      }}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Доля рекламных расходов от цены комплекта
+                    </span>
+                  </label>
+
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Прочие расходы на продажу, ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={shared.otherVariableRubPerPack}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.round(Number(e.target.value)));
+                        commitWithAudit(
+                          {
+                            ...model,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              otherVariableRubPerPack: val,
+                            },
+                          },
+                          'finance',
+                          'Обновлены прочие расходы на продажу',
+                          `${shared.otherVariableRubPerPack} ₽`,
+                          `${val} ₽`
+                        );
+                      }}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Упаковка, маркировка «Честный знак», брак
+                    </span>
+                  </label>
+
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Постоянные расходы, ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={
+                        shared.allocatedFixedOpexRubPerPack === null
+                          ? ''
+                          : shared.allocatedFixedOpexRubPerPack
+                      }
+                      placeholder="Не задано"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const val =
+                          raw.trim() === ''
+                            ? null
+                            : Math.max(0, Math.round(Number(raw)));
+                        commitWithAudit(
+                          {
+                            ...model,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              allocatedFixedOpexRubPerPack: val,
+                            },
+                          },
+                          'finance',
+                          'Обновлены постоянные расходы на комплект',
+                          shared.allocatedFixedOpexRubPerPack === null
+                            ? 'Не задано'
+                            : `${shared.allocatedFixedOpexRubPerPack} ₽`,
+                          val === null ? 'Не задано' : `${val} ₽`
+                        );
+                      }}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Доля команды, офиса и сервисов на 1 комплект
+                    </span>
+                  </label>
+                </div>
+
+                {/* Подробная таблица «Доходы и расходы» */}
+                <div className="overflow-x-auto rounded-[12px] border border-[#DED8CC] bg-white">
+                  <table className="w-full text-left border-collapse text-[12.5px]">
+                    <thead>
+                      <tr className="bg-[#F7F7F4] border-b border-[#DED8CC] text-[11px] uppercase text-[#5E5D58]">
+                        <th className="py-2 px-3">Статья доходов и расходов</th>
+                        <th className="py-2 px-3">Как считается</th>
+                        <th className="py-2 px-3">На 1 комплект</th>
+                        <th className="py-2 px-3">За {scenario.year} год</th>
+                        <th className="py-2 px-3">Доля от выручки</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFECE4]">
+                      <tr>
+                        <td className="py-2 px-3 font-bold text-[#141413]">Выручка</td>
+                        <td className="py-2 px-3 text-[#5E5D58]">
+                          Выкупы × средняя цена комплекта
+                        </td>
+                        <td className="py-2 px-3 font-mono font-semibold">
+                          {formatRub(pnl.avgRealizedPricePerPackRub)}
+                        </td>
+                        <td className="py-2 px-3 font-mono font-bold">
+                          {formatRub(pnl.annualRevenueRub)}
+                        </td>
+                        <td className="py-2 px-3 font-mono">100%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 text-[#3F3E3A]">
+                          Стоимость проданного товара
+                        </td>
+                        <td className="py-2 px-3 text-[#5E5D58]">
+                          Выкупы × закупочная себестоимость комплекта
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.unitCostPerPackRub !== null
+                            ? `−${formatRub(pnl.unitCostPerPackRub)}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.annualCogsRub !== null
+                            ? `−${formatRub(pnl.annualCogsRub)}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.annualCogsRub !== null && pnl.annualRevenueRub > 0
+                            ? `${Math.round((pnl.annualCogsRub / pnl.annualRevenueRub) * 1000) / 10}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 text-[#3F3E3A]">
+                          Расходы на продажу (комиссия, доставка, реклама, прочие)
+                        </td>
+                        <td className="py-2 px-3 text-[#5E5D58]">
+                          Комиссия {model.marketplaceFeePct}% + доставка{' '}
+                          {pnl.logisticsFilled ? `${model.logisticsRub} ₽` : 'Не заполнено'} + реклама{' '}
+                          {model.adsPct}% + прочие {shared.otherVariableRubPerPack} ₽
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.expensesFilled
+                            ? `−${formatRub(
+                                (pnl.unitMpCommissionRub || 0) +
+                                  (pnl.unitLogisticsRub || 0) +
+                                  (pnl.unitAdsRub || 0) +
+                                  (pnl.unitOtherVarRub || 0)
+                              )}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.expensesFilled
+                            ? `−${formatRub(
+                                (pnl.annualMpCommissionRub || 0) +
+                                  (pnl.annualLogisticsRub || 0) +
+                                  (pnl.annualAdsRub || 0) +
+                                  (pnl.annualOtherVarRub || 0)
+                              )}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.contributionMarginPct !== null
+                            ? `Остаётся ${pnl.contributionMarginPct}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 text-[#3F3E3A]">Постоянные расходы</td>
+                        <td className="py-2 px-3 text-[#5E5D58]">
+                          Выкупы × доля постоянных расходов на 1 комплект
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.unitAllocatedOpexRub !== null
+                            ? `−${formatRub(pnl.unitAllocatedOpexRub)}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">
+                          {pnl.annualAllocatedOpexRub !== null
+                            ? `−${formatRub(pnl.annualAllocatedOpexRub)}`
+                            : 'Не заполнено'}
+                        </td>
+                        <td className="py-2 px-3 font-mono">—</td>
+                      </tr>
+                      <tr className="bg-[#EAF6F0]/60 font-bold text-[#141413]">
+                        <td className="py-2.5 px-3">
+                          Расчётная операционная прибыль (остаётся с продажи)
+                        </td>
+                        <td className="py-2.5 px-3 text-[#3F3E3A] font-normal">
+                          Выручка − себестоимость − расходы на продажу − постоянные расходы
+                        </td>
+                        <td className="py-2.5 px-3 font-mono">
+                          {pnl.unitOperatingProfitRub !== null
+                            ? formatRub(pnl.unitOperatingProfitRub)
+                            : 'Не рассчитано'}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-[#157347]">
+                          {pnl.annualOperatingProfitRub !== null
+                            ? formatRub(pnl.annualOperatingProfitRub)
+                            : pnl.operatingProfitNotCalculatedReason}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono">
+                          {pnl.operatingMarginPct !== null
+                            ? `${pnl.operatingMarginPct}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* РАЗДЕЛ «ДЕНЬГИ НА ЗАКУПКИ» (Стр. 6 ТЗ): 3 понятных показателя + компактная таблица по кнопке «Подробнее» */}
+            <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
+                <div>
+                  <h3 className="text-[15px] font-bold text-[#141413]">
+                    Деньги на закупки
+                  </h3>
+                  <p className="text-[11.5px] text-[#5E5D58]">
+                    Предоплата фабрике {shared.factoryParams.prepaymentPct}% при размещении заказа и доплата{' '}
+                    {shared.factoryParams.balancePaymentPct}% перед отгрузкой
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 text-[11.5px] text-[#3F3E3A] bg-[#F7F7F4] border border-[#CECDC4] rounded-[8px] px-2.5 py-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(shared.wbPayoutScheduleConfirmed)}
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            sharedSupplyAndFact: {
+                              ...shared,
+                              wbPayoutScheduleConfirmed: e.target.checked,
+                            },
+                          },
+                          'finance',
+                          e.target.checked
+                            ? 'Подтверждён график выплат WB для расчёта пиковой потребности в деньгах'
+                            : 'Отключён график выплат WB'
+                        )
+                      }
+                      className="rounded border-[#CECDC4]"
+                    />
+                    <span>График выплат WB известен</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowProcurementCashDetails((v) => !v)}
+                    className="h-8 px-3 rounded-[8px] bg-[#F5F5F1] hover:border-[#141413] border border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
+                  >
+                    {showProcurementCashDetails ? 'Скрыть подробности ▴' : 'Подробнее ▾'}
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-[11.5px]">
-                {pnl.monthlyCashFlow.map((cf) => (
-                  <div
-                    key={cf.monthLabel}
-                    className="rounded-[10px] bg-[#FAF8F4] border border-[#ECE8DF] p-2.5 space-y-0.5"
-                  >
-                    <div className="font-bold text-[#1D1D1F]">{cf.monthLabel}</div>
-                    <div className="text-[#17643A]">
-                      +{formatMln(cf.inflowSalesRub)}
+              {/* Три показателя раздела «Деньги на закупки» (Стр. 6 ТЗ) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {/* 1. Общая стоимость плановых партий */}
+                <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                  <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                    1. Общая стоимость плановых партий
+                  </span>
+                  {procurement.totalRecommendedBudgetRub !== null ? (
+                    <>
+                      <div className="font-mono text-[19px] font-bold text-[#141413]">
+                        {formatMln(procurement.totalRecommendedBudgetRub)}
+                      </div>
+                      <div className="text-[11px] text-[#5E5D58]">
+                        {formatRub(procurement.totalRecommendedBudgetRub)} ·{' '}
+                        {procurement.totalRecommendedPacks.toLocaleString('ru-RU')} компл. по ещё не утверждённому плану
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[13.5px] font-bold text-[#B91C1C] pt-1">
+                      Не заполнена себестоимость
                     </div>
-                    <div className="text-[#B42318]">
-                      −{formatMln(cf.outflowProcurementRub + cf.outflowVariableAndOpexRub)}
-                    </div>
-                    <div className="text-[10.5px] font-semibold text-[#4E4A42] pt-0.5 border-t border-[#E6E0D4]">
-                      Баланс: {formatMln(cf.cumulativeCashBalanceRub)}
-                    </div>
-                  </div>
-                ))}
+                  )}
+                </div>
+
+                {/* 2. Следующий платёж фабрике */}
+                <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                  <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                    2. Следующий платёж фабрике
+                  </span>
+                  {pnl.nextFactoryPayment ? (
+                    <>
+                      <div className="font-mono text-[19px] font-bold text-[#141413]">
+                        {formatRub(pnl.nextFactoryPayment.amountRub)} · {pnl.nextFactoryPayment.dateIso}
+                      </div>
+                      <div className="text-[11px] text-[#5E5D58]">
+                        {pnl.nextFactoryPayment.label}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-[14px] font-bold text-[#3F3E3A] pt-0.5">
+                        Нет подтверждённых заказов PO
+                      </div>
+                      <div className="text-[11px] text-[#5E5D58]">
+                        Утвердите партию во вкладке «Закупки», чтобы зафиксировать дату платежа
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 3. Максимально потребуется собственных денег */}
+                <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
+                  <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                    3. Максимально потребуется собственных денег
+                  </span>
+                  {pnl.verifiedPeakCapitalDeficitRub !== null ? (
+                    <>
+                      <div className="font-mono text-[19px] font-bold text-[#B42318]">
+                        {pnl.verifiedPeakCapitalDeficitRub > 0
+                          ? formatMln(pnl.verifiedPeakCapitalDeficitRub)
+                          : '0 ₽ (хватает выручки)'}
+                      </div>
+                      <div className="text-[11px] text-[#5E5D58]">
+                        {formatRub(pnl.verifiedPeakCapitalDeficitRub)} · наибольший минус денег во времени
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-[13.5px] font-bold text-[#9A5B00] pt-0.5">
+                        Нельзя рассчитать без графика выплат
+                      </div>
+                      <div className="text-[11px] text-[#5E5D58]">
+                        Отметьте «График выплат WB известен» выше для расчёта кассового разрыва
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {/* Компактная таблица по месяцам «Платежи фабрике / Выплаты от продаж / Разница» по кнопке «Подробнее» (Стр. 6 ТЗ) */}
+              {showProcurementCashDetails && (
+                <div className="overflow-x-auto rounded-[12px] border border-[#DED8CC]">
+                  <table className="w-full text-left border-collapse text-[12px]">
+                    <thead>
+                      <tr className="bg-[#F7F7F4] border-b border-[#DED8CC] text-[10.5px] uppercase text-[#5E5D58]">
+                        <th className="py-2 px-3">Показатель</th>
+                        {pnl.monthlyCashFlow.map((cf) => (
+                          <th key={cf.monthLabel} className="py-2 px-2.5 font-mono">
+                            {cf.monthLabel}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFECE4]">
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-[#B42318]">
+                          Платежи фабрике
+                        </td>
+                        {pnl.monthlyCashFlow.map((cf) => (
+                          <td key={cf.monthLabel} className="py-2 px-2.5 font-mono text-[#B42318]">
+                            {cf.outflowProcurementRub > 0
+                              ? `−${(cf.outflowProcurementRub / 1_000_000).toFixed(2).replace('.', ',')}м`
+                              : '0'}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-[#157347]">
+                          Выплаты от продаж (после комиссий)
+                        </td>
+                        {pnl.monthlyCashFlow.map((cf) => {
+                          const netInflow = Math.max(
+                            0,
+                            cf.inflowSalesRub - cf.outflowVariableAndOpexRub
+                          );
+                          return (
+                            <td key={cf.monthLabel} className="py-2 px-2.5 font-mono text-[#157347]">
+                              {netInflow > 0
+                                ? `+${(netInflow / 1_000_000).toFixed(2).replace('.', ',')}м`
+                                : '0'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr className="bg-[#F7F7F4] font-bold">
+                        <td className="py-2 px-3 text-[#141413]">Разница за месяц</td>
+                        {pnl.monthlyCashFlow.map((cf) => (
+                          <td
+                            key={cf.monthLabel}
+                            className={`py-2 px-2.5 font-mono ${
+                              cf.netCashFlowRub >= 0 ? 'text-[#157347]' : 'text-[#B42318]'
+                            }`}
+                          >
+                            {cf.netCashFlowRub >= 0 ? '+' : ''}
+                            {(cf.netCashFlowRub / 1_000_000).toFixed(2).replace('.', ',')}м
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

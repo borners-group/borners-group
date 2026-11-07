@@ -144,6 +144,8 @@ export interface SharedSkuSupplyAndFact {
   otherVariableRubPerPack: number; // прочие переменные расходы ₽/компл.
   allocatedFixedOpexRubPerPack: number | null; // распределённые постоянные расходы OPEX ₽/компл. (null = не заполнено)
   settlementLagMonths: number; // задержка поступления выручки от MP (в месяцах, 0 или 1)
+  wbPayoutScheduleConfirmed?: boolean; // подтверждён ли график выплат WB для расчёта пиковой потребности в деньгах (Стр. 6 ТЗ)
+  customBrandOptions?: string[]; // пользовательские бренды, добавленные через «+ Создать бренд»
   factoryParams: FactoryProcurementParams;
   approvedOrders: ApprovedPurchaseOrder[];
   actualSalesByMonth: ActualMonthSaleRecord[];
@@ -271,6 +273,7 @@ export interface FinancialPnLResult {
 
   // 2. Маржинальная прибыль = Валовая прибыль - комиссии MP - логистика - реклама - прочие переменные
   expensesFilled: boolean;
+  logisticsFilled: boolean;
   unitMpCommissionRub: number | null;
   unitLogisticsRub: number | null;
   unitAdsRub: number | null;
@@ -295,6 +298,14 @@ export interface FinancialPnLResult {
   // 4. Потребность в капитале (денежный поток партий и продаж)
   monthlyCashFlow: MonthlyCashFlowRow[];
   peakCapitalDeficitRub: number;
+  wbPayoutScheduleConfirmed: boolean;
+  verifiedPeakCapitalDeficitRub: number | null;
+  nextFactoryPayment: {
+    dateIso: string;
+    amountRub: number;
+    orderNumber: string;
+    label: string;
+  } | null;
   totalProcurementOutflowRub: number;
 }
 
@@ -1525,12 +1536,13 @@ export function computeFinancialPnL(
       : null;
 
   // 2. Проверка заполненности коммерческих расходов (комиссии MP, логистика, реклама)
-  const expensesFilled =
-    hasCost &&
-    (shared.expensesFilled ||
-      model.marketplaceFeePct > 0 ||
-      model.logisticsRub > 0 ||
-      model.adsPct > 0);
+  const logisticsFilled = model.logisticsRub > 0;
+  const hasAnyExpenseRate =
+    shared.expensesFilled ||
+    model.marketplaceFeePct > 0 ||
+    model.logisticsRub > 0 ||
+    model.adsPct > 0;
+  const expensesFilled = hasCost && logisticsFilled && hasAnyExpenseRate;
 
   let unitMpCommissionRub: number | null = null;
   let unitLogisticsRub: number | null = null;
@@ -1544,51 +1556,58 @@ export function computeFinancialPnL(
   let annualContributionMarginRub: number | null = null;
   let contributionMarginPct: number | null = null;
 
-  if (expensesFilled && annualGrossProfitRub !== null && unitGrossProfitRub !== null) {
+  if (hasCost && hasAnyExpenseRate && annualGrossProfitRub !== null && unitGrossProfitRub !== null) {
     unitMpCommissionRub = Math.round(
       (avgRealizedPricePerPackRub * model.marketplaceFeePct) / 100
     );
-    unitLogisticsRub = model.logisticsRub;
     unitAdsRub = Math.round((avgRealizedPricePerPackRub * model.adsPct) / 100);
     unitOtherVarRub = shared.otherVariableRubPerPack || 0;
 
     annualMpCommissionRub = Math.round(
       (annualRevenueRub * model.marketplaceFeePct) / 100
     );
-    annualLogisticsRub = annualBuyoutsPacks * model.logisticsRub;
     annualAdsRub = Math.round((annualRevenueRub * model.adsPct) / 100);
     annualOtherVarRub = annualBuyoutsPacks * unitOtherVarRub;
 
-    unitContributionMarginRub =
-      unitGrossProfitRub -
-      unitMpCommissionRub -
-      unitLogisticsRub -
-      unitAdsRub -
-      unitOtherVarRub;
+    if (logisticsFilled) {
+      unitLogisticsRub = model.logisticsRub;
+      annualLogisticsRub = annualBuyoutsPacks * model.logisticsRub;
 
-    annualContributionMarginRub =
-      annualGrossProfitRub -
-      annualMpCommissionRub -
-      annualLogisticsRub -
-      annualAdsRub -
-      annualOtherVarRub;
+      unitContributionMarginRub =
+        unitGrossProfitRub -
+        unitMpCommissionRub -
+        unitLogisticsRub -
+        unitAdsRub -
+        unitOtherVarRub;
 
-    contributionMarginPct =
-      annualRevenueRub > 0
-        ? Math.round((annualContributionMarginRub / annualRevenueRub) * 1000) / 10
-        : 0;
+      annualContributionMarginRub =
+        annualGrossProfitRub -
+        annualMpCommissionRub -
+        annualLogisticsRub -
+        annualAdsRub -
+        annualOtherVarRub;
+
+      contributionMarginPct =
+        annualRevenueRub > 0
+          ? Math.round((annualContributionMarginRub / annualRevenueRub) * 1000) / 10
+          : 0;
+    }
   }
 
   const marginStatus: ValueStatusCode = expensesFilled ? 'plan' : 'not_filled';
 
   // 3. Операционная прибыль = Маржинальная прибыль - распределённые постоянные расходы (OPEX)
-  const opexFilled =
-    expensesFilled &&
+  const hasFixedOpexValue =
     shared.allocatedFixedOpexRubPerPack !== null &&
     shared.allocatedFixedOpexRubPerPack >= 0;
+  const opexFilled = expensesFilled && hasFixedOpexValue;
 
-  let unitAllocatedOpexRub: number | null = null;
-  let annualAllocatedOpexRub: number | null = null;
+  let unitAllocatedOpexRub: number | null = hasFixedOpexValue
+    ? shared.allocatedFixedOpexRubPerPack!
+    : null;
+  let annualAllocatedOpexRub: number | null = hasFixedOpexValue
+    ? annualBuyoutsPacks * shared.allocatedFixedOpexRubPerPack!
+    : null;
   let unitOperatingProfitRub: number | null = null;
   let annualOperatingProfitRub: number | null = null;
   let operatingMarginPct: number | null = null;
@@ -1596,19 +1615,22 @@ export function computeFinancialPnL(
 
   if (!hasCost) {
     operatingProfitNotCalculatedReason =
-      'Не рассчитана: не заполнена закупочная себестоимость комплекта';
+      'Не рассчитано: не заполнена закупочная себестоимость комплекта';
+  } else if (!logisticsFilled) {
+    operatingProfitNotCalculatedReason =
+      'Не рассчитано, пока не заполнена логистика';
   } else if (!expensesFilled) {
     operatingProfitNotCalculatedReason =
-      'Не рассчитана: не заполнены комиссии маркетплейса, логистика и реклама';
+      'Не рассчитано: не заполнены комиссия маркетплейса, логистика и реклама';
   } else if (!opexFilled) {
     operatingProfitNotCalculatedReason =
-      'Не рассчитана: не заданы распределённые постоянные операционные расходы (OPEX)';
+      'Не рассчитано: не заданы постоянные расходы';
   } else if (
     annualContributionMarginRub !== null &&
-    unitContributionMarginRub !== null
+    unitContributionMarginRub !== null &&
+    unitAllocatedOpexRub !== null &&
+    annualAllocatedOpexRub !== null
   ) {
-    unitAllocatedOpexRub = shared.allocatedFixedOpexRubPerPack!;
-    annualAllocatedOpexRub = annualBuyoutsPacks * unitAllocatedOpexRub;
     unitOperatingProfitRub = unitContributionMarginRub - unitAllocatedOpexRub;
     annualOperatingProfitRub = annualContributionMarginRub - annualAllocatedOpexRub;
     operatingMarginPct =
@@ -1679,6 +1701,39 @@ export function computeFinancialPnL(
     });
   }
 
+  // Ближайший платёж фабрике по подтверждённому графику PO (Стр. 6 ТЗ)
+  const confirmedPos = procurement.approvedOrders.filter(
+    (po) => po.confirmedByFactory !== false && po.status !== 'received'
+  );
+  let nextFactoryPayment: FinancialPnLResult['nextFactoryPayment'] = null;
+  if (confirmedPos.length > 0) {
+    const sortedPos = [...confirmedPos].sort((a, b) =>
+      a.orderPlacementDateIso.localeCompare(b.orderPlacementDateIso)
+    );
+    const firstPo = sortedPos[0];
+    if (firstPo.status === 'approved') {
+      nextFactoryPayment = {
+        dateIso: firstPo.orderPlacementDateIso,
+        amountRub: firstPo.prepaymentRub,
+        orderNumber: firstPo.orderNumber,
+        label: `Предоплата ${shared.factoryParams.prepaymentPct}% по ${firstPo.orderNumber}`,
+      };
+    } else {
+      nextFactoryPayment = {
+        dateIso: firstPo.requiredArrivalDateIso,
+        amountRub: firstPo.balancePaymentRub,
+        orderNumber: firstPo.orderNumber,
+        label: `Доплата ${shared.factoryParams.balancePaymentPct}% по ${firstPo.orderNumber}`,
+      };
+    }
+  }
+
+  const wbPayoutScheduleConfirmed = Boolean(shared.wbPayoutScheduleConfirmed);
+  const peakCapitalDeficitRub = Math.abs(minCumulativeCash);
+  const verifiedPeakCapitalDeficitRub = wbPayoutScheduleConfirmed
+    ? peakCapitalDeficitRub
+    : null;
+
   return {
     revenueStatus,
     costStatus,
@@ -1699,6 +1754,7 @@ export function computeFinancialPnL(
     annualGrossProfitRub,
     grossMarginPct,
     expensesFilled,
+    logisticsFilled,
     unitMpCommissionRub,
     unitLogisticsRub,
     unitAdsRub,
@@ -1718,7 +1774,10 @@ export function computeFinancialPnL(
     operatingMarginPct,
     operatingProfitNotCalculatedReason,
     monthlyCashFlow,
-    peakCapitalDeficitRub: Math.abs(minCumulativeCash),
+    peakCapitalDeficitRub,
+    wbPayoutScheduleConfirmed,
+    verifiedPeakCapitalDeficitRub,
+    nextFactoryPayment,
     totalProcurementOutflowRub: procurementOutflowsByMonth.reduce((a, b) => a + b, 0),
   };
 }
@@ -1814,7 +1873,10 @@ export interface StructuredPlanRowV11 {
 
 export function detectModelBrandPortfolioLabel(
   model: ScenarioModelSpec
-): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'Подтвердить бренд' {
+): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'Подтвердить бренд' | string {
+  if (model.customBrandLabel && model.customBrandLabel.trim().length > 0) {
+    return model.customBrandLabel.trim();
+  }
   if (model.brandId === 'NA_TELE') return 'НА ТЕЛЕ';
   const digits = model.code.replace(/\D/g, '');
   if (digits === '72302360') return 'FUKAI';

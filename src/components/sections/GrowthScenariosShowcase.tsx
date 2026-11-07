@@ -76,10 +76,27 @@ export const STORAGE_KEY_USER_PLANS_BACKUP = 'borners_user_saved_plans_v1';
 interface UserSavedModelPlanBackup {
   id: string;
   code: string;
+  title?: string;
+  subtitle?: string;
+  brandId?: ScenarioModelSpec['brandId'];
+  customBrandLabel?: string;
+  wbArticle?: string;
+  modelStageStatus?: ScenarioModelSpec['modelStageStatus'];
+  description?: string;
+  unitsInPack?: number;
   retailPriceRub: number;
   unitCostRub: number;
+  marketplaceFeePct?: number;
+  logisticsRub?: number;
+  adsPct?: number;
   priority?: ModelPriorityLevel;
   launchStatus: ScenarioModelSpec['launchStatus'];
+  gallery?: ScenarioModelSpec['gallery'];
+  palettes?: ScenarioModelSpec['palettes'];
+  fabric?: ScenarioModelSpec['fabric'];
+  construction?: ScenarioModelSpec['construction'];
+  waistband?: ScenarioModelSpec['waistband'];
+  attachedPdfs?: ScenarioModelSpec['attachedPdfs'];
   plansByScenario: ScenarioModelSpec['plansByScenario'];
   sharedSupplyAndFact?: ScenarioModelSpec['sharedSupplyAndFact'];
 }
@@ -91,10 +108,27 @@ function saveUserPlansBackup(modelsList: ScenarioModelSpec[]) {
     backup[m.id] = {
       id: m.id,
       code: m.code,
+      title: m.title,
+      subtitle: m.subtitle,
+      brandId: m.brandId,
+      customBrandLabel: m.customBrandLabel,
+      wbArticle: m.wbArticle,
+      modelStageStatus: m.modelStageStatus,
+      description: m.description,
+      unitsInPack: m.unitsInPack,
       retailPriceRub: m.retailPriceRub,
       unitCostRub: m.unitCostRub,
+      marketplaceFeePct: m.marketplaceFeePct,
+      logisticsRub: m.logisticsRub,
+      adsPct: m.adsPct,
       priority: m.priority,
       launchStatus: m.launchStatus,
+      gallery: m.gallery,
+      palettes: m.palettes,
+      fabric: m.fabric,
+      construction: m.construction,
+      waistband: m.waistband,
+      attachedPdfs: m.attachedPdfs,
       plansByScenario: m.plansByScenario,
       sharedSupplyAndFact: m.sharedSupplyAndFact,
     };
@@ -118,10 +152,28 @@ function overlayUserPlansBackup(
     if (!saved) return m;
     return {
       ...m,
+      code: saved.code ?? m.code,
+      title: saved.title ?? m.title,
+      subtitle: saved.subtitle ?? m.subtitle,
+      brandId: saved.brandId ?? m.brandId,
+      customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
+      wbArticle: saved.wbArticle ?? m.wbArticle,
+      modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
+      description: saved.description ?? m.description,
+      unitsInPack: saved.unitsInPack ?? m.unitsInPack,
       retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
       unitCostRub: saved.unitCostRub ?? m.unitCostRub,
+      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
+      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
+      adsPct: saved.adsPct ?? m.adsPct,
       priority: saved.priority ?? m.priority,
       launchStatus: saved.launchStatus ?? m.launchStatus,
+      gallery: saved.gallery || m.gallery,
+      palettes: saved.palettes || m.palettes,
+      fabric: saved.fabric || m.fabric,
+      construction: saved.construction || m.construction,
+      waistband: saved.waistband || m.waistband,
+      attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
       plansByScenario: saved.plansByScenario || m.plansByScenario,
       sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
     };
@@ -535,7 +587,7 @@ export function GrowthScenariosShowcase({
             return false;
           }
         }
-        return sc.includedBrands.includes(m.brandId);
+        return Boolean(m.customBrandLabel) || sc.includedBrands.includes(m.brandId);
       });
 
       let annualRevenueRub = 0;
@@ -668,7 +720,7 @@ export function GrowthScenariosShowcase({
           return false;
         }
       }
-      return currentScenario.includedBrands.includes(m.brandId);
+      return Boolean(m.customBrandLabel) || currentScenario.includedBrands.includes(m.brandId);
     });
 
     let approvedOrdersCount = 0;
@@ -771,10 +823,10 @@ export function GrowthScenariosShowcase({
         ) {
           return false;
         }
-        if (!currentScenario.includedBrands.includes(m.brandId)) {
+        if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
           return false;
         }
-      } else if (!currentScenario.includedBrands.includes(m.brandId)) {
+      } else if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
         return false;
       }
       if (brandFilterLocal !== 'ALL') {
@@ -785,7 +837,11 @@ export function GrowthScenariosShowcase({
         if (brandFilterLocal === 'BORNERS' && portfolioBrand !== 'BORNERS') {
           return false;
         }
-        if (brandFilterLocal === 'NA_TELE' && m.brandId !== 'NA_TELE') {
+        if (
+          brandFilterLocal === 'NA_TELE' &&
+          portfolioBrand !== 'НА ТЕЛЕ' &&
+          m.brandId !== 'NA_TELE'
+        ) {
           return false;
         }
       }

@@ -1139,6 +1139,130 @@ test('26. Приёмочный чек-лист ТЗ «Упростить раз�
   assert.equal(procUnconfirmed.totalApprovedReceiptsPacks, 0);
 });
 
+test('27. Приёмочные проверки ТЗ «Карточка товара и финансы (Версия 1.0 · 07.11.2026)» — все 7 проверок Раздела 07', () => {
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const scen2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+  const baseSorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+
+  // Проверка 1 (Редактирование бренда): Изменить бренд на BRN-001-SC -> новый бренд сохраняется и определяется в портфеле
+  assert.equal(detectModelBrandPortfolioLabel(baseSorbet), 'BORNERS');
+  const sorbetCustomBrand = {
+    ...baseSorbet,
+    brandId: 'NA_TELE' as const,
+    customBrandLabel: 'НА ТЕЛЕ',
+  };
+  assert.equal(detectModelBrandPortfolioLabel(sorbetCustomBrand), 'НА ТЕЛЕ');
+  const sorbetNewCustomBrand = {
+    ...baseSorbet,
+    customBrandLabel: 'BORNERS STUDIO',
+  };
+  assert.equal(detectModelBrandPortfolioLabel(sorbetNewCustomBrand), 'BORNERS STUDIO');
+
+  // Проверка 2 (Редактирование карточки): Название, артикул WB, комплектация, состав ткани и статус модели сохраняются в едином паспорте
+  const editedPassportModel = ensureModelUnifiedV11({
+    ...baseSorbet,
+    title: 'BRN-001-SC · Sorbet Club Updated',
+    wbArticle: '244995893',
+    modelStageStatus: 'Тест',
+    unitsInPack: 4,
+    fabric: {
+      ...baseSorbet.fabric,
+      composition: '95% Pima хлопок / 5% эластан',
+    },
+  });
+  assert.equal(editedPassportModel.title, 'BRN-001-SC · Sorbet Club Updated');
+  assert.equal(editedPassportModel.wbArticle, '244995893');
+  assert.equal(editedPassportModel.modelStageStatus, 'Тест');
+  assert.equal(editedPassportModel.fabric.composition, '95% Pima хлопок / 5% эластан');
+
+  // Проверка 3 (Фото и оригинал): Кнопки «По размеру экрана», «100%», «Открыть оригинал» в лайтбоксе + управление главным фото
+  const lightboxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'FullscreenPhotoLightbox.tsx'),
+    'utf-8'
+  );
+  assert.equal(lightboxCode.includes('По размеру экрана'), true);
+  assert.equal(lightboxCode.includes('100%'), true);
+  assert.equal(lightboxCode.includes('Открыть оригинал'), true);
+
+  // Проверка 4 (Сценарии): Изменить план продаж в Сценарии №1 -> Сценарий №2 не изменился; фото и характеристики одинаковые
+  const s2MetricsBefore = computeModelScenarioMetrics(editedPassportModel, scen2);
+  const s1ModifiedModel = {
+    ...editedPassportModel,
+    plansByScenario: {
+      ...editedPassportModel.plansByScenario,
+      1: {
+        ...editedPassportModel.plansByScenario[1],
+        monthlyPacks: editedPassportModel.plansByScenario[1].monthlyPacks.map((p, i) =>
+          i === 11 ? p + 2000 : p
+        ),
+      },
+    },
+  };
+  const s2MetricsAfter = computeModelScenarioMetrics(s1ModifiedModel, scen2);
+  assert.equal(s2MetricsAfter.annualRevenueRub, s2MetricsBefore.annualRevenueRub);
+  assert.equal(s2MetricsAfter.annualPacks, s2MetricsBefore.annualPacks);
+  assert.equal(s1ModifiedModel.gallery.length, editedPassportModel.gallery.length);
+  assert.equal(s1ModifiedModel.fabric.composition, editedPassportModel.fabric.composition);
+
+  // Проверка 5 (Финансы без ложной прибыли): Очистить поле логистики (logisticsRub = 0) ->
+  // итог показывает «Не рассчитано, пока не заполнена логистика», а не завышенную прибыль!
+  const sorbetWithLogistics = computeFinancialPnL(baseSorbet, scen1);
+  assert.equal(sorbetWithLogistics.logisticsFilled, true);
+  assert.equal(sorbetWithLogistics.unitOperatingProfitRub !== null, true);
+
+  const sorbetClearedLogistics = {
+    ...baseSorbet,
+    logisticsRub: 0,
+  };
+  const pnlWithoutLogistics = computeFinancialPnL(sorbetClearedLogistics, scen1);
+  assert.equal(pnlWithoutLogistics.logisticsFilled, false);
+  assert.equal(pnlWithoutLogistics.unitLogisticsRub, null);
+  assert.equal(pnlWithoutLogistics.unitOperatingProfitRub, null);
+  assert.equal(pnlWithoutLogistics.annualOperatingProfitRub, null);
+  assert.equal(
+    pnlWithoutLogistics.operatingProfitNotCalculatedReason,
+    'Не рассчитано, пока не заполнена логистика'
+  );
+  // И пока график выплат WB не подтверждён — verifiedPeakCapitalDeficitRub равен null («Нельзя рассчитать без графика выплат»)
+  assert.equal(pnlWithoutLogistics.wbPayoutScheduleConfirmed, false);
+  assert.equal(pnlWithoutLogistics.verifiedPeakCapitalDeficitRub, null);
+
+  // Проверка 6 (Себестоимость): Изменить себестоимость с 600 ₽ на 650 ₽ -> меняются прибыль с комплекта и стоимость закупки; план продаж не меняется
+  const sorbet650 = { ...baseSorbet, unitCostRub: 650 };
+  const pnl600 = computeFinancialPnL(baseSorbet, scen1);
+  const pnl650 = computeFinancialPnL(sorbet650, scen1);
+  const proc600 = computeProcurementPlan(baseSorbet, scen1);
+  const proc650 = computeProcurementPlan(sorbet650, scen1);
+  assert.equal(pnl650.annualBuyoutsPacks, pnl600.annualBuyoutsPacks);
+  assert.equal(pnl650.unitOperatingProfitRub, pnl600.unitOperatingProfitRub! - 50);
+  assert.equal(
+    proc650.totalRecommendedBudgetRub,
+    proc600.totalRecommendedBudgetRub! + proc600.totalRecommendedPacks * 50
+  );
+
+  // Проверка 7 (Читаемость карточки): В правой колонке ровно 4 карточки и 1 строка наличия, нет номеров 01..05 и кнопок «Формула»
+  const cardScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'ScenarioModelCardScreen.tsx'),
+    'utf-8'
+  );
+  assert.equal(cardScreenCode.includes('Выручка выбранного месяца'), true);
+  assert.equal(cardScreenCode.includes('Цена комплекта'), true);
+  assert.equal(cardScreenCode.includes('Себестоимость под ключ'), true);
+  assert.equal(cardScreenCode.includes('Прибыль с комплекта'), true);
+  assert.equal(cardScreenCode.includes('Наличие товара:'), true);
+  assert.equal(cardScreenCode.includes('01 · Выручка месяца'), false);
+  assert.equal(cardScreenCode.includes('05 · Операционная прибыль'), false);
+  assert.equal(cardScreenCode.includes('>Формула<'), false);
+  assert.equal(cardScreenCode.includes('Блок А. Сколько остаётся с одного комплекта'), true);
+  assert.equal(cardScreenCode.includes('Блок Б. Результат за выбранный период'), true);
+  assert.equal(cardScreenCode.includes('Показать подробный расчёт'), true);
+  assert.equal(cardScreenCode.includes('Деньги на закупки'), true);
+  assert.equal(cardScreenCode.includes('Нельзя рассчитать без графика выплат'), true);
+});
+
+
 
 
 

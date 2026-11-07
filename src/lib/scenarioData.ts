@@ -79,12 +79,24 @@ export interface ScenarioCommercialPlan {
   channelSplitPct?: ChannelSplitPct;
 }
 
+export type ModelPassportStageStatus =
+  | 'Идея'
+  | 'В разработке'
+  | 'Тест'
+  | 'Масштабирование'
+  | 'Действующий'
+  | 'Приостановлен';
+
 export interface ScenarioModelSpec {
   id: string;
   code: string;
   title: string;
   subtitle: string;
   brandId: 'BORNERS' | 'NA_TELE';
+  customBrandLabel?: string; // редактируемый бренд (BORNERS / FUKAI / НА ТЕЛЕ / свой бренд)
+  wbArticle?: string; // редактируемый артикул WB
+  modelStageStatus?: ModelPassportStageStatus; // статус жизненного цикла модели (Идея / В разработке / Тест / Масштабирование / Действующий / Приостановлен)
+  description?: string; // текстовое описание и примечания к модели
   launchStatus: 'В плане' | 'В разработке' | 'Утверждено' | 'В архиве';
   unitsInPack: number;
   retailPriceRub: number;

@@ -609,38 +609,79 @@ export function SkuProcurementMvpWorkbench({
           </div>
         </div>
 
-        {/* Строка ключевых параметров (План продаж | Остаток | Цена | Цикл | Доп. настройки) */}
-        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-          {/* 1. План продаж */}
-          <div className="flex flex-col justify-between rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
+        {/* ЧЕТЫРЕ КОРОТКИХ ПОКАЗАТЕЛЯ ВВЕРХУ ВКЛАДКИ «ЗАКУПКИ» (Раздел 06 ТЗ «Карточка товара и финансы»):
+            1. План продаж · 2. Доступный товар · 3. К заказу · 4. Стоимость заказа */}
+        <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-medium text-[#6B7280]">
-                План продаж ({currentScenario.title.split('·')[0].trim()})
+              <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
+                План продаж
               </span>
               {onOpenSalesMatrix && (
                 <button
                   type="button"
                   onClick={onOpenSalesMatrix}
-                  className="text-[10px] font-semibold text-[#111827] underline decoration-dotted hover:text-black"
+                  className="text-[10px] font-semibold text-[#111827] underline decoration-dotted hover:text-black cursor-pointer"
                 >
                   По месяцам ↗
                 </button>
               )}
             </div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="font-mono text-[15px] font-bold text-[#111827]">
-                {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
-              </span>
-              <span className="text-[11px] text-[#6B7280]">
-                {proc.annualDemandUnits.toLocaleString('ru-RU')} изд.
-              </span>
+            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+              {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
+            </div>
+            <div className="text-[11px] text-[#6B7280]">
+              {proc.annualDemandUnits.toLocaleString('ru-RU')} изд. · {currentScenario.title.split('·')[0].trim()}
             </div>
           </div>
 
-          {/* 2. Начальный остаток (свободно редактируемый) */}
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
+              Доступный товар
+            </span>
+            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+              {(proc.netOpeningAvailablePacks + proc.totalApprovedReceiptsPacks).toLocaleString('ru-RU')} компл.
+            </div>
+            <div className="text-[11px] text-[#6B7280]">
+              Склад: {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} · Утв. PO: {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
+              К заказу
+            </span>
+            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+              {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
+            </div>
+            <div className="text-[11px] text-[#6B7280]">
+              {proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд. ({proc.recommendedBatches.length} парт.)
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
+              Стоимость заказа
+            </span>
+            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+              {proc.totalRecommendedBudgetRub !== null
+                ? formatRubMillions(proc.totalRecommendedBudgetRub)
+                : 'Не заполнена себест.'}
+            </div>
+            <div className="text-[11px] text-[#6B7280]">
+              {proc.totalRecommendedBudgetRub !== null
+                ? `${proc.totalRecommendedBudgetRub.toLocaleString('ru-RU')} ₽`
+                : 'Укажите себестоимость комплекта'}
+            </div>
+          </div>
+        </div>
+
+        {/* Редактируемые параметры: Начальный остаток | Себестоимость | Срок производства | Срок доставки | MOQ и страховой запас */}
+        <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+          {/* 1. Начальный остаток (свободно редактируемый) */}
           <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
             <span className="text-[11px] font-semibold text-[#374151]">
-              Остаток на складе, компл.
+              Начальный остаток, компл.
             </span>
             <div className="mt-1 flex items-center gap-1.5">
               <NumericInput
@@ -655,10 +696,10 @@ export function SkuProcurementMvpWorkbench({
             </div>
           </label>
 
-          {/* 3. Себестоимость комплекта */}
+          {/* 2. Себестоимость комплекта */}
           <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
             <span className="text-[11px] font-semibold text-[#374151]">
-              Цена закупки (себест.), ₽
+              Себестоимость под ключ, ₽
             </span>
             <div className="mt-1 flex items-center gap-1.5">
               <NumericInput
@@ -673,36 +714,81 @@ export function SkuProcurementMvpWorkbench({
             </div>
           </label>
 
-          {/* 4. Цикл производства и поставки */}
+          {/* 3. Срок производства (дней) */}
           <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
             <span className="text-[11px] font-semibold text-[#374151]">
-              Цикл поставки, дней
+              Срок производства, дней
             </span>
             <div className="mt-1 flex items-center gap-1.5">
               <NumericInput
-                ariaLabel="Цикл производства и логистики, дней"
-                value={proc.totalLeadDays}
+                ariaLabel="Срок производства, дней"
+                value={fp.productionLeadDays}
                 min={1}
                 max={365}
                 step={5}
-                onChangeValue={handleUpdateTotalLeadDays}
+                onChangeValue={(nextProd) => {
+                  onUpdateModel({
+                    ...model,
+                    sharedSupplyAndFact: {
+                      ...shared,
+                      factoryParams: {
+                        ...fp,
+                        productionLeadDays: Math.max(1, Math.round(nextProd)),
+                      },
+                    },
+                  });
+                  triggerSavedIndicator('Сохранено');
+                }}
                 className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
               />
               <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">дней</span>
             </div>
           </label>
 
-          {/* 5. Кнопка раскрытия дополнительных настроек (Размеры S–XXL, MOQ, кратность) */}
+          {/* 4. Срок доставки и приёмки (дней) */}
+          <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
+            <span className="text-[11px] font-semibold text-[#374151]">
+              Срок доставки в РФ, дней
+            </span>
+            <div className="mt-1 flex items-center gap-1.5">
+              <NumericInput
+                ariaLabel="Срок доставки, дней"
+                value={fp.logisticsLeadDays}
+                min={0}
+                max={365}
+                step={2}
+                onChangeValue={(nextLog) => {
+                  onUpdateModel({
+                    ...model,
+                    sharedSupplyAndFact: {
+                      ...shared,
+                      factoryParams: {
+                        ...fp,
+                        logisticsLeadDays: Math.max(0, Math.round(nextLog)),
+                      },
+                    },
+                  });
+                  triggerSavedIndicator('Сохранено');
+                }}
+                className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
+              />
+              <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">
+                дн. (всего {proc.totalLeadDays})
+              </span>
+            </div>
+          </label>
+
+          {/* 5. Кнопка раскрытия дополнительных настроек (Размеры S–XXL, MOQ, кратность, страховой запас) */}
           <div className="flex flex-col justify-between rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
             <span className="text-[11px] font-medium text-[#6B7280]">
-              MOQ {fp.moqPacks.toLocaleString('ru-RU')} · Шаг {fp.packMultiple} · Сетка S–XXL
+              MOQ {fp.moqPacks.toLocaleString('ru-RU')} · Запас {fp.safetyStockDays} дн. · S–XXL
             </span>
             <button
               type="button"
               onClick={() => setShowAdvancedSettings((v) => !v)}
-              className="mt-1 inline-flex items-center justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+              className="mt-1 inline-flex items-center justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6] cursor-pointer"
             >
-              <span>Доп. настройки</span>
+              <span>MOQ, запас и размеры</span>
               <span>{showAdvancedSettings ? '▴' : '▾'}</span>
             </button>
           </div>
