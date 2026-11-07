@@ -15,6 +15,10 @@ import {
   AlertTriangle,
   Package,
   ChevronDown,
+  TrendingUp,
+  BarChart3,
+  Wallet,
+  ArrowUpRight,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
@@ -1824,10 +1828,10 @@ export function GrowthScenariosShowcase({
               </div>
             </div>
 
-            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ С ИНДИКАТОРОМ ВЫПОЛНЕНИЯ ЦЕЛИ */}
+            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ С АКЦЕНТНОЙ HERO-КАРТОЧКОЙ АКТИВНОГО СЦЕНАРИЯ */}
             <div
               data-tour="growth-scenarios"
-              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 bg-white border-b border-[#EAE9E2]"
+              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-white border-b border-[#EAE9E2]"
             >
               {[...scenarios]
                 .sort((a, b) =>
@@ -1857,7 +1861,7 @@ export function GrowthScenariosShowcase({
                   const diffSign = diffMlnNum > 0 ? '+' : '';
                   const pctNum = agg ? agg.goalCompletionPct : 100;
                   const pctStr = pctNum.toFixed(1).replace('.', ',');
-                  const progressWidth = Math.min(100, Math.max(8, Math.round(pctNum)));
+                  const progressWidth = Math.min(100, Math.max(10, Math.round(pctNum)));
 
                   return (
                     <div
@@ -1871,15 +1875,19 @@ export function GrowthScenariosShowcase({
                           setSelectedScenarioId(sc.id);
                         }
                       }}
-                      className={`group rounded-[13px] p-3.5 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                      className={`group rounded-[14px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-[#FAF9F5] border-[1.5px] border-[#141413] shadow-[0_4px_14px_rgba(20,20,19,0.06)]'
-                          : 'bg-white border border-[#DEDDD5] hover:border-[#9E9D95] hover:bg-[#FAF9F6]/60'
+                          ? 'bg-gradient-to-br from-[#161615] via-[#1F1F1C] to-[#121210] text-white border border-[#141413] shadow-[0_14px_30px_-8px_rgba(20,20,19,0.28)]'
+                          : 'bg-[#FAF9F6]/70 border border-[#DEDDD5] hover:border-[#141413] hover:bg-white hover:shadow-[0_6px_18px_-4px_rgba(20,20,19,0.06)]'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[12px] font-bold text-[#3D3C37] truncate">
+                          <span
+                            className={`text-[12px] font-bold truncate ${
+                              isSelected ? 'text-white/90' : 'text-[#3D3C37]'
+                            }`}
+                          >
                             {sc.id === ACTING_2027_SCENARIO_ID
                               ? 'Исходный план 2027 · ИП Нерсесянц'
                               : `${sc.title} · ${sc.scopeLabel}`}
@@ -1887,11 +1895,12 @@ export function GrowthScenariosShowcase({
 
                           <div className="flex items-center gap-1 shrink-0">
                             {isSelected ? (
-                              <span className="px-2 py-0.5 rounded-[5px] bg-[#141413] text-white text-[10px] font-bold">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                                 Активен
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded-[5px] bg-[#F4F3EE] text-[#686760] text-[10px] font-mono font-semibold">
+                              <span className="px-1.5 py-0.5 rounded-[5px] bg-white border border-[#E2E1D9] text-[#686760] text-[10px] font-mono font-semibold">
                                 {agg?.modelsCount || 0} SKU
                               </span>
                             )}
@@ -1904,7 +1913,11 @@ export function GrowthScenariosShowcase({
                                 }}
                                 title={`Удалить сценарий «${sc.title}»`}
                                 aria-label={`Удалить сценарий ${sc.title}`}
-                                className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-white hover:bg-rose-50 text-[#686762] hover:text-rose-700 border border-[#CECDC4] hover:border-rose-200 flex items-center justify-center text-[12px] leading-none font-bold transition cursor-pointer"
+                                className={`h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-bold transition cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-white/10 text-white/70 hover:bg-rose-500/30 hover:text-rose-200'
+                                    : 'bg-white hover:bg-rose-50 text-[#686762] hover:text-rose-700 border border-[#CECDC4]'
+                                }`}
                               >
                                 ×
                               </button>
@@ -1912,26 +1925,44 @@ export function GrowthScenariosShowcase({
                           </div>
                         </div>
 
-                        <div className="flex items-baseline justify-between gap-2 mt-2">
-                          <div className="font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                        <div className="flex items-baseline justify-between gap-2 mt-2.5">
+                          <div
+                            className={`font-mono text-[23px] font-extrabold tracking-[-0.02em] ${
+                              isSelected ? 'text-white' : 'text-[#141413]'
+                            }`}
+                          >
                             {liveDecMlnStr} млн ₽{' '}
-                            <span className="font-sans text-[11.5px] font-medium text-[#686760]">
+                            <span
+                              className={`font-sans text-[11.5px] font-medium ${
+                                isSelected ? 'text-white/60' : 'text-[#686760]'
+                              }`}
+                            >
                               / дек
                             </span>
                           </div>
                           {sc.id !== ACTING_2027_SCENARIO_ID ? (
                             <span
                               className={`px-2 py-0.5 rounded-[6px] font-mono text-[10.5px] font-bold border ${
-                                diffMlnNum >= -0.05
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-[#F4F3EE] text-[#52514C] border-[#DFDED7]'
+                                isSelected
+                                  ? diffMlnNum >= -0.05
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                                    : 'bg-white/10 text-white/85 border-white/15'
+                                  : diffMlnNum >= -0.05
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : 'bg-[#F4F3EE] text-[#52514C] border-[#DFDED7]'
                               }`}
                             >
                               {diffSign}
                               {diffMlnNum.toFixed(1).replace('.', ',')} млн ({pctStr}%)
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-[6px] bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                            <span
+                              className={`px-2 py-0.5 rounded-[6px] text-[10px] font-bold border ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              }`}
+                            >
                               База WB
                             </span>
                           )}
@@ -1939,29 +1970,45 @@ export function GrowthScenariosShowcase({
                       </div>
 
                       {/* Визуальный прогресс-бар выполнения цели декабря в стиле Peakly */}
-                      <div className="mt-2.5 space-y-1.5">
-                        <div className="h-1.5 w-full rounded-full bg-[#ECEBE4] overflow-hidden">
+                      <div className="mt-3 space-y-1.5">
+                        <div
+                          className={`h-1.5 w-full rounded-full overflow-hidden ${
+                            isSelected ? 'bg-white/15' : 'bg-[#E6E5DD]'
+                          }`}
+                        >
                           <div
                             style={{ width: `${progressWidth}%` }}
                             className={`h-full rounded-full transition-all ${
-                              pctNum >= 99.5
-                                ? 'bg-emerald-600'
-                                : isSelected
-                                  ? 'bg-[#141413]'
-                                  : 'bg-[#8E8D85]'
+                              isSelected
+                                ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
+                                : pctNum >= 99.5
+                                  ? 'bg-emerald-600'
+                                  : 'bg-[#686760]'
                             }`}
                           />
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-[#686760]">
+                        <div
+                          className={`flex items-center justify-between gap-2 text-[11px] ${
+                            isSelected ? 'text-white/70' : 'text-[#686760]'
+                          }`}
+                        >
                           <span>
                             Цель:{' '}
-                            <strong className="font-mono text-[#141413]">
+                            <strong
+                              className={`font-mono ${
+                                isSelected ? 'text-white' : 'text-[#141413]'
+                              }`}
+                            >
                               {String(targetMlnNum).replace('.', ',')} млн
                             </strong>
                           </span>
                           <span>
                             За год:{' '}
-                            <strong className="font-mono text-[#141413]">
+                            <strong
+                              className={`font-mono ${
+                                isSelected ? 'text-white' : 'text-[#141413]'
+                              }`}
+                            >
                               {annualMln} млн ₽
                             </strong>{' '}
                             · {agg?.modelsCount || 0} мод.
@@ -1973,7 +2020,7 @@ export function GrowthScenariosShowcase({
                 })}
             </div>
 
-            {/* РЯД 2: 4 БИЗНЕС-ЛИНЗЫ PEAKLY (БЕЗ ДУБЛИРОВАНИЯ — СТРУКТУРА, ОБОРОТ, КАПИТАЛ, РЕНТАБЕЛЬНОСТЬ) */}
+            {/* РЯД 2: 4 ОБЪЁМНЫЕ БИЗНЕС-КАРТОЧКИ PEAKLY С ИКОНКАМИ, МИКРО-ШКАЛАМИ И АКЦЕНТАМИ */}
             {(() => {
               const isActing = currentScenario.id === ACTING_2027_SCENARIO_ID;
               const annualRevMln = (currentAgg.annualRevenueRub / 1_000_000)
@@ -1990,20 +2037,18 @@ export function GrowthScenariosShowcase({
                 ? currentAgg.totalPurchaseNeedRub
                 : v11ScenarioSummary.recommendedBudgetRub;
               const procBudgetMln = (procBudgetRub / 1_000_000).toFixed(2).replace('.', ',');
-              const cogsSharePct =
+              const cogsShareNum =
                 currentAgg.annualRevenueRub > 0
-                  ? ((procBudgetRub / currentAgg.annualRevenueRub) * 100)
-                      .toFixed(1)
-                      .replace('.', ',')
-                  : '0,0';
+                  ? Math.round((procBudgetRub / currentAgg.annualRevenueRub) * 1000) / 10
+                  : 0;
+              const cogsSharePct = cogsShareNum.toFixed(1).replace('.', ',');
               const grossMarginRub = currentAgg.annualRevenueRub - procBudgetRub;
               const grossMarginMln = (grossMarginRub / 1_000_000).toFixed(2).replace('.', ',');
-              const grossMarginPct =
+              const grossMarginNum =
                 currentAgg.annualRevenueRub > 0
-                  ? ((grossMarginRub / currentAgg.annualRevenueRub) * 100)
-                      .toFixed(1)
-                      .replace('.', ',')
-                  : '0,0';
+                  ? Math.round((grossMarginRub / currentAgg.annualRevenueRub) * 1000) / 10
+                  : 0;
+              const grossMarginPct = grossMarginNum.toFixed(1).replace('.', ',');
               const wbShareDecPct =
                 currentAgg.targetMonthRevenueRub > 0
                   ? Math.min(
@@ -2015,19 +2060,24 @@ export function GrowthScenariosShowcase({
                   : 100;
 
               return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-[#FAF9F6]/50">
-                  {/* Линза 1: Структура пика сезона (Декабрь 2027) */}
-                  <div className="p-4 md:p-5 flex flex-col justify-between gap-2.5">
+                <div className="p-4 md:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 bg-[#FAF9F6]">
+                  {/* Карточка 1: Пик сезона (Декабрь 2027) */}
+                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#686760]">
-                          1. Структура декабря 2027
-                        </span>
-                        <span className="rounded-md bg-[#F2F1EC] border border-[#DFDED7] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="h-7 w-7 rounded-[8px] bg-emerald-50 border border-emerald-200/80 text-emerald-700 flex items-center justify-center">
+                            <TrendingUp className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
+                            Пик сезона · Дек 2027
+                          </span>
+                        </div>
+                        <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
                           {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} компл.
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[22px] font-extrabold text-[#141413]">
+                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {(currentAgg.targetMonthRevenueRub / 1_000_000)
                           .toFixed(2)
                           .replace('.', ',')}{' '}
@@ -2036,15 +2086,15 @@ export function GrowthScenariosShowcase({
                     </div>
 
                     {isActing ? (
-                      <div className="space-y-1.5">
-                        <div className="h-1.5 w-full rounded-full bg-emerald-600/85" />
+                      <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
+                        <div className="h-1.5 w-full rounded-full bg-emerald-600" />
                         <div className="text-[11.5px] text-[#5C5B55] flex items-center justify-between">
-                          <span>100% действующая база WB</span>
-                          <span className="font-mono font-semibold text-[#141413]">7 SKU</span>
+                          <span>100% база Wildberries</span>
+                          <span className="font-mono font-bold text-emerald-800">7 SKU сверены</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
                         <div className="h-1.5 w-full rounded-full bg-[#E4E3DC] overflow-hidden flex">
                           <div
                             style={{ width: `${wbShareDecPct}%` }}
@@ -2081,202 +2131,312 @@ export function GrowthScenariosShowcase({
                     )}
                   </div>
 
-                  {/* Линза 2: Годовой оборот и средний темп */}
-                  <div className="p-4 md:p-5 flex flex-col justify-between gap-2.5">
+                  {/* Карточка 2: Годовой оборот 2027 */}
+                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#686760]">
-                          2. Годовой оборот (12 мес.)
-                        </span>
-                        <span className="rounded-md bg-[#F2F1EC] border border-[#DFDED7] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="h-7 w-7 rounded-[8px] bg-sky-50 border border-sky-200/80 text-sky-700 flex items-center justify-center">
+                            <BarChart3 className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
+                            Годовой оборот
+                          </span>
+                        </div>
+                        <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
                           ~{avgMonthlyMln} млн/мес
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[22px] font-extrabold text-[#141413]">
+                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {annualRevMln} млн ₽
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EAE9E2] text-[11.5px] text-[#5C5B55]">
-                      <span>
-                        Выкупы:{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
-                        </strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('launch-calendar')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        02 · Продажи →
-                      </button>
+                    <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
+                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#5C5B55]">
+                        <span>
+                          Выкупы:{' '}
+                          <strong className="font-mono text-[#141413]">
+                            {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
+                          </strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigateTo('launch-calendar')}
+                          className="inline-flex items-center gap-0.5 font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
+                        >
+                          <span>02 · Продажи</span>
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Линза 3: Товарный капитал и бюджет закупок */}
-                  <div className="p-4 md:p-5 flex flex-col justify-between gap-2.5">
+                  {/* Карточка 3: Товарный капитал (COGS) */}
+                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#686760]">
-                          3. Товарный бюджет (COGS)
-                        </span>
-                        <span className="rounded-md bg-[#F2F1EC] border border-[#DFDED7] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                          {cogsSharePct}% от оборота
+                        <div className="inline-flex items-center gap-2">
+                          <span className="h-7 w-7 rounded-[8px] bg-amber-50 border border-amber-200/80 text-amber-800 flex items-center justify-center">
+                            <Package className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
+                            Товарный бюджет
+                          </span>
+                        </div>
+                        <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 font-mono text-[10.5px] font-bold text-amber-900">
+                          {cogsSharePct}% COGS
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[22px] font-extrabold text-[#141413]">
+                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {procBudgetMln} млн ₽
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EAE9E2] text-[11.5px] text-[#5C5B55]">
-                      <span>
-                        {isActing ? (
-                          'Товар + упаковка + приёмка'
-                        ) : (
-                          <>
-                            К заказу:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {v11ScenarioSummary.recommendedPacks.toLocaleString('ru-RU')} компл.
-                            </strong>
-                          </>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('roadmap-tasks')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        03 · Закупки →
-                      </button>
+                    <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
+                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#5C5B55]">
+                        <span>
+                          {isActing ? (
+                            'Товар + упаковка + приёмка'
+                          ) : (
+                            <>
+                              К заказу:{' '}
+                              <strong className="font-mono text-[#141413]">
+                                {v11ScenarioSummary.recommendedPacks.toLocaleString('ru-RU')} компл.
+                              </strong>
+                            </>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigateTo('roadmap-tasks')}
+                          className="inline-flex items-center gap-0.5 font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
+                        >
+                          <span>03 · Закупки</span>
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Линза 4: Валовый поток, средний чек и P&L */}
-                  <div className="p-4 md:p-5 flex flex-col justify-between gap-2.5">
+                  {/* Карточка 4: Валовый денежный поток и P&L */}
+                  <div className="rounded-[14px] bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/90 p-4 flex flex-col justify-between gap-3 shadow-[0_2px_10px_rgba(16,185,129,0.06)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#686760]">
-                          4. Валовый поток и P&amp;L
-                        </span>
-                        <span className="rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-mono text-[10.5px] font-bold text-emerald-800">
-                          {grossMarginPct}% вал. маржа
+                        <div className="inline-flex items-center gap-2">
+                          <span className="h-7 w-7 rounded-[8px] bg-emerald-600 text-white flex items-center justify-center shadow-2xs">
+                            <Wallet className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-950">
+                            Валовый поток и P&amp;L
+                          </span>
+                        </div>
+                        <span className="rounded-md bg-emerald-100/90 border border-emerald-300/80 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-emerald-900">
+                          {grossMarginPct}% маржа
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[22px] font-extrabold text-emerald-800">
+                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-emerald-900">
                         +{grossMarginMln} млн ₽
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EAE9E2] text-[11.5px] text-[#5C5B55]">
-                      <span>
-                        Ср. чек:{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {avgCheckRub.toLocaleString('ru-RU')} ₽/компл.
-                        </strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('finance')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        04 · Финансы →
-                      </button>
+                    <div className="space-y-1.5 pt-2 border-t border-emerald-200/60">
+                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-emerald-950/80">
+                        <span>
+                          Ср. чек:{' '}
+                          <strong className="font-mono text-[#141413]">
+                            {avgCheckRub.toLocaleString('ru-RU')} ₽/компл.
+                          </strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigateTo('finance')}
+                          className="inline-flex items-center gap-0.5 font-bold text-emerald-950 hover:underline cursor-pointer shrink-0"
+                        >
+                          <span>04 · Финансы</span>
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               );
             })()}
 
-            {/* РЯД 3: КОМПАКТНАЯ ИНТЕРАКТИВНАЯ ТРАЕКТОРИЯ 12 МЕСЯЦЕВ (ЯНВ–ДЕК 2027) ПРЯМО В СВОДКЕ */}
-            <div className="px-5 py-3.5 bg-white border-t border-[#EAE9E2]">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[11.5px] font-bold text-[#141413]">
-                    Помесячная траектория выручки 2027 (млн ₽)
-                  </span>
-                  <span className="text-[11px] text-[#686760]">
-                    нажмите на любой месяц для сверки
-                  </span>
+            {/* РЯД 3: PEAKLY ANALYTICS BENTO — ГРАФИК ДИНАМИКИ 12 МЕС. (8 КОЛ.) + ТОП-4 ЛИДЕРА ВЫРУЧКИ (4 КОЛ.) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[#EAE9E2] bg-white border-t border-[#EAE9E2]">
+              {/* ЛЕВАЯ ЧАСТЬ (8 колонок): Высокий интерактивный график выручки по месяцам */}
+              <div className="lg:col-span-8 p-4 md:p-5 flex flex-col justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div>
+                    <div className="text-[13px] font-extrabold text-[#141413]">
+                      Помесячная динамика выручки 2027 (Янв — Дек)
+                    </div>
+                    <div className="text-[11px] text-[#686760]">
+                      Нажмите на столбец любого месяца для просмотра детального объёма
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 text-[11.5px]">
+                    {(() => {
+                      const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
+                      const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
+                      const totSel = Math.round((bSel + nSel) * 100) / 100;
+                      return (
+                        <span className="rounded-[8px] bg-[#141413] text-white px-3 py-1 font-mono text-[11.5px] font-bold shadow-2xs">
+                          {MONTHS_SHORT_RU[selectedChartMonthIdx]} 2027: {totSel.toFixed(2).replace('.', ',')} млн ₽
+                        </span>
+                      );
+                    })()}
+                    <button
+                      type="button"
+                      onClick={() => navigateTo('launch-calendar')}
+                      className="h-7.5 px-2.5 rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] hover:bg-[#EFEFE9] font-semibold text-[#141413] cursor-pointer transition"
+                    >
+                      Матрица 12 мес. →
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-[11px] text-[#5C5B55]">
-                  {(() => {
-                    const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
-                    const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
-                    const totSel = Math.round((bSel + nSel) * 100) / 100;
-                    return (
-                      <span className="rounded-md bg-[#FAF9F6] border border-[#E2E1D9] px-2.5 py-0.5">
-                        <strong className="text-[#141413]">
-                          {MONTHS_SHORT_RU[selectedChartMonthIdx]} 2027:
-                        </strong>{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {totSel.toFixed(2).replace('.', ',')} млн ₽
-                        </strong>
-                      </span>
-                    );
-                  })()}
-                  <button
-                    type="button"
-                    onClick={() => navigateTo('launch-calendar')}
-                    className="font-semibold text-[#141413] hover:underline cursor-pointer"
-                  >
-                    Вся таблица 12 мес. →
-                  </button>
+
+                {/* Полотно графика с сеткой и объёмными столбцами */}
+                <div className="relative rounded-[12px] bg-[#FAF9F6] border border-[#E8E7DF] px-3 pt-5 pb-2.5">
+                  <div className="grid grid-cols-12 gap-2 items-end h-[116px]">
+                    {MONTHS_SHORT_RU.map((mName, idx) => {
+                      const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
+                      const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
+                      const totVal = Math.round((bVal + nVal) * 10) / 10;
+                      const barHeight = Math.max(14, Math.round((totVal / maxChartVal) * 84));
+                      const isSel = selectedChartMonthIdx === idx;
+                      const isDec = idx === 11;
+
+                      return (
+                        <button
+                          type="button"
+                          key={mName}
+                          onClick={() => setSelectedChartMonthIdx(idx)}
+                          className={`h-full flex flex-col items-center justify-end gap-1.5 rounded-[8px] px-1 py-1 transition cursor-pointer group ${
+                            isSel ? 'bg-white shadow-2xs ring-1 ring-[#D5D4CC]' : 'hover:bg-white/70'
+                          }`}
+                        >
+                          <span
+                            className={`font-mono text-[10px] leading-none ${
+                              isSel || isDec
+                                ? 'font-extrabold text-[#141413]'
+                                : 'font-semibold text-[#686760] group-hover:text-[#141413]'
+                            }`}
+                          >
+                            {totVal.toFixed(1).replace('.', ',')}
+                          </span>
+                          <div className="w-full flex justify-center items-end">
+                            <div
+                              style={{ height: `${barHeight}px` }}
+                              className={`w-full max-w-[34px] rounded-t-[6px] rounded-b-[3px] transition-all ${
+                                isDec
+                                  ? 'bg-gradient-to-t from-emerald-700 to-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.25)]'
+                                  : isSel
+                                    ? 'bg-gradient-to-t from-[#141413] to-[#3A3935]'
+                                    : 'bg-gradient-to-t from-[#B8B7AE] to-[#CFCEC6] group-hover:from-[#52514C] group-hover:to-[#787770]'
+                              }`}
+                            />
+                          </div>
+                          <span
+                            className={`text-[10.5px] leading-none ${
+                              isSel
+                                ? 'font-extrabold text-[#141413]'
+                                : isDec
+                                  ? 'font-bold text-emerald-800'
+                                  : 'font-semibold text-[#686760]'
+                            }`}
+                          >
+                            {mName}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-12 gap-1.5 items-end h-[68px] pt-2">
-                {MONTHS_SHORT_RU.map((mName, idx) => {
-                  const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
-                  const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
-                  const totVal = Math.round((bVal + nVal) * 10) / 10;
-                  const barHeight = Math.max(6, Math.round((totVal / maxChartVal) * 38));
-                  const isSel = selectedChartMonthIdx === idx;
-                  const isDec = idx === 11;
-
-                  return (
-                    <button
-                      type="button"
-                      key={mName}
-                      onClick={() => setSelectedChartMonthIdx(idx)}
-                      className={`flex flex-col items-center justify-end gap-1 rounded-[7px] py-1 px-0.5 transition cursor-pointer ${
-                        isSel ? 'bg-[#F4F3EE]' : 'hover:bg-[#FAF9F6]'
-                      }`}
-                    >
-                      <span
-                        className={`font-mono text-[9.5px] leading-none ${
-                          isSel || isDec
-                            ? 'font-extrabold text-[#141413]'
-                            : 'font-medium text-[#686760]'
-                        }`}
-                      >
-                        {totVal.toFixed(1).replace('.', ',')}
-                      </span>
-                      <div className="w-full max-w-[28px] flex justify-center">
-                        <div
-                          style={{ height: `${barHeight}px` }}
-                          className={`w-full rounded-[3px] transition-all ${
-                            isDec
-                              ? 'bg-emerald-600'
-                              : isSel
-                                ? 'bg-[#141413]'
-                                : 'bg-[#C8C7BE] hover:bg-[#686760]'
-                          }`}
-                        />
+              {/* ПРАВАЯ ЧАСТЬ (4 колонки): Топ-4 драйвера выручки сценария с долями */}
+              <div className="lg:col-span-4 p-4 md:p-5 flex flex-col justify-between bg-[#FAF9F6]/40">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div>
+                      <div className="text-[13px] font-extrabold text-[#141413]">
+                        Лидеры выручки сценария
                       </div>
-                      <span
-                        className={`text-[10px] leading-none ${
-                          isSel
-                            ? 'font-extrabold text-[#141413]'
-                            : 'font-medium text-[#686760]'
-                        }`}
-                      >
-                        {mName}
-                      </span>
-                    </button>
-                  );
-                })}
+                      <div className="text-[11px] text-[#686760]">
+                        Топ-4 SKU по вкладу в годовой оборот
+                      </div>
+                    </div>
+                    <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#52514C]">
+                      Топ-4 из {filteredModels.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {[...filteredModels]
+                      .map((m) => ({
+                        model: m,
+                        met: computeModelScenarioMetrics(m, currentScenario),
+                      }))
+                      .sort((a, b) => b.met.annualRevenueRub - a.met.annualRevenueRub)
+                      .slice(0, 4)
+                      .map(({ model: topMod, met: topMet }, idx) => {
+                        const sharePct =
+                          currentAgg.annualRevenueRub > 0
+                            ? Math.round(
+                                (topMet.annualRevenueRub / currentAgg.annualRevenueRub) * 1000
+                              ) / 10
+                            : 0;
+                        const barW = Math.min(100, Math.max(8, Math.round(sharePct * 2.2)));
+                        return (
+                          <button
+                            key={topMod.id}
+                            type="button"
+                            onClick={() => navigateScreen('model', topMod.id)}
+                            className="w-full rounded-[10px] bg-white border border-[#E2E1D9] hover:border-[#141413] p-2.5 text-left transition cursor-pointer group"
+                          >
+                            <div className="flex items-center justify-between gap-2 text-[12px]">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`h-5 w-5 rounded-md font-mono text-[10.5px] font-bold flex items-center justify-center shrink-0 ${
+                                    idx === 0
+                                      ? 'bg-[#141413] text-white'
+                                      : 'bg-[#F4F3EE] text-[#52514C]'
+                                  }`}
+                                >
+                                  #{idx + 1}
+                                </span>
+                                <span className="font-bold text-[#141413] group-hover:underline truncate">
+                                  {topMod.title}
+                                </span>
+                              </div>
+                              <div className="font-mono text-[12px] font-extrabold text-[#141413] shrink-0">
+                                {(topMet.annualRevenueRub / 1_000_000)
+                                  .toFixed(2)
+                                  .replace('.', ',')}{' '}
+                                млн ₽
+                              </div>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <div className="h-1.5 flex-1 rounded-full bg-[#ECEBE4] overflow-hidden">
+                                <div
+                                  style={{ width: `${barW}%` }}
+                                  className={`h-full rounded-full ${
+                                    idx === 0 ? 'bg-emerald-600' : 'bg-[#141413]'
+                                  }`}
+                                />
+                              </div>
+                              <span className="font-mono text-[10.5px] font-semibold text-[#686760] w-11 text-right">
+                                {sharePct.toFixed(1).replace('.', ',')}%
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2568,7 +2728,7 @@ export function GrowthScenariosShowcase({
             )}
 
             {catalogViewMode === 'grid' ? (
-              /* Витрина с карточками SKU в стиле Peakly */
+              /* Витрина с карточками SKU в стиле Peakly (с мини-спарклайном 12 мес. и юнит-экономикой) */
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {filteredModels.map((mod, modIdx) => {
                   const met = computeModelScenarioMetrics(mod, currentScenario);
@@ -2584,6 +2744,7 @@ export function GrowthScenariosShowcase({
                       : mod.brandId === 'NA_TELE'
                         ? 'НА ТЕЛЕ'
                         : 'BORNERS');
+                  const maxModMonthRev = Math.max(1, ...met.monthlyRevenuesRub);
 
                   return (
                     <div
@@ -2600,17 +2761,30 @@ export function GrowthScenariosShowcase({
                           navigateScreen('model', mod.id);
                         }
                       }}
-                      className="group relative rounded-[14px] bg-white border border-[#D8D7CF] hover:border-[#141413] p-4 text-left transition-all cursor-pointer flex flex-col justify-between hover:shadow-[0_8px_24px_-4px_rgba(20,20,19,0.07)]"
+                      className="group relative rounded-[15px] bg-white border border-[#D8D7CF] hover:border-[#141413] p-4 text-left transition-all cursor-pointer flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(20,20,19,0.09)]"
                     >
-                      {/* Уровень 1 и 2: Код + Фото + Название с приоритетом */}
+                      {/* Уровень 1 и 2: Код + Фото + Название + Мини-спарклайн 12 мес. */}
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2.5">
-                          <span className="font-mono text-[11px] font-bold text-[#52514C]">
-                            {actingMeta
-                              ? `WB ${actingMeta.wbSku}`
-                              : `${displayBrand} · ${mod.code}`}
-                          </span>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {modIdx < 3 && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded-[5px] font-mono text-[9.5px] font-bold shrink-0 ${
+                                  modIdx === 0
+                                    ? 'bg-[#141413] text-white'
+                                    : 'bg-[#F4F3EE] text-[#52514C] border border-[#E2E1D9]'
+                                }`}
+                              >
+                                #{modIdx + 1}
+                              </span>
+                            )}
+                            <span className="font-mono text-[11px] font-bold text-[#52514C] truncate">
+                              {actingMeta
+                                ? `WB ${actingMeta.wbSku}`
+                                : `${displayBrand} · ${mod.code}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <span
                               className={`px-2 py-0.5 rounded-[5px] text-[10px] font-bold border ${
                                 mod.launchStatus === 'Утверждено' ||
@@ -2644,20 +2818,25 @@ export function GrowthScenariosShowcase({
                           </div>
                         </div>
 
-                        <div className="relative rounded-[10px] bg-[#FAF9F6] border border-[#E6E5DD] p-2 mb-3">
-                          <BoxerPackStackSvg
-                            colors={colors}
-                            brandLabel={
-                              mod.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'
-                            }
-                            customPhotoUrl={mainGallery?.url}
-                          />
-                          <span className="absolute bottom-2 left-2 rounded-md bg-white/90 backdrop-blur-xs border border-[#DFDED7] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#3D3C37]">
+                        <div className="relative rounded-[12px] bg-[radial-gradient(circle_at_50%_40%,#FFFFFF_0%,#F3F2EC_100%)] border border-[#E6E5DD] p-2.5 mb-3 overflow-hidden">
+                          <div className="transition-transform duration-200 group-hover:scale-[1.03]">
+                            <BoxerPackStackSvg
+                              colors={colors}
+                              brandLabel={
+                                mod.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'
+                              }
+                              customPhotoUrl={mainGallery?.url}
+                            />
+                          </div>
+                          <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#141413] shadow-2xs">
                             {mod.unitsInPack} шт. · {mod.retailPriceRub.toLocaleString('ru-RU')} ₽
+                          </span>
+                          <span className="absolute bottom-2 right-2 rounded-md bg-[#141413]/85 backdrop-blur-xs px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
+                            {met.goalSharePct.toFixed(1).replace('.', ',')}%
                           </span>
                         </div>
 
-                        <div className="text-[15px] font-bold text-[#141413] group-hover:underline leading-snug">
+                        <div className="text-[15.5px] font-extrabold text-[#141413] group-hover:underline leading-snug">
                           {mod.title}
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
@@ -2678,17 +2857,36 @@ export function GrowthScenariosShowcase({
                               {priorityLabel}
                             </button>
                           ) : (
-                            <span className="shrink-0 font-mono text-[10px] font-semibold text-[#686760]">
-                              {met.goalSharePct.toFixed(1).replace('.', ',')}% плана
+                            <span className="shrink-0 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                              {met.annualPacks.toLocaleString('ru-RU')} вык./год
                             </span>
                           )}
+                        </div>
+
+                        {/* Мини-спарклайн 12 месяцев прямо внутри карточки товара */}
+                        <div className="mt-2.5 rounded-[8px] bg-[#FAF9F6] border border-[#ECEBE4] px-2.5 py-1.5 flex items-end justify-between gap-1 h-8">
+                          {met.monthlyRevenuesRub.map((mRev, mIdx) => {
+                            const hPx = Math.max(3, Math.round((mRev / maxModMonthRev) * 18));
+                            return (
+                              <div
+                                key={mIdx}
+                                style={{ height: `${hPx}px` }}
+                                title={`${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽`}
+                                className={`flex-1 rounded-[2px] ${
+                                  mIdx === 11
+                                    ? 'bg-emerald-600'
+                                    : 'bg-[#C8C7BE] group-hover:bg-[#787770]'
+                                }`}
+                              />
+                            );
+                          })}
                         </div>
                       </div>
 
                       {/* Уровень 3: Единая нижняя плашка (Выручка декабря и года слева · Степпер комплектов справа) */}
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="mt-3.5 pt-3 border-t border-[#EAE9E2] flex items-center justify-between gap-2"
+                        className="mt-3 pt-2.5 border-t border-[#EAE9E2] flex items-center justify-between gap-2"
                       >
                         <div>
                           <div className="font-mono text-[15px] font-extrabold text-[#141413] leading-tight">
@@ -2702,7 +2900,7 @@ export function GrowthScenariosShowcase({
                           </div>
                           <div className="text-[11px] text-[#686760] mt-0.5">
                             Год:{' '}
-                            <strong className="font-mono text-[#262624]">
+                            <strong className="font-mono text-[#141413]">
                               {(met.annualRevenueRub / 1_000_000)
                                 .toFixed(2)
                                 .replace('.', ',')}{' '}
