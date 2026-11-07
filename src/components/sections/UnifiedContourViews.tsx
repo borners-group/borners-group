@@ -29,6 +29,7 @@ import {
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
+import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurementMvpWorkbench';
 import { RoadmapTasksView } from '@/components/sections/ManagementAndSystemViews';
 import { FinanceView } from '@/components/sections/FinanceAndImportViews';
 
@@ -615,10 +616,10 @@ export function SalesMatrixContourView() {
 }
 
 // =============================================================================
-// 03 · ЗАКУПКИ: ПОЛНОЦЕННЫЙ РАБОЧИЙ КОНТУР ПАРТИЙ ФАБРИК, СКЛАДА, СЕБЕСТОИМОСТИ И PO
+// 03 · ЗАКУПКИ: УПРОЩЁННЫЙ 3-ЗОННЫЙ КОНТУР ПО ТЗ MVP (ЗОНА А / ЗОНА Б / ЗОНА В)
 // =============================================================================
 export function ProcurementContourView() {
-  const { tasks, currentUser, navigateTo, notify } = usePlatform();
+  const { tasks, navigateTo, notify } = usePlatform();
   const {
     orderedScenarios,
     currentScenario,
@@ -628,47 +629,12 @@ export function ProcurementContourView() {
     setIncludeGroupPortfolioInS1,
     eligibleModels,
     updateModelSpec,
-    updateModelsBatch,
   } = useLiveScenarioPortfolio();
 
   const [subTab, setSubTab] = useState<'batches' | 'crm'>('batches');
-  const [newPoOpen, setNewPoOpen] = useState(false);
-  const [newPoModelId, setNewPoModelId] = useState<string>('');
-  const [newPoFactory, setNewPoFactory] = useState<string>('');
-  const [newPoMonthIdx, setNewPoMonthIdx] = useState<number>(0);
-  const [newPoPacks, setNewPoPacks] = useState<number>(1000);
-  const [newPoCost, setNewPoCost] = useState<number>(600);
-  const [newPoStatus, setNewPoStatus] =
-    useState<ApprovedPurchaseOrder['status']>('approved');
-  const [newPoNote, setNewPoNote] = useState<string>('');
-
-  const [expandedFactoryKey, setExpandedFactoryKey] = useState<string | null>(null);
+  const [selectedSkuId, setSelectedSkuId] = useState<string>('scen-brn-001-sc');
   const [skuSearch, setSkuSearch] = useState('');
-  const [skuFilter, setSkuFilter] = useState<
-    'all' | 'deficit' | 'missing_cost' | 'covered'
-  >('all');
-  const [customOrderDrafts, setCustomOrderDrafts] = useState<
-    Record<string, { packs?: number; monthIdx?: number }>
-  >({});
-
-  // Инициализация выбранной модели в конструкторе нового PO
-  useEffect(() => {
-    if (eligibleModels.length === 0) return;
-    const found =
-      eligibleModels.find((m) => m.id === newPoModelId) || eligibleModels[0];
-    if (found && found.id !== newPoModelId) {
-      const ens = ensureModelUnifiedV11(found);
-      setNewPoModelId(ens.id);
-      setNewPoFactory(
-        ens.sharedSupplyAndFact?.factoryParams.factoryName ||
-          'Фабрика-партнёр BORNERS (КНР)'
-      );
-      setNewPoCost(ens.unitCostRub || 0);
-      setNewPoPacks(
-        Math.max(ens.sharedSupplyAndFact?.factoryParams.moqPacks || 1000, 500)
-      );
-    }
-  }, [eligibleModels, newPoModelId]);
+  const [showAllSkusTable, setShowAllSkusTable] = useState(false);
 
   const openTasksCount = useMemo(
     () => tasks.filter((t) => !t.isArchived && t.status !== 'Done').length,
@@ -677,13 +643,12 @@ export function ProcurementContourView() {
 
   const procData = useMemo(() => {
     let approvedCount = 0;
+    let approvedPacks = 0;
     let approvedRub = 0;
+    let totalOpeningPacks = 0;
     let recPacks = 0;
     let recUnits = 0;
     let recBudgetRub = 0;
-    let urgentCount = 0;
-    let deficitSkuCount = 0;
-    let missingCostSkuCount = 0;
 
     const approvedOrdersFlat: {
       model: ScenarioModelSpec;
@@ -693,212 +658,55 @@ export function ProcurementContourView() {
     const perSku = eligibleModels.map((rawM) => {
       const m = ensureModelUnifiedV11(rawM);
       const plan = computeProcurementPlan(m, currentScenario);
-      approvedCount += plan.approvedOrders.length;
-      approvedRub += plan.approvedOrders.reduce((s, o) => s + o.totalOrderRub, 0);
+      const confirmedPos = plan.approvedOrders.filter(
+        (o) => o.confirmedByFactory !== false
+      );
+      approvedCount += confirmedPos.length;
+      approvedPacks += plan.totalApprovedReceiptsPacks;
+      approvedRub += confirmedPos.reduce((s, o) => s + o.totalOrderRub, 0);
+      totalOpeningPacks += plan.netOpeningAvailablePacks;
       for (const po of plan.approvedOrders) {
         approvedOrdersFlat.push({ model: m, po });
       }
       recPacks += plan.totalRecommendedPacks;
       recUnits += plan.totalRecommendedUnits;
       recBudgetRub += plan.totalRecommendedBudgetRub || 0;
-      const skuUrgent = plan.recommendedBatches.filter(
-        (b) => b.isUrgentPastOrderDate
-      ).length;
-      urgentCount += skuUrgent;
-      if (plan.hasDeficit) deficitSkuCount += 1;
-      if (!m.unitCostRub || m.unitCostRub <= 0) missingCostSkuCount += 1;
-      return { model: m, plan, skuUrgent };
+      return { model: m, plan };
     });
-
-    const factoryGroups = groupRecommendedBatchesByFactory(
-      eligibleModels,
-      currentScenario
-    );
 
     return {
       approvedCount,
+      approvedPacks,
       approvedRub,
+      totalOpeningPacks,
       approvedOrdersFlat,
       recPacks,
       recUnits,
       recBudgetRub,
-      urgentCount,
-      deficitSkuCount,
-      missingCostSkuCount,
       perSku,
-      factoryGroups,
     };
   }, [eligibleModels, currentScenario]);
 
-  const filteredPerSku = useMemo(() => {
+  const activeSkuModel = useMemo(() => {
+    const found =
+      eligibleModels.find((m) => m.id === selectedSkuId) ||
+      eligibleModels.find((m) => m.code.toUpperCase() === 'BRN-001-SC') ||
+      eligibleModels[0];
+    return found ? ensureModelUnifiedV11(found) : null;
+  }, [eligibleModels, selectedSkuId]);
+
+  const filteredSkus = useMemo(() => {
     const q = skuSearch.trim().toLowerCase();
-    return procData.perSku.filter(({ model, plan }) => {
-      if (skuFilter === 'deficit' && !plan.hasDeficit) return false;
-      if (skuFilter === 'missing_cost' && model.unitCostRub > 0) return false;
-      if (skuFilter === 'covered' && plan.hasDeficit) return false;
-      if (!q) return true;
+    if (!q) return procData.perSku;
+    return procData.perSku.filter(({ model }) => {
       const acting = getActingSkuByWbOrVendor(model.code, model.title);
       return (
         model.code.toLowerCase().includes(q) ||
         model.title.toLowerCase().includes(q) ||
-        (acting?.wbSku || '').toLowerCase().includes(q) ||
-        (
-          model.sharedSupplyAndFact?.factoryParams.factoryName || ''
-        )
-          .toLowerCase()
-          .includes(q)
+        (acting?.wbSku || '').toLowerCase().includes(q)
       );
     });
-  }, [procData.perSku, skuSearch, skuFilter]);
-
-  const approverName = currentUser?.fullName || 'Владелец';
-
-  const handleSelectNewPoModel = (id: string) => {
-    setNewPoModelId(id);
-    const target = eligibleModels.find((m) => m.id === id);
-    if (!target) return;
-    const ens = ensureModelUnifiedV11(target);
-    const plan = computeProcurementPlan(ens, currentScenario);
-    setNewPoFactory(
-      ens.sharedSupplyAndFact?.factoryParams.factoryName ||
-        'Фабрика-партнёр BORNERS (КНР)'
-    );
-    setNewPoCost(ens.unitCostRub || 0);
-    setNewPoPacks(
-      plan.recommendedBatches[0]?.recommendedPacks ||
-        ens.sharedSupplyAndFact?.factoryParams.moqPacks ||
-        1000
-    );
-    setNewPoMonthIdx(plan.recommendedBatches[0]?.firstCoveredMonthIdx ?? 0);
-  };
-
-  const handleCreateManualPo = () => {
-    const target = eligibleModels.find((m) => m.id === newPoModelId);
-    if (!target) return;
-    const updated = createCustomPurchaseOrder(target, {
-      packsQty: newPoPacks,
-      unitCostRub: newPoCost,
-      factoryName: newPoFactory,
-      arrivalMonthIdx: newPoMonthIdx,
-      status: newPoStatus,
-      note: newPoNote,
-      author: approverName,
-      year: currentScenario.year || 2027,
-    });
-    updateModelSpec(updated);
-    setNewPoNote('');
-    setNewPoOpen(false);
-    notify(
-      'success',
-      `Создан заказ PO для ${target.code} (${newPoPacks.toLocaleString('ru-RU')} компл.)`,
-      `Приход: ${MONTHS_SHORT_RU[newPoMonthIdx]} ${currentScenario.year || 2027}`
-    );
-  };
-
-  const handleApproveFactoryGroup = (factoryName: string, orderMonthLabel: string) => {
-    const eligibleIds = new Set(eligibleModels.map((m) => m.id));
-    let createdCount = 0;
-
-    updateModelsBatch((prev) =>
-      prev.map((m) => {
-        if (!eligibleIds.has(m.id)) return m;
-        const plan = computeProcurementPlan(m, currentScenario);
-        const matching = plan.recommendedBatches.filter(
-          (b) =>
-            b.factoryName === factoryName &&
-            b.recommendedOrderDateIso.slice(0, 7) === orderMonthLabel
-        );
-        if (matching.length === 0) return m;
-        let nextM = m;
-        for (const b of matching) {
-          nextM = approveRecommendedBatch(nextM, b, approverName);
-          createdCount += 1;
-        }
-        return nextM;
-      })
-    );
-
-    if (createdCount > 0) {
-      notify(
-        'success',
-        `Утверждена сводная поставка ${factoryName} (${orderMonthLabel})`,
-        `Оформлено заказов PO: ${createdCount} шт.`
-      );
-    }
-  };
-
-  const handleApproveSkuBatches = (model: ScenarioModelSpec) => {
-    const plan = computeProcurementPlan(model, currentScenario);
-    if (plan.recommendedBatches.length === 0) return;
-
-    let nextModel = model;
-    for (const batch of plan.recommendedBatches) {
-      nextModel = approveRecommendedBatch(nextModel, batch, approverName);
-    }
-    updateModelSpec(nextModel);
-    notify(
-      'success',
-      `Утверждено ${plan.recommendedBatches.length} PO для ${model.code}`,
-      `Объём: ${plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.`
-    );
-  };
-
-  const handleCreateQuickSkuPo = (
-    model: ScenarioModelSpec,
-    packsQty: number,
-    arrivalMonthIdx: number
-  ) => {
-    const ens = ensureModelUnifiedV11(model);
-    const updated = createCustomPurchaseOrder(ens, {
-      packsQty: Math.max(1, Math.round(packsQty)),
-      unitCostRub: ens.unitCostRub || 0,
-      factoryName: ens.sharedSupplyAndFact?.factoryParams.factoryName,
-      arrivalMonthIdx,
-      author: approverName,
-      year: currentScenario.year || 2027,
-    });
-    updateModelSpec(updated);
-    notify(
-      'success',
-      `Создан заказ PO по ${model.code}: ${Math.max(1, Math.round(packsQty)).toLocaleString('ru-RU')} компл.`,
-      `Приход: ${MONTHS_SHORT_RU[arrivalMonthIdx]} ${currentScenario.year || 2027}`
-    );
-  };
-
-  const handleBulkApproveBatches = (onlyUrgent: boolean) => {
-    const eligibleIds = new Set(eligibleModels.map((m) => m.id));
-    let createdPoCount = 0;
-    let affectedSkus = 0;
-
-    updateModelsBatch((prev) =>
-      prev.map((m) => {
-        if (!eligibleIds.has(m.id)) return m;
-        const plan = computeProcurementPlan(m, currentScenario);
-        const toApprove = onlyUrgent
-          ? plan.recommendedBatches.filter((b) => b.isUrgentPastOrderDate)
-          : plan.recommendedBatches;
-        if (toApprove.length === 0) return m;
-
-        let nextM = m;
-        for (const b of toApprove) {
-          nextM = approveRecommendedBatch(nextM, b, approverName);
-          createdPoCount += 1;
-        }
-        affectedSkus += 1;
-        return nextM;
-      })
-    );
-
-    if (createdPoCount > 0) {
-      notify(
-        'success',
-        onlyUrgent
-          ? `Утверждены срочные партии: ${createdPoCount} PO (${affectedSkus} SKU)`
-          : `Утверждены все партии: ${createdPoCount} PO (${affectedSkus} SKU)`,
-        'Номера заказов PO, авансы и график прихода синхронизированы с P&L и Сводкой.'
-      );
-    }
-  };
+  }, [procData.perSku, skuSearch]);
 
   const handleExportAllPoCsv = () => {
     if (procData.approvedOrdersFlat.length === 0) {
@@ -919,19 +727,9 @@ export function ProcurementContourView() {
     );
   };
 
-  const openSkuProcurementCard = (modelId: string) => {
-    try {
-      sessionStorage.setItem('borners_open_scenario_model_id', modelId);
-      sessionStorage.setItem('borners_open_scenario_model_tab', 'procurement');
-    } catch {
-      // ignore
-    }
-    navigateTo('dashboard');
-  };
-
   return (
-    <div className="space-y-6 pb-16">
-      {/* Переключатель: Партии фабрик и PO | Операционные задачи CRM */}
+    <div className="space-y-5 pb-16">
+      {/* Переключатель: Закупки (MVP) | Задачи CRM */}
       <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12.5px] font-semibold">
           <button
@@ -943,8 +741,7 @@ export function ProcurementContourView() {
                 : 'text-[#52514C] hover:text-[#141413]'
             }`}
           >
-            Закупки, склад и заказы PO ({procData.approvedCount} PO /{' '}
-            {procData.factoryGroups.length} парт.)
+            03 · Закупки ({eligibleModels.length} SKU · {procData.approvedCount} PO)
           </button>
           <button
             type="button"
@@ -955,13 +752,31 @@ export function ProcurementContourView() {
                 : 'text-[#52514C] hover:text-[#141413]'
             }`}
           >
-            Задачи и поручения CRM ({openTasksCount})
+            Задачи CRM ({openTasksCount})
           </button>
         </div>
 
-        <span className="text-[12px] text-[#5E5D58]">
-          Прямое управление остатками, себестоимостью, фабриками и заказами PO из одной таблицы
-        </span>
+        <div className="flex flex-wrap items-center gap-3 text-[12px] text-[#4B5563]">
+          <span>
+            Всего по сценарию к заказу:{' '}
+            <strong className="font-mono text-[#111827]">
+              {procData.recPacks.toLocaleString('ru-RU')} компл.
+            </strong>{' '}
+            · Бюджет:{' '}
+            <strong className="font-mono text-[#111827]">
+              {formatMln(procData.recBudgetRub)}
+            </strong>
+          </span>
+          {procData.approvedOrdersFlat.length > 0 && (
+            <button
+              type="button"
+              onClick={handleExportAllPoCsv}
+              className="rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+            >
+              Экспорт PO (CSV · {procData.approvedOrdersFlat.length})
+            </button>
+          )}
+        </div>
       </div>
 
       {subTab === 'crm' ? (
@@ -969,498 +784,175 @@ export function ProcurementContourView() {
       ) : (
         <>
           <ScenarioContourHeader
-            stepCode="03 · Закупки · Управление поставками, складом и PO"
-            title="Заказы фабрикам (PO), остатки и себестоимость партий"
-            subtitle="Меняйте остатки, фабрику и себестоимость прямо в таблице, создавайте собственные заказы PO или утверждайте сводные поставки."
+            stepCode="03 · Закупки (Версия MVP · 3 зоны)"
+            title="Планирование закупок по плану продаж"
+            subtitle="Выберите модель и управляйте остатками, ценой закупки, циклом поставки и квартальными партиями в одном окне."
             selectedScenarioId={selectedScenarioId}
             orderedScenarios={orderedScenarios}
             onSelectScenario={setSelectedScenarioId}
             includeGroupPortfolioInS1={includeGroupPortfolioInS1}
             onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
             eligibleCount={eligibleModels.length}
-            rightSlot={
-              <>
-                <button
-                  type="button"
-                  onClick={() => setNewPoOpen((v) => !v)}
-                  className={`h-9 px-3.5 rounded-[9px] text-[12px] font-semibold border-[1.5px] transition cursor-pointer ${
-                    newPoOpen
-                      ? 'bg-white text-[#141413] border-[#141413]'
-                      : 'bg-[#141413] hover:bg-[#2A2A28] text-white border-[#141413]'
-                  }`}
-                >
-                  {newPoOpen ? 'Скрыть форму PO' : '+ Новый заказ фабрике (PO)'}
-                </button>
-
-                {procData.urgentCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => handleBulkApproveBatches(true)}
-                    className="h-9 px-3.5 rounded-[9px] bg-[#FFF7ED] hover:bg-[#FFEDD5] border-[1.5px] border-[#F59E0B] text-[12px] font-bold text-[#9A3412] transition cursor-pointer"
-                  >
-                    Утвердить срочные ({procData.urgentCount})
-                  </button>
-                )}
-
-                {procData.recPacks > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => handleBulkApproveBatches(false)}
-                    className="h-9 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[#141413] text-[12px] font-semibold transition cursor-pointer"
-                  >
-                    Утвердить все расчётные партии
-                  </button>
-                )}
-
-                {procData.approvedCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleExportAllPoCsv}
-                    className="h-9 px-3.5 rounded-[9px] bg-white hover:bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[#141413] text-[12px] font-semibold transition cursor-pointer"
-                  >
-                    Экспорт PO (CSV · {procData.approvedCount})
-                  </button>
-                )}
-              </>
-            }
           />
 
-          {/* КОНСТРУКТОР НОВОГО ЗАКАЗА ФАБРИКЕ PO НА УРОВНЕ РАЗДЕЛА 03 · ЗАКУПКИ */}
-          {newPoOpen && (
-            <section className="rounded-[18px] bg-[#F7F7F4] border-[1.5px] border-[#141413] p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                    Ручное размещение заказа фабрике
-                  </div>
-                  <h2 className="text-[17px] font-bold text-[#141413]">
-                    Создать заказ PO на любой артикул и месяц поставки
-                  </h2>
-                </div>
-                <div className="text-[13px] font-bold text-[#141413]">
-                  Сумма заказа:{' '}
-                  <span className="font-mono">
-                    {(Math.max(1, newPoPacks) * Math.max(0, newPoCost)).toLocaleString(
-                      'ru-RU'
-                    )}{' '}
-                    ₽
-                  </span>
-                </div>
+          {/* Компактный выбор модели SKU для работы в 3-зонном интерфейсе */}
+          <div className="rounded-xl border border-[#DFE4EC] bg-white p-3.5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] font-bold text-[#111827]">
+                  Модель для расчёта закупок:
+                </span>
+                <select
+                  aria-label="Выбор модели для закупок"
+                  value={activeSkuModel?.id || ''}
+                  onChange={(e) => setSelectedSkuId(e.target.value)}
+                  className="rounded-lg border border-[#111827] bg-[#F9FAFB] px-3 py-1.5 text-[13px] font-bold text-[#111827]"
+                >
+                  {eligibleModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.code} · {m.title} ({m.unitsInPack} изд./компл.)
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
-                <label className="space-y-1 lg:col-span-2">
-                  <span className="text-[#5E5D58] font-medium block">
-                    Артикул SKU / Модель
-                  </span>
-                  <select
-                    value={newPoModelId}
-                    onChange={(e) => handleSelectNewPoModel(e.target.value)}
-                    className="h-9 w-full rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 font-semibold text-[#141413] outline-none"
-                  >
-                    {eligibleModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.code} — {m.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <input
+                type="text"
+                value={skuSearch}
+                onChange={(e) => setSkuSearch(e.target.value)}
+                placeholder="Быстрый фильтр по артикулу или названию..."
+                className="w-full sm:w-64 rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-3 py-1.5 text-[12px] text-[#111827] focus:border-[#111827] focus:bg-white focus:outline-none"
+              />
+            </div>
 
-                <label className="space-y-1">
-                  <span className="text-[#5E5D58] font-medium block">Фабрика</span>
-                  <input
-                    type="text"
-                    value={newPoFactory}
-                    onChange={(e) => setNewPoFactory(e.target.value)}
-                    placeholder="Название фабрики"
-                    className="h-9 w-full rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 font-semibold text-[#141413] outline-none"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5E5D58] font-medium block">Месяц прихода</span>
-                  <select
-                    value={newPoMonthIdx}
-                    onChange={(e) => setNewPoMonthIdx(Number(e.target.value))}
-                    className="h-9 w-full rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2 font-semibold text-[#141413] outline-none"
-                  >
-                    {MONTHS_SHORT_RU.map((mName, idx) => (
-                      <option key={mName} value={idx}>
-                        {mName} {currentScenario.year || 2027}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5E5D58] font-medium block">
-                    Партия (компл.)
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    step={50}
-                    value={newPoPacks}
-                    onChange={(e) =>
-                      setNewPoPacks(Math.max(1, Math.round(Number(e.target.value) || 1)))
-                    }
-                    className="h-9 w-full rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 font-semibold text-[#141413] outline-none"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5E5D58] font-medium block">
-                    Себест. (₽/компл.)
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    value={newPoCost}
-                    onChange={(e) =>
-                      setNewPoCost(Math.max(0, Math.round(Number(e.target.value) || 0)))
-                    }
-                    className="h-9 w-full rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 font-semibold text-[#141413] outline-none"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[260px]">
-                  <select
-                    value={newPoStatus}
-                    onChange={(e) =>
-                      setNewPoStatus(
-                        e.target.value as ApprovedPurchaseOrder['status']
-                      )
-                    }
-                    className="h-9 rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[12px] font-semibold text-[#141413] outline-none"
-                  >
-                    {(
-                      Object.keys(
-                        PO_STATUS_LABELS_RU
-                      ) as ApprovedPurchaseOrder['status'][]
-                    ).map((st) => (
-                      <option key={st} value={st}>
-                        {PO_STATUS_LABELS_RU[st]}
-                      </option>
-                    ))}
-                  </select>
-
-                  <input
-                    type="text"
-                    value={newPoNote}
-                    onChange={(e) => setNewPoNote(e.target.value)}
-                    placeholder="Комментарий к поставке (упаковка, транш, условия оплаты)..."
-                    className="h-9 flex-1 rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-3 text-[12px] text-[#141413] outline-none"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
+            {/* Компактная лента пилюль моделей */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              {filteredSkus.map(({ model: m, plan }) => {
+                const isSelected = activeSkuModel?.id === m.id;
+                return (
                   <button
+                    key={m.id}
                     type="button"
-                    onClick={() => setNewPoOpen(false)}
-                    className="h-9 px-3 rounded-[8px] bg-white border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#5E5D58] hover:text-[#141413] cursor-pointer"
+                    onClick={() => setSelectedSkuId(m.id)}
+                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-left text-[11px] transition ${
+                      isSelected
+                        ? 'border-[#111827] bg-[#111827] text-white'
+                        : 'border-[#E5E7EB] bg-[#F9FAFB] text-[#374151] hover:border-[#9CA3AF] hover:bg-white'
+                    }`}
                   >
-                    Отмена
+                    <div className="font-bold">{m.title}</div>
+                    <div
+                      className={`font-mono text-[10px] ${
+                        isSelected ? 'text-gray-300' : 'text-[#6B7280]'
+                      }`}
+                    >
+                      К заказу: {plan.totalRecommendedPacks.toLocaleString('ru-RU')} к.
+                      {plan.approvedOrders.length > 0 && ` · PO: ${plan.approvedOrders.length}`}
+                    </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateManualPo}
-                    className="h-9 px-4 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer"
-                  >
-                    Оформить заказ PO
-                  </button>
-                </div>
-              </div>
-            </section>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ГЛАВНЫЙ 3-ЗОННЫЙ ИНТЕРФЕЙС ЗАКУПОК (ЗОНА А / ЗОНА Б / ЗОНА В) */}
+          {activeSkuModel && (
+            <SkuProcurementMvpWorkbench
+              model={activeSkuModel}
+              currentScenario={currentScenario}
+              onUpdateModel={updateModelSpec}
+              onNotify={(title, message, type = 'success') => notify(type, title, message)}
+              onOpenSalesMatrix={() => navigateTo('launch-calendar')}
+            />
           )}
 
-          {/* 4 СВОДНЫХ KPI КОНТУРА ЗАКУПОК */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Рекомендовано к заказу
-              </div>
-              <div className="text-[23px] font-bold text-[#141413]">
-                {procData.recPacks.toLocaleString('ru-RU')} компл.
-              </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                {procData.recUnits.toLocaleString('ru-RU')} физ. изделий
-              </div>
-            </div>
-
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Бюджет к размещению
-              </div>
-              <div className="text-[23px] font-bold text-[#141413]">
-                {formatMln(procData.recBudgetRub)}
-              </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                Авансы: {formatMln(procData.recBudgetRub * 0.3)}
-                {procData.missingCostSkuCount > 0
-                  ? ` · без себест.: ${procData.missingCostSkuCount} SKU`
-                  : ''}
-              </div>
-            </div>
-
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Оформленные заказы PO
-              </div>
-              <div className="text-[23px] font-bold text-[#157347]">
-                {procData.approvedCount} шт.
-              </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                На сумму: {formatMln(procData.approvedRub)}
-              </div>
-            </div>
-
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Контроль дефицита и сроков
-              </div>
-              <div className="text-[23px] font-bold text-[#141413]">
-                {procData.deficitSkuCount} SKU без PO
-              </div>
-              <div
-                className={`text-[11.5px] font-semibold ${
-                  procData.urgentCount > 0 ? 'text-[#B45309]' : 'text-[#157347]'
-                }`}
-              >
-                {procData.urgentCount > 0
-                  ? `Срочные партии: ${procData.urgentCount}`
-                  : 'Просроченных размещений нет'}
-              </div>
-            </div>
-          </section>
-
-          {/* РЕЕСТР ЗАКАЗОВ PO (ВСЕГДА ВИДЕН И ПОЛНОСТЬЮ РЕДАКТИРУЕМ ИНЛАЙН) */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
+          {/* Свернутая по умолчанию сводная таблица по всем SKU портфеля */}
+          <div className="rounded-xl border border-[#DFE4EC] bg-white px-4 py-3 shadow-2xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                  Реестр заказов фабрикам · Инлайн-управление PO
-                </div>
-                <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                  Действующие заказы PO ({procData.approvedOrdersFlat.length} шт. ·{' '}
-                  {formatMln(procData.approvedRub)})
-                </h2>
+              <div className="text-[12px] font-semibold text-[#374151]">
+                Сводка закупок по всем моделям сценария ({procData.perSku.length} SKU): к заказу{' '}
+                <strong className="font-mono text-[#111827]">
+                  {procData.recPacks.toLocaleString('ru-RU')} компл.
+                </strong>{' '}
+                на бюджет{' '}
+                <strong className="font-mono text-[#111827]">
+                  {formatMln(procData.recBudgetRub)}
+                </strong>
+                {' · '}остаток на складе{' '}
+                <strong className="font-mono text-[#111827]">
+                  {procData.totalOpeningPacks.toLocaleString('ru-RU')} компл.
+                </strong>
+                {' · '}подтверждённые PO{' '}
+                <strong className="font-mono text-[#111827]">
+                  {procData.approvedPacks.toLocaleString('ru-RU')} компл.
+                </strong>
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewPoOpen(true)}
-                  className="h-8.5 px-3 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer"
-                >
-                  + Добавить заказ PO
-                </button>
-                {procData.approvedOrdersFlat.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleExportAllPoCsv}
-                    className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] cursor-pointer"
-                  >
-                    Скачать CSV
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllSkusTable((v) => !v)}
+                className="rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-3 py-1.5 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+              >
+                {showAllSkusTable
+                  ? 'Скрыть сводку по всем SKU ▴'
+                  : `Показать сводку по всем SKU (${procData.perSku.length}) ▾`}
+              </button>
             </div>
 
-            {procData.approvedOrdersFlat.length === 0 ? (
-              <div className="rounded-[12px] bg-[#F7F7F4] border border-dashed border-[#CECDC4] px-4 py-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-[#5E5D58]">
-                <span>
-                  Пока нет оформленных заказов PO. Нажмите «+ Добавить заказ PO», утвердите сводную поставку фабрики ниже или создайте заказ прямо в строке нужного SKU.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setNewPoOpen(true)}
-                  className="h-8 px-3 rounded-[8px] bg-white border-[1.5px] border-[#141413] text-[12px] font-bold text-[#141413] cursor-pointer"
-                >
-                  Оформить первый PO →
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
-                <table className="w-full text-left border-collapse text-[12px]">
+            {showAllSkusTable && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
                   <thead>
-                    <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                      <th className="py-2.5 px-3 font-bold">Номер PO</th>
-                      <th className="py-2.5 px-3 font-bold">Статус</th>
-                      <th className="py-2.5 px-3 font-bold">SKU / Модель</th>
-                      <th className="py-2.5 px-3 font-bold">Фабрика</th>
-                      <th className="py-2.5 px-3 font-bold">Приход</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Комплектов</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Цена ₽/к.</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Сумма PO</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Действие</th>
+                    <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-[11px] text-[#6B7280]">
+                      <th className="py-2 pr-3 pl-2 font-semibold">Модель / SKU</th>
+                      <th className="px-2 py-2 text-right font-semibold">План продаж</th>
+                      <th className="px-2 py-2 text-right font-semibold">Остаток</th>
+                      <th className="px-2 py-2 text-right font-semibold">Подтв. PO</th>
+                      <th className="px-2 py-2 text-right font-semibold">К заказу</th>
+                      <th className="px-2 py-2 text-right font-semibold">Бюджет</th>
+                      <th className="py-2 pr-2 pl-2 text-right font-semibold">Действие</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E4E3DC]">
-                    {procData.approvedOrdersFlat.map(({ model, po }) => (
-                      <tr key={po.id} className="hover:bg-[#FAFAF7]">
-                        <td className="py-2 px-3 font-mono font-bold text-[#141413] whitespace-nowrap">
-                          <div>{po.orderNumber}</div>
-                          <div className="text-[10px] text-[#686762] font-normal">
-                            заказ {po.orderPlacementDateIso}
+                  <tbody className="divide-y divide-[#E5E7EB]">
+                    {procData.perSku.map(({ model: m, plan }) => (
+                      <tr
+                        key={m.id}
+                        className={`hover:bg-[#F9FAFB] ${
+                          activeSkuModel?.id === m.id ? 'bg-[#F3F4F6]/60' : ''
+                        }`}
+                      >
+                        <td className="py-2 pr-3 pl-2">
+                          <div className="font-bold text-[#111827]">{m.title}</div>
+                          <div className="font-mono text-[10.5px] text-[#6B7280]">
+                            {m.code} · {m.unitsInPack} изд./компл.
                           </div>
                         </td>
-                        <td className="py-2 px-3">
-                          <select
-                            value={po.status}
-                            onChange={(e) => {
-                              const st = e.target
-                                .value as ApprovedPurchaseOrder['status'];
-                              updateModelSpec(
-                                updateApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  { status: st },
-                                  approverName,
-                                  currentScenario.year || 2027
-                                )
-                              );
-                            }}
-                            className="h-7.5 px-2 rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] text-[11.5px] font-semibold text-[#141413] outline-none cursor-pointer"
-                          >
-                            {(
-                              Object.keys(
-                                PO_STATUS_LABELS_RU
-                              ) as ApprovedPurchaseOrder['status'][]
-                            ).map((st) => (
-                              <option key={st} value={st}>
-                                {PO_STATUS_LABELS_RU[st]}
-                              </option>
-                            ))}
-                          </select>
+                        <td className="px-2 py-2 text-right font-mono">
+                          {plan.annualDemandPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="py-2 px-3">
-                          <button
-                            type="button"
-                            onClick={() => openSkuProcurementCard(model.id)}
-                            className="font-bold text-[#141413] hover:underline text-left cursor-pointer"
-                          >
-                            {model.title}
-                          </button>
-                          <div className="font-mono text-[10.5px] text-[#5E5D58]">
-                            {model.code} · {po.physicalUnitsQty.toLocaleString('ru-RU')} изд.
-                          </div>
+                        <td className="px-2 py-2 text-right font-mono">
+                          {plan.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={po.factoryName}
-                            onChange={(e) =>
-                              updateModelSpec(
-                                updateApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  { factoryName: e.target.value },
-                                  approverName,
-                                  currentScenario.year || 2027
-                                )
-                              )
-                            }
-                            className="h-7.5 w-[170px] rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 font-medium text-[#141413] outline-none"
-                          />
+                        <td className="px-2 py-2 text-right font-mono text-emerald-700">
+                          {plan.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="py-2 px-3">
-                          <select
-                            value={po.arrivalMonthIdx}
-                            onChange={(e) =>
-                              updateModelSpec(
-                                updateApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  { arrivalMonthIdx: Number(e.target.value) },
-                                  approverName,
-                                  currentScenario.year || 2027
-                                )
-                              )
-                            }
-                            className="h-7.5 rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 font-semibold text-[#141413] outline-none"
-                          >
-                            {MONTHS_SHORT_RU.map((mName, idx) => (
-                              <option key={mName} value={idx}>
-                                {mName} {currentScenario.year || 2027}
-                              </option>
-                            ))}
-                          </select>
+                        <td className="px-2 py-2 text-right font-mono font-bold text-[#111827]">
+                          {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="py-2 px-3 text-right">
-                          <input
-                            type="number"
-                            min={1}
-                            step={50}
-                            value={po.packsQty}
-                            onChange={(e) =>
-                              updateModelSpec(
-                                updateApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  {
-                                    packsQty: Math.max(
-                                      1,
-                                      Math.round(Number(e.target.value) || 1)
-                                    ),
-                                  },
-                                  approverName,
-                                  currentScenario.year || 2027
-                                )
-                              )
-                            }
-                            className="h-7.5 w-[88px] rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 text-right font-mono font-semibold text-[#141413] outline-none"
-                          />
+                        <td className="px-2 py-2 text-right font-mono font-semibold text-[#111827]">
+                          {plan.totalRecommendedBudgetRub !== null
+                            ? formatMln(plan.totalRecommendedBudgetRub)
+                            : '—'}
                         </td>
-                        <td className="py-2 px-3 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            step={10}
-                            value={po.lockedUnitCostRub}
-                            onChange={(e) =>
-                              updateModelSpec(
-                                updateApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  {
-                                    lockedUnitCostRub: Math.max(
-                                      0,
-                                      Math.round(Number(e.target.value) || 0)
-                                    ),
-                                  },
-                                  approverName,
-                                  currentScenario.year || 2027
-                                )
-                              )
-                            }
-                            className="h-7.5 w-[82px] rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 text-right font-mono font-semibold text-[#141413] outline-none"
-                          />
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-[#141413] whitespace-nowrap">
-                          <div>{po.totalOrderRub.toLocaleString('ru-RU')} ₽</div>
-                          <div className="text-[10px] font-normal text-[#5E5D58]">
-                            аванс {po.prepaymentRub.toLocaleString('ru-RU')} ₽
-                          </div>
-                        </td>
-                        <td className="py-2 px-3 text-right whitespace-nowrap">
+                        <td className="py-2 pr-2 pl-2 text-right">
                           <button
                             type="button"
                             onClick={() => {
-                              updateModelSpec(
-                                removeApprovedPurchaseOrder(
-                                  model,
-                                  po.id,
-                                  approverName
-                                )
-                              );
-                              notify('warning', `Заказ ${po.orderNumber} удалён`);
+                              setSelectedSkuId(m.id);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
-                            className="h-7.5 px-2.5 rounded-[6px] bg-white hover:bg-[#FEF2F2] border border-[#CECDC4] hover:border-[#FCA5A5] text-[11px] font-semibold text-[#B91C1C] cursor-pointer"
+                            className="rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#111827] hover:text-white"
                           >
-                            Удалить
+                            Открыть расчёт
                           </button>
                         </td>
                       </tr>
@@ -1469,420 +961,7 @@ export function ProcurementContourView() {
                 </table>
               </div>
             )}
-          </section>
-
-          {/* 01 · СВОДНЫЕ ПАРТИИ ПО ФАБРИКАМ С РАСКРЫТИЕМ СОСТАВА И УТВЕРЖДЕНИЕМ В 1 КЛИК */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
-            <div>
-              <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                01 · Календарь размещения на фабриках
-              </div>
-              <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                Сводные рекомендованные поставки по фабрикам ({procData.factoryGroups.length})
-              </h2>
-            </div>
-
-            {procData.factoryGroups.length === 0 ? (
-              <div className="rounded-[12px] bg-[#EAF6F0] border border-[#BBE5CE] px-4 py-4 text-[13px] font-semibold text-[#157347]">
-                Все товарные потребности выбранного сценария полностью покрыты начальным остатком и утверждёнными заказами PO.
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
-                <table className="w-full text-left border-collapse text-[12.5px]">
-                  <thead>
-                    <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                      <th className="py-2.5 px-3.5 font-bold">Месяц заказа</th>
-                      <th className="py-2.5 px-3.5 font-bold">Фабрика</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Позиций</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Комплектов</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Физ. изделий</th>
-                      <th className="py-2.5 px-3 font-bold text-right">Бюджет партии</th>
-                      <th className="py-2.5 px-3.5 font-bold text-right">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E4E3DC]">
-                    {procData.factoryGroups.map((grp) => {
-                      const fKey = `${grp.factoryName}__${grp.orderMonthLabel}`;
-                      const isExp = expandedFactoryKey === fKey;
-                      return (
-                        <React.Fragment key={fKey}>
-                          <tr className="hover:bg-[#FAFAF7]">
-                            <td className="py-2.5 px-3.5 font-mono font-bold text-[#141413]">
-                              {grp.orderMonthLabel}
-                            </td>
-                            <td className="py-2.5 px-3.5 font-semibold text-[#141413]">
-                              {grp.factoryName}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedFactoryKey(isExp ? null : fKey)
-                                }
-                                className="px-2 py-0.5 rounded bg-[#F5F5F1] border border-[#CECDC4] hover:border-[#141413] text-[11px] font-semibold text-[#141413] cursor-pointer"
-                              >
-                                {grp.itemsCount} SKU {isExp ? '▲' : '▼'}
-                              </button>
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-semibold">
-                              {grp.totalPacks.toLocaleString('ru-RU')} компл.
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-[#5E5D58]">
-                              {grp.totalPhysicalUnits.toLocaleString('ru-RU')} изд.
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-bold text-[#141413]">
-                              <div>{grp.totalBudgetRub.toLocaleString('ru-RU')} ₽</div>
-                              <div className="text-[10.5px] font-normal text-[#5E5D58]">
-                                аванс {Math.round(grp.totalBudgetRub * 0.3).toLocaleString('ru-RU')} ₽
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleApproveFactoryGroup(
-                                    grp.factoryName,
-                                    grp.orderMonthLabel
-                                  )
-                                }
-                                className="h-8 px-3 rounded-[7px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[11.5px] font-semibold transition cursor-pointer"
-                              >
-                                Утвердить поставку в PO
-                              </button>
-                            </td>
-                          </tr>
-                          {isExp && (
-                            <tr className="bg-[#F7F7F4]">
-                              <td colSpan={7} className="px-4 py-3">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-[11.5px]">
-                                  {grp.lines.map((ln, idx) => (
-                                    <div
-                                      key={`${ln.modelId}-${idx}`}
-                                      className="rounded-[9px] bg-white border border-[#CECDC4] px-3 py-2 flex items-center justify-between gap-2"
-                                    >
-                                      <div className="min-w-0">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            openSkuProcurementCard(ln.modelId)
-                                          }
-                                          className="font-bold text-[#141413] hover:underline truncate block text-left cursor-pointer"
-                                        >
-                                          {ln.title}
-                                        </button>
-                                        <div className="font-mono text-[10.5px] text-[#5E5D58]">
-                                          {ln.skuCode} · склад к {ln.requiredArrivalDateIso}
-                                        </div>
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        <div className="font-bold text-[#141413]">
-                                          {ln.recommendedPacks.toLocaleString('ru-RU')} к.
-                                        </div>
-                                        <div className="text-[10.5px] text-[#5E5D58]">
-                                          {ln.estimatedTotalRub > 0
-                                            ? `${ln.estimatedTotalRub.toLocaleString('ru-RU')} ₽`
-                                            : 'цена 0 ₽'}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* 02 · ИНТЕРАКТИВНАЯ МАТРИЦА ПО КАЖДОМУ SKU: ПРЯМОЕ РЕДАКТИРОВАНИЕ ФАБРИКИ, СКЛАДА, СЕБЕСТОИМОСТИ И БЫСТРЫЙ ЗАКАЗ PO */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                  02 · Рабочая таблица снабжения по артикулам
-                </div>
-                <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                  Остатки, себестоимость, фабрики и быстрый выпуск PO ({filteredPerSku.length} из{' '}
-                  {procData.perSku.length} мод.)
-                </h2>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={skuSearch}
-                  onChange={(e) => setSkuSearch(e.target.value)}
-                  placeholder="Поиск SKU, WB, фабрики..."
-                  className="h-8.5 w-[210px] rounded-[8px] bg-[#F5F5F1] focus:bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-3 text-[12px] text-[#141413] outline-none"
-                />
-
-                <div className="inline-flex rounded-[8px] bg-[#EFEFE9] border border-[#CECDC4] p-0.5 text-[11.5px] font-semibold">
-                  {(
-                    [
-                      ['all', `Все (${procData.perSku.length})`],
-                      ['deficit', `Дефицит (${procData.deficitSkuCount})`],
-                      [
-                        'missing_cost',
-                        `Без себест. (${procData.missingCostSkuCount})`,
-                      ],
-                      [
-                        'covered',
-                        `Обеспечены (${
-                          procData.perSku.length - procData.deficitSkuCount
-                        })`,
-                      ],
-                    ] as const
-                  ).map(([fKey, label]) => (
-                    <button
-                      key={fKey}
-                      type="button"
-                      onClick={() => setSkuFilter(fKey)}
-                      className={`h-7 px-2.5 rounded-[6px] transition cursor-pointer ${
-                        skuFilter === fKey
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#52514C] hover:text-[#141413]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
-              <table className="w-full text-left border-collapse text-[12px]">
-                <thead>
-                  <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                    <th className="py-2.5 px-3 font-bold">SKU / Модель</th>
-                    <th className="py-2.5 px-2.5 font-bold">Фабрика</th>
-                    <th className="py-2.5 px-2.5 font-bold text-right">На складе</th>
-                    <th className="py-2.5 px-2.5 font-bold text-right">Себест. ₽/к.</th>
-                    <th className="py-2.5 px-2.5 font-bold text-right">План 2027</th>
-                    <th className="py-2.5 px-2.5 font-bold">Статус</th>
-                    <th className="py-2.5 px-3 font-bold text-right">
-                      Партия к заказу и выпуск PO
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E4E3DC]">
-                  {filteredPerSku.map(({ model, plan, skuUrgent }) => {
-                    const acting = getActingSkuByWbOrVendor(model.code, model.title);
-                    const shared = model.sharedSupplyAndFact!;
-                    const draft = customOrderDrafts[model.id] || {};
-                    const defaultPacks =
-                      plan.recommendedBatches[0]?.recommendedPacks ||
-                      shared.factoryParams.moqPacks ||
-                      1000;
-                    const defaultMonthIdx =
-                      plan.recommendedBatches[0]?.firstCoveredMonthIdx ?? 0;
-                    const orderPacks = draft.packs ?? defaultPacks;
-                    const orderMonthIdx = draft.monthIdx ?? defaultMonthIdx;
-
-                    return (
-                      <tr key={model.id} className="hover:bg-[#FAFAF7] transition">
-                        <td className="py-2.5 px-3">
-                          <button
-                            type="button"
-                            onClick={() => openSkuProcurementCard(model.id)}
-                            title="Открыть вкладку «03 · Закупки» внутри паспорта этого SKU"
-                            className="font-bold text-[#141413] hover:underline text-left cursor-pointer"
-                          >
-                            {model.title}
-                          </button>
-                          <div className="font-mono text-[10.5px] text-[#5E5D58] flex items-center gap-1.5">
-                            <span>
-                              {acting ? `WB ${acting.wbSku}` : model.code} ·{' '}
-                              {model.unitsInPack} изд./компл.
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => openSkuProcurementCard(model.id)}
-                              className="text-[#141413] font-sans font-semibold underline cursor-pointer"
-                            >
-                              Карточка →
-                            </button>
-                          </div>
-                        </td>
-
-                        <td className="py-2.5 px-2.5">
-                          <input
-                            type="text"
-                            value={shared.factoryParams.factoryName}
-                            onChange={(e) =>
-                              updateModelSpec({
-                                ...model,
-                                sharedSupplyAndFact: {
-                                  ...shared,
-                                  factoryParams: {
-                                    ...shared.factoryParams,
-                                    factoryName: e.target.value,
-                                  },
-                                },
-                              })
-                            }
-                            className="h-8 w-[165px] rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 text-[11.5px] font-medium text-[#141413] outline-none"
-                          />
-                        </td>
-
-                        <td className="py-2.5 px-2.5 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            step={50}
-                            value={shared.actualOpeningStockPacks}
-                            onChange={(e) =>
-                              updateModelSpec({
-                                ...model,
-                                sharedSupplyAndFact: {
-                                  ...shared,
-                                  actualOpeningStockPacks: Math.max(
-                                    0,
-                                    Math.round(Number(e.target.value) || 0)
-                                  ),
-                                },
-                              })
-                            }
-                            className="h-8 w-[82px] rounded-[7px] bg-white border border-[#CECDC4] focus:border-[#141413] px-2 text-right font-mono font-semibold text-[#141413] outline-none"
-                          />
-                        </td>
-
-                        <td className="py-2.5 px-2.5 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            step={10}
-                            value={model.unitCostRub || 0}
-                            onChange={(e) => {
-                              const nextCost = Math.max(
-                                0,
-                                Math.round(Number(e.target.value) || 0)
-                              );
-                              updateModelSpec({
-                                ...model,
-                                unitCostRub: nextCost,
-                                sharedSupplyAndFact: {
-                                  ...shared,
-                                  costStatus: nextCost > 0 ? 'plan' : 'not_filled',
-                                },
-                              });
-                            }}
-                            className={`h-8 w-[82px] rounded-[7px] border px-2 text-right font-mono font-semibold outline-none ${
-                              model.unitCostRub > 0
-                                ? 'bg-white border-[#CECDC4] focus:border-[#141413] text-[#141413]'
-                                : 'bg-[#FFFBEB] border-[#F59E0B] text-[#92400E]'
-                            }`}
-                          />
-                        </td>
-
-                        <td className="py-2.5 px-2.5 text-right font-mono">
-                          <div className="font-semibold text-[#141413]">
-                            {plan.annualDemandPacks.toLocaleString('ru-RU')} к.
-                          </div>
-                          {plan.totalApprovedReceiptsPacks > 0 && (
-                            <div className="text-[10px] text-[#157347] font-bold">
-                              PO: +{plan.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} к.
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-2.5 px-2.5">
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded-[6px] text-[10.5px] font-bold border ${
-                              !plan.hasDeficit
-                                ? 'bg-[#EAF6F0] text-[#157347] border-[#BBE5CE]'
-                                : skuUrgent > 0
-                                ? 'bg-[#FFF7ED] text-[#B45309] border-[#FCD34D]'
-                                : 'bg-[#F3F3EE] text-[#3F3E3A] border-[#D8D7CF]'
-                            }`}
-                          >
-                            {!plan.hasDeficit
-                              ? `Обеспечено (${plan.approvedOrders.length} PO)`
-                              : `Дефицит ${plan.totalDeficitPacks.toLocaleString('ru-RU')} к.`}
-                          </span>
-                        </td>
-
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                          <div className="inline-flex items-center justify-end gap-1.5">
-                            <input
-                              type="number"
-                              min={1}
-                              step={50}
-                              value={orderPacks}
-                              onChange={(e) =>
-                                setCustomOrderDrafts((prev) => ({
-                                  ...prev,
-                                  [model.id]: {
-                                    ...prev[model.id],
-                                    packs: Math.max(
-                                      1,
-                                      Math.round(Number(e.target.value) || 1)
-                                    ),
-                                  },
-                                }))
-                              }
-                              title="Количество комплектов для заказа PO"
-                              className="h-8 w-[80px] rounded-[7px] bg-[#F7F7F4] border border-[#CECDC4] focus:border-[#141413] px-2 text-right font-mono text-[11.5px] font-semibold text-[#141413] outline-none"
-                            />
-                            <select
-                              value={orderMonthIdx}
-                              onChange={(e) =>
-                                setCustomOrderDrafts((prev) => ({
-                                  ...prev,
-                                  [model.id]: {
-                                    ...prev[model.id],
-                                    monthIdx: Number(e.target.value),
-                                  },
-                                }))
-                              }
-                              title="Месяц прихода партии на склад"
-                              className="h-8 rounded-[7px] bg-[#F7F7F4] border border-[#CECDC4] focus:border-[#141413] px-1.5 text-[11.5px] font-semibold text-[#141413] outline-none"
-                            >
-                              {MONTHS_SHORT_RU.map((mName, idx) => (
-                                <option key={mName} value={idx}>
-                                  {mName}
-                                </option>
-                              ))}
-                            </select>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleCreateQuickSkuPo(
-                                  model,
-                                  orderPacks,
-                                  orderMonthIdx
-                                )
-                              }
-                              className="h-8 px-2.5 rounded-[7px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[11px] font-semibold transition cursor-pointer"
-                            >
-                              + В PO
-                            </button>
-
-                            {plan.recommendedBatches.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleApproveSkuBatches(model)}
-                                title="Утвердить сразу все расчётные партии года по этому SKU"
-                                className="h-8 px-2.5 rounded-[7px] bg-[#F5F5F1] hover:bg-white border border-[#CECDC4] hover:border-[#141413] text-[#141413] text-[11px] font-semibold transition cursor-pointer"
-                              >
-                                Все ({plan.recommendedBatches.length})
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          </div>
         </>
       )}
     </div>

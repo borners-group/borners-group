@@ -43,6 +43,30 @@ export const GALLERY_CATEGORY_LABELS_RU: Record<GalleryCategoryV11, string> = {
   video: 'Видео',
 };
 
+export type ModelScalingStage = 'hypothesis' | 'test' | 'scaling';
+
+export const MODEL_SCALING_STAGE_LABELS_RU: Record<ModelScalingStage, string> = {
+  hypothesis: 'Гипотеза',
+  test: 'Тест',
+  scaling: 'Масштабирование',
+};
+
+export interface CustomBatchPeriodDef {
+  id: string;
+  startMonthIdx: number; // 0..11
+  endMonthIdx: number; // 0..11 (>= startMonthIdx)
+  customPacksQty?: number | null; // ручная корректировка количества комплектов до утверждения
+  customOrderDateIso?: string | null; // ручная корректировка даты заказа до утверждения
+  customSizeSharesPct?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> | null; // ручная корректировка долей % для конкретной партии
+}
+
+export const DEFAULT_QUARTERLY_BATCH_PERIODS: CustomBatchPeriodDef[] = [
+  { id: 'q1', startMonthIdx: 0, endMonthIdx: 2 },
+  { id: 'q2', startMonthIdx: 3, endMonthIdx: 5 },
+  { id: 'q3', startMonthIdx: 6, endMonthIdx: 8 },
+  { id: 'q4', startMonthIdx: 9, endMonthIdx: 11 },
+];
+
 export interface FactoryProcurementParams {
   factoryName: string;
   moqPacks: number; // MOQ в комплектах
@@ -57,6 +81,7 @@ export interface FactoryProcurementParams {
   balancePaymentPct: number; // доплата % перед отгрузкой
   currency: 'RUB' | 'CNY' | 'USD';
   sizeSharesPct: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
+  customBatchPeriods?: CustomBatchPeriodDef[];
 }
 
 export interface ApprovedPurchaseOrder {
@@ -64,10 +89,13 @@ export interface ApprovedPurchaseOrder {
   orderNumber: string; // например PO-2027-001
   version: number;
   status: 'approved' | 'in_production' | 'in_transit' | 'received';
+  confirmedByFactory?: boolean; // по умолчанию true; если false — не считается гарантированным поступлением (Раздел 12 ТЗ)
   factoryName: string;
   approvedAt: string;
   approvedBy: string;
   arrivalMonthIdx: number; // 0..11 (Янв..Дек 2027)
+  coveredEndMonthIdx?: number; // 0..11
+  coverageMonthsLabel?: string; // например Янв–Мар 2027
   requiredArrivalDateIso: string; // YYYY-MM-DD
   orderPlacementDateIso: string; // зафиксированная дата размещения заказа при утверждении
   leadTimeDaysAtApproval: number; // зафиксированный цикл на момент утверждения
@@ -78,6 +106,7 @@ export interface ApprovedPurchaseOrder {
   totalOrderRub: number; // строго packsQty * lockedUnitCostRub (без повторного умножения на unitsInPack!)
   prepaymentRub: number;
   balancePaymentRub: number;
+  sizeBreakdownPacks?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
   note?: string;
 }
 
@@ -108,6 +137,7 @@ export interface SharedSkuSupplyAndFact {
   // Общие реальные остатки и заказы (единые между всеми сценариями 100 / 150 / 200 млн ₽!)
   actualOpeningStockPacks: number;
   reservedStockPacks: number;
+  scalingStage?: ModelScalingStage; // Гипотеза -> Тест -> Масштабирование (Раздел 8 ТЗ)
   costStatus: ValueStatusCode;
   confirmedUnitCostRub: number | null;
   expensesFilled: boolean; // заполнены ли реальные расходы MP / логистики / OPEX
@@ -123,12 +153,17 @@ export interface SharedSkuSupplyAndFact {
 
 export interface RecommendedProcurementBatch {
   batchIndex: number;
+  periodId: string;
   factoryName: string;
   coverageMonthsLabel: string;
   firstCoveredMonthIdx: number;
+  endCoveredMonthIdx: number;
   requiredArrivalDateIso: string;
   recommendedOrderDateIso: string;
   totalLeadDays: number;
+  periodDemandPacks: number;
+  openingAvailableAtStartPacks: number;
+  confirmedReceiptsInPeriodPacks: number;
   rawNetNeedPacks: number;
   safetyStockPacks: number;
   recommendedPacks: number; // округлено с учётом MOQ и кратности короба
@@ -138,6 +173,12 @@ export interface RecommendedProcurementBatch {
   prepaymentRub: number;
   balancePaymentRub: number;
   isUrgentPastOrderDate: boolean;
+  isAdditionalOrder?: boolean; // true, если в периоде уже есть утверждённый PO, но план продаж вырос («Дополнительно к заказу»)
+  isTestBatch?: boolean; // true для первой тестовой партии при статусе «Гипотеза» / «Тест»
+  isFutureScalingNeed?: boolean; // true для будущих кварталов до перехода в статус «Масштабирование»
+  hasCustomPacksOverride?: boolean;
+  hasCustomDateOverride?: boolean;
+  sizeSharesPct: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
   sizeBreakdownPacks: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
   colorBreakdownUnits: { colorName: string; unitsQty: number }[];
 }
@@ -167,6 +208,7 @@ export interface MonthlySupplyBalanceRow {
 export interface ProcurementComputationResult {
   unitsInPack: number;
   totalLeadDays: number;
+  scalingStage: ModelScalingStage;
   actualOpeningStockPacks: number;
   reservedStockPacks: number;
   netOpeningAvailablePacks: number;
@@ -182,9 +224,13 @@ export interface ProcurementComputationResult {
   supplyStatusTone: 'danger' | 'warning' | 'success' | 'neutral';
   monthlyBalance: MonthlySupplyBalanceRow[];
   recommendedBatches: RecommendedProcurementBatch[];
+  futureScalingBatches: RecommendedProcurementBatch[];
+  allPeriodBatches: RecommendedProcurementBatch[];
   totalRecommendedPacks: number;
   totalRecommendedUnits: number;
   totalRecommendedBudgetRub: number | null;
+  futureScalingPacks: number;
+  futureScalingBudgetRub: number | null;
   approvedOrders: ApprovedPurchaseOrder[];
   orderDiscrepancies: ApprovedOrderDiscrepancy[];
 }
@@ -301,9 +347,12 @@ export function getDefaultSharedSupplyAndFact(model: ScenarioModelSpec): SharedS
       : 'plan'
     : 'not_filled';
 
+  const defaultScalingStage: ModelScalingStage = 'scaling';
+
   return {
     actualOpeningStockPacks: 0,
     reservedStockPacks: 0,
+    scalingStage: defaultScalingStage,
     costStatus,
     confirmedUnitCostRub: actingSku ? actingSku.unitCogRub : null,
     expensesFilled: hasExplicitRates,
@@ -327,11 +376,11 @@ export function getDefaultSharedSupplyAndFact(model: ScenarioModelSpec): SharedS
       logisticsLeadDays: 14,
       acceptanceDays: 3,
       safetyStockDays: 15,
-      coverageWindowMonths: 2,
+      coverageWindowMonths: 3,
       prepaymentPct: 30,
       balancePaymentPct: 70,
       currency: 'RUB',
-      sizeSharesPct: { S: 12, M: 26, L: 30, XL: 20, XXL: 12 },
+      sizeSharesPct: { S: 10, M: 25, L: 35, XL: 20, XXL: 10 },
     },
     approvedOrders: [],
     actualSalesByMonth: Array.from({ length: 12 }, (_, idx) => ({
@@ -472,9 +521,122 @@ export function getModelChannelSplit(
 }
 
 /**
- * Раздел 04 ТЗ v1.1: Автоматическое планирование закупок
+ * Округление чистой потребности до MOQ и кратности шага заказа (Раздел 4 и Тест 3 ТЗ MVP Закупок).
+ * MOQ и кратность применяются ТОЛЬКО после расчёта чистой потребности (не прибавляются как надбавка!).
+ * Контрольный тест: MOQ = 1 000, потребность = 2 100, кратность = 1 000 -> заказ строго 3 000 (НЕ 3 100).
+ */
+export function roundNeedToMoqAndMultiple(
+  rawNetNeedPacks: number,
+  moqPacks: number,
+  packMultiple = 1
+): number {
+  if (rawNetNeedPacks <= 0) return 0;
+  const moq = Math.max(1, Math.round(moqPacks || 1));
+  const step = Math.max(1, Math.round(packMultiple || 1));
+  const afterMoq = Math.max(moq, Math.ceil(rawNetNeedPacks));
+  return Math.ceil(afterMoq / step) * step;
+}
+
+/**
+ * Распределение комплектов партии по размерам S–XXL методом наибольших остатков (Раздел 4, 5 и Тест 5 ТЗ MVP Закупок).
+ * Сумма по размерам строго равна общему количеству комплектов партии без потери или лишних единиц!
+ * Контрольный тест: партия 1 003 компл., матрица 10/25/35/20/10 -> 100 + 251 + 351 + 201 + 100 = 1 003.
+ */
+export function allocatePacksBySizeLargestRemainder(
+  totalPacks: number,
+  sizeSharesPct: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>
+): Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> {
+  const sizes: ('S' | 'M' | 'L' | 'XL' | 'XXL')[] = ['S', 'M', 'L', 'XL', 'XXL'];
+  const cleanTotal = Math.max(0, Math.round(totalPacks || 0));
+  if (cleanTotal === 0) {
+    return { S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
+  }
+
+  const rawWeights = sizes.map((sz) => Math.max(0, Number(sizeSharesPct?.[sz] ?? 0)));
+  const weightSum = rawWeights.reduce((s, v) => s + v, 0);
+  const normalizedWeights =
+    weightSum > 0 ? rawWeights.map((w) => w / weightSum) : [0.1, 0.25, 0.35, 0.2, 0.1];
+
+  const quotas = sizes.map((sz, idx) => {
+    const exact = cleanTotal * normalizedWeights[idx];
+    const floored = Math.floor(exact);
+    return {
+      sz,
+      idx,
+      floored,
+      remainder: exact - floored,
+      weight: normalizedWeights[idx],
+    };
+  });
+
+  let remainderToDistribute =
+    cleanTotal - quotas.reduce((sum, item) => sum + item.floored, 0);
+
+  const sortedForRemainder = [...quotas].sort((a, b) => {
+    if (Math.abs(b.remainder - a.remainder) > 1e-9) {
+      return b.remainder - a.remainder;
+    }
+    if (Math.abs(b.weight - a.weight) > 1e-9) {
+      return b.weight - a.weight;
+    }
+    return a.idx - b.idx;
+  });
+
+  for (let i = 0; i < sortedForRemainder.length && remainderToDistribute > 0; i++) {
+    sortedForRemainder[i].floored += 1;
+    remainderToDistribute -= 1;
+  }
+
+  const result: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> = {
+    S: 0,
+    M: 0,
+    L: 0,
+    XL: 0,
+    XXL: 0,
+  };
+  for (const item of quotas) {
+    result[item.sz] = item.floored;
+  }
+  return result;
+}
+
+/**
+ * Пересчёт чернового плана закупок («Рассчитать закупки» — Раздел 3 и Тест 8 ТЗ MVP Закупок).
+ * Сбрасывает ручные переопределения черновых партий, но НИКОГДА не меняет уже утверждённые заказы PO!
+ */
+export function recalculateDraftProcurementPlan(
+  rawModel: ScenarioModelSpec
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const currentPeriods = shared.factoryParams.customBatchPeriods;
+  const cleanedPeriods = Array.isArray(currentPeriods)
+    ? currentPeriods.map((p) => ({
+        id: p.id,
+        startMonthIdx: p.startMonthIdx,
+        endMonthIdx: p.endMonthIdx,
+      }))
+    : undefined;
+
+  return {
+    ...model,
+    sharedSupplyAndFact: {
+      ...shared,
+      factoryParams: {
+        ...shared.factoryParams,
+        customBatchPeriods: cleanedPeriods,
+      },
+      // Утверждённые заказы PO остаются строго неизменными!
+      approvedOrders: [...shared.approvedOrders],
+    },
+  };
+}
+
+/**
+ * Раздел 04 ТЗ v1.1 + ТЗ MVP «Закупки»: Автоматическое планирование закупок
  * Считает в физических единицах (комплекты И изделия), учитывает общие реальные остатки,
- * утверждённые заказы PO, MOQ, кратность короба, страховой запас и обратный расчёт даты заказа.
+ * подтверждённые фабрикой заказы PO, 4 квартальные партии (с возможностью объединения/деления),
+ * MOQ, кратность шага, метод наибольших остатков для размеров S–XXL и статус масштабирования модели.
  */
 export function computeProcurementPlan(
   rawModel: ScenarioModelSpec,
@@ -485,6 +647,7 @@ export function computeProcurementPlan(
   const fp = shared.factoryParams;
   const unitsInPack = Math.max(1, model.unitsInPack || 1);
   const year = scenario.year || 2027;
+  const scalingStage: ModelScalingStage = shared.scalingStage || 'scaling';
 
   const plan =
     model.plansByScenario[scenario.id] ||
@@ -507,8 +670,10 @@ export function computeProcurementPlan(
     Math.max(0, fp.logisticsLeadDays) +
     Math.max(0, fp.acceptanceDays);
 
+  // Раздел 12 ТЗ MVP: Неподтверждённые фабрикой заказы (confirmedByFactory === false) не считать гарантированными поступлениями!
   const approvedByMonth = Array(12).fill(0);
   for (const po of shared.approvedOrders) {
+    if (po.confirmedByFactory === false) continue;
     if (po.arrivalMonthIdx >= 0 && po.arrivalMonthIdx < 12) {
       approvedByMonth[po.arrivalMonthIdx] += po.packsQty;
     }
@@ -519,8 +684,7 @@ export function computeProcurementPlan(
     shared.actualOpeningStockPacks - shared.reservedStockPacks
   );
 
-  // 1. Помесячный баланс реального обеспечения (ТОЛЬКО реальный остаток + утверждённые PO!)
-  // При остатке = 0 и утверждённых поступлениях = 0 и продажах > 0 честно показывает дефицит (Тест-кейс №4)!
+  // 1. Помесячный баланс реального обеспечения (ТОЛЬКО реальный остаток + подтверждённые фабрикой PO!)
   let runningAvailable = netOpeningAvailablePacks;
   const monthlyBalance: MonthlySupplyBalanceRow[] = [];
   let coveredMonthsCount = 0;
@@ -535,8 +699,6 @@ export function computeProcurementPlan(
 
     const afterReceipts = openingAvailablePacks + approvedReceiptsPacks;
     const endingAvailablePacks = afterReceipts - demandPacks;
-    const deficitPacks = endingAvailablePacks < 0 ? Math.abs(Math.min(afterReceipts, 0) - endingAvailablePacks) : 0;
-    // Если в этом месяце не хватило товара для покрытия спроса:
     const monthUncovered = Math.max(0, demandPacks - Math.max(0, afterReceipts));
 
     if (demandPacks === 0 || afterReceipts >= demandPacks) {
@@ -566,62 +728,100 @@ export function computeProcurementPlan(
   const totalApprovedReceiptsUnits = totalApprovedReceiptsPacks * unitsInPack;
   const hasDeficit = totalDeficitPacks > 0;
 
-  // 2. Генерация рекомендуемых партий закупки для покрытия дефицита с учётом окна покрытия, страхового запаса, MOQ и кратности
-  const recommendedBatches: RecommendedProcurementBatch[] = [];
+  // 2. Генерация партий закупки по 4 кварталам (или настроенным пользователем периодам покрытия)
+  const periodDefs: CustomBatchPeriodDef[] =
+    Array.isArray(fp.customBatchPeriods) && fp.customBatchPeriods.length > 0
+      ? [...fp.customBatchPeriods].sort((a, b) => a.startMonthIdx - b.startMonthIdx)
+      : DEFAULT_QUARTERLY_BATCH_PERIODS;
+
+  const allPeriodBatches: RecommendedProcurementBatch[] = [];
   let simStock = netOpeningAvailablePacks;
-  const windowMonths = Math.max(1, fp.coverageWindowMonths || 2);
+  let currentCursorM = 0;
   const moq = Math.max(1, fp.moqPacks || 1);
   const multiple = Math.max(1, fp.packMultiple || 1);
   const colorsList = model.palettes[0]?.colors || [];
 
-  for (let m = 0; m < 12; m++) {
-    simStock += approvedByMonth[m] || 0;
-    const demandM = Math.max(0, plan.monthlyPacks[m] || 0);
-    const safetyPacksM = Math.ceil((demandM * Math.max(0, fp.safetyStockDays)) / 30);
+  for (let pIdx = 0; pIdx < periodDefs.length; pIdx++) {
+    const pDef = periodDefs[pIdx];
+    const startM = Math.min(11, Math.max(0, Math.round(pDef.startMonthIdx)));
+    const endM = Math.min(11, Math.max(startM, Math.round(pDef.endMonthIdx)));
 
-    if (demandM > 0 && simStock < demandM + safetyPacksM) {
-      // Рассчитываем потребность на период покрытия m .. min(11, m + windowMonths - 1)
-      const endM = Math.min(11, m + windowMonths - 1);
-      let windowDemand = 0;
-      let windowApprovedAfterM = 0;
-      for (let k = m; k <= endM; k++) {
-        windowDemand += Math.max(0, plan.monthlyPacks[k] || 0);
-        if (k > m) windowApprovedAfterM += approvedByMonth[k] || 0;
+    // Прокручиваем месяцы до начала периода, если между периодами был зазор
+    while (currentCursorM < startM) {
+      const d = Math.max(0, plan.monthlyPacks[currentCursorM] || 0);
+      const r = approvedByMonth[currentCursorM] || 0;
+      simStock = Math.max(0, simStock + r - d);
+      currentCursorM += 1;
+    }
+
+    const openingAvailableAtStartPacks = simStock;
+    let periodDemandPacks = 0;
+    let confirmedReceiptsInPeriodPacks = 0;
+    let tempRunning = openingAvailableAtStartPacks;
+    let maxIntraPeriodShortfall = 0;
+
+    for (let k = startM; k <= endM; k++) {
+      const d = Math.max(0, plan.monthlyPacks[k] || 0);
+      const r = approvedByMonth[k] || 0;
+      periodDemandPacks += d;
+      confirmedReceiptsInPeriodPacks += r;
+      tempRunning += r - d;
+      if (tempRunning < 0) {
+        maxIntraPeriodShortfall = Math.max(maxIntraPeriodShortfall, -tempRunning);
       }
-      const endMonthDemand = Math.max(0, plan.monthlyPacks[endM] || 0);
-      const targetSafety = Math.ceil((endMonthDemand * Math.max(0, fp.safetyStockDays)) / 30);
-      const rawNetNeedPacks = Math.max(
-        1,
-        windowDemand + targetSafety - simStock - windowApprovedAfterM
-      );
+    }
 
-      const afterMoq = Math.max(moq, rawNetNeedPacks);
-      const recommendedPacks = Math.ceil(afterMoq / multiple) * multiple;
+    const endMonthDemand = Math.max(0, plan.monthlyPacks[endM] || 0);
+    const targetSafety =
+      periodDemandPacks > 0
+        ? Math.ceil((endMonthDemand * Math.max(0, fp.safetyStockDays)) / 30)
+        : 0;
+
+    // Формула Раздела 4 ТЗ:
+    // потребность = max(0, сумма плановых выкупов за месяцы покрытия + целевой запас на конец периода - доступный остаток к началу покрытия - подтверждённые поступления)
+    const formulaNeed = Math.max(
+      0,
+      periodDemandPacks +
+        targetSafety -
+        openingAvailableAtStartPacks -
+        confirmedReceiptsInPeriodPacks
+    );
+    const rawNetNeedPacks = Math.max(formulaNeed, maxIntraPeriodShortfall);
+
+    const hasCustomPacksOverride =
+      typeof pDef.customPacksQty === 'number' && pDef.customPacksQty > 0;
+    const shouldCreateBatch = rawNetNeedPacks > 0 || hasCustomPacksOverride;
+
+    let recommendedPacks = 0;
+    if (shouldCreateBatch) {
+      recommendedPacks = hasCustomPacksOverride
+        ? Math.max(1, Math.round(pDef.customPacksQty!))
+        : roundNeedToMoqAndMultiple(rawNetNeedPacks, moq, multiple);
+
       const physicalUnitsQty = recommendedPacks * unitsInPack;
-
-      const requiredArrivalDateIso = `${year}-${String(m + 1).padStart(2, '0')}-01`;
-      const recommendedOrderDateIso = subtractDaysFromMonthStart(year, m, totalLeadDays);
+      const requiredArrivalDateIso = `${year}-${String(startM + 1).padStart(2, '0')}-01`;
+      const autoOrderDateIso = subtractDaysFromMonthStart(year, startM, totalLeadDays);
+      const hasCustomDateOverride =
+        typeof pDef.customOrderDateIso === 'string' && pDef.customOrderDateIso.trim().length > 0;
+      const recommendedOrderDateIso = hasCustomDateOverride
+        ? pDef.customOrderDateIso!.trim()
+        : autoOrderDateIso;
 
       const unitCostRub = Math.max(0, model.unitCostRub || 0);
-      // Строго Тест-кейс №5: сумма считается от комплектов (recommendedPacks * unitCostRub), НЕ умножается повторно на unitsInPack!
+      // Строго: бюджет = закупаемые комплекты * себестоимость комплекта (дважды не умножать!)
       const estimatedTotalRub = recommendedPacks * unitCostRub;
       const prepaymentRub = Math.round((estimatedTotalRub * fp.prepaymentPct) / 100);
       const balancePaymentRub = estimatedTotalRub - prepaymentRub;
 
-      // Разбивка по размерам (в комплектах)
-      const sizes: ('S' | 'M' | 'L' | 'XL' | 'XXL')[] = ['S', 'M', 'L', 'XL', 'XXL'];
-      const sizeBreakdownPacks = { S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
-      let allocatedPacks = 0;
-      sizes.forEach((sz, idx) => {
-        if (idx === sizes.length - 1) {
-          sizeBreakdownPacks[sz] = Math.max(0, recommendedPacks - allocatedPacks);
-        } else {
-          const share = (fp.sizeSharesPct[sz] || 20) / 100;
-          const cnt = Math.round(recommendedPacks * share);
-          sizeBreakdownPacks[sz] = cnt;
-          allocatedPacks += cnt;
-        }
-      });
+      const effectiveSizeShares: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> =
+        pDef.customSizeSharesPct
+          ? { ...fp.sizeSharesPct, ...pDef.customSizeSharesPct }
+          : { ...fp.sizeSharesPct };
+
+      const sizeBreakdownPacks = allocatePacksBySizeLargestRemainder(
+        recommendedPacks,
+        effectiveSizeShares
+      );
 
       const colorCount = Math.max(1, colorsList.length || unitsInPack);
       const colorBreakdownUnits = (
@@ -634,15 +834,22 @@ export function computeProcurementPlan(
         return { colorName, unitsQty: perColor + rem };
       });
 
-      recommendedBatches.push({
-        batchIndex: recommendedBatches.length + 1,
+      allPeriodBatches.push({
+        batchIndex: allPeriodBatches.length + 1,
+        periodId: pDef.id || `p-${startM}-${endM}`,
         factoryName: fp.factoryName,
         coverageMonthsLabel:
-          m === endM ? MONTHS_SHORT[m] : `${MONTHS_SHORT[m]}–${MONTHS_SHORT[endM]} ${year}`,
-        firstCoveredMonthIdx: m,
+          startM === endM
+            ? `${MONTHS_SHORT[startM]} ${year}`
+            : `${MONTHS_SHORT[startM]}–${MONTHS_SHORT[endM]} ${year}`,
+        firstCoveredMonthIdx: startM,
+        endCoveredMonthIdx: endM,
         requiredArrivalDateIso,
         recommendedOrderDateIso,
         totalLeadDays,
+        periodDemandPacks,
+        openingAvailableAtStartPacks,
+        confirmedReceiptsInPeriodPacks,
         rawNetNeedPacks,
         safetyStockPacks: targetSafety,
         recommendedPacks,
@@ -652,14 +859,50 @@ export function computeProcurementPlan(
         prepaymentRub,
         balancePaymentRub,
         isUrgentPastOrderDate: recommendedOrderDateIso < '2027-01-01',
+        isAdditionalOrder: confirmedReceiptsInPeriodPacks > 0,
+        hasCustomPacksOverride,
+        hasCustomDateOverride,
+        sizeSharesPct: effectiveSizeShares,
         sizeBreakdownPacks,
         colorBreakdownUnits,
       });
-
-      simStock += recommendedPacks;
     }
 
-    simStock = Math.max(0, simStock - demandM);
+    // Продвигаем симулируемый остаток через месяцы startM..endM с учётом запланированной партии
+    for (let k = startM; k <= endM; k++) {
+      const d = Math.max(0, plan.monthlyPacks[k] || 0);
+      const r = (approvedByMonth[k] || 0) + (k === startM ? recommendedPacks : 0);
+      simStock = Math.max(0, simStock + r - d);
+    }
+    currentCursorM = Math.max(currentCursorM, endM + 1);
+  }
+
+  // Раздел 8 ТЗ MVP: Осторожное масштабирование новой модели («Гипотеза» -> «Тест» -> «Масштабирование»).
+  // Пока у модели статус «Гипотеза» или «Тест», к утверждению формируется только первая тестовая партия
+  // (если ещё нет утверждённых заказов PO), а остальные квартальные объёмы отображаются как «Будущая потребность».
+  let recommendedBatches: RecommendedProcurementBatch[] = [];
+  let futureScalingBatches: RecommendedProcurementBatch[] = [];
+
+  if (scalingStage === 'hypothesis' || scalingStage === 'test') {
+    const hasConfirmedApprovedOrder = shared.approvedOrders.some(
+      (po) => po.confirmedByFactory !== false
+    );
+    if (!hasConfirmedApprovedOrder && allPeriodBatches.length > 0) {
+      recommendedBatches = [{ ...allPeriodBatches[0], isTestBatch: true }];
+      futureScalingBatches = allPeriodBatches.slice(1).map((b) => ({
+        ...b,
+        isFutureScalingNeed: true,
+      }));
+    } else {
+      recommendedBatches = [];
+      futureScalingBatches = allPeriodBatches.map((b) => ({
+        ...b,
+        isFutureScalingNeed: true,
+      }));
+    }
+  } else {
+    recommendedBatches = allPeriodBatches;
+    futureScalingBatches = [];
   }
 
   // 3. Проверка расхождений по уже утверждённым заказам PO (Тест-кейс №3: утверждённый заказ НЕ переписывается,
@@ -709,6 +952,15 @@ export function computeProcurementPlan(
       ? recommendedBatches.reduce((s, b) => s + b.estimatedTotalRub, 0)
       : null;
 
+  const futureScalingPacks = futureScalingBatches.reduce(
+    (s, b) => s + b.recommendedPacks,
+    0
+  );
+  const futureScalingBudgetRub =
+    model.unitCostRub > 0
+      ? futureScalingBatches.reduce((s, b) => s + b.estimatedTotalRub, 0)
+      : null;
+
   let supplyStatusLabel = 'Нет планового спроса';
   let supplyStatusTone: 'danger' | 'warning' | 'success' | 'neutral' = 'neutral';
   if (annualDemandPacks > 0) {
@@ -733,6 +985,7 @@ export function computeProcurementPlan(
   return {
     unitsInPack,
     totalLeadDays,
+    scalingStage,
     actualOpeningStockPacks: shared.actualOpeningStockPacks,
     reservedStockPacks: shared.reservedStockPacks,
     netOpeningAvailablePacks,
@@ -748,17 +1001,21 @@ export function computeProcurementPlan(
     supplyStatusTone,
     monthlyBalance,
     recommendedBatches,
+    futureScalingBatches,
+    allPeriodBatches,
     totalRecommendedPacks,
     totalRecommendedUnits,
     totalRecommendedBudgetRub,
+    futureScalingPacks,
+    futureScalingBudgetRub,
     approvedOrders: shared.approvedOrders,
     orderDiscrepancies,
   };
 }
 
 /**
- * Ручное утверждение рекомендованной партии закупки ответственным лицом (Раздел 04 ТЗ v1.1).
- * Присваивает номер PO, фиксирует количество, себестоимость и даты; не переписывается будущими пересчётами!
+ * Ручное утверждение рекомендованной партии закупки ответственным лицом (Раздел 04 ТЗ v1.1 + ТЗ MVP).
+ * Присваивает номер PO, фиксирует количество, себестоимость, размеры и даты; не переписывается будущими пересчётами!
  */
 export function approveRecommendedBatch(
   rawModel: ScenarioModelSpec,
@@ -782,10 +1039,13 @@ export function approveRecommendedBatch(
     orderNumber,
     version: 1,
     status: 'approved',
+    confirmedByFactory: true,
     factoryName: batch.factoryName,
     approvedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
     approvedBy: approverName,
     arrivalMonthIdx: batch.firstCoveredMonthIdx,
+    coveredEndMonthIdx: batch.endCoveredMonthIdx,
+    coverageMonthsLabel: batch.coverageMonthsLabel,
     requiredArrivalDateIso: batch.requiredArrivalDateIso,
     orderPlacementDateIso: batch.recommendedOrderDateIso,
     leadTimeDaysAtApproval: batch.totalLeadDays,
@@ -796,8 +1056,24 @@ export function approveRecommendedBatch(
     totalOrderRub,
     prepaymentRub,
     balancePaymentRub,
+    sizeBreakdownPacks: batch.sizeBreakdownPacks,
     note: `Покрытие ${batch.coverageMonthsLabel}`,
   };
+
+  // Сбрасываем ручное переопределение customPacksQty у утверждённого периода, чтобы он не создавал дубль
+  const updatedCustomPeriods = Array.isArray(shared.factoryParams.customBatchPeriods)
+    ? shared.factoryParams.customBatchPeriods.map((p) =>
+        p.id === batch.periodId ||
+        (p.startMonthIdx === batch.firstCoveredMonthIdx &&
+          p.endMonthIdx === batch.endCoveredMonthIdx)
+          ? {
+              id: p.id,
+              startMonthIdx: p.startMonthIdx,
+              endMonthIdx: p.endMonthIdx,
+            }
+          : p
+      )
+    : undefined;
 
   const auditEntry: ModelAuditEntry = {
     id: `aud-po-${Date.now()}-${nextSeq}`,
@@ -817,6 +1093,10 @@ export function approveRecommendedBatch(
     ...model,
     sharedSupplyAndFact: {
       ...shared,
+      factoryParams: {
+        ...shared.factoryParams,
+        customBatchPeriods: updatedCustomPeriods,
+      },
       approvedOrders: [...shared.approvedOrders, newPo],
       auditHistory: [auditEntry, ...shared.auditHistory],
     },
@@ -891,10 +1171,13 @@ export function createCustomPurchaseOrder(
     orderNumber,
     version: 1,
     status: params.status || 'approved',
+    confirmedByFactory: true,
     factoryName,
     approvedAt: nowStr,
     approvedBy: author,
     arrivalMonthIdx,
+    coveredEndMonthIdx: arrivalMonthIdx,
+    coverageMonthsLabel: `${MONTHS_SHORT[arrivalMonthIdx]} ${year}`,
     requiredArrivalDateIso,
     orderPlacementDateIso,
     leadTimeDaysAtApproval: totalLeadDays,
@@ -905,6 +1188,7 @@ export function createCustomPurchaseOrder(
     totalOrderRub,
     prepaymentRub,
     balancePaymentRub,
+    sizeBreakdownPacks: allocatePacksBySizeLargestRemainder(packsQty, fp.sizeSharesPct),
     note: params.note?.trim() || `Поставка к ${MONTHS_SHORT[arrivalMonthIdx]} ${year}`,
   };
 
@@ -950,6 +1234,8 @@ export function updateApprovedPurchaseOrder(
       | 'orderPlacementDateIso'
       | 'requiredArrivalDateIso'
       | 'status'
+      | 'confirmedByFactory'
+      | 'sizeBreakdownPacks'
       | 'note'
     >
   >,
@@ -991,6 +1277,10 @@ export function updateApprovedPurchaseOrder(
     ...target,
     version: (target.version || 1) + 1,
     status: patch.status ?? target.status,
+    confirmedByFactory:
+      patch.confirmedByFactory !== undefined
+        ? patch.confirmedByFactory
+        : target.confirmedByFactory ?? true,
     factoryName:
       patch.factoryName !== undefined
         ? patch.factoryName.trim() || target.factoryName
@@ -1005,6 +1295,11 @@ export function updateApprovedPurchaseOrder(
     totalOrderRub,
     prepaymentRub,
     balancePaymentRub,
+    sizeBreakdownPacks:
+      patch.sizeBreakdownPacks ??
+      (patch.packsQty !== undefined
+        ? allocatePacksBySizeLargestRemainder(nextPacks, shared.factoryParams.sizeSharesPct)
+        : target.sizeBreakdownPacks),
     note: patch.note !== undefined ? patch.note : target.note,
   };
 

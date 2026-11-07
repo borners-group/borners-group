@@ -44,6 +44,7 @@ import {
   verifyScenarioS1_100M,
 } from '../src/lib/scenarioS1_100M.ts';
 import {
+  allocatePacksBySizeLargestRemainder,
   approveRecommendedBatch,
   computeFinancialPnL,
   computeProcurementPlan,
@@ -54,7 +55,9 @@ import {
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
   parseStructuredPlanCsvOrJson,
+  recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
+  roundNeedToMoqAndMultiple,
   serializePurchaseOrdersToCsv,
   serializeStructuredPlanToCsv,
   updateApprovedPurchaseOrder,
@@ -982,6 +985,160 @@ test('25. Ручное управление закупками PO (создан�
   assert.equal(cardCode.includes('Открыть оригинал (Zoom)'), false);
   assert.equal(lightboxCode.includes('GALLERY_CATEGORY_LABELS_RU'), false);
 });
+
+test('26. Приёмочный чек-лист ТЗ «Упростить раздел Закупки (Версия MVP)» — все 8 обязательных тестов Раздела 11', () => {
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const scen2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+  const baseSorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+
+  // Тест 1 (Начальный остаток): Ввести начальный остаток 1 000 -> потребность уменьшается, данные сохранены в модели
+  const procZeroStock = computeProcurementPlan(baseSorbet, scen1);
+  const sorbetWith1000Stock = {
+    ...baseSorbet,
+    sharedSupplyAndFact: {
+      ...baseSorbet.sharedSupplyAndFact!,
+      actualOpeningStockPacks: 1000,
+    },
+  };
+  const proc1000Stock = computeProcurementPlan(sorbetWith1000Stock, scen1);
+  assert.equal(proc1000Stock.netOpeningAvailablePacks, 1000);
+  assert.equal(proc1000Stock.totalDeficitPacks < procZeroStock.totalDeficitPacks, true);
+  assert.equal(
+    proc1000Stock.recommendedBatches[0].rawNetNeedPacks,
+    procZeroStock.recommendedBatches[0].rawNetNeedPacks - 1000
+  );
+
+  // Тест 2 (Изменение продаж месяца): Утвердить заказ PO на Q3 (Июл–Сен), затем увеличить август на +500 ->
+  // старый PO остаётся неизменным, а дополнительный объём идёт отдельной строкой «Дополнительно к заказу»
+  const q3Batch = procZeroStock.recommendedBatches.find((b) => b.firstCoveredMonthIdx === 6)!;
+  assert.equal(Boolean(q3Batch), true);
+  const modelWithApprovedQ3 = approveRecommendedBatch(baseSorbet, q3Batch, 'Владелец');
+  const lockedPoBefore = modelWithApprovedQ3.sharedSupplyAndFact!.approvedOrders[0];
+
+  const planS1 = modelWithApprovedQ3.plansByScenario[1];
+  const augIncreasedPacks = [...planS1.monthlyPacks];
+  augIncreasedPacks[7] = (augIncreasedPacks[7] || 0) + 500; // Август +500 компл.
+  const modelAugPlus500 = {
+    ...modelWithApprovedQ3,
+    plansByScenario: {
+      ...modelWithApprovedQ3.plansByScenario,
+      1: {
+        ...planS1,
+        monthlyPacks: augIncreasedPacks,
+      },
+    },
+  };
+  const procAfterAugIncrease = computeProcurementPlan(modelAugPlus500, scen1);
+  // Утверждённый PO на Q3 не изменился ни на одну цифру!
+  assert.equal(procAfterAugIncrease.approvedOrders[0].packsQty, lockedPoBefore.packsQty);
+  assert.equal(procAfterAugIncrease.approvedOrders[0].totalOrderRub, lockedPoBefore.totalOrderRub);
+  assert.equal(
+    procAfterAugIncrease.approvedOrders[0].orderPlacementDateIso,
+    lockedPoBefore.orderPlacementDateIso
+  );
+  // А для покрытия роста продаж в Q3 появилась отдельная строка с пометкой isAdditionalOrder («Дополнительно к заказу»)
+  const additionalQ3Batch = procAfterAugIncrease.recommendedBatches.find(
+    (b) => b.firstCoveredMonthIdx === 6
+  )!;
+  assert.equal(Boolean(additionalQ3Batch), true);
+  assert.equal(additionalQ3Batch.isAdditionalOrder, true);
+  assert.equal(additionalQ3Batch.rawNetNeedPacks > 0, true);
+
+  // Тест 3 (MOQ и кратность): MOQ = 1 000, потребность = 2 100, кратность = 1 000 -> заказ строго 3 000 (НЕ 3 100!)
+  assert.equal(roundNeedToMoqAndMultiple(2100, 1000, 1000), 3000);
+  assert.notEqual(roundNeedToMoqAndMultiple(2100, 1000, 1000), 3100);
+  assert.equal(roundNeedToMoqAndMultiple(450, 1000, 50), 1000);
+
+  // Тест 4 (Себестоимость): Изменить себестоимость с 600 ₽ на 650 ₽ -> меняется только бюджет закупки, план продаж не меняется
+  const sorbetCost650 = {
+    ...baseSorbet,
+    unitCostRub: 650,
+  };
+  const procCost600 = computeProcurementPlan(baseSorbet, scen1);
+  const procCost650 = computeProcurementPlan(sorbetCost650, scen1);
+  assert.equal(procCost650.annualDemandPacks, procCost600.annualDemandPacks);
+  assert.equal(procCost650.totalRecommendedPacks, procCost600.totalRecommendedPacks);
+  assert.equal(
+    procCost650.totalRecommendedBudgetRub,
+    procCost650.totalRecommendedPacks * 650
+  );
+  assert.equal(
+    (procCost650.totalRecommendedBudgetRub || 0) >
+      (procCost600.totalRecommendedBudgetRub || 0),
+    true
+  );
+
+  // Тест 5 (Размеры методом наибольших остатков): Партия 1 003 комплекта, матрица 10/25/35/20/10 -> сумма строго 1 003
+  const sizeAlloc1003 = allocatePacksBySizeLargestRemainder(1003, {
+    S: 10,
+    M: 25,
+    L: 35,
+    XL: 20,
+    XXL: 10,
+  });
+  const sum1003 =
+    sizeAlloc1003.S +
+    sizeAlloc1003.M +
+    sizeAlloc1003.L +
+    sizeAlloc1003.XL +
+    sizeAlloc1003.XXL;
+  assert.equal(sum1003, 1003);
+  assert.deepEqual(sizeAlloc1003, { S: 100, M: 251, L: 351, XL: 201, XXL: 100 });
+
+  // Тест 6 (Статус модели): При статусе «Гипотеза» к заказу предлагается только тестовая партия, остальные кварталы — «Будущая потребность»
+  const sorbetHypothesis = {
+    ...baseSorbet,
+    sharedSupplyAndFact: {
+      ...baseSorbet.sharedSupplyAndFact!,
+      scalingStage: 'hypothesis' as const,
+    },
+  };
+  const procHypothesis = computeProcurementPlan(sorbetHypothesis, scen1);
+  assert.equal(procHypothesis.scalingStage, 'hypothesis');
+  assert.equal(procHypothesis.recommendedBatches.length, 1);
+  assert.equal(procHypothesis.recommendedBatches[0].isTestBatch, true);
+  assert.equal(procHypothesis.futureScalingBatches.length, 3);
+  assert.equal(procHypothesis.futureScalingBatches[0].isFutureScalingNeed, true);
+
+  // Тест 7 (Смена сценария): Переключить Сценарий №1 -> Сценарий №2 -> меняется спрос, остаток и PO не удваиваются
+  const modelWithStockAndPo = {
+    ...modelWithApprovedQ3,
+    sharedSupplyAndFact: {
+      ...modelWithApprovedQ3.sharedSupplyAndFact!,
+      actualOpeningStockPacks: 800,
+    },
+  };
+  const procScen1 = computeProcurementPlan(modelWithStockAndPo, scen1);
+  const procScen2 = computeProcurementPlan(modelWithStockAndPo, scen2);
+  assert.notEqual(procScen1.annualDemandPacks, procScen2.annualDemandPacks);
+  assert.equal(procScen1.netOpeningAvailablePacks, 800);
+  assert.equal(procScen2.netOpeningAvailablePacks, 800);
+  assert.equal(procScen1.approvedOrders.length, 1);
+  assert.equal(procScen2.approvedOrders.length, 1);
+  assert.equal(
+    procScen1.totalApprovedReceiptsPacks,
+    procScen2.totalApprovedReceiptsPacks
+  );
+
+  // Тест 8 (Утверждённый заказ + подтверждение фабрики): «Рассчитать» не меняет количество, цену и даты утверждённого PO;
+  // неподтверждённый фабрикой заказ (confirmedByFactory: false) не считается гарантированным поступлением
+  const recalculated = recalculateDraftProcurementPlan(modelWithStockAndPo);
+  const poAfterRecalc = recalculated.sharedSupplyAndFact!.approvedOrders[0];
+  assert.equal(poAfterRecalc.packsQty, lockedPoBefore.packsQty);
+  assert.equal(poAfterRecalc.lockedUnitCostRub, lockedPoBefore.lockedUnitCostRub);
+  assert.equal(poAfterRecalc.orderPlacementDateIso, lockedPoBefore.orderPlacementDateIso);
+
+  const unconfirmedByFactoryModel = updateApprovedPurchaseOrder(
+    recalculated,
+    poAfterRecalc.id,
+    { confirmedByFactory: false }
+  );
+  const procUnconfirmed = computeProcurementPlan(unconfirmedByFactoryModel, scen1);
+  assert.equal(procUnconfirmed.totalApprovedReceiptsPacks, 0);
+});
+
 
 
 

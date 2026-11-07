@@ -22,6 +22,7 @@ import {
 } from '@/lib/scenarioS1_100M';
 import {
   detectModelBrandPortfolioLabel,
+  ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
 } from '@/lib/unifiedBusinessEngine';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
@@ -45,7 +46,8 @@ interface UserSavedModelPlanBackup {
 
 function syncUserPlansBackup(modelsList: ScenarioModelSpec[]) {
   const backup: Record<string, UserSavedModelPlanBackup> = {};
-  for (const m of modelsList) {
+  for (const raw of modelsList) {
+    const m = ensureModelUnifiedV11(raw);
     backup[m.id] = {
       id: m.id,
       code: m.code,
@@ -58,6 +60,30 @@ function syncUserPlansBackup(modelsList: ScenarioModelSpec[]) {
     };
   }
   safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup);
+}
+
+function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModelSpec[] {
+  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
+    STORAGE_KEY_USER_PLANS_BACKUP
+  );
+  if (!backup || typeof backup !== 'object') return modelsList;
+  return modelsList.map((m) => {
+    const saved =
+      backup[m.id] ||
+      Object.values(backup).find(
+        (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
+      );
+    if (!saved) return m;
+    return {
+      ...m,
+      retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
+      unitCostRub: saved.unitCostRub ?? m.unitCostRub,
+      priority: saved.priority ?? m.priority,
+      launchStatus: saved.launchStatus ?? m.launchStatus,
+      plansByScenario: saved.plansByScenario || m.plansByScenario,
+      sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
+    };
+  });
 }
 
 const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
@@ -142,8 +168,10 @@ export function useLiveScenarioPortfolio() {
           )
       );
       if (clean.length > 0) {
-        setModels(clean);
+        setModels(overlayBackupOntoModels(clean));
       }
+    } else {
+      setModels(overlayBackupOntoModels(DEFAULT_MODELS_LIST));
     }
 
     const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);

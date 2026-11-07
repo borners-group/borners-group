@@ -61,6 +61,7 @@ import {
   computeFinancialPnL,
   computeProcurementPlan,
   detectModelBrandPortfolioLabel,
+  ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
@@ -85,7 +86,8 @@ interface UserSavedModelPlanBackup {
 
 function saveUserPlansBackup(modelsList: ScenarioModelSpec[]) {
   const backup: Record<string, UserSavedModelPlanBackup> = {};
-  for (const m of modelsList) {
+  for (const raw of modelsList) {
+    const m = ensureModelUnifiedV11(raw);
     backup[m.id] = {
       id: m.id,
       code: m.code,
