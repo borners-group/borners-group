@@ -1,4 +1,4 @@
-:HL["/borners-platform/_next/static/chunks/03pnhk06vq3nz.css","style"]
+:HL["/borners-group/_next/static/chunks/0bir7nglfmcpb.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"/_not-found","h":96,"c":"$Q2"}]]
-0:{"b":"Ff7t-CLx5MIoa8KdBuBAe","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"LowHVr3_bzSFaW0Rx9hOl","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
