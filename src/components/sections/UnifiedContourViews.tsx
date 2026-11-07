@@ -772,261 +772,174 @@ export function ProcurementContourView() {
 
   return (
     <div className="space-y-4 pb-16">
-      {/* ЕДИНАЯ КОМПАКТНАЯ ПАНЕЛЬ УПРАВЛЕНИЯ РАЗДЕЛОМ ЗАКУПОК (Вместо 3 нагромождённых блоков) */}
-      <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-3.5">
-        {/* Верхний ряд: Закупки / Задачи CRM + Выбор сценария + Итог по сценарию */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12.5px] font-bold">
-              <button
-                type="button"
-                onClick={() => setSubTab('batches')}
-                className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
-                  subTab === 'batches'
-                    ? 'bg-[#141413] text-white'
-                    : 'text-[#52514C] hover:text-[#141413]'
-                }`}
-              >
-                03 · Закупки ({eligibleModels.length} моделей · {procData.approvedCount} PO)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubTab('crm')}
-                className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
-                  subTab === 'crm'
-                    ? 'bg-[#141413] text-white'
-                    : 'text-[#52514C] hover:text-[#141413]'
-                }`}
-              >
-                Задачи CRM ({openTasksCount})
-              </button>
+      {/* ЕДИНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ НАВИГАЦИИ РАЗДЕЛА 03 · ЗАКУПКИ */}
+      <div className="rounded-[14px] bg-white border border-[#D8D7CF] px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
+        {/* Левая часть: Вкладки Закупки / Задачи CRM + Сценарии */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="inline-flex rounded-[9px] bg-[#F4F3EE] border border-[#E2E1D9] p-0.5 text-[12px] font-bold">
+            <button
+              type="button"
+              onClick={() => setSubTab('batches')}
+              className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
+                subTab === 'batches'
+                  ? 'bg-[#141413] text-white'
+                  : 'text-[#5C5B55] hover:text-[#141413]'
+              }`}
+            >
+              03 · Закупки ({eligibleModels.length} мод. · {procData.approvedCount} PO)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('crm')}
+              className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
+                subTab === 'crm'
+                  ? 'bg-[#141413] text-white'
+                  : 'text-[#5C5B55] hover:text-[#141413]'
+              }`}
+            >
+              Задачи CRM ({openTasksCount})
+            </button>
+          </div>
+
+          {subTab === 'batches' && (
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#FAF9F6] border border-[#E2E1D9] p-0.5">
+              {orderedScenarios.map((sc) => {
+                const active = sc.id === selectedScenarioId;
+                const shortTitle =
+                  sc.id === 100 || sc.id === 4
+                    ? 'Исходный план'
+                    : `Сценарий №${sc.id} · ${sc.monthlyTargetMln} млн`;
+                return (
+                  <button
+                    key={sc.id}
+                    type="button"
+                    onClick={() => setSelectedScenarioId(sc.id)}
+                    className={`h-8 px-2.5 rounded-[7px] text-[11.5px] font-bold transition cursor-pointer ${
+                      active
+                        ? 'bg-[#141413] text-white'
+                        : 'text-[#5C5B55] hover:text-[#141413]'
+                    }`}
+                  >
+                    {shortTitle}
+                  </button>
+                );
+              })}
             </div>
-
-            {subTab === 'batches' && (
-              <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F8F7F3] border-[1.5px] border-[#D5D4CA] p-1">
-                {orderedScenarios.map((sc) => {
-                  const active = sc.id === selectedScenarioId;
-                  const shortTitle =
-                    sc.id === 4
-                      ? 'Исходный план'
-                      : `Сценарий №${sc.id} · ${sc.monthlyTargetMln} млн`;
-                  return (
-                    <button
-                      key={sc.id}
-                      type="button"
-                      onClick={() => setSelectedScenarioId(sc.id)}
-                      className={`px-2.5 py-1 rounded-[6px] text-[11.5px] font-bold transition cursor-pointer ${
-                        active
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#52514C] hover:text-[#141413]'
-                      }`}
-                    >
-                      {shortTitle}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 text-[12px] text-[#374151]">
-            <span className="rounded-lg border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-3 py-1.5">
-              Всего по сценарию к заказу:{' '}
-              <strong className="font-mono font-extrabold text-[#141413]">
-                {procData.recPacks.toLocaleString('ru-RU')} компл.
-              </strong>{' '}
-              · Бюджет:{' '}
-              <strong className="font-mono font-extrabold text-[#141413]">
-                {formatMln(procData.recBudgetRub)}
-              </strong>
-            </span>
-            {subTab === 'batches' && (
-              <button
-                type="button"
-                onClick={() => setShowAllSkusTable((v) => !v)}
-                className="rounded-lg border-[1.5px] border-[#141413] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#141413] hover:text-white transition cursor-pointer"
-              >
-                {showAllSkusTable
-                  ? 'Скрыть таблицу всех SKU ▴'
-                  : `Сводная по всем SKU (${procData.perSku.length}) ▾`}
-              </button>
-            )}
-            {procData.approvedOrdersFlat.length > 0 && (
-              <button
-                type="button"
-                onClick={handleExportAllPoCsv}
-                className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-2.5 py-1.5 text-[11.5px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-              >
-                Экспорт PO ({procData.approvedOrdersFlat.length})
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* Нижний ряд панели: Выбор конкретной модели для расчёта закупок (Без лишней ленты из 21 кнопки) */}
-        {subTab === 'batches' && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t-[1.5px] border-[#E8E7DF] pt-3">
-            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-              <span className="text-[12.5px] font-extrabold text-[#141413] shrink-0">
-                Модель:
-              </span>
-              <button
-                type="button"
-                onClick={() => handleStepSku(-1)}
-                title="Предыдущая модель"
-                className="h-9 px-2.5 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-              >
-                ‹ Пред.
-              </button>
-              <select
-                aria-label="Выбор модели для закупок"
-                value={activeSkuModel?.id || ''}
-                onChange={(e) => setSelectedSkuId(e.target.value)}
-                className="h-9 flex-1 max-w-[540px] rounded-lg border-[1.5px] border-[#141413] bg-white px-3 text-[13px] font-extrabold text-[#141413] cursor-pointer"
-              >
-                {filteredSkus.map(({ model: m, plan }) => (
-                  <option key={m.id} value={m.id}>
-                    {m.title} ({m.code} · {m.unitsInPack} изд./компл.) — К заказу: {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => handleStepSku(1)}
-                title="Следующая модель"
-                className="h-9 px-2.5 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-              >
-                След. ›
-              </button>
-              <span className="font-mono text-[11.5px] font-bold text-[#5C5B55]">
-                {filteredSkus.length > 0 ? `${activeSkuIndex + 1} из ${filteredSkus.length}` : '0'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={skuSearch}
-                onChange={(e) => setSkuSearch(e.target.value)}
-                placeholder="Поиск по артикулу или названию..."
-                className="h-9 w-56 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-3 text-[12px] font-medium text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
-              />
-              {skuSearch && (
-                <button
-                  type="button"
-                  onClick={() => setSkuSearch('')}
-                  className="text-[11.5px] font-bold text-[#5C5B55] hover:text-[#141413] cursor-pointer"
-                >
-                  Сбросить
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Правая часть: Итог по сценарию + Сводная по всем SKU */}
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#52514C]">
+          <span className="rounded-[9px] border border-[#E2E1D9] bg-[#FAF9F6] px-3 py-1.5">
+            Итого по сценарию:{' '}
+            <strong className="font-mono font-bold text-[#141413]">
+              {procData.recPacks.toLocaleString('ru-RU')} компл.
+            </strong>{' '}
+            ·{' '}
+            <strong className="font-mono font-bold text-[#141413]">
+              {formatMln(procData.recBudgetRub)}
+            </strong>
+          </span>
+          {subTab === 'batches' && (
+            <button
+              type="button"
+              onClick={() => setShowAllSkusTable((v) => !v)}
+              className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
+                showAllSkusTable
+                  ? 'border-[#141413] bg-[#141413] text-white'
+                  : 'border-[#CFCEC6] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+              }`}
+            >
+              {showAllSkusTable
+                ? 'Скрыть сводную ▴'
+                : `Сводная всех SKU (${procData.perSku.length}) ▾`}
+            </button>
+          )}
+          {procData.approvedOrdersFlat.length > 0 && (
+            <button
+              type="button"
+              onClick={handleExportAllPoCsv}
+              className="rounded-[9px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-1.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+            >
+              Экспорт PO ({procData.approvedOrdersFlat.length})
+            </button>
+          )}
+        </div>
       </div>
 
       {subTab === 'crm' ? (
         <RoadmapTasksView />
       ) : (
         <>
-          {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ */}
-          {activeSkuModel && (
-            <SkuProcurementMvpWorkbench
-              model={activeSkuModel}
-              currentScenario={currentScenario}
-              onUpdateModel={updateModelSpec}
-              onNotify={(title, message, type = 'success') => notify(type, title, message)}
-              onOpenSalesMatrix={() => navigateTo('launch-calendar')}
-            />
-          )}
-
-          {/* Свернутая по умолчанию сводная таблица по всем SKU портфеля */}
-          <div className="rounded-xl border border-[#DFE4EC] bg-white px-4 py-3 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[12px] font-semibold text-[#374151]">
-                Сводка закупок по всем моделям сценария ({procData.perSku.length} SKU): к заказу{' '}
-                <strong className="font-mono text-[#111827]">
-                  {procData.recPacks.toLocaleString('ru-RU')} компл.
-                </strong>{' '}
-                на бюджет{' '}
-                <strong className="font-mono text-[#111827]">
-                  {formatMln(procData.recBudgetRub)}
-                </strong>
-                {' · '}остаток на складе{' '}
-                <strong className="font-mono text-[#111827]">
-                  {procData.totalOpeningPacks.toLocaleString('ru-RU')} компл.
-                </strong>
-                {' · '}подтверждённые PO{' '}
-                <strong className="font-mono text-[#111827]">
-                  {procData.approvedPacks.toLocaleString('ru-RU')} компл.
-                </strong>
+          {/* Сводная таблица по всем SKU портфеля (открывается по кнопке сверху) */}
+          {showAllSkusTable && (
+            <div className="rounded-[14px] border border-[#D8D7CF] bg-white p-4 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[13px] font-bold text-[#141413]">
+                  Сводная таблица закупок по всем моделям сценария ({procData.perSku.length} SKU)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAllSkusTable(false)}
+                  className="text-[12px] font-semibold text-[#6E6D66] hover:text-[#141413] cursor-pointer"
+                >
+                  Свернуть ▴
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAllSkusTable((v) => !v)}
-                className="rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-3 py-1.5 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
-              >
-                {showAllSkusTable
-                  ? 'Скрыть сводку по всем SKU ▴'
-                  : `Показать сводку по всем SKU (${procData.perSku.length}) ▾`}
-              </button>
-            </div>
-
-            {showAllSkusTable && (
-              <div className="mt-3 overflow-x-auto">
+              <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
                 <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
                   <thead>
-                    <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-[11px] text-[#6B7280]">
-                      <th className="py-2 pr-3 pl-2 font-semibold">Модель / SKU</th>
-                      <th className="px-2 py-2 text-right font-semibold">План продаж</th>
-                      <th className="px-2 py-2 text-right font-semibold">Остаток</th>
-                      <th className="px-2 py-2 text-right font-semibold">Подтв. PO</th>
-                      <th className="px-2 py-2 text-right font-semibold">К заказу</th>
-                      <th className="px-2 py-2 text-right font-semibold">Бюджет</th>
-                      <th className="py-2 pr-2 pl-2 text-right font-semibold">Действие</th>
+                    <tr className="border-b border-[#E4E3DC] bg-[#FAF9F6] text-[11px] font-semibold text-[#6E6D66] uppercase tracking-wide">
+                      <th className="py-2.5 pr-3 pl-3.5">Модель / SKU</th>
+                      <th className="px-3 py-2.5 text-right">План продаж</th>
+                      <th className="px-3 py-2.5 text-right">Остаток</th>
+                      <th className="px-3 py-2.5 text-right">Подтв. PO</th>
+                      <th className="px-3 py-2.5 text-right">К заказу</th>
+                      <th className="px-3 py-2.5 text-right">Бюджет</th>
+                      <th className="py-2.5 pr-3.5 pl-3 text-right">Действие</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E5E7EB]">
+                  <tbody className="divide-y divide-[#ECEBE4]">
                     {procData.perSku.map(({ model: m, plan }) => (
                       <tr
                         key={m.id}
-                        className={`hover:bg-[#F9FAFB] ${
-                          activeSkuModel?.id === m.id ? 'bg-[#F3F4F6]/60' : ''
+                        className={`hover:bg-[#FAF9F6] ${
+                          activeSkuModel?.id === m.id ? 'bg-[#F4F3EE]/80' : ''
                         }`}
                       >
-                        <td className="py-2 pr-3 pl-2">
-                          <div className="font-bold text-[#111827]">{m.title}</div>
-                          <div className="font-mono text-[10.5px] text-[#6B7280]">
+                        <td className="py-2.5 pr-3 pl-3.5">
+                          <div className="font-bold text-[#141413]">{m.title}</div>
+                          <div className="font-mono text-[10.5px] text-[#6E6D66]">
                             {m.code} · {m.unitsInPack} изд./компл.
                           </div>
                         </td>
-                        <td className="px-2 py-2 text-right font-mono">
+                        <td className="px-3 py-2.5 text-right font-mono text-[#3D3C38]">
                           {plan.annualDemandPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="px-2 py-2 text-right font-mono">
+                        <td className="px-3 py-2.5 text-right font-mono text-[#3D3C38]">
                           {plan.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="px-2 py-2 text-right font-mono text-emerald-700">
+                        <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
                           {plan.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="px-2 py-2 text-right font-mono font-bold text-[#111827]">
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-[#141413]">
                           {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
                         </td>
-                        <td className="px-2 py-2 text-right font-mono font-semibold text-[#111827]">
+                        <td className="px-3 py-2.5 text-right font-mono font-semibold text-[#141413]">
                           {plan.totalRecommendedBudgetRub !== null
                             ? formatMln(plan.totalRecommendedBudgetRub)
                             : '—'}
                         </td>
-                        <td className="py-2 pr-2 pl-2 text-right">
+                        <td className="py-2.5 pr-3.5 pl-3 text-right">
                           <button
                             type="button"
                             onClick={() => {
                               setSelectedSkuId(m.id);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                              setShowAllSkusTable(false);
                             }}
-                            className="rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#111827] hover:text-white"
+                            className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#141413] hover:text-white cursor-pointer"
                           >
-                            Открыть расчёт
+                            Выбрать
                           </button>
                         </td>
                       </tr>
@@ -1034,8 +947,61 @@ export function ProcurementContourView() {
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ (переключатель модели встроен прямо в шапку!) */}
+          {activeSkuModel && (
+            <SkuProcurementMvpWorkbench
+              model={activeSkuModel}
+              currentScenario={currentScenario}
+              onUpdateModel={updateModelSpec}
+              onNotify={(title, message, type = 'success') => notify(type, title, message)}
+              onOpenSalesMatrix={() => navigateTo('launch-calendar')}
+              headerLeftSlot={
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleStepSku(-1)}
+                    title="Предыдущая модель"
+                    className="h-9 w-8 rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] text-[14px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer flex items-center justify-center"
+                  >
+                    ‹
+                  </button>
+                  <select
+                    aria-label="Выбор модели для закупок"
+                    value={activeSkuModel.id}
+                    onChange={(e) => setSelectedSkuId(e.target.value)}
+                    className="h-9 min-w-[260px] max-w-[460px] rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-3 text-[13.5px] font-extrabold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none cursor-pointer"
+                  >
+                    {filteredSkus.map(({ model: m, plan }) => (
+                      <option key={m.id} value={m.id}>
+                        {m.title} ({m.code} · {m.unitsInPack} изд.) — {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleStepSku(1)}
+                    title="Следующая модель"
+                    className="h-9 w-8 rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] text-[14px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer flex items-center justify-center"
+                  >
+                    ›
+                  </button>
+                  <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-1 font-mono text-[11px] font-semibold text-[#5C5B55]">
+                    {filteredSkus.length > 0 ? `${activeSkuIndex + 1} / ${filteredSkus.length}` : '0'}
+                  </span>
+                  <input
+                    type="text"
+                    value={skuSearch}
+                    onChange={(e) => setSkuSearch(e.target.value)}
+                    placeholder="Поиск модели..."
+                    className="h-9 w-40 rounded-[8px] border border-[#DFDED7] bg-[#FAF9F6] px-2.5 text-[12px] text-[#141413] placeholder:text-[#8E8D85] focus:w-52 focus:border-[#141413] focus:bg-white focus:outline-none transition-all"
+                  />
+                </div>
+              }
+            />
+          )}
         </>
       )}
     </div>
