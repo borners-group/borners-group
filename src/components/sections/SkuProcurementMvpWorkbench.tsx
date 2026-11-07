@@ -176,20 +176,8 @@ export function SkuProcurementMvpWorkbench({
     setSavedStamp(`${label} · ${timeStr}`);
   };
 
-  // Авто-выбор первой партии для Зоны В, если ещё ничего не выбрано
-  const activeExpandedKey = useMemo(() => {
-    if (expandedKey) return expandedKey;
-    if (proc.recommendedBatches.length > 0) {
-      return `draft-${proc.recommendedBatches[0].periodId}`;
-    }
-    if (proc.approvedOrders.length > 0) {
-      return `po-${proc.approvedOrders[0].id}`;
-    }
-    if (proc.futureScalingBatches.length > 0) {
-      return `future-${proc.futureScalingBatches[0].periodId}`;
-    }
-    return null;
-  }, [expandedKey, proc.recommendedBatches, proc.approvedOrders, proc.futureScalingBatches]);
+  // Не раскрываем первую партию автоматически при загрузке — показываем все 4 квартальные партии чистым списком
+  const activeExpandedKey = expandedKey;
 
   const sizeShareSum = useMemo(
     () => SIZES_LIST.reduce((sum, sz) => sum + (Number(fp.sizeSharesPct[sz]) || 0), 0),
@@ -557,31 +545,44 @@ export function SkuProcurementMvpWorkbench({
     (po) => po.confirmedByFactory !== false
   ).length;
 
+  const handleApproveAllDraftBatches = () => {
+    if (proc.recommendedBatches.length === 0) return;
+    let updated = model;
+    for (const batch of proc.recommendedBatches) {
+      updated = approveRecommendedBatch(updated, batch, 'Владелец');
+    }
+    onUpdateModel(updated);
+    triggerSavedIndicator('Все партии утверждены');
+    onNotify?.(
+      'Утверждены все партии по модели',
+      `Создано заказов PO: ${proc.recommendedBatches.length} шт. на общий объём ${proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.`,
+      'success'
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* =====================================================================
-          ЗОНА А · ПАРАМЕТРЫ + 2 ГЛАВНЫЕ ЦИФРЫ (Раздел 2, 7, 10 ТЗ MVP)
+          БЛОК 1 · ИТОГИ И ПАРАМЕТРЫ ЗАКУПКИ МОДЕЛИ (Без дублирования цифр)
          ===================================================================== */}
-      <div className="rounded-xl border border-[#DFE4EC] bg-white p-4 shadow-2xs">
-        {/* Шапка Зоны А: Название модели + Статус масштабирования + ✓ Сохранено */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] pb-3">
+      <div className="rounded-[14px] border-[1.5px] border-[#C8C7BE] bg-white p-5">
+        {/* Шапка: Название модели + Статус масштабирования + ✓ Сохранено */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b-[1.5px] border-[#E2E1D8] pb-3.5">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="rounded bg-[#111827] px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase">
-              Зона А · Параметры
-            </span>
-            <h3 className="text-[15px] font-bold text-[#111827]">
-              ЗАКУПКИ · {model.title}
+            <h3 className="text-[16px] font-extrabold text-[#111827]">
+              {model.title}
             </h3>
-            <span className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#4B5563]">
+            <span className="rounded-md border-[1.5px] border-[#D5D4CA] bg-[#F6F5F0] px-2.5 py-0.5 font-mono text-[11.5px] font-bold text-[#141413]">
               {model.code} · {model.unitsInPack} изд./компл.
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Переключатель статуса масштабирования (Раздел 8 ТЗ) */}
+            <span className="text-[11px] font-semibold text-[#5C5B55]">Режим закупки:</span>
+            {/* Переключатель статуса масштабирования */}
             <div
-              className="inline-flex items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-0.5"
-              title="Раздел 8 ТЗ: Пока у модели статус «Гипотеза» или «Тест», к утверждению формируется только первая тестовая партия"
+              className="inline-flex items-center rounded-lg border-[1.5px] border-[#D5D4CA] bg-[#F4F3EE] p-0.5"
+              title="Пока у модели статус «Гипотеза» или «Тест», к утверждению формируется только первая тестовая партия"
             >
               {(['hypothesis', 'test', 'scaling'] as ModelScalingStage[]).map((st) => {
                 const active = proc.scalingStage === st;
@@ -590,10 +591,10 @@ export function SkuProcurementMvpWorkbench({
                     key={st}
                     type="button"
                     onClick={() => handleUpdateScalingStage(st)}
-                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                    className={`rounded-md px-2.5 py-1 text-[11.5px] font-bold transition cursor-pointer ${
                       active
-                        ? 'bg-[#111827] text-white shadow-2xs'
-                        : 'text-[#4B5563] hover:text-[#111827]'
+                        ? 'bg-[#141413] text-white'
+                        : 'text-[#52514C] hover:text-[#141413]'
                     }`}
                   >
                     {MODEL_SCALING_STAGE_LABELS_RU[st]}
@@ -602,207 +603,213 @@ export function SkuProcurementMvpWorkbench({
               })}
             </div>
 
-            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-900">
               <span>✓</span>
               <span>{savedStamp}</span>
             </span>
           </div>
         </div>
 
-        {/* ЧЕТЫРЕ КОРОТКИХ ПОКАЗАТЕЛЯ ВВЕРХУ ВКЛАДКИ «ЗАКУПКИ» (Раздел 06 ТЗ «Карточка товара и финансы»):
-            1. План продаж · 2. Доступный товар · 3. К заказу · 4. Стоимость заказа */}
-        <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+        {/* 4 ГЛАВНЫХ ПОКАЗАТЕЛЯ (Без повторов ниже!) */}
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-[12px] border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-3.5 py-3">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
-                План продаж
+              <span className="text-[11px] font-bold text-[#5C5B55] uppercase tracking-wider">
+                1. План продаж (год)
               </span>
               {onOpenSalesMatrix && (
                 <button
                   type="button"
                   onClick={onOpenSalesMatrix}
-                  className="text-[10px] font-semibold text-[#111827] underline decoration-dotted hover:text-black cursor-pointer"
+                  className="text-[11px] font-bold text-[#141413] underline decoration-dotted hover:text-black cursor-pointer"
                 >
                   По месяцам ↗
                 </button>
               )}
             </div>
-            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+            <div className="mt-1 font-mono text-[20px] font-black text-[#141413]">
               {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
             </div>
-            <div className="text-[11px] text-[#6B7280]">
+            <div className="mt-0.5 text-[11.5px] font-medium text-[#5C5B55]">
               {proc.annualDemandUnits.toLocaleString('ru-RU')} изд. · {currentScenario.title.split('·')[0].trim()}
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
-            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
-              Доступный товар
+          <div className="rounded-[12px] border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-3.5 py-3">
+            <span className="text-[11px] font-bold text-[#5C5B55] uppercase tracking-wider">
+              2. Доступный товар
             </span>
-            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+            <div className="mt-1 font-mono text-[20px] font-black text-[#141413]">
               {(proc.netOpeningAvailablePacks + proc.totalApprovedReceiptsPacks).toLocaleString('ru-RU')} компл.
             </div>
-            <div className="text-[11px] text-[#6B7280]">
-              Склад: {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} · Утв. PO: {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')}
+            <div className="mt-0.5 text-[11.5px] font-medium text-[#5C5B55]">
+              Склад: <strong>{proc.netOpeningAvailablePacks.toLocaleString('ru-RU')}</strong> · Утв. PO: <strong>{proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')}</strong> ({confirmedPoCount} шт.)
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
-            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
-              К заказу
+          <div className="rounded-[12px] border-[1.5px] border-[#141413] bg-white px-3.5 py-3">
+            <span className="text-[11px] font-bold text-[#141413] uppercase tracking-wider">
+              3. К заказу на фабрике
             </span>
-            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+            <div className="mt-1 font-mono text-[20px] font-black text-[#141413]">
               {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
             </div>
-            <div className="text-[11px] text-[#6B7280]">
-              {proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд. ({proc.recommendedBatches.length} парт.)
+            <div className="mt-0.5 text-[11.5px] font-medium text-[#5C5B55]">
+              {proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд. · разбито на {proc.recommendedBatches.length} парт.
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
-            <span className="text-[11px] font-semibold text-[#6B7280] uppercase">
-              Стоимость заказа
+          <div className="rounded-[12px] border-[1.5px] border-[#141413] bg-white px-3.5 py-3">
+            <span className="text-[11px] font-bold text-[#141413] uppercase tracking-wider">
+              4. Стоимость заказа
             </span>
-            <div className="mt-1 font-mono text-[17px] font-extrabold text-[#111827]">
+            <div className="mt-1 font-mono text-[20px] font-black text-[#141413]">
               {proc.totalRecommendedBudgetRub !== null
                 ? formatRubMillions(proc.totalRecommendedBudgetRub)
                 : 'Не заполнена себест.'}
             </div>
-            <div className="text-[11px] text-[#6B7280]">
+            <div className="mt-0.5 text-[11.5px] font-medium text-[#5C5B55]">
               {proc.totalRecommendedBudgetRub !== null
-                ? `${proc.totalRecommendedBudgetRub.toLocaleString('ru-RU')} ₽`
-                : 'Укажите себестоимость комплекта'}
+                ? `${proc.totalRecommendedBudgetRub.toLocaleString('ru-RU')} ₽ (по ${model.unitCostRub} ₽/компл.)`
+                : 'Укажите себестоимость комплекта ниже'}
             </div>
           </div>
         </div>
 
-        {/* Редактируемые параметры: Начальный остаток | Себестоимость | Срок производства | Срок доставки | MOQ и страховой запас */}
-        <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-          {/* 1. Начальный остаток (свободно редактируемый) */}
-          <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
-            <span className="text-[11px] font-semibold text-[#374151]">
-              Начальный остаток, компл.
+        {/* Редактируемые параметры: Начальный остаток | Себестоимость | Срок производства | Срок доставки | MOQ и размеры */}
+        <div className="mt-4 border-t-[1.5px] border-[#E8E7DF] pt-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[12px] font-extrabold text-[#141413]">
+              Исходные параметры для расчёта партий (меняйте любую цифру — расчёт обновится сразу):
             </span>
-            <div className="mt-1 flex items-center gap-1.5">
-              <NumericInput
-                ariaLabel="Начальный остаток, комплектов"
-                value={shared.actualOpeningStockPacks}
-                min={0}
-                step={50}
-                onChangeValue={handleUpdateOpeningStock}
-                className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
-              />
-              <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">компл.</span>
-            </div>
-          </label>
-
-          {/* 2. Себестоимость комплекта */}
-          <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
-            <span className="text-[11px] font-semibold text-[#374151]">
-              Себестоимость под ключ, ₽
-            </span>
-            <div className="mt-1 flex items-center gap-1.5">
-              <NumericInput
-                ariaLabel="Себестоимость комплекта, рублей"
-                value={model.unitCostRub || 0}
-                min={0}
-                step={10}
-                onChangeValue={handleUpdateUnitCost}
-                className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
-              />
-              <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">₽/компл.</span>
-            </div>
-          </label>
-
-          {/* 3. Срок производства (дней) */}
-          <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
-            <span className="text-[11px] font-semibold text-[#374151]">
-              Срок производства, дней
-            </span>
-            <div className="mt-1 flex items-center gap-1.5">
-              <NumericInput
-                ariaLabel="Срок производства, дней"
-                value={fp.productionLeadDays}
-                min={1}
-                max={365}
-                step={5}
-                onChangeValue={(nextProd) => {
-                  onUpdateModel({
-                    ...model,
-                    sharedSupplyAndFact: {
-                      ...shared,
-                      factoryParams: {
-                        ...fp,
-                        productionLeadDays: Math.max(1, Math.round(nextProd)),
-                      },
-                    },
-                  });
-                  triggerSavedIndicator('Сохранено');
-                }}
-                className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
-              />
-              <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">дней</span>
-            </div>
-          </label>
-
-          {/* 4. Срок доставки и приёмки (дней) */}
-          <label className="flex flex-col justify-between rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 focus-within:border-[#111827] focus-within:ring-1 focus-within:ring-[#111827]">
-            <span className="text-[11px] font-semibold text-[#374151]">
-              Срок доставки в РФ, дней
-            </span>
-            <div className="mt-1 flex items-center gap-1.5">
-              <NumericInput
-                ariaLabel="Срок доставки, дней"
-                value={fp.logisticsLeadDays}
-                min={0}
-                max={365}
-                step={2}
-                onChangeValue={(nextLog) => {
-                  onUpdateModel({
-                    ...model,
-                    sharedSupplyAndFact: {
-                      ...shared,
-                      factoryParams: {
-                        ...fp,
-                        logisticsLeadDays: Math.max(0, Math.round(nextLog)),
-                      },
-                    },
-                  });
-                  triggerSavedIndicator('Сохранено');
-                }}
-                className="w-full rounded border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 font-mono text-[14px] font-bold text-[#111827] focus:bg-white focus:outline-none"
-              />
-              <span className="shrink-0 text-[11px] font-medium text-[#6B7280]">
-                дн. (всего {proc.totalLeadDays})
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {/* 1. Начальный остаток */}
+            <label className="flex flex-col justify-between rounded-[10px] border-[1.5px] border-[#C8C7BE] bg-white px-3 py-2.5 focus-within:border-[#141413]">
+              <span className="text-[11.5px] font-bold text-[#2C2B28]">
+                Остаток на складе сейчас
               </span>
-            </div>
-          </label>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <NumericInput
+                  ariaLabel="Начальный остаток, комплектов"
+                  value={shared.actualOpeningStockPacks}
+                  min={0}
+                  step={50}
+                  onChangeValue={handleUpdateOpeningStock}
+                  className="w-full rounded-md border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-2.5 py-1.5 font-mono text-[15px] font-extrabold text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
+                />
+                <span className="shrink-0 text-[11px] font-semibold text-[#5C5B55]">компл.</span>
+              </div>
+            </label>
 
-          {/* 5. Кнопка раскрытия дополнительных настроек (Размеры S–XXL, MOQ, кратность, страховой запас) */}
-          <div className="flex flex-col justify-between rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
-            <span className="text-[11px] font-medium text-[#6B7280]">
-              MOQ {fp.moqPacks.toLocaleString('ru-RU')} · Запас {fp.safetyStockDays} дн. · S–XXL
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAdvancedSettings((v) => !v)}
-              className="mt-1 inline-flex items-center justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6] cursor-pointer"
-            >
-              <span>MOQ, запас и размеры</span>
-              <span>{showAdvancedSettings ? '▴' : '▾'}</span>
-            </button>
+            {/* 2. Себестоимость комплекта */}
+            <label className="flex flex-col justify-between rounded-[10px] border-[1.5px] border-[#C8C7BE] bg-white px-3 py-2.5 focus-within:border-[#141413]">
+              <span className="text-[11.5px] font-bold text-[#2C2B28]">
+                Себестоимость под ключ
+              </span>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <NumericInput
+                  ariaLabel="Себестоимость комплекта, рублей"
+                  value={model.unitCostRub || 0}
+                  min={0}
+                  step={10}
+                  onChangeValue={handleUpdateUnitCost}
+                  className="w-full rounded-md border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-2.5 py-1.5 font-mono text-[15px] font-extrabold text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
+                />
+                <span className="shrink-0 text-[11px] font-semibold text-[#5C5B55]">₽/компл.</span>
+              </div>
+            </label>
+
+            {/* 3. Срок производства (дней) */}
+            <label className="flex flex-col justify-between rounded-[10px] border-[1.5px] border-[#C8C7BE] bg-white px-3 py-2.5 focus-within:border-[#141413]">
+              <span className="text-[11.5px] font-bold text-[#2C2B28]">
+                Срок производства
+              </span>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <NumericInput
+                  ariaLabel="Срок производства, дней"
+                  value={fp.productionLeadDays}
+                  min={1}
+                  max={365}
+                  step={5}
+                  onChangeValue={(nextProd) => {
+                    onUpdateModel({
+                      ...model,
+                      sharedSupplyAndFact: {
+                        ...shared,
+                        factoryParams: {
+                          ...fp,
+                          productionLeadDays: Math.max(1, Math.round(nextProd)),
+                        },
+                      },
+                    });
+                    triggerSavedIndicator('Сохранено');
+                  }}
+                  className="w-full rounded-md border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-2.5 py-1.5 font-mono text-[15px] font-extrabold text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
+                />
+                <span className="shrink-0 text-[11px] font-semibold text-[#5C5B55]">дней</span>
+              </div>
+            </label>
+
+            {/* 4. Срок доставки и приёмки (дней) */}
+            <label className="flex flex-col justify-between rounded-[10px] border-[1.5px] border-[#C8C7BE] bg-white px-3 py-2.5 focus-within:border-[#141413]">
+              <span className="text-[11.5px] font-bold text-[#2C2B28]">
+                Доставка в РФ
+              </span>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <NumericInput
+                  ariaLabel="Срок доставки, дней"
+                  value={fp.logisticsLeadDays}
+                  min={0}
+                  max={365}
+                  step={2}
+                  onChangeValue={(nextLog) => {
+                    onUpdateModel({
+                      ...model,
+                      sharedSupplyAndFact: {
+                        ...shared,
+                        factoryParams: {
+                          ...fp,
+                          logisticsLeadDays: Math.max(0, Math.round(nextLog)),
+                        },
+                      },
+                    });
+                    triggerSavedIndicator('Сохранено');
+                  }}
+                  className="w-full rounded-md border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-2.5 py-1.5 font-mono text-[15px] font-extrabold text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
+                />
+                <span className="shrink-0 text-[11px] font-semibold text-[#5C5B55]">
+                  дн. (цикл {proc.totalLeadDays})
+                </span>
+              </div>
+            </label>
+
+            {/* 5. Кнопка раскрытия дополнительных настроек (Размеры S–XXL, MOQ, кратность, страховой запас) */}
+            <div className="flex flex-col justify-between rounded-[10px] border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-3 py-2.5">
+              <span className="text-[11px] font-bold text-[#5C5B55]">
+                MOQ {fp.moqPacks.toLocaleString('ru-RU')} · Запас {fp.safetyStockDays} дн.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedSettings((v) => !v)}
+                className="mt-1.5 inline-flex items-center justify-between rounded-md border-[1.5px] border-[#141413] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#141413] hover:text-white transition cursor-pointer"
+              >
+                <span>Размеры S–XXL и MOQ</span>
+                <span>{showAdvancedSettings ? '▴' : '▾'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Раскрывающийся блок «Дополнительные настройки» (Единая размерная сетка S-XXL, MOQ, Кратность, Страховой запас) */}
         {showAdvancedSettings && (
-          <div className="mt-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+          <div className="mt-3 rounded-[10px] border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] p-3.5">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-              {/* Единая размерная сетка модели (%) — Раздел 5 ТЗ */}
+              {/* Единая размерная сетка модели (%) */}
               <div className="lg:col-span-7">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold text-[#111827] uppercase">
-                    Единая размерная сетка модели (S–XXL, сумма = 100%)
+                  <span className="text-[11.5px] font-extrabold text-[#141413] uppercase">
+                    Пропорция размеров модели (S–XXL, сумма = 100%)
                   </span>
                   <div className="flex items-center gap-2">
                     <span
@@ -818,7 +825,7 @@ export function SkuProcurementMvpWorkbench({
                       <button
                         type="button"
                         onClick={handleNormalizeSizeSharesTo100}
-                        className="rounded bg-[#111827] px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-black"
+                        className="rounded bg-[#141413] px-2.5 py-0.5 text-[10.5px] font-bold text-white hover:bg-black cursor-pointer"
                       >
                         Выровнять до 100%
                       </button>
@@ -829,16 +836,16 @@ export function SkuProcurementMvpWorkbench({
                   {SIZES_LIST.map((sz) => (
                     <label
                       key={sz}
-                      className="flex flex-col rounded border border-[#D1D5DB] bg-white px-2 py-1.5"
+                      className="flex flex-col rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5"
                     >
-                      <span className="text-[10px] font-bold text-[#6B7280]">{sz}, %</span>
+                      <span className="text-[10.5px] font-bold text-[#5C5B55]">{sz}, %</span>
                       <NumericInput
                         ariaLabel={`Доля размера ${sz}, %`}
                         value={fp.sizeSharesPct[sz] ?? 20}
                         min={0}
                         max={100}
                         onChangeValue={(val) => handleUpdateModelSizeShare(sz, val)}
-                        className="mt-0.5 w-full font-mono text-[13px] font-bold text-[#111827] focus:outline-none"
+                        className="mt-0.5 w-full font-mono text-[14px] font-extrabold text-[#141413] focus:outline-none"
                       />
                     </label>
                   ))}
@@ -847,9 +854,9 @@ export function SkuProcurementMvpWorkbench({
 
               {/* MOQ, Кратность и Целевой запас */}
               <div className="grid grid-cols-3 gap-2 lg:col-span-5">
-                <label className="flex flex-col justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1.5">
-                  <span className="text-[10px] font-bold text-[#6B7280]">
-                    MOQ (мин. партия)
+                <label className="flex flex-col justify-between rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5">
+                  <span className="text-[10.5px] font-bold text-[#5C5B55]">
+                    MOQ (мин. заказ)
                   </span>
                   <div className="mt-1 flex items-center gap-1">
                     <NumericInput
@@ -858,14 +865,14 @@ export function SkuProcurementMvpWorkbench({
                       min={1}
                       step={100}
                       onChangeValue={handleUpdateMoq}
-                      className="w-full font-mono text-[13px] font-bold text-[#111827] focus:outline-none"
+                      className="w-full font-mono text-[14px] font-extrabold text-[#141413] focus:outline-none"
                     />
-                    <span className="text-[10px] text-[#6B7280]">компл.</span>
+                    <span className="text-[10px] text-[#5C5B55]">компл.</span>
                   </div>
                 </label>
 
-                <label className="flex flex-col justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1.5">
-                  <span className="text-[10px] font-bold text-[#6B7280]">
+                <label className="flex flex-col justify-between rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5">
+                  <span className="text-[10.5px] font-bold text-[#5C5B55]">
                     Кратность (шаг)
                   </span>
                   <div className="mt-1 flex items-center gap-1">
@@ -875,14 +882,14 @@ export function SkuProcurementMvpWorkbench({
                       min={1}
                       step={50}
                       onChangeValue={handleUpdatePackMultiple}
-                      className="w-full font-mono text-[13px] font-bold text-[#111827] focus:outline-none"
+                      className="w-full font-mono text-[14px] font-extrabold text-[#141413] focus:outline-none"
                     />
-                    <span className="text-[10px] text-[#6B7280]">компл.</span>
+                    <span className="text-[10px] text-[#5C5B55]">компл.</span>
                   </div>
                 </label>
 
-                <label className="flex flex-col justify-between rounded border border-[#D1D5DB] bg-white px-2.5 py-1.5">
-                  <span className="text-[10px] font-bold text-[#6B7280]">
+                <label className="flex flex-col justify-between rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5">
+                  <span className="text-[10.5px] font-bold text-[#5C5B55]">
                     Целевой запас
                   </span>
                   <div className="mt-1 flex items-center gap-1">
@@ -893,132 +900,84 @@ export function SkuProcurementMvpWorkbench({
                       max={180}
                       step={5}
                       onChangeValue={handleUpdateSafetyDays}
-                      className="w-full font-mono text-[13px] font-bold text-[#111827] focus:outline-none"
+                      className="w-full font-mono text-[14px] font-extrabold text-[#141413] focus:outline-none"
                     />
-                    <span className="text-[10px] text-[#6B7280]">дн.</span>
+                    <span className="text-[10px] text-[#5C5B55]">дн.</span>
                   </div>
                 </label>
               </div>
             </div>
           </div>
         )}
+      </div>
 
-        {/* ДВЕ ГЛАВНЫЕ ЦИФРЫ («К заказу, компл.» и «Бюджет, ₽») + компактная строка остатков и PO + кнопки */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
-          <div className="flex flex-wrap items-center gap-6">
-            <div>
-              <div className="text-[11px] font-semibold text-[#6B7280] uppercase">
-                К заказу, компл.
-              </div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <span className="font-mono text-[22px] font-extrabold text-[#111827]">
-                  {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
-                </span>
-                <span className="text-[12px] font-medium text-[#6B7280]">
-                  ({proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд.)
-                </span>
-              </div>
-            </div>
-
-            <div className="h-9 w-px bg-[#D1D5DB]" />
-
-            <div>
-              <div className="text-[11px] font-semibold text-[#6B7280] uppercase">
-                Бюджет, ₽
-              </div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <span className="font-mono text-[22px] font-extrabold text-[#111827]">
-                  {proc.totalRecommendedBudgetRub !== null
-                    ? formatRubMillions(proc.totalRecommendedBudgetRub)
-                    : 'Не задана цена'}
-                </span>
-                {proc.totalRecommendedBudgetRub !== null && (
-                  <span className="text-[12px] font-medium text-[#6B7280]">
-                    ({proc.totalRecommendedBudgetRub.toLocaleString('ru-RU')} ₽)
-                  </span>
-                )}
-              </div>
-            </div>
+      {/* =====================================================================
+          БЛОК 2 · ПАРТИИ К ЗАКАЗУ И УТВЕРЖДЁННЫЕ ПОСТАВКИ (Чистый список из 4 кварталов)
+         ===================================================================== */}
+      <div className="rounded-[14px] border-[1.5px] border-[#C8C7BE] bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-[1.5px] border-[#E2E1D8] pb-3.5">
+          <div>
+            <h4 className="text-[16px] font-extrabold text-[#141413]">
+              Партии к заказу по кварталам ({proc.recommendedBatches.length} план · {proc.approvedOrders.length} утв. PO)
+            </h4>
+            <p className="mt-0.5 text-[12px] text-[#5C5B55]">
+              Вы можете утвердить любую партию в 1 клик или нажать «Размеры и расчёт ▾», чтобы скорректировать объём, даты и размерную сетку.
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleRecalculateDrafts}
-              className="rounded-lg bg-[#111827] px-3.5 py-2 text-[12px] font-semibold text-white shadow-2xs transition hover:bg-black"
+              className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
             >
-              Рассчитать закупки
+              Пересчитать по плану
             </button>
             <button
               type="button"
               onClick={() => setShowAddCustomModal((v) => !v)}
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-[12px] font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
+              className="rounded-lg border-[1.5px] border-[#141413] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#F8F7F3] cursor-pointer"
             >
-              + Добавить партию
+              + Своя партия
             </button>
             {fp.customBatchPeriods && (
               <button
                 type="button"
                 onClick={handleResetToDefaultQuarters}
-                className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-2 text-[11px] font-medium text-[#4B5563] hover:text-[#111827]"
+                className="rounded-lg border border-[#D5D4CA] bg-white px-2.5 py-1.5 text-[11.5px] font-semibold text-[#5C5B55] hover:text-[#141413] cursor-pointer"
               >
-                4 квартала по умолч.
+                Сбросить к 4 кварталам
+              </button>
+            )}
+            {proc.recommendedBatches.length > 0 && (
+              <button
+                type="button"
+                onClick={handleApproveAllDraftBatches}
+                className="rounded-lg bg-[#141413] px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-black cursor-pointer"
+              >
+                ✓ Утвердить все ({proc.recommendedBatches.length})
               </button>
             )}
           </div>
         </div>
 
-        {/* Компактная строка под двумя главными цифрами: остатки и подтверждённые заказы */}
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[12px] text-[#4B5563]">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span>
-              Остаток на складе:{' '}
-              <strong className="font-mono text-[#111827]">
-                {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл.
-              </strong>
-            </span>
-            <span>·</span>
-            <span>
-              Подтверждённые заказы PO:{' '}
-              <strong className="font-mono text-[#111827]">
-                {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.
-              </strong>{' '}
-              ({confirmedPoCount} шт.)
-            </span>
-            {proc.futureScalingPacks > 0 && (
-              <>
-                <span>·</span>
-                <span className="text-amber-800">
-                  Будущая потребность (после теста):{' '}
-                  <strong className="font-mono">
-                    {proc.futureScalingPacks.toLocaleString('ru-RU')} компл.
-                  </strong>
-                  {proc.futureScalingBudgetRub !== null &&
-                    ` (${formatRubMillions(proc.futureScalingBudgetRub)})`}
-                </span>
-              </>
-            )}
-          </div>
-          <span className="text-[11px] text-[#6B7280]">{proc.supplyStatusLabel}</span>
-        </div>
-
-        {/* Форма «+ Добавить партию» (раскрывается по кнопке) */}
+        {/* Форма «+ Своя партия» (раскрывается по кнопке) */}
         {showAddCustomModal && (
-          <div className="mt-3 rounded-lg border border-[#111827] bg-[#F9FAFB] p-3">
-            <div className="flex items-center justify-between pb-2">
-              <span className="text-[12px] font-bold text-[#111827]">
-                Новая партия закупки
+          <div className="mt-3.5 rounded-[10px] border-[1.5px] border-[#141413] bg-[#F8F7F3] p-3.5">
+            <div className="flex items-center justify-between pb-2.5">
+              <span className="text-[13px] font-extrabold text-[#141413]">
+                Добавление произвольной партии закупки
               </span>
               <button
                 type="button"
                 onClick={() => setShowAddCustomModal(false)}
-                className="text-[11px] font-medium text-[#6B7280] hover:text-[#111827]"
+                className="text-[11.5px] font-bold text-[#5C5B55] hover:text-[#141413] cursor-pointer"
               >
                 Закрыть ✕
               </button>
             </div>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-5">
-              <label className="flex flex-col text-[11px] font-medium text-[#4B5563]">
+              <label className="flex flex-col text-[11px] font-bold text-[#374151]">
                 Начало покрытия
                 <select
                   value={newBatchStartMonth}
@@ -1027,7 +986,7 @@ export function SkuProcurementMvpWorkbench({
                     setNewBatchStartMonth(m);
                     if (newBatchEndMonth < m) setNewBatchEndMonth(m);
                   }}
-                  className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 text-[12px] font-semibold text-[#111827]"
+                  className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#141413]"
                 >
                   {MONTHS_SHORT.map((m, idx) => (
                     <option key={m} value={idx}>
@@ -1037,12 +996,12 @@ export function SkuProcurementMvpWorkbench({
                 </select>
               </label>
 
-              <label className="flex flex-col text-[11px] font-medium text-[#4B5563]">
+              <label className="flex flex-col text-[11px] font-bold text-[#374151]">
                 Конец покрытия
                 <select
                   value={newBatchEndMonth}
                   onChange={(e) => setNewBatchEndMonth(Number(e.target.value))}
-                  className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 text-[12px] font-semibold text-[#111827]"
+                  className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 text-[12px] font-bold text-[#141413]"
                 >
                   {MONTHS_SHORT.map((m, idx) => (
                     <option key={m} value={idx} disabled={idx < newBatchStartMonth}>
@@ -1052,41 +1011,41 @@ export function SkuProcurementMvpWorkbench({
                 </select>
               </label>
 
-              <label className="flex flex-col text-[11px] font-medium text-[#4B5563]">
+              <label className="flex flex-col text-[11px] font-bold text-[#374151]">
                 Количество, компл.
                 <NumericInput
                   value={newBatchPacks}
                   min={1}
                   step={50}
                   onChangeValue={setNewBatchPacks}
-                  className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 font-mono text-[12px] font-bold text-[#111827]"
+                  className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 font-mono text-[12.5px] font-extrabold text-[#141413]"
                 />
               </label>
 
-              <label className="flex flex-col text-[11px] font-medium text-[#4B5563]">
+              <label className="flex flex-col text-[11px] font-bold text-[#374151]">
                 Дата заказа до
                 <input
                   type="date"
                   value={newBatchOrderDate}
                   onChange={(e) => setNewBatchOrderDate(e.target.value)}
-                  className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 font-mono text-[12px] font-semibold text-[#111827]"
+                  className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 font-mono text-[12px] font-bold text-[#141413]"
                 />
               </label>
 
               <div className="flex flex-col justify-end gap-1.5">
-                <label className="inline-flex items-center gap-1.5 text-[11px] text-[#374151]">
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#374151]">
                   <input
                     type="checkbox"
                     checked={newBatchApproveImmediately}
                     onChange={(e) => setNewBatchApproveImmediately(e.target.checked)}
-                    className="rounded border-[#D1D5DB]"
+                    className="rounded border-[#C8C7BE]"
                   />
-                  <span>Сразу утвердить PO</span>
+                  <span>Сразу утвердить в PO</span>
                 </label>
                 <button
                   type="button"
                   onClick={handleAddBatchSubmit}
-                  className="rounded bg-[#111827] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-black"
+                  className="rounded-md bg-[#141413] px-3 py-1.5 text-[12px] font-bold text-white hover:bg-black cursor-pointer"
                 >
                   Сохранить партию
                 </button>
@@ -1094,28 +1053,9 @@ export function SkuProcurementMvpWorkbench({
             </div>
           </div>
         )}
-      </div>
 
-      {/* =====================================================================
-          ЗОНА Б · ПЛАН ЗАКУПОК + ЗОНА В · ДЕТАЛИЗАЦИЯ ПО КЛИКУ (Раздел 2, 6, 10)
-         ===================================================================== */}
-      <div className="rounded-xl border border-[#DFE4EC] bg-white p-4 shadow-2xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] pb-3">
-          <div className="flex items-center gap-2.5">
-            <span className="rounded bg-[#111827] px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase">
-              Зона Б · План закупок
-            </span>
-            <h4 className="text-[14px] font-bold text-[#111827]">
-              Партии к заказу и утверждённые поставки
-            </h4>
-          </div>
-          <span className="text-[11px] text-[#6B7280]">
-            Нажмите на строку партии, чтобы открыть Зону В (формула расчёта, размеры S–XXL и управление)
-          </span>
-        </div>
-
-        <div className="mt-3 space-y-2">
-          {/* 1. Уже утверждённые заказы PO (не переписываются пересчётом!) */}
+        <div className="mt-4 space-y-2.5">
+          {/* 1. Уже утверждённые заказы PO */}
           {proc.approvedOrders.map((po, poIdx) => {
             const rowKey = `po-${po.id}`;
             const isExpanded = activeExpandedKey === rowKey;
@@ -1129,68 +1069,56 @@ export function SkuProcurementMvpWorkbench({
             return (
               <div
                 key={po.id}
-                className={`rounded-xl border transition ${
+                className={`rounded-[12px] border-[1.5px] transition ${
                   isExpanded
-                    ? 'border-[#111827] bg-[#F9FAFB]'
-                    : 'border-[#E5E7EB] bg-white hover:border-[#D1D5DB]'
+                    ? 'border-[#141413] bg-[#F8F7F3]'
+                    : 'border-emerald-300 bg-emerald-50/30 hover:border-emerald-500'
                 }`}
               >
-                {/* Компактная строка партии */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setExpandedKey(isExpanded ? null : rowKey);
-                    }
-                  }}
-                  className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-3.5 py-2.5"
-                >
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="font-mono text-[12px] font-bold text-[#111827]">
-                      Заказ #{poIdx + 1} ·{' '}
+                    <span className="rounded-md bg-emerald-800 px-2.5 py-1 font-mono text-[11px] font-bold text-white">
+                      УТВЕРЖДЁН PO #{poIdx + 1}
+                    </span>
+                    <span className="text-[14px] font-extrabold text-[#141413]">
                       {po.coverageMonthsLabel || `${MONTHS_SHORT[po.arrivalMonthIdx]} 2027`}
                     </span>
-                    <span className="rounded border border-[#E5E7EB] bg-[#F3F4F6] px-2 py-0.5 font-mono text-[11px] text-[#374151]">
+                    <span className="rounded border border-[#D5D4CA] bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-[#374151]">
                       {po.orderNumber}
+                    </span>
+                    <span className="text-[12px] text-[#5C5B55]">
+                      Заказ от <strong className="font-mono text-[#141413]">{po.orderPlacementDateIso}</strong>
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 text-[12px]">
-                    <span className="font-mono font-bold text-[#111827]">
-                      {po.packsQty.toLocaleString('ru-RU')} компл.
-                    </span>
-                    <span className="text-[#D1D5DB]">|</span>
-                    <span className="font-mono font-semibold text-[#111827]">
-                      {formatRubMillions(po.totalOrderRub)}
-                    </span>
-                    <span className="text-[#D1D5DB]">|</span>
-                    <span className="font-mono text-[#4B5563]">
-                      Заказ от {po.orderPlacementDateIso}
-                    </span>
-                    <span
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${
-                        confirmed
-                          ? 'bg-emerald-100 text-emerald-900'
-                          : 'bg-amber-100 text-amber-900'
-                      }`}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-right">
+                      <div className="font-mono text-[15px] font-black text-[#141413]">
+                        {po.packsQty.toLocaleString('ru-RU')} компл. · {formatRubMillions(po.totalOrderRub)}
+                      </div>
+                      <div className="text-[11px] text-[#5C5B55]">
+                        {(po.packsQty * po.unitsInPack).toLocaleString('ru-RU')} изд. · {confirmed ? 'Подтверждён фабрикой' : 'Ожидает подтв. фабрики'}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
+                      className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#F4F3EE] cursor-pointer"
                     >
-                      {confirmed ? 'Утверждено · Подтв. фабрикой' : 'Ожидает подтв. фабрики'}
-                    </span>
-                    <span className="text-[#6B7280]">{isExpanded ? '▴' : '▾'}</span>
+                      {isExpanded ? 'Скрыть детали ▴' : 'Размеры и статус ▾'}
+                    </button>
                   </div>
                 </div>
 
-                {/* ЗОНА В · Детализация утверждённого заказа PO */}
+                {/* Детализация утверждённого заказа PO */}
                 {isExpanded && (
-                  <div className="border-t border-[#E5E7EB] bg-white px-4 py-3.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-                      <span className="rounded bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-bold text-[#111827] uppercase">
-                        Зона В · Детализация утверждённого заказа {po.orderNumber}
+                  <div className="border-t-[1.5px] border-[#E2E1D8] bg-white px-4 py-3.5 rounded-b-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+                      <span className="text-[12px] font-extrabold text-[#141413]">
+                        Детализация утверждённого заказа {po.orderNumber}
                       </span>
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-[#111827]">
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] font-bold text-[#141413]">
                         <input
                           type="checkbox"
                           checked={confirmed}
@@ -1201,43 +1129,42 @@ export function SkuProcurementMvpWorkbench({
                             onUpdateModel(updated);
                             triggerSavedIndicator('Сохранено');
                           }}
-                          className="rounded border-[#D1D5DB]"
+                          className="rounded border-[#C8C7BE]"
                         />
                         <span>Подтверждён фабрикой (учитывать в гарантированных поставках)</span>
                       </label>
                     </div>
 
                     {discrepancy && (
-                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] text-amber-900">
+                      <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-900">
                         <strong>Зафиксированный PO сохранён без изменений:</strong>{' '}
                         {discrepancy.message}
                       </div>
                     )}
 
                     {/* Таблица размеров S–XXL для PO */}
-                    <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2.5">
-                      <div className="text-[11px] font-semibold text-[#374151]">
-                        Размеры партии (S–XXL): комплекты и физические изделия ({po.unitsInPack}{' '}
-                        шт./компл.)
+                    <div className="rounded-lg border-[1.5px] border-[#E2E1D8] bg-[#F8F7F3] p-3">
+                      <div className="text-[11.5px] font-bold text-[#2C2B28]">
+                        Размеры партии (S–XXL): комплекты и физические изделия ({po.unitsInPack} шт./компл.)
                       </div>
                       <div className="mt-2 grid grid-cols-6 gap-2 text-center text-[11px]">
                         {SIZES_LIST.map((sz) => (
                           <div
                             key={sz}
-                            className="rounded border border-[#E5E7EB] bg-white px-2 py-1.5"
+                            className="rounded-md border border-[#D5D4CA] bg-white px-2 py-1.5"
                           >
-                            <div className="font-bold text-[#6B7280]">{sz}</div>
-                            <div className="font-mono text-[13px] font-bold text-[#111827]">
+                            <div className="font-bold text-[#5C5B55]">{sz}</div>
+                            <div className="font-mono text-[13px] font-extrabold text-[#141413]">
                               {(poSizes[sz] || 0).toLocaleString('ru-RU')} компл.
                             </div>
-                            <div className="font-mono text-[10px] text-[#6B7280]">
+                            <div className="font-mono text-[10px] text-[#5C5B55]">
                               {((poSizes[sz] || 0) * po.unitsInPack).toLocaleString('ru-RU')} изд.
                             </div>
                           </div>
                         ))}
-                        <div className="rounded border border-[#111827] bg-[#111827] px-2 py-1.5 text-white">
+                        <div className="rounded-md border border-[#141413] bg-[#141413] px-2 py-1.5 text-white">
                           <div className="font-bold text-gray-300">ИТОГО</div>
-                          <div className="font-mono text-[13px] font-bold">
+                          <div className="font-mono text-[13px] font-extrabold">
                             {poSizeTotal.toLocaleString('ru-RU')} компл.
                           </div>
                           <div className="font-mono text-[10px] text-gray-300">
@@ -1249,8 +1176,8 @@ export function SkuProcurementMvpWorkbench({
 
                     {/* Управление утверждённым PO */}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#4B5563]">
-                        <span>Статус поставки:</span>
+                      <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#374151]">
+                        <span className="font-semibold">Статус поставки:</span>
                         <select
                           value={po.status}
                           onChange={(e) => {
@@ -1260,7 +1187,7 @@ export function SkuProcurementMvpWorkbench({
                             onUpdateModel(updated);
                             triggerSavedIndicator('Сохранено');
                           }}
-                          className="rounded border border-[#D1D5DB] bg-white px-2 py-1 text-[11px] font-semibold text-[#111827]"
+                          className="rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1 text-[12px] font-bold text-[#141413]"
                         >
                           {Object.entries(PO_STATUS_LABELS_RU).map(([k, lbl]) => (
                             <option key={k} value={k}>
@@ -1269,7 +1196,7 @@ export function SkuProcurementMvpWorkbench({
                           ))}
                         </select>
                         <span>
-                          · Зафиксированная цена: <strong>{po.lockedUnitCostRub} ₽/компл.</strong>
+                          · Цена в заказе: <strong>{po.lockedUnitCostRub} ₽/компл.</strong>
                         </span>
                       </div>
 
@@ -1280,9 +1207,9 @@ export function SkuProcurementMvpWorkbench({
                           onUpdateModel(updated);
                           triggerSavedIndicator('Заказ удалён');
                         }}
-                        className="rounded border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-800 hover:bg-rose-100"
+                        className="rounded-md border border-rose-300 bg-rose-50 px-3 py-1 text-[11.5px] font-bold text-rose-800 hover:bg-rose-100 cursor-pointer"
                       >
-                        Удалить тестовый заказ
+                        Вернуть в черновик / Удалить PO
                       </button>
                     </div>
                   </div>
@@ -1308,123 +1235,123 @@ export function SkuProcurementMvpWorkbench({
             return (
               <div
                 key={batch.periodId}
-                className={`rounded-xl border transition ${
+                className={`rounded-[12px] border-[1.5px] transition ${
                   isExpanded
-                    ? 'border-[#111827] bg-[#F9FAFB]'
-                    : 'border-[#E5E7EB] bg-white hover:border-[#D1D5DB]'
+                    ? 'border-[#141413] bg-[#F8F7F3]'
+                    : 'border-[#C8C7BE] bg-white hover:border-[#141413]'
                 }`}
               >
-                {/* Компактная строка партии (Формат из Раздела 10 Стр. 5) */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setExpandedKey(isExpanded ? null : rowKey);
-                    }
-                  }}
-                  className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-3.5 py-2.5"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[13px] font-bold text-[#111827]">
-                      Партия №{bIdx + 1} · {batch.coverageMonthsLabel.replace(' 2027', '')}
-                    </span>
-                    {batch.isAdditionalOrder && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                        Дополнительно к заказу
+                {/* Наглядная строка квартальной партии с прямыми кнопками действия */}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-[#141413] px-2.5 py-0.5 font-mono text-[11.5px] font-bold text-white">
+                        Партия №{bIdx + 1}
                       </span>
-                    )}
-                    {batch.isTestBatch && (
-                      <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-900">
-                        Тестовая партия ({MODEL_SCALING_STAGE_LABELS_RU[proc.scalingStage]})
+                      <span className="text-[15px] font-extrabold text-[#141413]">
+                        Покрытие: {batch.coverageMonthsLabel}
                       </span>
-                    )}
-                    {batch.isUrgentPastOrderDate && (
-                      <span
-                        className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-900"
-                        title="Расчётная дата заказа в прошлом — вы можете скорректировать дату вручную в Зоне В"
-                      >
-                        ⚠ Дата в прошлом
+                      {batch.isAdditionalOrder && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">
+                          Дополнительно к заказу
+                        </span>
+                      )}
+                      {batch.isTestBatch && (
+                        <span className="rounded bg-blue-100 px-2 py-0.5 text-[10.5px] font-bold text-blue-900">
+                          Тестовая партия ({MODEL_SCALING_STAGE_LABELS_RU[proc.scalingStage]})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#5C5B55]">
+                      <span>
+                        Заказать до:{' '}
+                        <strong className="font-mono text-[#141413]">
+                          {batch.recommendedOrderDateIso}
+                        </strong>
                       </span>
-                    )}
+                      <span>→</span>
+                      <span>
+                        Приход на склад к:{' '}
+                        <strong className="font-mono text-[#141413]">
+                          {batch.requiredArrivalDateIso}
+                        </strong>
+                      </span>
+                      <span>·</span>
+                      <span>План продаж квартала: {batch.periodDemandPacks.toLocaleString('ru-RU')} компл.</span>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 text-[12px]">
-                    <span className="font-mono text-[13px] font-bold text-[#111827]">
-                      {batch.recommendedPacks.toLocaleString('ru-RU')} компл.
-                    </span>
-                    <span className="text-[#D1D5DB]">|</span>
-                    <span className="font-mono font-semibold text-[#111827]">
-                      {formatRubMillions(batch.estimatedTotalRub)}
-                    </span>
-                    <span className="text-[#D1D5DB]">|</span>
-                    <span className="font-mono text-[#4B5563]">
-                      Заказ до {batch.recommendedOrderDateIso}
-                    </span>
-                    <span className="rounded-md border border-[#D1D5DB] bg-[#F3F4F6] px-2 py-0.5 text-[11px] font-bold text-[#111827]">
-                      План
-                    </span>
-                    <span className="text-[#6B7280]">{isExpanded ? '▴' : '▾'}</span>
+                  {/* Объём, бюджет и 2 прямые кнопки */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-right pr-1">
+                      <div className="font-mono text-[16px] font-black text-[#141413]">
+                        {batch.recommendedPacks.toLocaleString('ru-RU')} компл. · {formatRubMillions(batch.estimatedTotalRub)}
+                      </div>
+                      <div className="font-mono text-[11.5px] text-[#5C5B55]">
+                        {batch.physicalUnitsQty.toLocaleString('ru-RU')} изд. · {batch.estimatedTotalRub.toLocaleString('ru-RU')} ₽
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
+                      className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-3 py-2 text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                    >
+                      {isExpanded ? 'Скрыть расчёт ▴' : 'Размеры и расчёт ▾'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApproveDraftBatch(batch)}
+                      className="rounded-lg bg-[#141413] px-3.5 py-2 text-[12px] font-bold text-white hover:bg-black cursor-pointer"
+                    >
+                      ✓ Утвердить заказ
+                    </button>
                   </div>
                 </div>
 
-                {/* ЗОНА В · Детализация выбранной партии (раскрывается по клику) */}
+                {/* Раскрываемая карточка партии (формула, редактирование дат/кол-ва, размеры S–XXL) */}
                 {isExpanded && (
-                  <div className="border-t border-[#E5E7EB] bg-white px-4 py-3.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-[#111827] px-2 py-0.5 text-[10px] font-bold text-white uppercase">
-                          Зона В · Детализация партии №{bIdx + 1} ({batch.coverageMonthsLabel})
-                        </span>
-                        <span className="text-[11px] text-[#6B7280]">
-                          Приход к {batch.requiredArrivalDateIso} · Цикл {batch.totalLeadDays} дн.
-                        </span>
+                  <div className="border-t-[1.5px] border-[#E2E1D8] bg-white px-4 py-4 rounded-b-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
+                      <div className="text-[12.5px] font-extrabold text-[#141413]">
+                        Расчёт и размерная сетка · Партия №{bIdx + 1} ({batch.coverageMonthsLabel})
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setEditingBatchKey(isEditing ? null : rowKey)}
-                          className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+                          className="rounded-lg border-[1.5px] border-[#141413] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#F8F7F3] cursor-pointer"
                         >
-                          {isEditing ? 'Готово' : 'Изменить'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApproveDraftBatch(batch)}
-                          className="rounded-lg bg-[#111827] px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-2xs hover:bg-black"
-                        >
-                          Утвердить заказ
+                          {isEditing ? 'Готово' : 'Изменить количество или даты'}
                         </button>
                       </div>
                     </div>
 
-                    {/* Формула расчёта потребности (Раздел 4 ТЗ) */}
-                    <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[11px] text-[#374151]">
-                      <span className="font-semibold text-[#111827]">Формула расчёта: </span>
-                      Плановые выкупы ({batch.periodDemandPacks.toLocaleString('ru-RU')} компл.) +
-                      Целевой запас ({batch.safetyStockPacks.toLocaleString('ru-RU')} компл.) −
+                    {/* Формула расчёта потребности */}
+                    <div className="rounded-lg border-[1.5px] border-[#E2E1D8] bg-[#F8F7F3] px-3.5 py-2.5 text-[12px] text-[#374151]">
+                      <span className="font-bold text-[#141413]">Как посчитана партия: </span>
+                      Выкупы периода ({batch.periodDemandPacks.toLocaleString('ru-RU')} компл.) +
+                      Запас ({batch.safetyStockPacks.toLocaleString('ru-RU')} компл.) −
                       Остаток к началу ({batch.openingAvailableAtStartPacks.toLocaleString('ru-RU')}{' '}
-                      компл.) − Подтверждённые PO (
+                      компл.) − Утверждённые PO (
                       {batch.confirmedReceiptsInPeriodPacks.toLocaleString('ru-RU')} компл.) ={' '}
                       <strong>
                         чистая потребность {batch.rawNetNeedPacks.toLocaleString('ru-RU')} компл.
                       </strong>{' '}
-                      → с округлением до MOQ ({fp.moqPacks.toLocaleString('ru-RU')}) и шага (
-                      {fp.packMultiple}):{' '}
-                      <strong className="font-mono text-[#111827]">
+                      → с учётом MOQ ({fp.moqPacks.toLocaleString('ru-RU')}) и шага ({fp.packMultiple}):{' '}
+                      <strong className="font-mono text-[#141413]">
                         {batch.recommendedPacks.toLocaleString('ru-RU')} компл. (
                         {batch.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
                       </strong>
                     </div>
 
-                    {/* Режим редактирования партии до утверждения (месяцы покрытия, количество, дата заказа, объединение/деление) */}
+                    {/* Режим редактирования партии до утверждения */}
                     {isEditing && (
-                      <div className="mt-2.5 rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] p-3">
-                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
-                          <label className="flex flex-col text-[11px] font-semibold text-[#374151]">
+                      <div className="mt-3 rounded-lg border-[1.5px] border-[#141413] bg-[#F8F7F3] p-3.5">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                          <label className="flex flex-col text-[11.5px] font-bold text-[#2C2B28]">
                             Начало покрытия
                             <select
                               value={batch.firstCoveredMonthIdx}
@@ -1436,7 +1363,7 @@ export function SkuProcurementMvpWorkbench({
                                   endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
                                 }));
                               }}
-                              className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 text-[12px] font-semibold text-[#111827]"
+                              className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 text-[12.5px] font-bold text-[#141413]"
                             >
                               {MONTHS_SHORT.map((m, idx) => (
                                 <option key={m} value={idx}>
@@ -1446,7 +1373,7 @@ export function SkuProcurementMvpWorkbench({
                             </select>
                           </label>
 
-                          <label className="flex flex-col text-[11px] font-semibold text-[#374151]">
+                          <label className="flex flex-col text-[11.5px] font-bold text-[#2C2B28]">
                             Конец покрытия
                             <select
                               value={batch.endCoveredMonthIdx}
@@ -1457,7 +1384,7 @@ export function SkuProcurementMvpWorkbench({
                                   endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
                                 }));
                               }}
-                              className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 text-[12px] font-semibold text-[#111827]"
+                              className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 text-[12.5px] font-bold text-[#141413]"
                             >
                               {MONTHS_SHORT.map((m, idx) => (
                                 <option
@@ -1471,8 +1398,8 @@ export function SkuProcurementMvpWorkbench({
                             </select>
                           </label>
 
-                          <label className="flex flex-col text-[11px] font-semibold text-[#374151]">
-                            Количество партии, компл.
+                          <label className="flex flex-col text-[11.5px] font-bold text-[#2C2B28]">
+                            Своё количество, компл.
                             <NumericInput
                               value={batch.recommendedPacks}
                               min={1}
@@ -1483,11 +1410,11 @@ export function SkuProcurementMvpWorkbench({
                                   customPacksQty: val,
                                 }))
                               }
-                              className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 font-mono text-[12px] font-bold text-[#111827]"
+                              className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 font-mono text-[13px] font-extrabold text-[#141413]"
                             />
                           </label>
 
-                          <label className="flex flex-col text-[11px] font-semibold text-[#374151]">
+                          <label className="flex flex-col text-[11.5px] font-bold text-[#2C2B28]">
                             Дата заказа (вручную)
                             <input
                               type="date"
@@ -1498,18 +1425,18 @@ export function SkuProcurementMvpWorkbench({
                                   customOrderDateIso: e.target.value,
                                 }))
                               }
-                              className="mt-1 rounded border border-[#D1D5DB] bg-white px-2 py-1.5 font-mono text-[12px] font-semibold text-[#111827]"
+                              className="mt-1 rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1.5 font-mono text-[12.5px] font-bold text-[#141413]"
                             />
                           </label>
                         </div>
 
-                        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#E5E7EB] pt-2">
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E1D8] pt-2.5">
                           <div className="flex flex-wrap items-center gap-2">
                             {canMergeNext && (
                               <button
                                 type="button"
                                 onClick={() => handleMergeWithNextPeriod(batch.periodId)}
-                                className="rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+                                className="rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1 text-[11.5px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
                               >
                                 Объединить со следующей партией
                               </button>
@@ -1518,7 +1445,7 @@ export function SkuProcurementMvpWorkbench({
                               <button
                                 type="button"
                                 onClick={() => handleSplitPeriod(batch.periodId)}
-                                className="rounded border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+                                className="rounded-md border-[1.5px] border-[#C8C7BE] bg-white px-2.5 py-1 text-[11.5px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
                               >
                                 Разделить партию на две
                               </button>
@@ -1529,7 +1456,7 @@ export function SkuProcurementMvpWorkbench({
                             <button
                               type="button"
                               onClick={() => handleDeleteDraftPeriod(batch.periodId)}
-                              className="rounded border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-800 hover:bg-rose-100"
+                              className="rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-[11.5px] font-bold text-rose-800 hover:bg-rose-100 cursor-pointer"
                             >
                               Удалить черновую партию
                             </button>
@@ -1538,17 +1465,16 @@ export function SkuProcurementMvpWorkbench({
                       </div>
                     )}
 
-                    {/* Размеры S–XXL (метод наибольших остатков, Раздел 5 и 10 ТЗ) */}
-                    <div className="mt-2.5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2.5">
+                    {/* Размеры S–XXL */}
+                    <div className="mt-3 rounded-lg border-[1.5px] border-[#E2E1D8] bg-[#F8F7F3] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-[#111827]">
-                          Размеры: S [{batch.sizeSharesPct.S}%] · M [{batch.sizeSharesPct.M}%] · L [
+                        <span className="text-[11.5px] font-bold text-[#141413]">
+                          Распределение по размерам S–XXL: S [{batch.sizeSharesPct.S}%] · M [{batch.sizeSharesPct.M}%] · L [
                           {batch.sizeSharesPct.L}%] · XL [{batch.sizeSharesPct.XL}%] · XXL [
-                          {batch.sizeSharesPct.XXL}%] ={' '}
-                          {SIZES_LIST.reduce((s, sz) => s + (batch.sizeSharesPct[sz] || 0), 0)}%
+                          {batch.sizeSharesPct.XXL}%]
                         </span>
-                        <span className="text-[11px] text-[#6B7280]">
-                          Метод наибольших остатков · без потери единиц
+                        <span className="text-[11px] font-medium text-[#5C5B55]">
+                          Без потери единиц при округлении
                         </span>
                       </div>
 
@@ -1559,27 +1485,27 @@ export function SkuProcurementMvpWorkbench({
                           return (
                             <div
                               key={sz}
-                              className="rounded border border-[#E5E7EB] bg-white px-2 py-1.5"
+                              className="rounded-md border border-[#D5D4CA] bg-white px-2 py-1.5"
                             >
-                              <div className="flex items-center justify-between text-[10px] font-bold text-[#6B7280]">
+                              <div className="flex items-center justify-between text-[10px] font-bold text-[#5C5B55]">
                                 <span>{sz}</span>
                                 <span>{batch.sizeSharesPct[sz]}%</span>
                               </div>
-                              <div className="mt-0.5 font-mono text-[13px] font-bold text-[#111827]">
+                              <div className="mt-0.5 font-mono text-[13.5px] font-extrabold text-[#141413]">
                                 {packsForSize.toLocaleString('ru-RU')} компл.
                               </div>
-                              <div className="font-mono text-[10px] text-[#6B7280]">
+                              <div className="font-mono text-[10px] text-[#5C5B55]">
                                 {unitsForSize.toLocaleString('ru-RU')} изд.
                               </div>
                             </div>
                           );
                         })}
-                        <div className="rounded border border-[#111827] bg-[#111827] px-2 py-1.5 text-white">
+                        <div className="rounded-md border border-[#141413] bg-[#141413] px-2 py-1.5 text-white">
                           <div className="flex items-center justify-between text-[10px] font-bold text-gray-300">
                             <span>ИТОГ</span>
                             <span>100%</span>
                           </div>
-                          <div className="mt-0.5 font-mono text-[13px] font-bold">
+                          <div className="mt-0.5 font-mono text-[13.5px] font-extrabold">
                             {sizeTotalPacks.toLocaleString('ru-RU')} компл.
                           </div>
                           <div className="font-mono text-[10px] text-gray-300">
@@ -1594,25 +1520,25 @@ export function SkuProcurementMvpWorkbench({
             );
           })}
 
-          {/* 3. Будущая потребность (для моделей в статусе «Гипотеза» или «Тест», Раздел 8 ТЗ) */}
+          {/* 3. Будущая потребность (для моделей в статусе «Гипотеза» или «Тест») */}
           {proc.futureScalingBatches.length > 0 && (
-            <div className="mt-3 rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-3">
+            <div className="mt-3 rounded-[12px] border-[1.5px] border-dashed border-[#C8C7BE] bg-[#F8F7F3] p-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
                 <div>
-                  <span className="text-[12px] font-bold text-[#111827]">
-                    Будущая потребность после прохождения теста (статус «
+                  <span className="text-[13px] font-extrabold text-[#141413]">
+                    Следующие кварталы после прохождения теста (сейчас режим «
                     {MODEL_SCALING_STAGE_LABELS_RU[proc.scalingStage]}»)
                   </span>
-                  <p className="text-[11px] text-[#6B7280]">
-                    По правилу осторожного масштабирования (Раздел 8 ТЗ) эти кварталы не предлагаются к заказу до перевода модели в статус «Масштабирование».
+                  <p className="text-[11.5px] text-[#5C5B55]">
+                    Чтобы открыть все кварталы к заказу прямо сейчас, переключите режим в «Масштабирование».
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleUpdateScalingStage('scaling')}
-                  className="rounded-lg border border-[#111827] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#111827] hover:bg-[#111827] hover:text-white"
+                  className="rounded-lg border-[1.5px] border-[#141413] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#141413] hover:text-white cursor-pointer"
                 >
-                  Перевести в «Масштабирование»
+                  Включить «Масштабирование»
                 </button>
               </div>
 
@@ -1620,13 +1546,13 @@ export function SkuProcurementMvpWorkbench({
                 {proc.futureScalingBatches.map((fb) => (
                   <div
                     key={fb.periodId}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] text-[#4B5563]"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#D5D4CA] bg-white px-3.5 py-2 text-[12px] text-[#4B5563]"
                   >
-                    <span className="font-mono font-semibold text-[#111827]">
-                      Партия №{fb.batchIndex} · {fb.coverageMonthsLabel.replace(' 2027', '')}
+                    <span className="font-mono font-bold text-[#141413]">
+                      Партия №{fb.batchIndex} · {fb.coverageMonthsLabel}
                     </span>
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-mono font-semibold text-[#111827]">
+                      <span className="font-mono font-bold text-[#141413]">
                         {fb.recommendedPacks.toLocaleString('ru-RU')} компл.
                       </span>
                       <span>|</span>
@@ -1635,8 +1561,8 @@ export function SkuProcurementMvpWorkbench({
                       <span className="font-mono text-[11px]">
                         Заказ до {fb.recommendedOrderDateIso}
                       </span>
-                      <span className="rounded bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-semibold text-[#6B7280]">
-                        Будущая потребность
+                      <span className="rounded bg-[#EFEFE9] px-2 py-0.5 text-[10.5px] font-bold text-[#5C5B55]">
+                        После теста
                       </span>
                     </div>
                   </div>
@@ -1648,48 +1574,47 @@ export function SkuProcurementMvpWorkbench({
           {proc.approvedOrders.length === 0 &&
             proc.recommendedBatches.length === 0 &&
             proc.futureScalingBatches.length === 0 && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-[12px] font-medium text-emerald-900">
-                Потребность в закупках полностью закрыта текущим остатком на складе (
-                {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл.).
+              <div className="rounded-xl border-[1.5px] border-emerald-300 bg-emerald-50/70 px-4 py-3 text-[13px] font-bold text-emerald-900">
+                ✓ Потребность в закупках полностью закрыта доступным товаром (склад: {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл., утверждённые PO: {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.).
               </div>
             )}
         </div>
       </div>
 
       {/* =====================================================================
-          СКРЫТАЯ ПО УМОЛЧАНИЮ ТАБЛИЦА НА 12 МЕСЯЦЕВ (Раздел 7 ТЗ MVP)
+          СКРЫТАЯ ПО УМОЛЧАНИЮ ТАБЛИЦА НА 12 МЕСЯЦЕВ
          ===================================================================== */}
-      <div className="rounded-xl border border-[#DFE4EC] bg-white px-4 py-3 shadow-2xs">
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] font-semibold text-[#374151]">
-            Помесячный расчёт остатков, выкупов и поступлений (Янв–Дек 2027)
+      <div className="rounded-[14px] border-[1.5px] border-[#C8C7BE] bg-white px-5 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[13px] font-bold text-[#141413]">
+            Помесячный баланс: остатки, выкупы и приходы по 12 месяцам (Янв–Дек 2027)
           </span>
           <button
             type="button"
             onClick={() => setShowMonthlyTable((v) => !v)}
-            className="rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-3 py-1.5 text-[12px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
+            className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
           >
-            {showMonthlyTable ? 'Скрыть расчёт (12 мес.) ▴' : 'Показать расчёт (12 мес.) ▾'}
+            {showMonthlyTable ? 'Скрыть таблицу 12 мес. ▴' : 'Показать таблицу 12 мес. ▾'}
           </button>
         </div>
 
         {showMonthlyTable && (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-left text-[11px]">
+            <table className="w-full min-w-[760px] border-collapse text-left text-[11.5px]">
               <thead>
-                <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]">
-                  <th className="py-2 pr-3 pl-2 font-semibold">Показатель (компл.)</th>
+                <tr className="border-b-[1.5px] border-[#E2E1D8] bg-[#F8F7F3] text-[#5C5B55]">
+                  <th className="py-2 pr-3 pl-2 font-bold">Показатель (компл.)</th>
                   {proc.monthlyBalance.map((r) => (
-                    <th key={r.monthIdx} className="px-2 py-2 text-right font-mono font-semibold">
+                    <th key={r.monthIdx} className="px-2 py-2 text-right font-mono font-bold">
                       {r.monthLabel}
                     </th>
                   ))}
-                  <th className="py-2 pr-2 pl-3 text-right font-mono font-bold text-[#111827]">
+                  <th className="py-2 pr-2 pl-3 text-right font-mono font-extrabold text-[#141413]">
                     Год
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E5E7EB]">
+              <tbody className="divide-y divide-[#E8E7DF]">
                 <tr>
                   <td className="py-2 pr-3 pl-2 font-medium text-[#374151]">
                     Остаток на начало мес.
@@ -1699,7 +1624,7 @@ export function SkuProcurementMvpWorkbench({
                       {r.openingAvailablePacks.toLocaleString('ru-RU')}
                     </td>
                   ))}
-                  <td className="py-2 pr-2 pl-3 text-right font-mono font-semibold text-[#111827]">
+                  <td className="py-2 pr-2 pl-3 text-right font-mono font-bold text-[#141413]">
                     {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')}
                   </td>
                 </tr>
@@ -1726,18 +1651,18 @@ export function SkuProcurementMvpWorkbench({
                   </td>
                 </tr>
                 <tr>
-                  <td className="py-2 pr-3 pl-2 font-semibold text-[#111827]">
+                  <td className="py-2 pr-3 pl-2 font-bold text-[#141413]">
                     План выкупов (продажи)
                   </td>
                   {proc.monthlyBalance.map((r) => (
                     <td
                       key={r.monthIdx}
-                      className="px-2 py-2 text-right font-mono font-semibold text-[#111827]"
+                      className="px-2 py-2 text-right font-mono font-bold text-[#141413]"
                     >
                       {r.demandPacks.toLocaleString('ru-RU')}
                     </td>
                   ))}
-                  <td className="py-2 pr-2 pl-3 text-right font-mono font-bold text-[#111827]">
+                  <td className="py-2 pr-2 pl-3 text-right font-mono font-extrabold text-[#141413]">
                     {proc.annualDemandPacks.toLocaleString('ru-RU')}
                   </td>
                 </tr>

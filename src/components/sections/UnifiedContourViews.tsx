@@ -631,10 +631,41 @@ export function ProcurementContourView() {
     updateModelSpec,
   } = useLiveScenarioPortfolio();
 
-  const [subTab, setSubTab] = useState<'batches' | 'crm'>('batches');
-  const [selectedSkuId, setSelectedSkuId] = useState<string>('scen-brn-001-sc');
+  const [subTab, setSubTab] = useState<'batches' | 'crm'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('borners_procurement_subtab_v1');
+        if (saved === 'batches' || saved === 'crm') return saved;
+      } catch {
+        // ignore
+      }
+    }
+    return 'batches';
+  });
+  const [selectedSkuId, setSelectedSkuId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem('borners_procurement_selected_sku_v1');
+        if (saved) return saved;
+      } catch {
+        // ignore
+      }
+    }
+    return 'scen-brn-001-sc';
+  });
   const [skuSearch, setSkuSearch] = useState('');
   const [showAllSkusTable, setShowAllSkusTable] = useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('borners_procurement_subtab_v1', subTab);
+        window.localStorage.setItem('borners_procurement_selected_sku_v1', selectedSkuId);
+      } catch {
+        // ignore
+      }
+    }
+  }, [subTab, selectedSkuId]);
 
   const openTasksCount = useMemo(
     () => tasks.filter((t) => !t.isArchived && t.status !== 'Done').length,
@@ -727,135 +758,178 @@ export function ProcurementContourView() {
     );
   };
 
+  const activeSkuIndex = useMemo(() => {
+    if (!activeSkuModel) return 0;
+    const idx = filteredSkus.findIndex((item) => item.model.id === activeSkuModel.id);
+    return idx >= 0 ? idx : 0;
+  }, [filteredSkus, activeSkuModel]);
+
+  const handleStepSku = (delta: number) => {
+    if (filteredSkus.length === 0) return;
+    const nextIdx = (activeSkuIndex + delta + filteredSkus.length) % filteredSkus.length;
+    setSelectedSkuId(filteredSkus[nextIdx].model.id);
+  };
+
   return (
-    <div className="space-y-5 pb-16">
-      {/* Переключатель: Закупки (MVP) | Задачи CRM */}
-      <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12.5px] font-semibold">
-          <button
-            type="button"
-            onClick={() => setSubTab('batches')}
-            className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
-              subTab === 'batches'
-                ? 'bg-[#141413] text-white'
-                : 'text-[#52514C] hover:text-[#141413]'
-            }`}
-          >
-            03 · Закупки ({eligibleModels.length} SKU · {procData.approvedCount} PO)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubTab('crm')}
-            className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
-              subTab === 'crm'
-                ? 'bg-[#141413] text-white'
-                : 'text-[#52514C] hover:text-[#141413]'
-            }`}
-          >
-            Задачи CRM ({openTasksCount})
-          </button>
+    <div className="space-y-4 pb-16">
+      {/* ЕДИНАЯ КОМПАКТНАЯ ПАНЕЛЬ УПРАВЛЕНИЯ РАЗДЕЛОМ ЗАКУПОК (Вместо 3 нагромождённых блоков) */}
+      <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] p-4 space-y-3.5">
+        {/* Верхний ряд: Закупки / Задачи CRM + Выбор сценария + Итог по сценарию */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12.5px] font-bold">
+              <button
+                type="button"
+                onClick={() => setSubTab('batches')}
+                className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
+                  subTab === 'batches'
+                    ? 'bg-[#141413] text-white'
+                    : 'text-[#52514C] hover:text-[#141413]'
+                }`}
+              >
+                03 · Закупки ({eligibleModels.length} моделей · {procData.approvedCount} PO)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('crm')}
+                className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
+                  subTab === 'crm'
+                    ? 'bg-[#141413] text-white'
+                    : 'text-[#52514C] hover:text-[#141413]'
+                }`}
+              >
+                Задачи CRM ({openTasksCount})
+              </button>
+            </div>
+
+            {subTab === 'batches' && (
+              <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F8F7F3] border-[1.5px] border-[#D5D4CA] p-1">
+                {orderedScenarios.map((sc) => {
+                  const active = sc.id === selectedScenarioId;
+                  const shortTitle =
+                    sc.id === 4
+                      ? 'Исходный план'
+                      : `Сценарий №${sc.id} · ${sc.monthlyTargetMln} млн`;
+                  return (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onClick={() => setSelectedScenarioId(sc.id)}
+                      className={`px-2.5 py-1 rounded-[6px] text-[11.5px] font-bold transition cursor-pointer ${
+                        active
+                          ? 'bg-[#141413] text-white'
+                          : 'text-[#52514C] hover:text-[#141413]'
+                      }`}
+                    >
+                      {shortTitle}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 text-[12px] text-[#374151]">
+            <span className="rounded-lg border-[1.5px] border-[#D5D4CA] bg-[#F8F7F3] px-3 py-1.5">
+              Всего по сценарию к заказу:{' '}
+              <strong className="font-mono font-extrabold text-[#141413]">
+                {procData.recPacks.toLocaleString('ru-RU')} компл.
+              </strong>{' '}
+              · Бюджет:{' '}
+              <strong className="font-mono font-extrabold text-[#141413]">
+                {formatMln(procData.recBudgetRub)}
+              </strong>
+            </span>
+            {subTab === 'batches' && (
+              <button
+                type="button"
+                onClick={() => setShowAllSkusTable((v) => !v)}
+                className="rounded-lg border-[1.5px] border-[#141413] bg-white px-3 py-1.5 text-[12px] font-bold text-[#141413] hover:bg-[#141413] hover:text-white transition cursor-pointer"
+              >
+                {showAllSkusTable
+                  ? 'Скрыть таблицу всех SKU ▴'
+                  : `Сводная по всем SKU (${procData.perSku.length}) ▾`}
+              </button>
+            )}
+            {procData.approvedOrdersFlat.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportAllPoCsv}
+                className="rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-2.5 py-1.5 text-[11.5px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+              >
+                Экспорт PO ({procData.approvedOrdersFlat.length})
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-[12px] text-[#4B5563]">
-          <span>
-            Всего по сценарию к заказу:{' '}
-            <strong className="font-mono text-[#111827]">
-              {procData.recPacks.toLocaleString('ru-RU')} компл.
-            </strong>{' '}
-            · Бюджет:{' '}
-            <strong className="font-mono text-[#111827]">
-              {formatMln(procData.recBudgetRub)}
-            </strong>
-          </span>
-          {procData.approvedOrdersFlat.length > 0 && (
-            <button
-              type="button"
-              onClick={handleExportAllPoCsv}
-              className="rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-2.5 py-1 text-[11px] font-semibold text-[#111827] hover:bg-[#F3F4F6]"
-            >
-              Экспорт PO (CSV · {procData.approvedOrdersFlat.length})
-            </button>
-          )}
-        </div>
+        {/* Нижний ряд панели: Выбор конкретной модели для расчёта закупок (Без лишней ленты из 21 кнопки) */}
+        {subTab === 'batches' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t-[1.5px] border-[#E8E7DF] pt-3">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+              <span className="text-[12.5px] font-extrabold text-[#141413] shrink-0">
+                Модель:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleStepSku(-1)}
+                title="Предыдущая модель"
+                className="h-9 px-2.5 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+              >
+                ‹ Пред.
+              </button>
+              <select
+                aria-label="Выбор модели для закупок"
+                value={activeSkuModel?.id || ''}
+                onChange={(e) => setSelectedSkuId(e.target.value)}
+                className="h-9 flex-1 max-w-[540px] rounded-lg border-[1.5px] border-[#141413] bg-white px-3 text-[13px] font-extrabold text-[#141413] cursor-pointer"
+              >
+                {filteredSkus.map(({ model: m, plan }) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title} ({m.code} · {m.unitsInPack} изд./компл.) — К заказу: {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleStepSku(1)}
+                title="Следующая модель"
+                className="h-9 px-2.5 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] text-[12px] font-bold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+              >
+                След. ›
+              </button>
+              <span className="font-mono text-[11.5px] font-bold text-[#5C5B55]">
+                {filteredSkus.length > 0 ? `${activeSkuIndex + 1} из ${filteredSkus.length}` : '0'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={skuSearch}
+                onChange={(e) => setSkuSearch(e.target.value)}
+                placeholder="Поиск по артикулу или названию..."
+                className="h-9 w-56 rounded-lg border-[1.5px] border-[#C8C7BE] bg-[#F8F7F3] px-3 text-[12px] font-medium text-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none"
+              />
+              {skuSearch && (
+                <button
+                  type="button"
+                  onClick={() => setSkuSearch('')}
+                  className="text-[11.5px] font-bold text-[#5C5B55] hover:text-[#141413] cursor-pointer"
+                >
+                  Сбросить
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {subTab === 'crm' ? (
         <RoadmapTasksView />
       ) : (
         <>
-          <ScenarioContourHeader
-            stepCode="03 · Закупки (Версия MVP · 3 зоны)"
-            title="Планирование закупок по плану продаж"
-            subtitle="Выберите модель и управляйте остатками, ценой закупки, циклом поставки и квартальными партиями в одном окне."
-            selectedScenarioId={selectedScenarioId}
-            orderedScenarios={orderedScenarios}
-            onSelectScenario={setSelectedScenarioId}
-            includeGroupPortfolioInS1={includeGroupPortfolioInS1}
-            onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
-            eligibleCount={eligibleModels.length}
-          />
-
-          {/* Компактный выбор модели SKU для работы в 3-зонном интерфейсе */}
-          <div className="rounded-xl border border-[#DFE4EC] bg-white p-3.5 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold text-[#111827]">
-                  Модель для расчёта закупок:
-                </span>
-                <select
-                  aria-label="Выбор модели для закупок"
-                  value={activeSkuModel?.id || ''}
-                  onChange={(e) => setSelectedSkuId(e.target.value)}
-                  className="rounded-lg border border-[#111827] bg-[#F9FAFB] px-3 py-1.5 text-[13px] font-bold text-[#111827]"
-                >
-                  {eligibleModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.code} · {m.title} ({m.unitsInPack} изд./компл.)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <input
-                type="text"
-                value={skuSearch}
-                onChange={(e) => setSkuSearch(e.target.value)}
-                placeholder="Быстрый фильтр по артикулу или названию..."
-                className="w-full sm:w-64 rounded-lg border border-[#D1D5DB] bg-[#F9FAFB] px-3 py-1.5 text-[12px] text-[#111827] focus:border-[#111827] focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            {/* Компактная лента пилюль моделей */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-              {filteredSkus.map(({ model: m, plan }) => {
-                const isSelected = activeSkuModel?.id === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setSelectedSkuId(m.id)}
-                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-left text-[11px] transition ${
-                      isSelected
-                        ? 'border-[#111827] bg-[#111827] text-white'
-                        : 'border-[#E5E7EB] bg-[#F9FAFB] text-[#374151] hover:border-[#9CA3AF] hover:bg-white'
-                    }`}
-                  >
-                    <div className="font-bold">{m.title}</div>
-                    <div
-                      className={`font-mono text-[10px] ${
-                        isSelected ? 'text-gray-300' : 'text-[#6B7280]'
-                      }`}
-                    >
-                      К заказу: {plan.totalRecommendedPacks.toLocaleString('ru-RU')} к.
-                      {plan.approvedOrders.length > 0 && ` · PO: ${plan.approvedOrders.length}`}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ГЛАВНЫЙ 3-ЗОННЫЙ ИНТЕРФЕЙС ЗАКУПОК (ЗОНА А / ЗОНА Б / ЗОНА В) */}
+          {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ */}
           {activeSkuModel && (
             <SkuProcurementMvpWorkbench
               model={activeSkuModel}

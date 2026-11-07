@@ -54,6 +54,7 @@ import {
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
+  matchesBrandFilter,
   parseStructuredPlanCsvOrJson,
   recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
@@ -1261,6 +1262,63 @@ test('27. Приёмочные проверки ТЗ «Карточка това
   assert.equal(cardScreenCode.includes('Деньги на закупки'), true);
   assert.equal(cardScreenCode.includes('Нельзя рассчитать без графика выплат'), true);
 });
+
+test('28. Чистый экран «Закупки» (без дублей и авто-раскрытия), сохранение позиции при F5 и активация всех 5 брендов холдинга (BORNERS, НА ТЕЛЕ, FUKAI, Акуша, Liskani)', () => {
+  const procWorkbenchCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'SkuProcurementMvpWorkbench.tsx'),
+    'utf-8'
+  );
+  // 1. В SkuProcurementMvpWorkbench убраны дублирующиеся плашки «Зона А / Зона Б / Зона В» и авто-раскрытие первой партии
+  assert.equal(procWorkbenchCode.includes('Зона А · Параметры'), false);
+  assert.equal(procWorkbenchCode.includes('Зона Б · План закупок'), false);
+  assert.equal(procWorkbenchCode.includes('const activeExpandedKey = expandedKey;'), true);
+  assert.equal(procWorkbenchCode.includes('Размеры и расчёт'), true);
+  assert.equal(procWorkbenchCode.includes('✓ Утвердить заказ'), true);
+  assert.equal(procWorkbenchCode.includes('✓ Утвердить все'), true);
+
+  // 2. Сохранение экрана и вкладки при перезагрузке страницы (F5)
+  const platformCtxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'context', 'PlatformContext.tsx'),
+    'utf-8'
+  );
+  const showcaseCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'GrowthScenariosShowcase.tsx'),
+    'utf-8'
+  );
+  const cardScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'ScenarioModelCardScreen.tsx'),
+    'utf-8'
+  );
+  assert.equal(platformCtxCode.includes('borners_ui_nav_state_v1'), true);
+  assert.equal(showcaseCode.includes('borners_scenario_screen_state_v1'), true);
+  assert.equal(cardScreenCode.includes('borners_model_card_active_tab_v1'), true);
+
+  // 3. Активация всех 5 брендов холдинга (BORNERS, NA_TELE, FUKAI, AKUSHA, LISKANI)
+  const initialDataCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'lib', 'initial-data.ts'),
+    'utf-8'
+  );
+  assert.equal(initialDataCode.includes("code: 'BORNERS'"), true);
+  assert.equal(initialDataCode.includes("code: 'NA_TELE'"), true);
+  assert.equal(initialDataCode.includes("code: 'FUKAI'"), true);
+  assert.equal(initialDataCode.includes("code: 'AKUSHA'"), true);
+  assert.equal(initialDataCode.includes("code: 'LISKANI'"), true);
+  assert.equal(initialDataCode.includes("isStrategyInDevelopment: true"), false);
+  assert.equal(cardScreenCode.includes("'Акуша'"), true);
+  assert.equal(cardScreenCode.includes("'Liskani'"), true);
+
+  const baseSorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+  const akushaModel = { ...baseSorbet, customBrandLabel: 'Акуша' };
+  const liskaniModel = { ...baseSorbet, customBrandLabel: 'Liskani' };
+  assert.equal(matchesBrandFilter(akushaModel, 'AKUSHA'), true);
+  assert.equal(matchesBrandFilter(akushaModel, 'BORNERS'), false);
+  assert.equal(matchesBrandFilter(liskaniModel, 'LISKANI'), true);
+  assert.equal(matchesBrandFilter(liskaniModel, 'LEZKANI'), true);
+  assert.equal(matchesBrandFilter(liskaniModel, 'ALL'), true);
+});
+
 
 
 

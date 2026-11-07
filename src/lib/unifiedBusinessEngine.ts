@@ -1873,7 +1873,7 @@ export interface StructuredPlanRowV11 {
 
 export function detectModelBrandPortfolioLabel(
   model: ScenarioModelSpec
-): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'Подтвердить бренд' | string {
+): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'Акуша' | 'Liskani' | 'Подтвердить бренд' | string {
   if (model.customBrandLabel && model.customBrandLabel.trim().length > 0) {
     return model.customBrandLabel.trim();
   }
@@ -1882,6 +1882,34 @@ export function detectModelBrandPortfolioLabel(
   if (digits === '72302360') return 'FUKAI';
   if (isUnverifiedActingSku(model.code)) return 'Подтвердить бренд';
   return 'BORNERS';
+}
+
+export function matchesBrandFilter(
+  model: ScenarioModelSpec,
+  brandFilter: string
+): boolean {
+  if (!brandFilter || brandFilter === 'ALL') return true;
+  const portfolioBrand = detectModelBrandPortfolioLabel(model).trim();
+  const upperBrand = portfolioBrand.toUpperCase();
+  const upperFilter = brandFilter.trim().toUpperCase();
+
+  if (upperFilter === 'BORNERS') return upperBrand === 'BORNERS';
+  if (upperFilter === 'NA_TELE' || upperFilter === 'НА ТЕЛЕ') {
+    return upperBrand === 'НА ТЕЛЕ' || upperBrand === 'NA_TELE' || model.brandId === 'NA_TELE';
+  }
+  if (upperFilter === 'FUKAI') return upperBrand === 'FUKAI';
+  if (upperFilter === 'AKUSHA' || upperFilter === 'АКУША') {
+    return upperBrand === 'АКУША' || upperBrand === 'AKUSHA';
+  }
+  if (
+    upperFilter === 'LISKANI' ||
+    upperFilter === 'LEZKANI' ||
+    upperFilter === 'ЛЕЗКАНИ' ||
+    upperFilter === 'ЛИСКАНИ'
+  ) {
+    return ['LISKANI', 'LEZKANI', 'ЛЕЗКАНИ', 'ЛИСКАНИ'].includes(upperBrand);
+  }
+  return upperBrand === upperFilter;
 }
 
 export function exportStructuredScenarioPlan(

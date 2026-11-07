@@ -65,6 +65,7 @@ import {
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
+  matchesBrandFilter,
   parseStructuredPlanCsvOrJson,
   serializeStructuredPlanToCsv,
 } from '@/lib/unifiedBusinessEngine';
@@ -219,6 +220,54 @@ export function GrowthScenariosShowcase({
   const [selectedModelId, setSelectedModelId] = useState<string>(
     initialModelId || 'scen-brn-001-sc'
   );
+  const screenHydratedRef = useRef(false);
+
+  // Восстановление открытого экрана (Сценарии / Карточка модели / Матрица 12 мес.) и выбранной модели при перезагрузке (F5)
+  useEffect(() => {
+    try {
+      const pendingModelId = sessionStorage.getItem('borners_open_scenario_model_id');
+      if (pendingModelId) {
+        screenHydratedRef.current = true;
+        return;
+      }
+      const savedScreenRaw = window.localStorage.getItem(
+        'borners_scenario_screen_state_v1'
+      );
+      if (savedScreenRaw) {
+        const parsed = JSON.parse(savedScreenRaw) as {
+          screen?: 'scenarios' | 'model' | 'sales-plan';
+          selectedModelId?: string;
+        };
+        if (
+          !initialModelId &&
+          (parsed.screen === 'scenarios' ||
+            parsed.screen === 'model' ||
+            parsed.screen === 'sales-plan')
+        ) {
+          setScreen(parsed.screen);
+        }
+        if (!initialModelId && parsed.selectedModelId) {
+          setSelectedModelId(parsed.selectedModelId);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      screenHydratedRef.current = true;
+    }
+  }, [initialModelId]);
+
+  useEffect(() => {
+    if (!screenHydratedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        'borners_scenario_screen_state_v1',
+        JSON.stringify({ screen, selectedModelId })
+      );
+    } catch {
+      // ignore
+    }
+  }, [screen, selectedModelId]);
 
   const setSelectedScenarioId = useCallback((nextId: number) => {
     setSelectedScenarioIdState(nextId);
@@ -258,7 +307,9 @@ export function GrowthScenariosShowcase({
   }, []);
 
   useEffect(() => {
-    setScreen(initialScreen);
+    if (initialScreen && initialScreen !== 'scenarios') {
+      setScreen(initialScreen);
+    }
   }, [initialScreen]);
 
   useEffect(() => {
@@ -297,9 +348,7 @@ export function GrowthScenariosShowcase({
 
   // Фильтры каталога на Экране №1 (синхронизированы с верхним переключателем бренда)
   const [searchQuery, setSearchQuery] = useState('');
-  const [brandFilterLocal, setBrandFilterLocal] = useState<
-    'ALL' | 'BORNERS' | 'FUKAI' | 'NA_TELE'
-  >('ALL');
+  const [brandFilterLocal, setBrandFilterLocal] = useState<string>('ALL');
   const [statusFilterLocal, setStatusFilterLocal] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'default' | 'dec_desc' | 'year_desc' | 'priority'>(
     'default'
@@ -307,11 +356,7 @@ export function GrowthScenariosShowcase({
   const [selectedChartMonthIdx, setSelectedChartMonthIdx] = useState<number>(11);
 
   useEffect(() => {
-    if (
-      brandFilter === 'ALL' ||
-      brandFilter === 'BORNERS' ||
-      brandFilter === 'NA_TELE'
-    ) {
+    if (brandFilter) {
       setBrandFilterLocal((prev) => (prev === brandFilter ? prev : brandFilter));
     }
   }, [brandFilter]);
@@ -337,8 +382,8 @@ export function GrowthScenariosShowcase({
   const [newScenarioModalOpen, setNewScenarioModalOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
-  // Поля формы создания новой модели (Тест 11: короткая форма, работает даже без всех полей)
-  const [draftBrand, setDraftBrand] = useState<'BORNERS' | 'NA_TELE'>('BORNERS');
+  // Поля формы создания новой модели (Тест 11: короткая форма, работает со всеми брендами холдинга)
+  const [draftBrand, setDraftBrand] = useState<string>('BORNERS');
   const [draftTitle, setDraftTitle] = useState('');
   const [draftType, setDraftType] = useState('Боксеры (trunks)');
   const [draftUnitsInPack, setDraftUnitsInPack] = useState(4);
@@ -830,18 +875,7 @@ export function GrowthScenariosShowcase({
         return false;
       }
       if (brandFilterLocal !== 'ALL') {
-        const portfolioBrand = detectModelBrandPortfolioLabel(m);
-        if (brandFilterLocal === 'FUKAI' && portfolioBrand !== 'FUKAI') {
-          return false;
-        }
-        if (brandFilterLocal === 'BORNERS' && portfolioBrand !== 'BORNERS') {
-          return false;
-        }
-        if (
-          brandFilterLocal === 'NA_TELE' &&
-          portfolioBrand !== 'НА ТЕЛЕ' &&
-          m.brandId !== 'NA_TELE'
-        ) {
+        if (!matchesBrandFilter(m, brandFilterLocal)) {
           return false;
         }
       }
@@ -1169,13 +1203,25 @@ export function GrowthScenariosShowcase({
       };
     });
 
+    const resolvedCustomBrand =
+      draftBrand === 'AKUSHA'
+        ? 'Акуша'
+        : draftBrand === 'LISKANI'
+        ? 'Liskani'
+        : draftBrand === 'FUKAI'
+        ? 'FUKAI'
+        : draftBrand === 'NA_TELE'
+        ? 'НА ТЕЛЕ'
+        : 'BORNERS';
+
     const created: ScenarioModelSpec = {
       ...INITIAL_SCENARIO_MODELS[0],
       id: newId,
       code: `№${nextNum}`,
       title: cleanTitle.toUpperCase(),
       subtitle: `${draftType} · ${draftUnitsInPack} шт. в комплекте`,
-      brandId: draftBrand,
+      brandId: draftBrand === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+      customBrandLabel: resolvedCustomBrand,
       launchStatus: 'В плане',
       unitsInPack: draftUnitsInPack,
       retailPriceRub: draftRetailPrice || 1290,
@@ -2320,26 +2366,18 @@ export function GrowthScenariosShowcase({
                 <select
                   value={brandFilterLocal}
                   onChange={(e) => {
-                    const nextVal = e.target.value as
-                      | 'ALL'
-                      | 'BORNERS'
-                      | 'FUKAI'
-                      | 'NA_TELE';
+                    const nextVal = e.target.value;
                     setBrandFilterLocal(nextVal);
-                    if (
-                      nextVal === 'ALL' ||
-                      nextVal === 'BORNERS' ||
-                      nextVal === 'NA_TELE'
-                    ) {
-                      setBrandFilter(nextVal);
-                    }
+                    setBrandFilter(nextVal);
                   }}
                   className="h-9 px-3 rounded-[9px] bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] cursor-pointer"
                 >
                   <option value="ALL">Все бренды</option>
                   <option value="BORNERS">BORNERS</option>
-                  <option value="FUKAI">FUKAI (ИП Нерсесянц)</option>
                   <option value="NA_TELE">НА ТЕЛЕ</option>
+                  <option value="FUKAI">FUKAI (ИП Нерсесянц)</option>
+                  <option value="AKUSHA">Акуша</option>
+                  <option value="LISKANI">Liskani (Лезкани)</option>
                 </select>
 
                 <select
@@ -3076,13 +3114,14 @@ export function GrowthScenariosShowcase({
                 </label>
                 <select
                   value={draftBrand}
-                  onChange={(e) =>
-                    setDraftBrand(e.target.value as 'BORNERS' | 'NA_TELE')
-                  }
+                  onChange={(e) => setDraftBrand(e.target.value)}
                   className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
                 >
                   <option value="BORNERS">BORNERS</option>
                   <option value="NA_TELE">НА ТЕЛЕ</option>
+                  <option value="FUKAI">FUKAI</option>
+                  <option value="AKUSHA">Акуша</option>
+                  <option value="LISKANI">Liskani (Лезкани)</option>
                 </select>
               </div>
 

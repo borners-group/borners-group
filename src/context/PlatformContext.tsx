@@ -455,30 +455,56 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             // ignore
           }
         }
-        setState((prev) => ({
-          ...prev,
-          ...parsed,
-          products: deduplicateAndHealProducts(nextProducts),
-          brands: (parsed.brands || prev.brands).map((b) =>
+        setState((prev) => {
+          const baseBrands = parsed.brands || prev.brands;
+          const mergedBrands = [...baseBrands].map((b) =>
             b.code === 'BORNERS'
               ? { ...b, heroImage: 'images/products/borners-editorial-hero.jpg' }
               : b.code === 'NA_TELE'
               ? { ...b, heroImage: 'images/products/natele-editorial-hero.jpg' }
+              : b.code === 'AKUSHA' || b.code === 'LISKANI'
+              ? { ...b, isStrategyInDevelopment: false, statusNote: 'Активен' }
               : b
-          ),
-          strategies: (parsed.strategies || prev.strategies).map((s, idx) => ({
-            ...s,
-            deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
-          })),
-          miroItems: parsed.miroItems !== undefined
-            ? parsed.miroItems.map((m) => {
-                if (m.connectedToIds) return m;
-                const fallback = INITIAL_MIRO_ITEMS.find((init) => init.id === m.id);
-                return { ...m, connectedToIds: fallback?.connectedToIds || [] };
-              })
-            : prev.miroItems,
-          presentationOverrides: parsed.presentationOverrides || {},
-        }));
+          );
+          for (const initBrand of INITIAL_BRANDS) {
+            if (!mergedBrands.some((b) => b.id === initBrand.id || b.code === initBrand.code)) {
+              mergedBrands.push(initBrand);
+            }
+          }
+
+          const baseUsers = parsed.users || prev.users;
+          const allHoldingBrandIds = mergedBrands.map((b) => b.id);
+          const mergedUsers = baseUsers.map((u) =>
+            u.role === 'Owner' || u.role === 'Admin' || u.role === 'Viewer' || u.role === 'Partner'
+              ? {
+                  ...u,
+                  assignedBrandIds: Array.from(
+                    new Set([...(u.assignedBrandIds || []), ...allHoldingBrandIds])
+                  ),
+                }
+              : u
+          );
+
+          return {
+            ...prev,
+            ...parsed,
+            users: mergedUsers,
+            products: deduplicateAndHealProducts(nextProducts),
+            brands: mergedBrands,
+            strategies: (parsed.strategies || prev.strategies).map((s, idx) => ({
+              ...s,
+              deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
+            })),
+            miroItems: parsed.miroItems !== undefined
+              ? parsed.miroItems.map((m) => {
+                  if (m.connectedToIds) return m;
+                  const fallback = INITIAL_MIRO_ITEMS.find((init) => init.id === m.id);
+                  return { ...m, connectedToIds: fallback?.connectedToIds || [] };
+                })
+              : prev.miroItems,
+            presentationOverrides: parsed.presentationOverrides || {},
+          };
+        });
       }
       const savedAuth = window.localStorage.getItem(AUTH_STORAGE_KEY);
       if (savedAuth) {
@@ -489,6 +515,49 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(parsedAuth.isAuthenticated);
         if (parsedAuth.currentUserId) setCurrentUserId(parsedAuth.currentUserId);
       }
+
+      // Восстановление текущего раздела и выбранной карточки после перезагрузки (F5)
+      const savedNav = window.localStorage.getItem('borners_ui_nav_state_v1');
+      if (savedNav) {
+        try {
+          const parsedNav = JSON.parse(savedNav) as {
+            activeSection?: NavSectionId;
+            platformMode?: PlatformMode;
+            brandFilter?: BrandFilter;
+            selectedProductId?: string | null;
+            selectedConceptId?: string | null;
+            selectedLaunchId?: string | null;
+          };
+          if (parsedNav.activeSection) {
+            setActiveSection(parsedNav.activeSection);
+            setNavHistory([parsedNav.activeSection]);
+            const initialStack = [
+              {
+                section: parsedNav.activeSection,
+                platformMode: parsedNav.platformMode || ('management' as PlatformMode),
+                brandFilter: parsedNav.brandFilter || 'ALL',
+                productId: parsedNav.selectedProductId ?? null,
+                conceptId: parsedNav.selectedConceptId ?? null,
+                launchId: parsedNav.selectedLaunchId ?? null,
+              },
+            ];
+            historyStackRef.current = initialStack;
+            historyCursorRef.current = 0;
+            setHistoryState({ stack: initialStack, cursor: 0 });
+          }
+          if (parsedNav.platformMode) setPlatformMode(parsedNav.platformMode);
+          if (parsedNav.brandFilter) setBrandFilter(parsedNav.brandFilter);
+          if (parsedNav.selectedProductId !== undefined)
+            setSelectedProductId(parsedNav.selectedProductId);
+          if (parsedNav.selectedConceptId !== undefined)
+            setSelectedConceptId(parsedNav.selectedConceptId);
+          if (parsedNav.selectedLaunchId !== undefined)
+            setSelectedLaunchId(parsedNav.selectedLaunchId);
+        } catch {
+          // ignore invalid JSON
+        }
+      }
+
       setDarkMode(false);
     } catch (err) {
       console.error('Failed to hydrate state from localStorage:', err);
@@ -496,6 +565,34 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setHydrated(true);
     }
   }, []);
+
+  // Сохранение текущего маршрута навигации в localStorage, чтобы F5 оставлял на том же экране
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(
+        'borners_ui_nav_state_v1',
+        JSON.stringify({
+          activeSection,
+          platformMode,
+          brandFilter,
+          selectedProductId,
+          selectedConceptId,
+          selectedLaunchId,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, [
+    hydrated,
+    activeSection,
+    platformMode,
+    brandFilter,
+    selectedProductId,
+    selectedConceptId,
+    selectedLaunchId,
+  ]);
 
   useEffect(() => {
     if (!hydrated) return;

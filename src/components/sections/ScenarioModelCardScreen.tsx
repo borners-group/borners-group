@@ -74,7 +74,7 @@ const STAGE_STATUS_OPTIONS: ModelPassportStageStatus[] = [
   'Приостановлен',
 ];
 
-const DEFAULT_BRAND_OPTIONS = ['BORNERS', 'FUKAI', 'НА ТЕЛЕ'];
+const DEFAULT_BRAND_OPTIONS = ['BORNERS', 'НА ТЕЛЕ', 'FUKAI', 'Акуша', 'Liskani'];
 
 function StatusPill({ status }: { status: ValueStatusCode }) {
   const styles: Record<ValueStatusCode, string> = {
@@ -160,12 +160,33 @@ export function ScenarioModelCardScreen({
           window.sessionStorage.removeItem('borners_open_scenario_model_tab');
           return requestedTab;
         }
+        const savedTab = window.localStorage.getItem(
+          'borners_model_card_active_tab_v1'
+        );
+        if (
+          savedTab === 'product' ||
+          savedTab === 'sales' ||
+          savedTab === 'procurement' ||
+          savedTab === 'finance'
+        ) {
+          return savedTab;
+        }
       } catch {
         // ignore
       }
     }
     return 'product';
   });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('borners_model_card_active_tab_v1', activeTab);
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeTab]);
 
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number>(
     scenario.targetMonthIdx ?? 11

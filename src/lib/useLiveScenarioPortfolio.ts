@@ -24,6 +24,7 @@ import {
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
+  matchesBrandFilter,
 } from '@/lib/unifiedBusinessEngine';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 
@@ -181,18 +182,7 @@ export function filterModelsForScenario(
     }
 
     if (brandFilter && brandFilter !== 'ALL') {
-      const portfolioBrand = detectModelBrandPortfolioLabel(m);
-      if (brandFilter === 'BORNERS' && portfolioBrand !== 'BORNERS') {
-        return false;
-      }
-      if (
-        brandFilter === 'NA_TELE' &&
-        portfolioBrand !== 'НА ТЕЛЕ' &&
-        m.brandId !== 'NA_TELE'
-      ) {
-        return false;
-      }
-      if (brandFilter === 'FUKAI' && portfolioBrand !== 'FUKAI') {
+      if (!matchesBrandFilter(m, brandFilter)) {
         return false;
       }
     }
