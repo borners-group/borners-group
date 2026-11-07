@@ -1,5 +1,5 @@
-:HL["/borners-group/_next/static/chunks/0bir7nglfmcpb.css","style"]
+:HL["/borners-group/_next/static/chunks/3yg-25x21qciy.css","style"]
 :HL["/borners-group/_next/static/media/07c7676b89ed2778-s.p.2bn3s6zvc0dyp.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/borners-group/_next/static/media/76b70a1dbe058eb5-s.p.1y4-pdgsjb-pw.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 1:[["children",{"s":"__PAGE__","h":160}]]
-0:{"b":"LowHVr3_bzSFaW0Rx9hOl","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"p4LO1nGv1PiZ8PKv8SFYH","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
