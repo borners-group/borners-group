@@ -2,8 +2,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import {
+  AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Check,
   ChevronDown,
   ChevronRight,
   LayoutGrid,
@@ -1844,26 +1847,53 @@ export function AppShell() {
             navigateTo(sec);
           }}
         />
-        <div className="fixed bottom-6 right-6 z-50 space-y-2 max-w-md w-full pointer-events-none">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              className="pointer-events-auto bg-[#111111] text-white rounded-2xl border border-[#E8E8E5]/20 shadow-xl px-5 py-4 text-[14px] flex items-start justify-between gap-4"
-            >
-              <div>
-                <div className="font-semibold text-[15px]">{t.title}</div>
-                {t.description && (
-                  <div className="text-neutral-300 text-[14px] mt-1">{t.description}</div>
-                )}
-              </div>
-              <button
-                onClick={() => dismissToast(t.id)}
-                className="text-neutral-400 hover:text-white cursor-pointer"
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 max-w-[340px] w-auto pointer-events-none">
+          {toasts.map((t) => {
+            const isWarn = t.type === 'warning';
+            const isErr = t.type === 'error';
+            return (
+              <div
+                key={t.id}
+                className="pointer-events-auto bg-white/95 backdrop-blur-md text-[#141413] rounded-[12px] border border-[#D5D4CC] shadow-[0_8px_24px_-4px_rgba(20,20,19,0.09),0_2px_6px_-1px_rgba(20,20,19,0.04)] px-3.5 py-2.5 flex items-start gap-2.5 transition-all"
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                    isErr
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : isWarn
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {isErr ? (
+                    <AlertCircle className="h-3 w-3" />
+                  ) : isWarn ? (
+                    <AlertTriangle className="h-3 w-3" />
+                  ) : (
+                    <Check className="h-3 w-3 stroke-[2.5]" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1 pr-1">
+                  <div className="font-bold text-[12.5px] text-[#141413] leading-snug">
+                    {t.title}
+                  </div>
+                  {t.description && (
+                    <div className="text-[#686760] text-[11.5px] leading-snug mt-0.5 line-clamp-2">
+                      {t.description}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Закрыть уведомление"
+                  onClick={() => dismissToast(t.id)}
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#8E8D85] hover:bg-[#F4F3EE] hover:text-[#141413] transition cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

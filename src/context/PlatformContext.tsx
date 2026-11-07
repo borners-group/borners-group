@@ -614,10 +614,17 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const notify = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      setToasts((prev) => [...prev, { id, type, title, description }]);
+      const prefix = title.includes(':') ? title.split(':')[0].trim() : title;
+      setToasts((prev) => {
+        const filtered = prev.filter((t) => {
+          const tPrefix = t.title.includes(':') ? t.title.split(':')[0].trim() : t.title;
+          return t.title !== title && tPrefix !== prefix;
+        });
+        return [...filtered.slice(-1), { id, type, title, description }];
+      });
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4500);
+      }, 2800);
     },
     []
   );

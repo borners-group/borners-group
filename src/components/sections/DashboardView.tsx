@@ -208,60 +208,42 @@ export function DashboardView() {
 
   return (
     <div className="space-y-5 pb-16">
-      {/* КОМПАКТНАЯ СТРОКА ПЕРЕКЛЮЧЕНИЯ РЕЖИМА БЕЗ ИКОНОК И ДУБЛИРУЮЩИХ ПЛАШЕК */}
-      <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-[9px] border-[1.5px] border-[#CECDC4] bg-[#EFEFE9] p-0.5">
-          <button
-            type="button"
-            onClick={() => setDashboardMode('all')}
-            className={`h-8 px-3.5 rounded-[7px] text-[12.5px] font-semibold transition cursor-pointer ${
-              dashboardMode === 'all'
-                ? 'bg-[#141413] text-white shadow-2xs'
-                : 'text-[#5E5D58] hover:text-[#141413]'
-            }`}
-          >
-            Сценарии и модели 2027
-          </button>
-          <button
-            type="button"
-            data-tour={dashboardMode === 'all' ? 'studio-canvas' : undefined}
-            onClick={() => setDashboardMode('miro')}
-            className={`h-8 px-3.5 rounded-[7px] text-[12.5px] font-semibold transition cursor-pointer ${
-              dashboardMode === 'miro'
-                ? 'bg-[#141413] text-white shadow-2xs'
-                : 'text-[#5E5D58] hover:text-[#141413]'
-            }`}
-          >
-            Студия идей (Холст)
-          </button>
+      {/* Если открыт режим Холста (Miro), показываем компактную полоску возврата в Сводку */}
+      {dashboardMode === 'miro' && (
+        <div className="rounded-[14px] bg-white border border-[#D8D7CF] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
+          <div className="inline-flex rounded-[9px] border border-[#E2E1D9] bg-[#F4F3EE] p-0.5">
+            <button
+              type="button"
+              onClick={() => setDashboardMode('all')}
+              className="h-8 px-3.5 rounded-[7px] text-[12.5px] font-semibold text-[#5E5D58] hover:text-[#141413] transition cursor-pointer"
+            >
+              ← Вернуться в Сводку 2027
+            </button>
+            <button
+              type="button"
+              onClick={() => setDashboardMode('miro')}
+              className="h-8 px-3.5 rounded-[7px] bg-[#141413] text-white text-[12.5px] font-semibold shadow-2xs transition cursor-pointer"
+            >
+              Студия идей (Холст)
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <button
+              type="button"
+              onClick={() => navigateTo('product-lab')}
+              className="h-8 px-3 rounded-[8px] bg-[#FAF9F6] hover:border-[#141413] border border-[#D8D7CF] text-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer transition"
+            >
+              <span className="text-[#5E5D58]">R&amp;D Lab:</span>
+              <strong className="font-bold text-[#141413]">{filteredConcepts.length} обр.</strong>
+            </button>
+          </div>
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-2 text-[12px]">
-          <button
-            type="button"
-            onClick={() => navigateTo('product-lab')}
-            className="h-8 px-3 rounded-[8px] bg-[#F6F6F2] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <span className="text-[#5E5D58]">R&amp;D Lab:</span>
-            <strong className="font-bold text-[#141413]">{filteredConcepts.length} обр.</strong>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateTo('roadmap-tasks')}
-            className="h-8 px-3 rounded-[8px] bg-[#F6F6F2] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <span className="text-[#5E5D58]">Закупки и задачи:</span>
-            <strong className="font-bold text-[#141413]">
-              {activeTasksCount} зад. · {filteredLaunches.length} рел.
-            </strong>
-          </button>
-        </div>
-      </div>
-
-      {/* 1. РЕЖИМ СЦЕНАРИЕВ И МОДЕЛЕЙ (БЕЗ ДУБЛИРОВАНИЯ МИРО-ДОСКИ СНИЗУ) */}
+      {/* 1. РЕЖИМ СВОДКИ СЦЕНАРИЕВ И МОДЕЛЕЙ ИЛИ СТУДИЯ ИДЕЙ */}
       {dashboardMode === 'all' ? (
-        <GrowthScenariosShowcase />
+        <GrowthScenariosShowcase onOpenStudioCanvas={() => setDashboardMode('miro')} />
       ) : (
         <MiroBoardView />
       )}
