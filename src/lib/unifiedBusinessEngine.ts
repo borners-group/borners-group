@@ -823,6 +823,293 @@ export function approveRecommendedBatch(
   };
 }
 
+export const PO_STATUS_LABELS_RU: Record<ApprovedPurchaseOrder['status'], string> = {
+  approved: 'Согласован',
+  in_production: 'В производстве',
+  in_transit: 'В пути',
+  received: 'На складе',
+};
+
+/**
+ * Ручное создание произвольного заказа фабрике PO (в том числе вне авто-рекомендаций, с любой партией, ценой и датой).
+ */
+export function createCustomPurchaseOrder(
+  rawModel: ScenarioModelSpec,
+  params: {
+    packsQty: number;
+    unitCostRub?: number;
+    factoryName?: string;
+    arrivalMonthIdx: number;
+    orderPlacementDateIso?: string;
+    requiredArrivalDateIso?: string;
+    status?: ApprovedPurchaseOrder['status'];
+    note?: string;
+    author?: string;
+    year?: number;
+  }
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const fp = shared.factoryParams;
+  const year = params.year || 2027;
+  const arrivalMonthIdx = Math.min(11, Math.max(0, Math.round(params.arrivalMonthIdx || 0)));
+  const packsQty = Math.max(1, Math.round(params.packsQty || 1));
+  const unitsInPack = Math.max(1, model.unitsInPack || 1);
+  const physicalUnitsQty = packsQty * unitsInPack;
+
+  const totalLeadDays =
+    Math.max(0, fp.productionLeadDays) +
+    Math.max(0, fp.qcDays) +
+    Math.max(0, fp.logisticsLeadDays) +
+    Math.max(0, fp.acceptanceDays);
+
+  const requiredArrivalDateIso =
+    params.requiredArrivalDateIso ||
+    `${year}-${String(arrivalMonthIdx + 1).padStart(2, '0')}-01`;
+  const orderPlacementDateIso =
+    params.orderPlacementDateIso ||
+    subtractDaysFromMonthStart(year, arrivalMonthIdx, totalLeadDays);
+
+  const lockedUnitCostRub = Math.max(
+    0,
+    params.unitCostRub !== undefined ? Math.round(params.unitCostRub) : model.unitCostRub || 0
+  );
+  // Строго Тест-кейс №5: сумма считается от комплектов (packsQty * lockedUnitCostRub)
+  const totalOrderRub = packsQty * lockedUnitCostRub;
+  const prepaymentRub = Math.round((totalOrderRub * fp.prepaymentPct) / 100);
+  const balancePaymentRub = totalOrderRub - prepaymentRub;
+
+  const nextSeq = shared.approvedOrders.length + 1;
+  const codeClean = model.code.replace(/\s+/g, '');
+  const orderNumber = `PO-${year}-${codeClean}-${String(nextSeq).padStart(2, '0')}`;
+  const author = params.author || 'Владелец';
+  const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const factoryName = (params.factoryName || fp.factoryName || 'Фабрика-партнёр BORNERS').trim();
+
+  const newPo: ApprovedPurchaseOrder = {
+    id: `po-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    orderNumber,
+    version: 1,
+    status: params.status || 'approved',
+    factoryName,
+    approvedAt: nowStr,
+    approvedBy: author,
+    arrivalMonthIdx,
+    requiredArrivalDateIso,
+    orderPlacementDateIso,
+    leadTimeDaysAtApproval: totalLeadDays,
+    packsQty,
+    unitsInPack,
+    physicalUnitsQty,
+    lockedUnitCostRub,
+    totalOrderRub,
+    prepaymentRub,
+    balancePaymentRub,
+    note: params.note?.trim() || `Поставка к ${MONTHS_SHORT[arrivalMonthIdx]} ${year}`,
+  };
+
+  const nextUnitCostRub =
+    model.unitCostRub > 0 ? model.unitCostRub : lockedUnitCostRub > 0 ? lockedUnitCostRub : 0;
+
+  const auditEntry: ModelAuditEntry = {
+    id: `aud-po-create-${Date.now()}`,
+    timestamp: nowStr,
+    author,
+    category: 'procurement',
+    summary: `Создан заказ ${orderNumber}: ${packsQty.toLocaleString('ru-RU')} компл. (${physicalUnitsQty.toLocaleString('ru-RU')} изд.) · ${totalOrderRub.toLocaleString('ru-RU')} ₽`,
+    afterValue: `${factoryName} · приход ${MONTHS_SHORT[arrivalMonthIdx]} ${year}`,
+    passportVersion: shared.passportVersion,
+  };
+
+  return {
+    ...model,
+    unitCostRub: nextUnitCostRub,
+    sharedSupplyAndFact: {
+      ...shared,
+      costStatus: nextUnitCostRub > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
+      approvedOrders: [...shared.approvedOrders, newPo],
+      auditHistory: [auditEntry, ...shared.auditHistory],
+    },
+  };
+}
+
+/**
+ * Редактирование параметров уже созданного заказа PO (статус, количество, цена, фабрика, месяц/даты, комментарий).
+ * Срабатывает ТОЛЬКО по явному действию пользователя (сохраняя защиту от автоматической перезаписи Тест-кейса №3).
+ */
+export function updateApprovedPurchaseOrder(
+  rawModel: ScenarioModelSpec,
+  poId: string,
+  patch: Partial<
+    Pick<
+      ApprovedPurchaseOrder,
+      | 'packsQty'
+      | 'lockedUnitCostRub'
+      | 'factoryName'
+      | 'arrivalMonthIdx'
+      | 'orderPlacementDateIso'
+      | 'requiredArrivalDateIso'
+      | 'status'
+      | 'note'
+    >
+  >,
+  author = 'Владелец',
+  year = 2027
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const target = shared.approvedOrders.find((p) => p.id === poId);
+  if (!target) return model;
+
+  const unitsInPack = Math.max(1, model.unitsInPack || target.unitsInPack || 1);
+  const nextPacks =
+    patch.packsQty !== undefined
+      ? Math.max(1, Math.round(patch.packsQty))
+      : target.packsQty;
+  const nextLockedCost =
+    patch.lockedUnitCostRub !== undefined
+      ? Math.max(0, Math.round(patch.lockedUnitCostRub))
+      : target.lockedUnitCostRub;
+  const nextArrivalMonthIdx =
+    patch.arrivalMonthIdx !== undefined
+      ? Math.min(11, Math.max(0, Math.round(patch.arrivalMonthIdx)))
+      : target.arrivalMonthIdx;
+  const nextRequiredArrivalIso =
+    patch.requiredArrivalDateIso !== undefined
+      ? patch.requiredArrivalDateIso
+      : patch.arrivalMonthIdx !== undefined
+      ? `${year}-${String(nextArrivalMonthIdx + 1).padStart(2, '0')}-01`
+      : target.requiredArrivalDateIso;
+
+  const totalOrderRub = nextPacks * nextLockedCost;
+  const prepaymentRub = Math.round(
+    (totalOrderRub * shared.factoryParams.prepaymentPct) / 100
+  );
+  const balancePaymentRub = totalOrderRub - prepaymentRub;
+
+  const updatedPo: ApprovedPurchaseOrder = {
+    ...target,
+    version: (target.version || 1) + 1,
+    status: patch.status ?? target.status,
+    factoryName:
+      patch.factoryName !== undefined
+        ? patch.factoryName.trim() || target.factoryName
+        : target.factoryName,
+    arrivalMonthIdx: nextArrivalMonthIdx,
+    requiredArrivalDateIso: nextRequiredArrivalIso,
+    orderPlacementDateIso: patch.orderPlacementDateIso ?? target.orderPlacementDateIso,
+    packsQty: nextPacks,
+    unitsInPack,
+    physicalUnitsQty: nextPacks * unitsInPack,
+    lockedUnitCostRub: nextLockedCost,
+    totalOrderRub,
+    prepaymentRub,
+    balancePaymentRub,
+    note: patch.note !== undefined ? patch.note : target.note,
+  };
+
+  const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const auditEntry: ModelAuditEntry = {
+    id: `aud-po-upd-${Date.now()}`,
+    timestamp: nowStr,
+    author,
+    category: 'procurement',
+    summary: `Обновлён заказ ${updatedPo.orderNumber} (v${updatedPo.version}): ${PO_STATUS_LABELS_RU[updatedPo.status]} · ${updatedPo.packsQty.toLocaleString('ru-RU')} компл. · ${updatedPo.totalOrderRub.toLocaleString('ru-RU')} ₽`,
+    passportVersion: shared.passportVersion,
+  };
+
+  return {
+    ...model,
+    sharedSupplyAndFact: {
+      ...shared,
+      approvedOrders: shared.approvedOrders.map((p) => (p.id === poId ? updatedPo : p)),
+      auditHistory: [auditEntry, ...shared.auditHistory],
+    },
+  };
+}
+
+/**
+ * Удаление / отмена заказа PO из реестра SKU.
+ */
+export function removeApprovedPurchaseOrder(
+  rawModel: ScenarioModelSpec,
+  poId: string,
+  author = 'Владелец'
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const target = shared.approvedOrders.find((p) => p.id === poId);
+  if (!target) return model;
+
+  const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const auditEntry: ModelAuditEntry = {
+    id: `aud-po-del-${Date.now()}`,
+    timestamp: nowStr,
+    author,
+    category: 'procurement',
+    summary: `Удалён заказ ${target.orderNumber} (${target.packsQty.toLocaleString('ru-RU')} компл.)`,
+    passportVersion: shared.passportVersion,
+  };
+
+  return {
+    ...model,
+    sharedSupplyAndFact: {
+      ...shared,
+      approvedOrders: shared.approvedOrders.filter((p) => p.id !== poId),
+      auditHistory: [auditEntry, ...shared.auditHistory],
+    },
+  };
+}
+
+/**
+ * Экспорт реестра заказов PO в CSV (с BOM для корректного открытия в Excel).
+ */
+export function serializePurchaseOrdersToCsv(
+  items: { model: ScenarioModelSpec; po: ApprovedPurchaseOrder }[]
+): string {
+  const header = [
+    'Номер PO',
+    'Статус',
+    'Артикул SKU',
+    'Модель',
+    'Фабрика',
+    'Дата заказа',
+    'Месяц прихода',
+    'Дата прихода',
+    'Комплектов',
+    'Изделий в компл.',
+    'Физических изделий',
+    'Себест. за компл. ₽',
+    'Сумма заказа ₽',
+    'Предоплата ₽',
+    'Доплата ₽',
+    'Комментарий',
+  ].join(';');
+
+  const rows = items.map(({ model, po }) =>
+    [
+      po.orderNumber,
+      PO_STATUS_LABELS_RU[po.status] || po.status,
+      model.code,
+      `"${(model.title || '').replace(/"/g, '""')}"`,
+      `"${(po.factoryName || '').replace(/"/g, '""')}"`,
+      po.orderPlacementDateIso,
+      MONTHS_SHORT[po.arrivalMonthIdx] || '',
+      po.requiredArrivalDateIso,
+      po.packsQty,
+      po.unitsInPack,
+      po.physicalUnitsQty,
+      po.lockedUnitCostRub,
+      po.totalOrderRub,
+      po.prepaymentRub,
+      po.balancePaymentRub,
+      `"${(po.note || '').replace(/"/g, '""')}"`,
+    ].join(';')
+  );
+
+  return `\uFEFF${[header, ...rows].join('\n')}`;
+}
+
 /**
  * Раздел 05 ТЗ v1.1: Проверяемые финансовые формулы P&L и Потребность в капитале.
  * Тест-кейс №8: Если финансовые затраты не заполнены — операционная прибыль строго «Не рассчитана» (null), без ложных 75%!

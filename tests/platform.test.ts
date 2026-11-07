@@ -47,13 +47,17 @@ import {
   approveRecommendedBatch,
   computeFinancialPnL,
   computeProcurementPlan,
+  createCustomPurchaseOrder,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
   parseStructuredPlanCsvOrJson,
+  removeApprovedPurchaseOrder,
+  serializePurchaseOrdersToCsv,
   serializeStructuredPlanToCsv,
+  updateApprovedPurchaseOrder,
 } from '../src/lib/unifiedBusinessEngine.ts';
 
 test('1. Юнит-экономика (п. 11 ТЗ): расчёт чистой выручки, прибыли на единицу и маржи', () => {
@@ -912,6 +916,73 @@ test('24. Пакетное утверждение всех рекомендов�
   assert.equal(afterProc.totalDeficitPacks, 0);
   assert.equal(afterProc.recommendedBatches.length, 0);
 });
+
+test('25. Ручное управление закупками PO (создание, правка статуса/партии/цены, CSV и удаление) + чистая фотогалерея без лишних подписей', () => {
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const sorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+
+  // 1. Ручное создание произвольного PO на 1 500 комплектов по 620 ₽ к марту (индекс 2)
+  const created = createCustomPurchaseOrder(sorbet, {
+    packsQty: 1500,
+    unitCostRub: 620,
+    factoryName: 'Guangzhou Textile Hub',
+    arrivalMonthIdx: 2,
+    status: 'in_production',
+    note: 'Тестовый весенний транш',
+    year: 2027,
+  });
+
+  const po1 = created.sharedSupplyAndFact!.approvedOrders[0];
+  assert.equal(Boolean(po1), true);
+  assert.equal(po1.packsQty, 1500);
+  assert.equal(po1.physicalUnitsQty, 1500 * 4); // 6 000 физ. изделий
+  assert.equal(po1.lockedUnitCostRub, 620);
+  assert.equal(po1.totalOrderRub, 1500 * 620); // строго без повторного умножения на 4!
+  assert.equal(po1.status, 'in_production');
+  assert.equal(po1.arrivalMonthIdx, 2);
+
+  // 2. Ручное редактирование созданного PO (кол-во -> 2 000 компл., цена -> 590 ₽, статус -> in_transit)
+  const updated = updateApprovedPurchaseOrder(created, po1.id, {
+    packsQty: 2000,
+    lockedUnitCostRub: 590,
+    status: 'in_transit',
+    arrivalMonthIdx: 3,
+  });
+  const poUpdated = updated.sharedSupplyAndFact!.approvedOrders[0];
+  assert.equal(poUpdated.version, 2);
+  assert.equal(poUpdated.packsQty, 2000);
+  assert.equal(poUpdated.physicalUnitsQty, 8000);
+  assert.equal(poUpdated.totalOrderRub, 2000 * 590);
+  assert.equal(poUpdated.status, 'in_transit');
+  assert.equal(poUpdated.arrivalMonthIdx, 3);
+
+  // 3. Проверка CSV экспорта заказов PO
+  const csv = serializePurchaseOrdersToCsv([{ model: updated, po: poUpdated }]);
+  assert.equal(csv.includes(poUpdated.orderNumber), true);
+  assert.equal(csv.includes('В пути'), true);
+
+  // 4. Удаление заказа PO возвращает список заказов к 0
+  const afterDelete = removeApprovedPurchaseOrder(updated, po1.id);
+  assert.equal(afterDelete.sharedSupplyAndFact!.approvedOrders.length, 0);
+  const procAfterDelete = computeProcurementPlan(afterDelete, scen1);
+  assert.equal(procAfterDelete.approvedOrders.length, 0);
+
+  // 5. В карточке SKU и лайтбоксе убраны плашки категорий фото и кнопка «Открыть оригинал (Zoom)» поверх кадра
+  const cardCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'ScenarioModelCardScreen.tsx'),
+    'utf-8'
+  );
+  const lightboxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'FullscreenPhotoLightbox.tsx'),
+    'utf-8'
+  );
+  assert.equal(cardCode.includes('GALLERY_CATEGORY_LABELS_RU'), false);
+  assert.equal(cardCode.includes('Открыть оригинал (Zoom)'), false);
+  assert.equal(lightboxCode.includes('GALLERY_CATEGORY_LABELS_RU'), false);
+});
+
 
 
 

@@ -13,10 +13,6 @@ import {
   Move,
 } from 'lucide-react';
 import type { GalleryMediaItem } from '@/lib/scenarioData';
-import {
-  GALLERY_CATEGORY_LABELS_RU,
-  type GalleryCategoryV11,
-} from '@/lib/unifiedBusinessEngine';
 
 interface FullscreenPhotoLightboxProps {
   open: boolean;
@@ -42,7 +38,6 @@ export function FullscreenPhotoLightbox({
   onSelectId,
   onClose,
 }: FullscreenPhotoLightboxProps) {
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | GalleryCategoryV11>('ALL');
   const [scale, setScale] = useState<number>(1);
   const [mode, setMode] = useState<'fit' | '100%' | 'custom'>('fit');
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -56,23 +51,17 @@ export function FullscreenPhotoLightbox({
   );
   const pinchStartRef = useRef<{ dist: number; startScale: number } | null>(null);
 
-  const validItems = useMemo(
+  const filteredItems = useMemo(
     () => items.filter((it) => Boolean(it.originalUrl || it.url)),
     [items]
   );
-
-  const filteredItems = useMemo(() => {
-    if (categoryFilter === 'ALL') return validItems;
-    const byCat = validItems.filter((it) => it.category === categoryFilter);
-    return byCat.length > 0 ? byCat : validItems;
-  }, [validItems, categoryFilter]);
 
   const currentIndex = useMemo(() => {
     const idx = filteredItems.findIndex((it) => it.id === activeId);
     return idx >= 0 ? idx : 0;
   }, [filteredItems, activeId]);
 
-  const currentItem = filteredItems[currentIndex] || validItems[0];
+  const currentItem = filteredItems[currentIndex] || filteredItems[0];
   const currentOriginalSrc = normalizePublicAssetUrl(
     currentItem?.originalUrl || currentItem?.url || ''
   );
@@ -159,10 +148,6 @@ export function FullscreenPhotoLightbox({
   }, [open, onClose, goPrev, goNext, adjustZoom, resetToFit]);
 
   if (!open || !currentItem) return null;
-
-  const availableCategories = Array.from(
-    new Set(validItems.map((it) => it.category))
-  ) as GalleryCategoryV11[];
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -272,23 +257,15 @@ export function FullscreenPhotoLightbox({
     >
       {/* ВЕРХНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-white/10 bg-[#16171A]/90 text-white">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[12px] text-white/65">
-            <span className="font-mono font-semibold text-[#F5E6CE]">{modelCode}</span>
-            <span>·</span>
-            <span className="truncate">{modelTitle}</span>
-            <span>·</span>
-            <span>
-              Кадр {currentIndex + 1} из {filteredItems.length}
-            </span>
-          </div>
-          <div className="text-[14px] font-semibold text-white truncate mt-0.5">
-            {currentItem.label}{' '}
-            <span className="text-[11.5px] font-normal text-white/60">
-              ({GALLERY_CATEGORY_LABELS_RU[currentItem.category] || currentItem.category}
-              {naturalDims ? ` · оригинал ${naturalDims.w}×${naturalDims.h} px` : ''})
-            </span>
-          </div>
+        <div className="min-w-0 flex items-center gap-2.5 text-[13px] text-white">
+          <span className="font-mono font-semibold text-white">{modelCode}</span>
+          <span className="text-white/40">·</span>
+          <span className="truncate font-semibold">{modelTitle}</span>
+          <span className="text-white/40">·</span>
+          <span className="font-mono text-[12px] text-white/75">
+            {currentIndex + 1} / {filteredItems.length}
+            {naturalDims ? ` (${naturalDims.w}×${naturalDims.h})` : ''}
+          </span>
         </div>
 
         {/* Инструменты масштаба + Оригинал + Закрытие */}
@@ -322,12 +299,12 @@ export function FullscreenPhotoLightbox({
             onClick={resetToFit}
             className={`h-8 px-2.5 rounded-[9px] text-[11.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
               mode === 'fit'
-                ? 'bg-[#F5E6CE] text-[#1D1D1F]'
+                ? 'bg-white text-[#141413]'
                 : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
           >
             <Maximize2 className="h-3.5 w-3.5" />
-            <span>По размеру экрана</span>
+            <span>В экран</span>
           </button>
 
           <button
@@ -335,7 +312,7 @@ export function FullscreenPhotoLightbox({
             onClick={setActual100Pct}
             className={`h-8 px-2.5 rounded-[9px] text-[11.5px] font-semibold transition cursor-pointer ${
               mode === '100%'
-                ? 'bg-[#F5E6CE] text-[#1D1D1F]'
+                ? 'bg-white text-[#141413]'
                 : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
           >
@@ -374,37 +351,6 @@ export function FullscreenPhotoLightbox({
           </button>
         </div>
       </div>
-
-      {/* ФИЛЬТР КАТЕГОРИЙ КАДРОВ (если есть несколько категорий) */}
-      {availableCategories.length > 1 && (
-        <div className="flex items-center gap-1.5 px-4 md:px-6 py-2 bg-[#16171A]/60 border-b border-white/5 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setCategoryFilter('ALL')}
-            className={`h-7 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition cursor-pointer ${
-              categoryFilter === 'ALL'
-                ? 'bg-white text-[#1D1D1F]'
-                : 'bg-white/10 text-white/75 hover:bg-white/20'
-            }`}
-          >
-            Все кадры ({validItems.length})
-          </button>
-          {availableCategories.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setCategoryFilter(cat)}
-              className={`h-7 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition cursor-pointer ${
-                categoryFilter === cat
-                  ? 'bg-white text-[#1D1D1F]'
-                  : 'bg-white/10 text-white/75 hover:bg-white/20'
-              }`}
-            >
-              {GALLERY_CATEGORY_LABELS_RU[cat] || cat}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* ОСНОВНАЯ СЦЕНА ПРОСМОТРА ФОТО ЦЕЛИКОМ БЕЗ ОБРЕЗКИ */}
       <div
@@ -484,43 +430,38 @@ export function FullscreenPhotoLightbox({
         )}
       </div>
 
-      {/* НИЖНЯЯ ЛЕНТА МИНИАТЮР С СОХРАНЕНИЕМ ПОРЯДКА И ПОДПИСЕЙ */}
-      <div className="px-4 md:px-6 py-2.5 border-t border-white/10 bg-[#16171A]/95 flex items-center gap-2.5 overflow-x-auto">
-        {filteredItems.map((it, idx) => {
-          const isAct = it.id === currentItem.id;
-          const thumbSrc = normalizePublicAssetUrl(it.url || it.originalUrl || '');
-          return (
-            <button
-              key={it.id}
-              type="button"
-              onClick={() => {
-                onSelectId(it.id);
-                resetToFit();
-              }}
-              className={`shrink-0 flex items-center gap-2 rounded-[10px] p-1.5 pr-3 border text-left transition cursor-pointer ${
-                isAct
-                  ? 'bg-white/15 border-[#F5E6CE] text-white'
-                  : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-              }`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumbSrc}
-                alt={it.label}
-                className="h-10 w-12 rounded-[6px] object-contain bg-[#F5F4F1]"
-              />
-              <div className="max-w-[140px]">
-                <div className="text-[11px] font-semibold truncate">
-                  {idx + 1}. {it.label}
-                </div>
-                <div className="text-[10px] text-white/55 truncate">
-                  {GALLERY_CATEGORY_LABELS_RU[it.category] || it.category}
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      {/* НИЖНЯЯ ЛЕНТА ЧИСТЫХ ФОТО-МИНИАТЮР */}
+      {filteredItems.length > 1 && (
+        <div className="px-4 md:px-6 py-2.5 border-t border-white/10 bg-[#16171A]/95 flex items-center justify-center gap-2 overflow-x-auto">
+          {filteredItems.map((it, idx) => {
+            const isAct = it.id === currentItem.id;
+            const thumbSrc = normalizePublicAssetUrl(it.url || it.originalUrl || '');
+            return (
+              <button
+                key={it.id}
+                type="button"
+                onClick={() => {
+                  onSelectId(it.id);
+                  resetToFit();
+                }}
+                aria-label={`Фото ${idx + 1}`}
+                className={`shrink-0 rounded-[9px] p-1 border-[1.5px] transition cursor-pointer ${
+                  isAct
+                    ? 'bg-white/20 border-white'
+                    : 'bg-white/5 border-white/15 opacity-70 hover:opacity-100 hover:bg-white/10'
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbSrc}
+                  alt={`${modelTitle} — фото ${idx + 1}`}
+                  className="h-12 w-14 rounded-[6px] object-contain bg-[#F6F6F4]"
+                />
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
