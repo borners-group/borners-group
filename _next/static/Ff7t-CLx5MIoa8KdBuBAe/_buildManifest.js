@@ -3,8 +3,8 @@ self.__BUILD_MANIFEST = {
     "afterFiles": [],
     "beforeFiles": [
       {
-        "source": "/borners-group//_next/:path+",
-        "destination": "/borners-group/_next/:path+"
+        "source": "/borners-platform//_next/:path+",
+        "destination": "/borners-platform/_next/:path+"
       }
     ],
     "fallback": []
