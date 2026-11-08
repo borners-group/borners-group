@@ -148,10 +148,7 @@ export function buildDefaultProductGroups(
       isSystemDefault: true,
       createdAt: '2026-11-08',
     },
-  ];
-
-  if (akushaModels.length > 0) {
-    groups.push({
+    {
       id: 'grp-akusha-shoes',
       title: 'Обувная коллекция AKUSHA',
       subtitle: 'Основная линейка обуви бренда Акуша (учёт в парах)',
@@ -161,11 +158,8 @@ export function buildDefaultProductGroups(
       modelCodes: akushaModels.map((m) => m.code),
       isSystemDefault: true,
       createdAt: '2026-11-08',
-    });
-  }
-
-  if (liscaniModels.length > 0) {
-    groups.push({
+    },
+    {
       id: 'grp-liscani-curtains',
       title: 'Шторы и текстиль LISCANI',
       subtitle: 'Портьеры, блэкаут и тюль Liscani (комплекты штор и метраж ткани)',
@@ -175,18 +169,61 @@ export function buildDefaultProductGroups(
       modelCodes: liscaniModels.map((m) => m.code),
       isSystemDefault: true,
       createdAt: '2026-11-08',
-    });
-  }
+    },
+  ];
 
   return groups;
 }
 
 export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[] {
+  const defaults = buildDefaultProductGroups(models);
   const stored = safeGetStorageJson<ProductGroupDef[]>(STORAGE_KEY_PRODUCT_GROUPS);
-  if (Array.isArray(stored) && stored.length > 0) {
-    return stored;
+  if (!Array.isArray(stored) || stored.length === 0) {
+    return defaults;
   }
-  return buildDefaultProductGroups(models);
+
+  // Находим все модели, которые уже распределены хотя бы в одну сохранённую группу
+  const assignedIds = new Set<string>();
+  const assignedCodes = new Set<string>();
+  for (const g of stored) {
+    for (const id of g.modelIds || []) assignedIds.add(id);
+    for (const code of g.modelCodes || []) assignedCodes.add(code.toUpperCase());
+  }
+
+  // Синхронизируем новые созданные карточки товаров в системные дефолтные группы соответствующего бренда
+  const merged = stored.map((g) => {
+    if (!g.isSystemDefault) return g;
+    const defMatch = defaults.find((d) => d.id === g.id);
+    if (!defMatch) return g;
+
+    const nextIds = [...(g.modelIds || [])];
+    const nextCodes = [...(g.modelCodes || [])];
+    for (let i = 0; i < defMatch.modelIds.length; i++) {
+      const mId = defMatch.modelIds[i];
+      const mCode = defMatch.modelCodes[i];
+      if (!assignedIds.has(mId) && (!mCode || !assignedCodes.has(mCode.toUpperCase()))) {
+        nextIds.push(mId);
+        if (mCode) nextCodes.push(mCode);
+        assignedIds.add(mId);
+        if (mCode) assignedCodes.add(mCode.toUpperCase());
+      }
+    }
+    return {
+      ...g,
+      modelIds: nextIds,
+      modelCodes: nextCodes,
+    };
+  });
+
+  // Если для какого-то бренда появились карточки, а его дефолтной группы ещё не было в stored — добавляем её
+  for (const defGrp of defaults) {
+    const exists = merged.some((g) => g.id === defGrp.id);
+    if (!exists && defGrp.modelIds.length > 0) {
+      merged.push(defGrp);
+    }
+  }
+
+  return merged;
 }
 
 export function saveProductGroups(groups: ProductGroupDef[]): void {
@@ -333,6 +370,7 @@ export interface BrandCatalogSectionSummary {
   categoryLabel: string;
   primaryUnit: string;
   secondaryUnit: string;
+  activeScenario: GrowthScenarioDef;
   models: ScenarioModelSpec[];
   decRevenueRub: number;
   annualRevenueRub: number;
@@ -434,6 +472,7 @@ export function buildBrandCatalogSections(
       categoryLabel: cfg.categoryDefault,
       primaryUnit: cfg.primaryUnit,
       secondaryUnit: cfg.secondaryUnit,
+      activeScenario: activeScen,
       models: brandModels,
       decRevenueRub,
       annualRevenueRub,

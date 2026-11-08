@@ -494,6 +494,14 @@ export function GrowthScenariosShowcase({
     }
   }, [brandFilter]);
 
+  useEffect(() => {
+    if (draftBrand) {
+      const cfg = getBrandUnitConfig(draftBrand);
+      setDraftType(cfg.categoryDefault);
+      setDraftUnitsInPack(cfg.secondaryPerPrimaryDefault);
+    }
+  }, [draftBrand]);
+
   const hydratedRef = useRef(false);
 
   const commitModels = useCallback(
@@ -3129,6 +3137,19 @@ export function GrowthScenariosShowcase({
                   }
                   setBrandFilterLocal(bCode);
                   setBrandFilter(bCode);
+                }}
+                selectedScenarioByBrand={selectedScenarioByBrand}
+                onSelectScenarioForBrand={(bCode, scenId) => {
+                  setSelectedScenarioForBrand(bCode, scenId);
+                }}
+                onSelectActiveScenarioId={(scenId) => {
+                  setSelectedScenarioId(scenId);
+                }}
+                onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+                  setDraftScenBrand(bCode);
+                  setDraftScenTitle(defaultTitle);
+                  setDraftCopyFromScenarioId(0);
+                  setNewScenarioModalOpen(true);
                 }}
                 onOpenModelPassport={(modelId) => navigateScreen('model', modelId)}
                 onUpdateModel={handleUpdateModel}

@@ -224,7 +224,7 @@ export function useLiveScenarioPortfolio() {
     FUKAI: 1,
     AKUSHA: null,
     LISKANI: null,
-    NA_TELE: null,
+    NA_TELE: 2,
   });
 
   const syncFromStorage = useCallback(() => {

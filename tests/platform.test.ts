@@ -2009,6 +2009,13 @@ test('35. Раздельные каталоги по брендам, Групп�
   const liscaniCatalog = brandSections.find((s) => s.brandCode === 'LISKANI')!;
   assert.equal(liscaniCatalog.primaryUnit, 'компл. штор');
   assert.equal(liscaniCatalog.models.length, 1);
+  assert.equal(liscaniCatalog.activeScenario.id, scen2.id);
+
+  const syncedGroups = buildDefaultProductGroups(lsCreated.models);
+  const akushaGroup = syncedGroups.find((g) => g.id === 'grp-akusha-shoes')!;
+  const liscaniGroup = syncedGroups.find((g) => g.id === 'grp-liscani-curtains')!;
+  assert.equal(akushaGroup.modelCodes.includes('AK-TEST-1'), true);
+  assert.equal(liscaniGroup.modelCodes.includes('LS-TEST-1'), true);
 
   // 3. Разбиение партии на под-партии и прямое указание дат размещения заказа
   const sampleModel = ensureModelUnifiedV11(INITIAL_SCENARIO_MODELS[0]);

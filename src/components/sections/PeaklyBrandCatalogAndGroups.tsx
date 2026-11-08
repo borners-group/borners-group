@@ -41,6 +41,7 @@ import {
   getScenariosForBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
+  removeApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
 import {
   ProductGroupDef,
@@ -553,6 +554,10 @@ export interface PeaklyCatalogGroupsAndBrandsProps {
   scenarios: GrowthScenarioDef[];
   brandFilter: string;
   onSelectBrandFilter: (brandCode: string) => void;
+  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>>;
+  onSelectScenarioForBrand?: (brandCode: string, scenarioId: number | null) => void;
+  onSelectActiveScenarioId?: (scenarioId: number) => void;
+  onOpenCreateScenarioForBrand?: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenModelPassport: (modelId: string) => void;
   onUpdateModel: (updated: ScenarioModelSpec) => void;
   onDeleteModel?: (model: ScenarioModelSpec) => void;
@@ -570,8 +575,13 @@ export function PeaklyCatalogGroupsAndBrandsView({
   models,
   filteredModels,
   currentScenario,
+  scenarios,
   brandFilter,
   onSelectBrandFilter,
+  selectedScenarioByBrand,
+  onSelectScenarioForBrand,
+  onSelectActiveScenarioId,
+  onOpenCreateScenarioForBrand,
   onOpenModelPassport,
   onUpdateModel,
   onDeleteModel,
@@ -619,7 +629,25 @@ export function PeaklyCatalogGroupsAndBrandsView({
     saveProductGroups(nextGroups);
   };
 
-  // Группы с фильтрацией по выбранному кабинету / бренду
+  // Карта активных сценариев по каждому бренду (у каждого бренда — свой сценарий развития)
+  const scenarioByBrandMap = useMemo(() => {
+    const map: Partial<Record<CanonicalBrandCode, GrowthScenarioDef>> = {};
+    const codes: CanonicalBrandCode[] = ['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'];
+    for (const bCode of codes) {
+      const selId = selectedScenarioByBrand?.[bCode];
+      if (typeof selId === 'number') {
+        const found = scenarios.find((s) => s.id === selId);
+        if (found) {
+          map[bCode] = found;
+          continue;
+        }
+      }
+      map[bCode] = currentScenario;
+    }
+    return map;
+  }, [selectedScenarioByBrand, scenarios, currentScenario]);
+
+  // Группы с фильтрацией по выбранному кабинету / бренду (с учётом сценария каждого бренда)
   const visibleGroupsWithMetrics = useMemo(() => {
     const normFilter =
       brandFilter === 'ALL' ? 'ALL' : normalizePortfolioBrandCode(brandFilter);
@@ -628,19 +656,36 @@ export function PeaklyCatalogGroupsAndBrandsView({
       .filter((g) => {
         if (normFilter === 'ALL') return true;
         if (g.brandCode === normFilter) return true;
-        const mList = computeProductGroupMetrics(g, filteredModels, currentScenario).models;
+        const grpScen =
+          g.brandCode !== 'ALL'
+            ? scenarioByBrandMap[g.brandCode] || currentScenario
+            : currentScenario;
+        const mList = computeProductGroupMetrics(g, models, grpScen).models;
         return mList.some((m) => matchesBrandFilter(m, normFilter));
       })
-      .map((g) => computeProductGroupMetrics(g, filteredModels, currentScenario));
-  }, [groups, brandFilter, filteredModels, currentScenario]);
+      .map((g) => {
+        const grpScen =
+          g.brandCode !== 'ALL'
+            ? scenarioByBrandMap[g.brandCode] || currentScenario
+            : currentScenario;
+        return {
+          ...computeProductGroupMetrics(g, models, grpScen),
+          activeScenario: grpScen,
+        };
+      });
+  }, [groups, brandFilter, models, scenarioByBrandMap, currentScenario]);
 
-  // Раздельные каталоги по каждому бренду
+  // Раздельные каталоги по каждому бренду (каждый бренд считает показатели по своему сценарию)
   const brandSections = useMemo(() => {
-    const allSections = buildBrandCatalogSections(models, {}, currentScenario);
+    const allSections = buildBrandCatalogSections(
+      models,
+      scenarioByBrandMap,
+      currentScenario
+    );
     if (brandFilter === 'ALL') return allSections;
     const norm = normalizePortfolioBrandCode(brandFilter);
     return allSections.filter((s) => s.brandCode === norm);
-  }, [models, currentScenario, brandFilter]);
+  }, [models, scenarioByBrandMap, currentScenario, brandFilter]);
 
   const openCreateGroupModal = () => {
     const defaultBrand =
@@ -745,9 +790,20 @@ export function PeaklyCatalogGroupsAndBrandsView({
   );
 
   // Рендер одной карточки SKU с кнопкой «Партии и даты»
-  const renderModelCard = (mod: ScenarioModelSpec, modIdx: number) => {
-    const met = computeModelScenarioMetrics(mod, currentScenario);
-    const proc = computeProcurementPlan(mod, currentScenario);
+  const renderModelCard = (
+    mod: ScenarioModelSpec,
+    modIdx: number,
+    scenarioOverride?: GrowthScenarioDef
+  ) => {
+    const modBrandCode = normalizePortfolioBrandCode(
+      detectModelBrandPortfolioLabel(mod)
+    );
+    const activeScen =
+      scenarioOverride ||
+      (modBrandCode !== 'ALL' ? scenarioByBrandMap[modBrandCode] : undefined) ||
+      currentScenario;
+    const met = computeModelScenarioMetrics(mod, activeScen);
+    const proc = computeProcurementPlan(mod, activeScen);
     const mainGallery = mod.gallery.find((g) => g.isMain) || mod.gallery[0];
     const colors = mod.palettes[0]?.colors || [];
     const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
@@ -1197,7 +1253,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                        {gm.models.map((m, idx) => renderModelCard(m, idx))}
+                        {gm.models.map((m, idx) =>
+                          renderModelCard(m, idx, gm.activeScenario)
+                        )}
                       </div>
                     )}
                   </div>
@@ -1258,13 +1316,59 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onOpenCreateModel(sec.brandCode)}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer shrink-0"
-                  >
-                    + Добавить товар в {sec.displayCode}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {onSelectScenarioForBrand && (
+                      <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#D8D7CE] px-2.5 py-1 text-[11.5px]">
+                        <span className="text-[#686760] font-medium">Сценарий:</span>
+                        <select
+                          value={
+                            selectedScenarioByBrand?.[sec.brandCode] ??
+                            sec.activeScenario.id
+                          }
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const nextId = raw === '' ? null : Number(raw);
+                            onSelectScenarioForBrand(sec.brandCode, nextId);
+                            if (nextId !== null && onSelectActiveScenarioId) {
+                              onSelectActiveScenarioId(nextId);
+                            }
+                          }}
+                          className="font-bold text-[#141413] bg-transparent focus:outline-none cursor-pointer max-w-[190px]"
+                        >
+                          {getScenariosForBrand(scenarios, sec.brandCode).map((sc) => (
+                            <option key={sc.id} value={sc.id}>
+                              {sc.id === ACTING_2027_SCENARIO_ID
+                                ? 'Исходный план 2027'
+                                : `${sc.title} (${sc.year || 2027})`}
+                            </option>
+                          ))}
+                        </select>
+                        {onOpenCreateScenarioForBrand && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenCreateScenarioForBrand(
+                                sec.brandCode,
+                                `${sec.displayCode} — план развития 2027`
+                              )
+                            }
+                            title={`Создать свой сценарий для ${sec.displayCode}`}
+                            className="h-6 px-1.5 rounded bg-[#FAF9F6] hover:bg-[#EFEFE9] border border-[#D8D7CE] text-[10.5px] font-bold text-[#141413] cursor-pointer"
+                          >
+                            + Свой
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenCreateModel(sec.brandCode)}
+                      className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer shrink-0"
+                    >
+                      + Добавить товар в {sec.displayCode}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Сетка карточек этого бренда */}
@@ -1287,7 +1391,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {sec.models.map((m, idx) => renderModelCard(m, idx))}
+                      {sec.models.map((m, idx) =>
+                        renderModelCard(m, idx, sec.activeScenario)
+                      )}
                     </div>
                   )}
                 </div>
@@ -1494,7 +1600,17 @@ export function PeaklyCatalogGroupsAndBrandsView({
       {batchEditorModel && (
         <QuickModelBatchesAndDatesModal
           model={batchEditorModel}
-          scenario={currentScenario}
+          scenario={
+            (() => {
+              const bCode = normalizePortfolioBrandCode(
+                detectModelBrandPortfolioLabel(batchEditorModel)
+              );
+              return (
+                (bCode !== 'ALL' ? scenarioByBrandMap[bCode] : undefined) ||
+                currentScenario
+              );
+            })()
+          }
           onClose={() => setBatchEditorModelId(null)}
           onUpdateModel={onUpdateModel}
           notify={notify}
@@ -1561,11 +1677,13 @@ function QuickModelBatchesAndDatesModal({
       id: `${cur.id}-a`,
       startMonthIdx: cur.startMonthIdx,
       endMonthIdx: mid,
+      scenarioId: scenario.id,
     };
     const secondHalf: CustomBatchPeriodDef = {
       id: `${cur.id}-b`,
       startMonthIdx: mid + 1,
       endMonthIdx: cur.endMonthIdx,
+      scenarioId: scenario.id,
     };
     const nextList = [
       ...activePeriods.slice(0, idx),
@@ -1587,10 +1705,16 @@ function QuickModelBatchesAndDatesModal({
         endMonthIdx: 1,
         customPacksQty: 1000,
         customOrderDateIso: `${(scenario.year || 2027) - 1}-11-15`,
+        scenarioId: scenario.id,
       },
     ];
     updatePeriods(nextList);
     notify?.('success', 'Добавлена новая партия');
+  };
+
+  const handleResetToQuarters = () => {
+    updatePeriods(DEFAULT_QUARTERLY_BATCH_PERIODS.map((p) => ({ ...p })));
+    notify?.('success', 'Возвращена стандартная разбивка на 4 квартала (Q1–Q4)');
   };
 
   const handleUpdateBatchField = (
@@ -1598,8 +1722,29 @@ function QuickModelBatchesAndDatesModal({
     updater: (prev: CustomBatchPeriodDef) => CustomBatchPeriodDef
   ) => {
     const nextList = activePeriods.map((p) =>
-      p.id === periodId ? updater(p) : p
+      p.id === periodId ? { ...updater(p), scenarioId: scenario.id } : p
     );
+    updatePeriods(nextList);
+  };
+
+  const handleUpdateBatchQtyAndRebalance = (periodId: string, nextQty: number) => {
+    const targetIdx = activePeriods.findIndex((p) => p.id === periodId);
+    const nextList = activePeriods.map((p, idx) => {
+      if (p.id === periodId) {
+        return {
+          ...p,
+          customPacksQty: Math.max(0, Math.round(nextQty)),
+          scenarioId: scenario.id,
+        };
+      }
+      if (targetIdx >= 0 && idx > targetIdx) {
+        return {
+          ...p,
+          customPacksQty: null,
+        };
+      }
+      return p;
+    });
     updatePeriods(nextList);
   };
 
@@ -1611,6 +1756,12 @@ function QuickModelBatchesAndDatesModal({
       'Партия утверждена в заказ фабрике',
       `${batch.recommendedPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit} · заказ до ${formatShortDateRu(batch.recommendedOrderDateIso)}`
     );
+  };
+
+  const handleRevokeApprovedPo = (poId: string) => {
+    const updated = removeApprovedPurchaseOrder(model, poId);
+    onUpdateModel(updated);
+    notify?.('warning', 'Заказ фабрике возвращён в черновик');
   };
 
   return (
@@ -1625,13 +1776,20 @@ function QuickModelBatchesAndDatesModal({
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE9E2]">
           <div>
             <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-              Разбиение по партиям и график дат заказа · {model.code}
+              Разбиение по партиям и график дат заказа · {model.code} · {scenario.title}
             </div>
             <h3 className="text-[18px] font-extrabold text-[#141413]">
               {model.title} ({detectModelBrandPortfolioLabel(model)})
             </h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetToQuarters}
+              className="h-8.5 px-3 rounded-[9px] border border-[#D8D7CE] bg-white hover:bg-[#FAF9F6] text-[11.5px] font-semibold text-[#52514C] cursor-pointer"
+            >
+              ↺ Сбросить к 4 кварталам
+            </button>
             <button
               type="button"
               onClick={handleAddCustomBatch}
@@ -1663,6 +1821,43 @@ function QuickModelBatchesAndDatesModal({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EAE9E2]">
+              {proc.approvedOrders.map((po, poIdx) => (
+                <tr key={po.id} className="bg-[#F2FBF6]/60 hover:bg-[#EAF8F0]">
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded bg-[#EAF6F0] border border-[#BCE3CF] text-[10px] font-bold text-[#146C43]">
+                        ✓ Утверждён PO #{poIdx + 1}
+                      </span>
+                      <span className="font-bold text-[#141413]">
+                        {po.coverageMonthsLabel || 'В работе у фабрики'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 font-mono font-bold text-[#141413]">
+                    {formatShortDateRu(po.orderPlacementDateIso)}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-bold text-[#141413]">
+                    {po.packsQty.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono">
+                    <div className="text-[13.5px] font-extrabold text-[#0F5132]">
+                      {formatMln(po.totalOrderRub)}
+                    </div>
+                    <div className="text-[10.5px] text-[#146C43] font-semibold">
+                      Аванс: {formatMln(po.prepaymentRub)}
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeApprovedPo(po.id)}
+                      className="h-8 px-2.5 rounded-[8px] border border-[#D8D7CE] bg-white hover:bg-rose-50 hover:text-rose-700 text-[11px] font-semibold text-[#52514C] cursor-pointer"
+                    >
+                      Вернуть в черновик
+                    </button>
+                  </td>
+                </tr>
+              ))}
               {proc.recommendedBatches.map((batch, idx) => {
                 const canSplit = batch.endCoveredMonthIdx > batch.firstCoveredMonthIdx;
                 return (
@@ -1742,10 +1937,7 @@ function QuickModelBatchesAndDatesModal({
                         value={batch.recommendedPacks}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          handleUpdateBatchField(batch.periodId, (prev) => ({
-                            ...prev,
-                            customPacksQty: val,
-                          }));
+                          handleUpdateBatchQtyAndRebalance(batch.periodId, val);
                         }}
                         className="h-8 w-24 rounded-[8px] border border-[#CFCEC6] bg-white px-2 text-right font-mono text-[13px] font-bold text-[#141413]"
                       />

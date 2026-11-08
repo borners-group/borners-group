@@ -31,7 +31,9 @@ import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import {
+  createBrandProductModel,
   detectModelBrandPortfolioLabel,
+  getBrandUnitConfig,
   matchesBrandFilter,
 } from '@/lib/unifiedBusinessEngine';
 
@@ -101,6 +103,9 @@ export function ProductCatalogView() {
     models: scenarioModels,
     scenarios,
     currentScenario,
+    selectedScenarioByBrand,
+    setSelectedScenarioForBrand,
+    setSelectedScenarioId,
     updateModelSpec,
     updateModelsBatch,
   } = useLiveScenarioPortfolio();
@@ -354,30 +359,35 @@ export function ProductCatalogView() {
       },
     });
 
-    // Также автоматически регистрируем новую модель в «Сценариях роста» (единая база карточек)
-    const nextNum = String(scenarioModels.length + 1).padStart(3, '0');
-    const createdScenarioModel: ScenarioModelSpec = {
-      ...INITIAL_SCENARIO_MODELS[0],
-      id: `scen-model-${Date.now()}`,
-      code: `№${nextNum}`,
-      title: newSkuForm.name.trim().toUpperCase(),
-      subtitle: `${newSkuForm.category} · ${newSkuForm.productType}`,
-      brandId: newSkuForm.brandId === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
-      launchStatus: 'В разработке',
-      unitsInPack: 4,
-      retailPriceRub: retail,
-      unitCostRub: cost,
-      hasActualSalesOrPurchases: false,
-      gallery: [
-        {
-          id: `g-main-${Date.now()}`,
-          category: 'pack',
-          label: 'Главное фото',
-          url: newSkuForm.imageUrl || undefined,
-          isMain: true,
-        },
-      ],
-    };
+    // Также автоматически регистрируем новую модель в «Сценариях роста» (единая база карточек без выдуманных продаж по п. 4.4 ТЗ)
+    const unitCfg = getBrandUnitConfig(newSkuForm.brandId);
+    const { model: baseCreated } = createBrandProductModel(
+      scenarioModels,
+      scenarios,
+      {
+        title: newSkuForm.name.trim().toUpperCase(),
+        brandCode: newSkuForm.brandId,
+        code: newSkuForm.sku.trim() || undefined,
+        categoryLabel: newSkuForm.category || unitCfg.categoryDefault,
+        retailPriceRub: retail,
+        unitCostRub: cost,
+        unitsInPack: unitCfg.secondaryPerPrimaryDefault,
+      }
+    );
+    const createdScenarioModel: ScenarioModelSpec = newSkuForm.imageUrl
+      ? {
+          ...baseCreated,
+          gallery: [
+            {
+              id: `g-main-${Date.now()}`,
+              category: 'pack',
+              label: 'Главное фото',
+              url: newSkuForm.imageUrl,
+              isMain: true,
+            },
+          ],
+        }
+      : baseCreated;
     updateModelsBatch((prev) => [...prev, createdScenarioModel]);
 
     setCreateModalOpen(false);
@@ -544,6 +554,13 @@ export function ProductCatalogView() {
           scenarios={scenarios}
           brandFilter={brandFilter}
           onSelectBrandFilter={(bCode) => setBrandFilter(bCode)}
+          selectedScenarioByBrand={selectedScenarioByBrand}
+          onSelectScenarioForBrand={(bCode, scenId) => {
+            setSelectedScenarioForBrand(bCode, scenId);
+          }}
+          onSelectActiveScenarioId={(scenId) => {
+            setSelectedScenarioId(scenId);
+          }}
           onOpenModelPassport={(modelId) => {
             try {
               sessionStorage.setItem('borners_open_scenario_model_id', modelId);
@@ -554,7 +571,12 @@ export function ProductCatalogView() {
           }}
           onUpdateModel={updateModelSpec}
           onDeleteModel={handleDeleteScenarioModel}
-          onOpenCreateModel={() => setCreateModalOpen(true)}
+          onOpenCreateModel={(defaultBrandCode) => {
+            if (defaultBrandCode) {
+              setNewSkuForm((prev) => ({ ...prev, brandId: defaultBrandCode }));
+            }
+            setCreateModalOpen(true);
+          }}
           notify={notify}
         />
       </div>
@@ -1853,8 +1875,11 @@ export function ProductCatalogView() {
                   onChange={(e) => setNewSkuForm({ ...newSkuForm, brandId: e.target.value })}
                   className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                 >
-                  <option value="BORNERS">BORNERS</option>
-                  <option value="NA_TELE">НА ТЕЛЕ</option>
+                  <option value="BORNERS">BORNERS (мужское бельё)</option>
+                  <option value="NA_TELE">НА ТЕЛЕ (женское бельё)</option>
+                  <option value="FUKAI">FUKAI (трикотаж / бельё)</option>
+                  <option value="AKUSHA">AKUSHA (обувь)</option>
+                  <option value="LISKANI">LISCANI (шторы)</option>
                 </select>
               </div>
               <div className="sm:col-span-2">
