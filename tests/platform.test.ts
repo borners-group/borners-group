@@ -1942,6 +1942,138 @@ test('34. Приёмочные тесты ТЗ «BORNERS GROUP — развит�
   );
 });
 
+test('35. Раздельные каталоги по брендам, Группы товаров в стиле Peakly и разбиение партий с выбором дат заказа', async () => {
+  const {
+    buildDefaultProductGroups,
+    computeProductGroupMetrics,
+    buildBrandCatalogSections,
+  } = await import('../src/lib/productGroups.ts');
+  const {
+    INITIAL_SCENARIOS,
+    INITIAL_SCENARIO_MODELS,
+  } = await import('../src/lib/scenarioData.ts');
+  const {
+    computeProcurementPlan,
+    createBrandProductModel,
+    ensureModelUnifiedV11,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const scen2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+
+  // 1. Дефолтные группы товаров по брендам и линейкам
+  const defaultGroups = buildDefaultProductGroups(INITIAL_SCENARIO_MODELS);
+  assert.ok(defaultGroups.length >= 4, 'Должны создаваться умные дефолтные группы по брендам и позициям');
+
+  const wbBaseGroup = defaultGroups.find((g) => g.id === 'grp-borners-wb-base')!;
+  assert.ok(wbBaseGroup, 'Группа действующей базы WB BORNERS должна существовать');
+  const wbGroupMetrics = computeProductGroupMetrics(
+    wbBaseGroup,
+    INITIAL_SCENARIO_MODELS,
+    scen1
+  );
+  assert.ok(wbGroupMetrics.modelsCount >= 5, 'В группе действующей базы WB должно быть не менее 5 SKU');
+  assert.ok(wbGroupMetrics.annualRevenueRub > 0, 'Годовые продажи группы должны считаться');
+  assert.ok(wbGroupMetrics.procurementBudgetRub > 0, 'Бюджет закупок группы должен считаться');
+  assert.ok(wbGroupMetrics.firstWaveStartRub > 0, 'Старт 1-й партии Q1 по группе должен считаться');
+
+  // 2. Раздельные каталоги по всем 5 брендам холдинга
+  const akCreated = createBrandProductModel(INITIAL_SCENARIO_MODELS, INITIAL_SCENARIOS, {
+    brandCode: 'AKUSHA',
+    code: 'AK-TEST-1',
+    title: 'Акуша слипы базовые',
+    retailPriceRub: 1200,
+    unitCostRub: 350,
+    initialMonthlyPacks: Array(12).fill(1500),
+  });
+  const lsCreated = createBrandProductModel(akCreated.models, INITIAL_SCENARIOS, {
+    brandCode: 'LISKANI',
+    code: 'LS-TEST-1',
+    title: 'Liscani Блэкаут 3 метра',
+    retailPriceRub: 3900,
+    unitCostRub: 1400,
+    initialMonthlyPacks: Array(12).fill(900),
+  });
+  const brandSections = buildBrandCatalogSections(
+    lsCreated.models,
+    {
+      BORNERS: scen1,
+      NA_TELE: scen2,
+      FUKAI: scen1,
+      AKUSHA: scen1,
+      LISKANI: scen2,
+    },
+    scen2
+  );
+  assert.equal(brandSections.length, 5, 'Должны формироваться 5 отдельных каталогов по каждому бренду');
+  const liscaniCatalog = brandSections.find((s) => s.brandCode === 'LISKANI')!;
+  assert.equal(liscaniCatalog.primaryUnit, 'компл. штор');
+  assert.equal(liscaniCatalog.models.length, 1);
+
+  // 3. Разбиение партии на под-партии и прямое указание дат размещения заказа
+  const sampleModel = ensureModelUnifiedV11(INITIAL_SCENARIO_MODELS[0]);
+  const splitPeriods = [
+    {
+      id: 'q1-part-1',
+      title: 'Партия №1А (Январь)',
+      startMonthIdx: 0,
+      endMonthIdx: 0,
+      customOrderDateIso: '2026-10-25',
+      customPacksQty: 4500,
+    },
+    {
+      id: 'q1-part-2',
+      title: 'Партия №1Б (Февраль–Март)',
+      startMonthIdx: 1,
+      endMonthIdx: 2,
+      customOrderDateIso: '2026-11-28',
+      customPacksQty: null,
+    },
+    {
+      id: 'q2',
+      title: 'Партия №2 (Q2)',
+      startMonthIdx: 3,
+      endMonthIdx: 5,
+      customOrderDateIso: null,
+      customPacksQty: null,
+    },
+    {
+      id: 'q3',
+      title: 'Партия №3 (Q3)',
+      startMonthIdx: 6,
+      endMonthIdx: 8,
+      customOrderDateIso: null,
+      customPacksQty: null,
+    },
+    {
+      id: 'q4',
+      title: 'Партия №4 (Q4)',
+      startMonthIdx: 9,
+      endMonthIdx: 11,
+      customOrderDateIso: null,
+      customPacksQty: null,
+    },
+  ];
+  const modelWithSplitBatches = {
+    ...sampleModel,
+    sharedSupplyAndFact: {
+      ...sampleModel.sharedSupplyAndFact!,
+      factoryParams: {
+        ...sampleModel.sharedSupplyAndFact!.factoryParams,
+        customBatchPeriods: splitPeriods,
+      },
+    },
+  };
+  const procPlan = computeProcurementPlan(modelWithSplitBatches, scen1);
+  assert.equal(procPlan.recommendedBatches.length, 5, 'После разбиения Q1 должно быть 5 партий');
+  assert.equal(procPlan.recommendedBatches[0].recommendedOrderDateIso, '2026-10-25');
+  assert.equal(procPlan.recommendedBatches[0].hasCustomDateOverride, true);
+  assert.equal(procPlan.recommendedBatches[0].recommendedPacks, 4500);
+  assert.equal(procPlan.recommendedBatches[1].recommendedOrderDateIso, '2026-11-28');
+  assert.equal(procPlan.recommendedBatches[1].hasCustomDateOverride, true);
+});
+
+
 
 
 

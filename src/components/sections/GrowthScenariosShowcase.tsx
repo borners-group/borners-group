@@ -53,6 +53,10 @@ import {
   verifyScenarioS1_100M,
 } from '@/lib/scenarioS1_100M';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
+import {
+  PeaklyCatalogGroupsAndBrandsView,
+  PeaklyMasterCabinetsSummary,
+} from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
@@ -2864,7 +2868,46 @@ export function GrowthScenariosShowcase({
           </section>
 
           {/* =====================================================================
-              БЛОК 02 · ТОВАРНАЯ МАТРИЦА СЦЕНАРИЯ (ВИТРИНА | ТАБЛИЦА + ПИЛЛЫ БРЕНДОВ)
+              БЛОК 01-B · СВОДНАЯ ВСЕХ КАБИНЕТОВ И БРЕНДОВ КАК В PEAKLY
+              Выносит все важные показатели по всем 5 кабинетам (Продажи, Закупки,
+              Старт Q1, Пик своих денег, Прибыль) на Главную + свой сценарий у каждого бренда
+          ===================================================================== */}
+          <PeaklyMasterCabinetsSummary
+            multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+            scenarios={scenarios}
+            activeBrandFilter={brandFilterLocal}
+            onSelectBrandFilter={(bCode) => {
+              if (
+                bCode === 'FUKAI' &&
+                currentScenario.id === 1 &&
+                !includeGroupPortfolioInS1
+              ) {
+                setIncludeGroupPortfolioInS1(true);
+              }
+              setBrandFilterLocal(bCode);
+              setBrandFilter(bCode);
+            }}
+            onSelectScenarioForBrand={(bCode, scenId) => {
+              setSelectedScenarioForBrand(bCode, scenId);
+            }}
+            onSelectActiveScenarioId={(scenId) => {
+              setSelectedScenarioId(scenId);
+            }}
+            onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+              setDraftScenBrand(bCode);
+              setDraftScenTitle(defaultTitle);
+              setDraftCopyFromScenarioId(0);
+              setNewScenarioModalOpen(true);
+            }}
+            onOpenCreateModelForBrand={(bCode) => {
+              setDraftBrand(bCode);
+              setNewModelModalOpen(true);
+            }}
+            onNavigateSection={(sec) => navigateTo(sec)}
+          />
+
+          {/* =====================================================================
+              БЛОК 02 · ТОВАРНАЯ МАТРИЦА СЦЕНАРИЯ (ГРУППЫ ТОВАРОВ · КАТАЛОГИ БРЕНДОВ · ТАБЛИЦА)
           ===================================================================== */}
           <section className="rounded-[16px] bg-white border border-[#D8D7CF] p-5 md:p-6 space-y-4 shadow-[0_2px_12px_-2px_rgba(20,20,19,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-[#EAE9E2]">
@@ -3069,252 +3112,37 @@ export function GrowthScenariosShowcase({
             )}
 
             {catalogViewMode === 'grid' ? (
-              /* Витрина с карточками SKU в стиле Peakly (с мини-спарклайном 12 мес. и юнит-экономикой) */
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {filteredModels.map((mod, modIdx) => {
-                  const met = computeModelScenarioMetrics(mod, currentScenario);
-                  const mainGallery =
-                    mod.gallery.find((g) => g.isMain) || mod.gallery[0];
-                  const colors = mod.palettes[0]?.colors || [];
-                  const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
-                  const priorityLabel = getModelPriority(mod);
-                  const displayBrand =
-                    mod.customBrandLabel ||
-                    (actingMeta?.wbSku === '72302360'
-                      ? 'FUKAI'
-                      : mod.brandId === 'NA_TELE'
-                        ? 'НА ТЕЛЕ'
-                        : 'BORNERS');
-                  const maxModMonthRev = Math.max(1, ...met.monthlyRevenuesRub);
-
-                  return (
-                    <div
-                      key={mod.id}
-                      role="button"
-                      tabIndex={0}
-                      data-tour={modIdx === 0 ? 'model-passport' : undefined}
-                      onClick={() => {
-                        navigateScreen('model', mod.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          navigateScreen('model', mod.id);
-                        }
-                      }}
-                      className="group relative rounded-[15px] bg-white border border-[#D8D7CF] hover:border-[#141413] p-4 text-left transition-all cursor-pointer flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(20,20,19,0.09)]"
-                    >
-                      {/* Уровень 1 и 2: Код + Фото + Название + Мини-спарклайн 12 мес. */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {modIdx < 3 && (
-                              <span
-                                className={`px-1.5 py-0.5 rounded-[5px] font-mono text-[9.5px] font-bold shrink-0 ${
-                                  modIdx === 0
-                                    ? 'bg-[#141413] text-white'
-                                    : 'bg-[#F4F3EE] text-[#52514C] border border-[#E2E1D9]'
-                                }`}
-                              >
-                                #{modIdx + 1}
-                              </span>
-                            )}
-                            <span className="font-mono text-[11px] font-bold text-[#52514C] truncate">
-                              {actingMeta
-                                ? `WB ${actingMeta.wbSku}`
-                                : `${displayBrand} · ${mod.code}`}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span
-                              className={`px-2 py-0.5 rounded-[5px] text-[10px] font-bold border ${
-                                mod.launchStatus === 'Утверждено' ||
-                                (actingMeta &&
-                                  actingMeta.wbSku !== '72302360' &&
-                                  actingMeta.wbSku !== '86205435')
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : 'bg-[#F4F3EE] text-[#52514C] border-[#DFDED7]'
-                              }`}
-                            >
-                              {actingMeta
-                                ? actingMeta.wbSku === '72302360'
-                                  ? 'FUKAI · WB'
-                                  : actingMeta.wbSku === '86205435'
-                                    ? 'WB · проверить'
-                                    : 'BORNERS · WB'
-                                : mod.launchStatus}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteOrArchiveModel(mod);
-                              }}
-                              title={`Удалить карточку ${mod.code} ${mod.title}`}
-                              aria-label={`Удалить ${mod.title}`}
-                              className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-white hover:bg-rose-50 border border-[#CECDC4] hover:border-rose-200 flex items-center justify-center text-[#686762] hover:text-rose-700 text-[12px] leading-none font-bold transition cursor-pointer"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="relative rounded-[12px] bg-[radial-gradient(circle_at_50%_40%,#FFFFFF_0%,#F3F2EC_100%)] border border-[#E6E5DD] p-2.5 mb-3 overflow-hidden">
-                          <div className="transition-transform duration-200 group-hover:scale-[1.03]">
-                            <BoxerPackStackSvg
-                              colors={colors}
-                              brandLabel={
-                                mod.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'
-                              }
-                              customPhotoUrl={mainGallery?.url}
-                            />
-                          </div>
-                          <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#141413] shadow-2xs">
-                            {mod.unitsInPack} шт. · {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
-                          </span>
-                          <span className="absolute bottom-2 right-2 rounded-md bg-[#141413]/85 backdrop-blur-xs px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
-                            {met.goalSharePct.toFixed(1).replace('.', ',')}%
-                          </span>
-                        </div>
-
-                        <div className="text-[15.5px] font-extrabold text-[#141413] group-hover:underline leading-snug">
-                          {mod.title}
-                        </div>
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                          <span className="text-[11.5px] text-[#686760] truncate">
-                            {mod.subtitle}
-                          </span>
-                          {!actingMeta ? (
-                            <button
-                              type="button"
-                              onClick={(e) => handleCycleCardPriority(mod, e)}
-                              title="Нажмите, чтобы изменить приоритет модели для авто-расчёта"
-                              className={`shrink-0 px-2 py-0.5 rounded-[5px] text-[10px] font-bold transition cursor-pointer border ${
-                                priorityLabel === 'Высший'
-                                  ? 'bg-[#141413] text-white border-[#141413]'
-                                  : 'bg-[#FAF9F6] hover:border-[#141413] text-[#262624] border-[#CFCEC6]'
-                              }`}
-                            >
-                              {priorityLabel}
-                            </button>
-                          ) : (
-                            <span className="shrink-0 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                              {met.annualPacks.toLocaleString('ru-RU')} вык./год
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Мини-спарклайн 12 месяцев прямо внутри карточки товара */}
-                        <div className="mt-2.5 rounded-[8px] bg-[#FAF9F6] border border-[#ECEBE4] px-2.5 py-1.5 flex items-end justify-between gap-1 h-8">
-                          {met.monthlyRevenuesRub.map((mRev, mIdx) => {
-                            const hPx = Math.max(3, Math.round((mRev / maxModMonthRev) * 18));
-                            return (
-                              <div
-                                key={mIdx}
-                                style={{ height: `${hPx}px` }}
-                                title={`${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽`}
-                                className={`flex-1 rounded-[2px] ${
-                                  mIdx === 11
-                                    ? 'bg-emerald-600'
-                                    : 'bg-[#C8C7BE] group-hover:bg-[#787770]'
-                                }`}
-                              />
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Уровень 3: Единая нижняя плашка (Выручка декабря и года слева · Степпер комплектов справа) */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-3 pt-2.5 border-t border-[#EAE9E2] flex items-center justify-between gap-2"
-                      >
-                        <div>
-                          <div className="font-mono text-[15px] font-extrabold text-[#141413] leading-tight">
-                            {(met.targetMonthRevenueRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽{' '}
-                            <span className="font-sans text-[10.5px] font-medium text-[#686760]">
-                              / дек
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-[#686760] mt-0.5">
-                            Год:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {(met.annualRevenueRub / 1_000_000)
-                                .toFixed(2)
-                                .replace('.', ',')}{' '}
-                              млн ₽
-                            </strong>
-                          </div>
-                        </div>
-
-                        <div className="inline-flex items-center gap-0.5 bg-[#FAF9F6] border border-[#CFCEC6] rounded-[8px] px-1 py-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) =>
-                              handleQuickAdjustDecPacks(
-                                mod,
-                                Math.max(0, met.targetMonthPacks - 200),
-                                e
-                              )
-                            }
-                            title="Уменьшить выкупы декабря на 200 компл."
-                            className="h-6 w-5 rounded text-[13px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] transition cursor-pointer"
-                          >
-                            −
-                          </button>
-                          <input
-                            type="number"
-                            min={0}
-                            step={100}
-                            value={met.targetMonthPacks}
-                            onChange={(e) =>
-                              handleQuickAdjustDecPacks(
-                                mod,
-                                Number(e.target.value) || 0,
-                                e
-                              )
-                            }
-                            title="Выкупы в декабре 2027 (комплектов)"
-                            className="w-13 text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent"
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) =>
-                              handleQuickAdjustDecPacks(
-                                mod,
-                                met.targetMonthPacks + 200,
-                                e
-                              )
-                            }
-                            title="Увеличить выкупы декабря на 200 компл."
-                            className="h-6 w-5 rounded text-[13px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] transition cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Карточка «Добавить модель» */}
-                <button
-                  type="button"
-                  onClick={() => setNewModelModalOpen(true)}
-                  className="rounded-[14px] border border-dashed border-[#C8C7BE] hover:border-[#141413] bg-[#FAF9F6] hover:bg-white p-6 flex flex-col items-center justify-center text-center gap-2 transition cursor-pointer min-h-[280px]"
-                >
-                  <div className="text-[26px] font-light leading-none text-[#141413]">+</div>
-                  <div className="text-[14.5px] font-bold text-[#141413]">
-                    Добавить модель
-                  </div>
-                  <p className="text-[12px] text-[#686760] max-w-[200px]">
-                    Новая товарная позиция в сценарий ({currentScenario.scopeLabel})
-                  </p>
-                </button>
-              </div>
+              /* Группы товаров (папки как на скрине 2, но красивее в стиле Peakly) + Раздельные каталоги по брендам + Прямое разбиение по партиям и датам */
+              <PeaklyCatalogGroupsAndBrandsView
+                models={models}
+                filteredModels={filteredModels}
+                currentScenario={currentScenario}
+                scenarios={scenarios}
+                brandFilter={brandFilterLocal}
+                onSelectBrandFilter={(bCode) => {
+                  if (
+                    bCode === 'FUKAI' &&
+                    currentScenario.id === 1 &&
+                    !includeGroupPortfolioInS1
+                  ) {
+                    setIncludeGroupPortfolioInS1(true);
+                  }
+                  setBrandFilterLocal(bCode);
+                  setBrandFilter(bCode);
+                }}
+                onOpenModelPassport={(modelId) => navigateScreen('model', modelId)}
+                onUpdateModel={handleUpdateModel}
+                onDeleteModel={handleDeleteOrArchiveModel}
+                onOpenCreateModel={(defaultBrandCode) => {
+                  if (defaultBrandCode) {
+                    setDraftBrand(defaultBrandCode);
+                  }
+                  setNewModelModalOpen(true);
+                }}
+                onQuickAdjustDecPacks={handleQuickAdjustDecPacks}
+                onCyclePriority={handleCycleCardPriority}
+                notify={notify}
+              />
             ) : (
               /* Компактная табличная матрица всех SKU на одном экране */
               <div className="overflow-x-auto rounded-[14px] border-[1.5px] border-[#CECDC4]">

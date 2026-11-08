@@ -28,6 +28,7 @@ import {
 import { INITIAL_SCENARIO_MODELS, ScenarioModelSpec } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
+import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import {
   detectModelBrandPortfolioLabel,
@@ -76,6 +77,7 @@ export function ProductCatalogView() {
     users,
     currentUser,
     brandFilter,
+    setBrandFilter,
     platformMode,
     selectedProductId,
     setSelectedProductId,
@@ -97,6 +99,9 @@ export function ProductCatalogView() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const {
     models: scenarioModels,
+    scenarios,
+    currentScenario,
+    updateModelSpec,
     updateModelsBatch,
   } = useLiveScenarioPortfolio();
 
@@ -528,86 +533,30 @@ export function ProductCatalogView() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {scenarioModels
-            .filter(
-              (m) =>
-                m.launchStatus !== 'В архиве' &&
-                (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
-            )
-            .map((m) => {
-              const activePal = m.palettes[0];
-              const colors = activePal ? activePal.colors : [];
-              const brandLbl = detectModelBrandPortfolioLabel(m);
-              return (
-                <div
-                  key={m.id}
-                  onClick={() => {
-                    try {
-                      sessionStorage.setItem('borners_open_scenario_model_id', m.id);
-                    } catch {
-                      // ignore
-                    }
-                    navigateTo('dashboard');
-                  }}
-                  className="group rounded-[14px] bg-white hover:bg-[#FAFAF7] border-[1.5px] border-[#CECDC4] hover:border-[#141413] p-4 transition-all cursor-pointer flex flex-col justify-between gap-3"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
-                      <span className="font-mono text-[#52514C]">
-                        {brandLbl} · {m.code}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] text-[10px] text-[#141413]">
-                          {m.launchStatus}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteScenarioModel(m);
-                          }}
-                          title="Удалить карточку"
-                          className="h-5 w-5 rounded-[6px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-white border border-[#CECDC4] hover:border-[#FCA5A5] text-[#686762] hover:text-[#B91C1C] flex items-center justify-center text-[13px] leading-none font-bold transition cursor-pointer"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    <div className="h-24 my-2.5 rounded-[10px] bg-[#F5F5F1] border border-[#DFDED6] flex items-center justify-center p-2 overflow-hidden">
-                      <BoxerPackStackSvg
-                        colors={colors}
-                        brandLabel={m.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
-                        customPhotoUrl={
-                          (m.gallery.find((g) => g.isMain && g.url) ||
-                            m.gallery.find((g) => Boolean(g.url)))?.url ||
-                          m.palettes.find((p) => Boolean(p.imageUrl))?.imageUrl
-                        }
-                      />
-                    </div>
-                    <div className="text-[14px] font-bold text-[#141413] group-hover:underline leading-snug">
-                      {m.title}
-                    </div>
-                    <div className="text-[11.5px] text-[#5E5D58] mt-0.5 truncate">
-                      {m.subtitle}
-                    </div>
-                  </div>
-
-                  <div className="pt-2.5 border-t-[1.5px] border-[#E4E3DC] flex items-center justify-between text-[12px]">
-                    <div>
-                      <span className="text-[#5E5D58]">Цена: </span>
-                      <span className="font-mono font-bold text-[#141413]">
-                        {m.retailPriceRub.toLocaleString('ru-RU')} ₽
-                      </span>
-                    </div>
-                    <span className="font-semibold text-[#141413]">
-                      Паспорт →
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-        </div>
+        <PeaklyCatalogGroupsAndBrandsView
+          models={scenarioModels}
+          filteredModels={scenarioModels.filter(
+            (m) =>
+              m.launchStatus !== 'В архиве' &&
+              (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
+          )}
+          currentScenario={currentScenario}
+          scenarios={scenarios}
+          brandFilter={brandFilter}
+          onSelectBrandFilter={(bCode) => setBrandFilter(bCode)}
+          onOpenModelPassport={(modelId) => {
+            try {
+              sessionStorage.setItem('borners_open_scenario_model_id', modelId);
+            } catch {
+              // ignore
+            }
+            navigateTo('dashboard');
+          }}
+          onUpdateModel={updateModelSpec}
+          onDeleteModel={handleDeleteScenarioModel}
+          onOpenCreateModel={() => setCreateModalOpen(true)}
+          notify={notify}
+        />
       </div>
 
       {/* Панель поиска и расширенных фильтров (п. 6 и 17 ТЗ) */}
