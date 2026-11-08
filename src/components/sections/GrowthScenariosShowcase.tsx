@@ -1916,15 +1916,15 @@ export function GrowthScenariosShowcase({
                       }}
                       className={`group rounded-[14px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-gradient-to-br from-[#161615] via-[#1F1F1C] to-[#121210] text-white border border-[#141413] shadow-[0_14px_30px_-8px_rgba(20,20,19,0.28)]'
-                          : 'bg-[#FAF9F6]/70 border border-[#DEDDD5] hover:border-[#141413] hover:bg-white hover:shadow-[0_6px_18px_-4px_rgba(20,20,19,0.06)]'
+                          ? 'bg-white text-[#141413] border-2 border-[#141413] shadow-[0_6px_20px_-6px_rgba(20,20,19,0.10)]'
+                          : 'bg-[#FAF9F6]/70 border border-[#DEDDD5] hover:border-[#B8B7AE] hover:bg-white hover:shadow-[0_4px_14px_-4px_rgba(20,20,19,0.05)]'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
                           <span
                             className={`text-[12px] font-bold truncate ${
-                              isSelected ? 'text-white/90' : 'text-[#3D3C37]'
+                              isSelected ? 'text-[#141413]' : 'text-[#3D3C37]'
                             }`}
                           >
                             {sc.id === ACTING_2027_SCENARIO_ID
@@ -1934,8 +1934,8 @@ export function GrowthScenariosShowcase({
 
                           <div className="flex items-center gap-1 shrink-0">
                             {isSelected ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-bold">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EAF6F0] border border-[#BCE3CF] text-[#146C43] text-[10px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-[#157347]" />
                                 Активен
                               </span>
                             ) : (
@@ -1952,11 +1952,7 @@ export function GrowthScenariosShowcase({
                                 }}
                                 title={`Удалить сценарий «${sc.title}»`}
                                 aria-label={`Удалить сценарий ${sc.title}`}
-                                className={`h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-bold transition cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-white/10 text-white/70 hover:bg-rose-500/30 hover:text-rose-200'
-                                    : 'bg-white hover:bg-rose-50 text-[#686762] hover:text-rose-700 border border-[#CECDC4]'
-                                }`}
+                                className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-bold transition cursor-pointer bg-white hover:bg-rose-50 text-[#686762] hover:text-rose-700 border border-[#CECDC4]"
                               >
                                 ×
                               </button>
@@ -1965,43 +1961,25 @@ export function GrowthScenariosShowcase({
                         </div>
 
                         <div className="flex items-baseline justify-between gap-2 mt-2.5">
-                          <div
-                            className={`font-mono text-[23px] font-extrabold tracking-[-0.02em] ${
-                              isSelected ? 'text-white' : 'text-[#141413]'
-                            }`}
-                          >
+                          <div className="font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
                             {liveDecMlnStr} млн ₽{' '}
-                            <span
-                              className={`font-sans text-[11.5px] font-medium ${
-                                isSelected ? 'text-white/60' : 'text-[#686760]'
-                              }`}
-                            >
+                            <span className="font-sans text-[11.5px] font-medium text-[#686760]">
                               / дек
                             </span>
                           </div>
                           {sc.id !== ACTING_2027_SCENARIO_ID ? (
                             <span
                               className={`px-2 py-0.5 rounded-[6px] font-mono text-[10.5px] font-bold border ${
-                                isSelected
-                                  ? diffMlnNum >= -0.05
-                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                                    : 'bg-white/10 text-white/85 border-white/15'
-                                  : diffMlnNum >= -0.05
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    : 'bg-[#F4F3EE] text-[#52514C] border-[#DFDED7]'
+                                diffMlnNum >= -0.05
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-[#F4F3EE] text-[#52514C] border-[#DFDED7]'
                               }`}
                             >
                               {diffSign}
                               {diffMlnNum.toFixed(1).replace('.', ',')} млн ({pctStr}%)
                             </span>
                           ) : (
-                            <span
-                              className={`px-2 py-0.5 rounded-[6px] text-[10px] font-bold border ${
-                                isSelected
-                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              }`}
-                            >
+                            <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-bold border bg-emerald-50 text-emerald-800 border-emerald-200">
                               База WB
                             </span>
                           )}
@@ -2010,44 +1988,26 @@ export function GrowthScenariosShowcase({
 
                       {/* Визуальный прогресс-бар выполнения цели декабря в стиле Peakly */}
                       <div className="mt-3 space-y-1.5">
-                        <div
-                          className={`h-1.5 w-full rounded-full overflow-hidden ${
-                            isSelected ? 'bg-white/15' : 'bg-[#E6E5DD]'
-                          }`}
-                        >
+                        <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#E6E5DD]">
                           <div
                             style={{ width: `${progressWidth}%` }}
                             className={`h-full rounded-full transition-all ${
-                              isSelected
-                                ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
-                                : pctNum >= 99.5
-                                  ? 'bg-emerald-600'
-                                  : 'bg-[#686760]'
+                              isSelected || pctNum >= 99.5
+                                ? 'bg-[#157347]'
+                                : 'bg-[#8E8D85]'
                             }`}
                           />
                         </div>
-                        <div
-                          className={`flex items-center justify-between gap-2 text-[11px] ${
-                            isSelected ? 'text-white/70' : 'text-[#686760]'
-                          }`}
-                        >
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-[#686760]">
                           <span>
                             Цель:{' '}
-                            <strong
-                              className={`font-mono ${
-                                isSelected ? 'text-white' : 'text-[#141413]'
-                              }`}
-                            >
+                            <strong className="font-mono text-[#141413]">
                               {String(targetMlnNum).replace('.', ',')} млн
                             </strong>
                           </span>
                           <span>
                             За год:{' '}
-                            <strong
-                              className={`font-mono ${
-                                isSelected ? 'text-white' : 'text-[#141413]'
-                              }`}
-                            >
+                            <strong className="font-mono text-[#141413]">
                               {annualMln} млн ₽
                             </strong>{' '}
                             · {agg?.modelsCount || 0} мод.
@@ -2099,24 +2059,19 @@ export function GrowthScenariosShowcase({
                   : 100;
 
               return (
-                <div className="p-4 md:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 bg-[#FAF9F6]">
-                  {/* Карточка 1: Пик сезона (Декабрь 2027) */}
-                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white">
+                  {/* Колонка 1: Пик сезона (Декабрь 2027) */}
+                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="h-7 w-7 rounded-[8px] bg-emerald-50 border border-emerald-200/80 text-emerald-700 flex items-center justify-center">
-                            <TrendingUp className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
-                            Пик сезона · Дек 2027
-                          </span>
-                        </div>
-                        <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                          Структура декабря 2027
+                        </span>
+                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
                           {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} компл.
                         </span>
                       </div>
-                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {(currentAgg.targetMonthRevenueRub / 1_000_000)
                           .toFixed(2)
                           .replace('.', ',')}{' '}
@@ -2125,28 +2080,28 @@ export function GrowthScenariosShowcase({
                     </div>
 
                     {isActing ? (
-                      <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
-                        <div className="h-1.5 w-full rounded-full bg-emerald-600" />
-                        <div className="text-[11.5px] text-[#5C5B55] flex items-center justify-between">
-                          <span>100% база Wildberries</span>
-                          <span className="font-mono font-bold text-emerald-800">7 SKU сверены</span>
+                      <div className="space-y-1.5">
+                        <div className="h-1.5 w-full rounded-full bg-[#157347]" />
+                        <div className="text-[11.5px] text-[#686762] flex items-center justify-between">
+                          <span>100% действующая база WB</span>
+                          <span className="font-mono font-bold text-[#141413]">7 SKU</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
+                      <div className="space-y-1.5">
                         <div className="h-1.5 w-full rounded-full bg-[#E4E3DC] overflow-hidden flex">
                           <div
                             style={{ width: `${wbShareDecPct}%` }}
-                            className="h-full bg-emerald-600"
+                            className="h-full bg-[#157347]"
                             title="Действующая база WB"
                           />
                           <div
                             style={{ width: `${100 - wbShareDecPct}%` }}
-                            className="h-full bg-[#141413]"
+                            className="h-full bg-[#8E8D85]"
                             title="Новые модели 2027"
                           />
                         </div>
-                        <div className="text-[11px] text-[#5C5B55] flex items-center justify-between gap-2">
+                        <div className="text-[11.5px] text-[#686762] flex items-center justify-between gap-2">
                           <span>
                             База WB:{' '}
                             <strong className="font-mono text-[#141413]">
@@ -2170,64 +2125,51 @@ export function GrowthScenariosShowcase({
                     )}
                   </div>
 
-                  {/* Карточка 2: Годовой оборот 2027 */}
-                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
+                  {/* Колонка 2: Годовой оборот 2027 */}
+                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="h-7 w-7 rounded-[8px] bg-sky-50 border border-sky-200/80 text-sky-700 flex items-center justify-center">
-                            <BarChart3 className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
-                            Годовой оборот
-                          </span>
-                        </div>
-                        <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                          Годовой оборот (12 мес.)
+                        </span>
+                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
                           ~{avgMonthlyMln} млн/мес
                         </span>
                       </div>
-                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {annualRevMln} млн ₽
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
-                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#5C5B55]">
-                        <span>
-                          Выкупы:{' '}
-                          <strong className="font-mono text-[#141413]">
-                            {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
-                          </strong>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => navigateTo('launch-calendar')}
-                          className="inline-flex items-center gap-0.5 font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                        >
-                          <span>02 · Продажи</span>
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                      <span>
+                        Выкупы:{' '}
+                        <strong className="font-mono text-[#141413]">
+                          {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigateTo('launch-calendar')}
+                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
+                      >
+                        02 · Продажи →
+                      </button>
                     </div>
                   </div>
 
-                  {/* Карточка 3: Вложить на старт и пик своих денег (с учётом оборота WB) */}
-                  <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
+                  {/* Колонка 3: Вложить на старт (Q1) и пик своих денег */}
+                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="h-7 w-7 rounded-[8px] bg-amber-50 border border-amber-200/80 text-amber-800 flex items-center justify-center">
-                            <Package className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
-                            Вложить на старт (Q1)
-                          </span>
-                        </div>
-                        <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 font-mono text-[10.5px] font-bold text-amber-900">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                          Вложить на старт (Q1)
+                        </span>
+                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
                           Аванс 30%: {(v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub / 1_000_000).toFixed(2).replace('.', ',')} млн
                         </span>
                       </div>
-                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
                         {(v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub / 1_000_000)
                           .toFixed(2)
                           .replace('.', ',')}{' '}
@@ -2235,51 +2177,41 @@ export function GrowthScenariosShowcase({
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
-                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#5C5B55]">
-                        <span>
-                          Пик своих денег (с WB):{' '}
-                          <strong className="font-mono text-[#1E3A8A]">
-                            {(v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн
-                          </strong>{' '}
-                          <span className="text-[10.5px] text-[#686760]">
-                            (год: {procBudgetMln} млн)
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => navigateTo('roadmap-tasks')}
-                          className="inline-flex items-center gap-0.5 font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                        >
-                          <span>03 · Закупки</span>
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                      <span>
+                        Пик с WB:{' '}
+                        <strong className="font-mono text-[#141413]">
+                          {(v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub / 1_000_000)
+                            .toFixed(2)
+                            .replace('.', ',')}{' '}
+                          млн
+                        </strong>{' '}
+                        · год: {procBudgetMln} млн
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigateTo('roadmap-tasks')}
+                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
+                      >
+                        03 · Закупки →
+                      </button>
                     </div>
                   </div>
 
-                  {/* Карточка 4: Ожидаемая прибыль (после себестоимости, комиссий WB, логистики и рекламы) */}
-                  <div className="rounded-[14px] bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/90 p-4 flex flex-col justify-between gap-3 shadow-[0_2px_10px_rgba(16,185,129,0.06)]">
+                  {/* Колонка 4: Ожидаемая прибыль и P&L */}
+                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="h-7 w-7 rounded-[8px] bg-emerald-600 text-white flex items-center justify-center shadow-2xs">
-                            <Wallet className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-950">
-                            Ожидаемая прибыль
-                          </span>
-                        </div>
-                        <span className="rounded-md bg-emerald-100/90 border border-emerald-300/80 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-emerald-900">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                          Ожидаемая прибыль и P&L
+                        </span>
+                        <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#146C43]">
                           {v11ScenarioSummary.investmentSummary.operatingMarginPct
                             .toFixed(1)
                             .replace('.', ',')}% рентаб.
                         </span>
                       </div>
-                      <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-emerald-900">
+                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#157347]">
                         +
                         {(
                           v11ScenarioSummary.investmentSummary.annualEstimatedOperatingProfitRub /
@@ -2291,206 +2223,113 @@ export function GrowthScenariosShowcase({
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 pt-2 border-t border-emerald-200/60">
-                      <div className="flex items-center justify-between gap-2 text-[11.5px] text-emerald-950/80">
-                        <span>
-                          Себест. продаж:{' '}
-                          <strong className="font-mono text-[#141413]">
-                            {(v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
-                          </strong>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => navigateTo('finance')}
-                          className="inline-flex items-center gap-0.5 font-bold text-emerald-950 hover:underline cursor-pointer shrink-0"
-                        >
-                          <span>04 · Финансы</span>
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                      <span>
+                        Себест. продаж:{' '}
+                        <strong className="font-mono text-[#141413]">
+                          {(v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub / 1_000_000)
+                            .toFixed(2)
+                            .replace('.', ',')}{' '}
+                          млн ₽
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigateTo('finance')}
+                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
+                      >
+                        04 · Финансы →
+                      </button>
                     </div>
                   </div>
                 </div>
               );
             })()}
 
-            {/* РЯД 3: PEAKLY ANALYTICS BENTO — ГРАФИК ДИНАМИКИ 12 МЕС. (8 КОЛ.) + ТОП-4 ЛИДЕРА ВЫРУЧКИ (4 КОЛ.) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[#EAE9E2] bg-white border-t border-[#EAE9E2]">
-              {/* ЛЕВАЯ ЧАСТЬ (8 колонок): Высокий интерактивный график выручки по месяцам */}
-              <div className="lg:col-span-8 p-4 md:p-5 flex flex-col justify-between">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <div>
-                    <div className="text-[13px] font-extrabold text-[#141413]">
-                      Помесячная динамика выручки 2027 (Янв — Дек)
-                    </div>
-                    <div className="text-[11px] text-[#686760]">
-                      Нажмите на столбец любого месяца для просмотра детального объёма
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 text-[11.5px]">
-                    {(() => {
-                      const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
-                      const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
-                      const totSel = Math.round((bSel + nSel) * 100) / 100;
-                      return (
-                        <span className="rounded-[8px] bg-[#141413] text-white px-3 py-1 font-mono text-[11.5px] font-bold shadow-2xs">
-                          {MONTHS_SHORT_RU[selectedChartMonthIdx]} 2027: {totSel.toFixed(2).replace('.', ',')} млн ₽
-                        </span>
-                      );
-                    })()}
-                    <button
-                      type="button"
-                      onClick={() => navigateTo('launch-calendar')}
-                      className="h-7.5 px-2.5 rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] hover:bg-[#EFEFE9] font-semibold text-[#141413] cursor-pointer transition"
-                    >
-                      Матрица 12 мес. →
-                    </button>
-                  </div>
+            {/* РЯД 3: КОМПАКТНАЯ ПОЛОСА ПОМЕСЯЧНОЙ ТРАЕКТОРИИ ВЫРУЧКИ 2027 В СТИЛЕ PEAKLY */}
+            <div className="px-5 py-3.5 bg-white border-t border-[#EAE9E2]">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-[12px] font-bold text-[#141413]">
+                    Помесячная траектория выручки 2027 (млн ₽)
+                  </span>
+                  <span className="text-[11px] text-[#686760]">
+                    нажмите на любой месяц для сверки
+                  </span>
                 </div>
 
-                {/* Полотно графика с сеткой и объёмными столбцами */}
-                <div className="relative rounded-[12px] bg-[#FAF9F6] border border-[#E8E7DF] px-3 pt-5 pb-2.5">
-                  <div className="grid grid-cols-12 gap-2 items-end h-[116px]">
-                    {MONTHS_SHORT_RU.map((mName, idx) => {
-                      const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
-                      const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
-                      const totVal = Math.round((bVal + nVal) * 10) / 10;
-                      const barHeight = Math.max(14, Math.round((totVal / maxChartVal) * 84));
-                      const isSel = selectedChartMonthIdx === idx;
-                      const isDec = idx === 11;
-
-                      return (
-                        <button
-                          type="button"
-                          key={mName}
-                          onClick={() => setSelectedChartMonthIdx(idx)}
-                          className={`h-full flex flex-col items-center justify-end gap-1.5 rounded-[8px] px-1 py-1 transition cursor-pointer group ${
-                            isSel ? 'bg-white shadow-2xs ring-1 ring-[#D5D4CC]' : 'hover:bg-white/70'
-                          }`}
-                        >
-                          <span
-                            className={`font-mono text-[10px] leading-none ${
-                              isSel || isDec
-                                ? 'font-extrabold text-[#141413]'
-                                : 'font-semibold text-[#686760] group-hover:text-[#141413]'
-                            }`}
-                          >
-                            {totVal.toFixed(1).replace('.', ',')}
-                          </span>
-                          <div className="w-full flex justify-center items-end">
-                            <div
-                              style={{ height: `${barHeight}px` }}
-                              className={`w-full max-w-[34px] rounded-t-[6px] rounded-b-[3px] transition-all ${
-                                isDec
-                                  ? 'bg-gradient-to-t from-emerald-700 to-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.25)]'
-                                  : isSel
-                                    ? 'bg-gradient-to-t from-[#141413] to-[#3A3935]'
-                                    : 'bg-gradient-to-t from-[#B8B7AE] to-[#CFCEC6] group-hover:from-[#52514C] group-hover:to-[#787770]'
-                              }`}
-                            />
-                          </div>
-                          <span
-                            className={`text-[10.5px] leading-none ${
-                              isSel
-                                ? 'font-extrabold text-[#141413]'
-                                : isDec
-                                  ? 'font-bold text-emerald-800'
-                                  : 'font-semibold text-[#686760]'
-                            }`}
-                          >
-                            {mName}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div className="flex items-center gap-2.5 text-[11.5px]">
+                  {(() => {
+                    const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
+                    const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
+                    const totSel = Math.round((bSel + nSel) * 100) / 100;
+                    return (
+                      <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] text-[#141413] px-2.5 py-0.5 font-mono text-[11px] font-bold">
+                        {MONTHS_SHORT_RU[selectedChartMonthIdx]} 2027: {totSel.toFixed(2).replace('.', ',')} млн ₽
+                      </span>
+                    );
+                  })()}
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('launch-calendar')}
+                    className="font-bold text-[#141413] hover:underline cursor-pointer transition"
+                  >
+                    Вся таблица 12 мес. →
+                  </button>
                 </div>
               </div>
 
-              {/* ПРАВАЯ ЧАСТЬ (4 колонки): Топ-4 драйвера выручки сценария с долями */}
-              <div className="lg:col-span-4 p-4 md:p-5 flex flex-col justify-between bg-[#FAF9F6]/40">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div>
-                      <div className="text-[13px] font-extrabold text-[#141413]">
-                        Лидеры выручки сценария
-                      </div>
-                      <div className="text-[11px] text-[#686760]">
-                        Топ-4 SKU по вкладу в годовой оборот
-                      </div>
-                    </div>
-                    <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#52514C]">
-                      Топ-4 из {filteredModels.length}
-                    </span>
-                  </div>
+              <div className="grid grid-cols-12 gap-1.5 items-end h-[66px]">
+                {MONTHS_SHORT_RU.map((mName, idx) => {
+                  const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
+                  const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
+                  const totVal = Math.round((bVal + nVal) * 10) / 10;
+                  const barHeight = Math.max(10, Math.round((totVal / maxChartVal) * 36));
+                  const isSel = selectedChartMonthIdx === idx;
+                  const isDec = idx === 11;
 
-                  <div className="space-y-2.5">
-                    {[...filteredModels]
-                      .map((m) => ({
-                        model: m,
-                        met: computeModelScenarioMetrics(m, currentScenario),
-                      }))
-                      .sort((a, b) => b.met.annualRevenueRub - a.met.annualRevenueRub)
-                      .slice(0, 4)
-                      .map(({ model: topMod, met: topMet }, idx) => {
-                        const sharePct =
-                          currentAgg.annualRevenueRub > 0
-                            ? Math.round(
-                                (topMet.annualRevenueRub / currentAgg.annualRevenueRub) * 1000
-                              ) / 10
-                            : 0;
-                        const barW = Math.min(100, Math.max(8, Math.round(sharePct * 2.2)));
-                        return (
-                          <button
-                            key={topMod.id}
-                            type="button"
-                            onClick={() => navigateScreen('model', topMod.id)}
-                            className="w-full rounded-[10px] bg-white border border-[#E2E1D9] hover:border-[#141413] p-2.5 text-left transition cursor-pointer group"
-                          >
-                            <div className="flex items-center justify-between gap-2 text-[12px]">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span
-                                  className={`h-5 w-5 rounded-md font-mono text-[10.5px] font-bold flex items-center justify-center shrink-0 ${
-                                    idx === 0
-                                      ? 'bg-[#141413] text-white'
-                                      : 'bg-[#F4F3EE] text-[#52514C]'
-                                  }`}
-                                >
-                                  #{idx + 1}
-                                </span>
-                                <span className="font-bold text-[#141413] group-hover:underline truncate">
-                                  {topMod.title}
-                                </span>
-                              </div>
-                              <div className="font-mono text-[12px] font-extrabold text-[#141413] shrink-0">
-                                {(topMet.annualRevenueRub / 1_000_000)
-                                  .toFixed(2)
-                                  .replace('.', ',')}{' '}
-                                млн ₽
-                              </div>
-                            </div>
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <div className="h-1.5 flex-1 rounded-full bg-[#ECEBE4] overflow-hidden">
-                                <div
-                                  style={{ width: `${barW}%` }}
-                                  className={`h-full rounded-full ${
-                                    idx === 0 ? 'bg-emerald-600' : 'bg-[#141413]'
-                                  }`}
-                                />
-                              </div>
-                              <span className="font-mono text-[10.5px] font-semibold text-[#686760] w-11 text-right">
-                                {sharePct.toFixed(1).replace('.', ',')}%
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </div>
+                  return (
+                    <button
+                      type="button"
+                      key={mName}
+                      onClick={() => setSelectedChartMonthIdx(idx)}
+                      className={`h-full flex flex-col items-center justify-end gap-1 rounded-[8px] px-1 py-1 transition cursor-pointer group ${
+                        isSel
+                          ? 'bg-[#EAF6F0]/70 ring-1 ring-[#BCE3CF]'
+                          : 'hover:bg-[#FAF9F6]'
+                      }`}
+                    >
+                      <span
+                        className={`font-mono text-[10px] leading-none ${
+                          isSel || isDec
+                            ? 'font-bold text-[#141413]'
+                            : 'font-medium text-[#686760] group-hover:text-[#141413]'
+                        }`}
+                      >
+                        {totVal.toFixed(1).replace('.', ',')}
+                      </span>
+                      <div className="w-full flex justify-center items-end">
+                        <div
+                          style={{ height: `${barHeight}px` }}
+                          className={`w-full max-w-[26px] rounded-[4px] transition-all ${
+                            isSel || isDec
+                              ? 'bg-[#157347]'
+                              : 'bg-[#CFCEC6] group-hover:bg-[#8E8D85]'
+                          }`}
+                        />
+                      </div>
+                      <span
+                        className={`text-[10px] leading-none ${
+                          isSel || isDec
+                            ? 'font-bold text-[#141413]'
+                            : 'font-medium text-[#686760]'
+                        }`}
+                      >
+                        {mName}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
