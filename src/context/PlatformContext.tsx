@@ -511,9 +511,13 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         const parsedAuth = JSON.parse(savedAuth) as {
           isAuthenticated: boolean;
           currentUserId: string;
+          darkMode?: boolean;
         };
         setIsAuthenticated(parsedAuth.isAuthenticated);
         if (parsedAuth.currentUserId) setCurrentUserId(parsedAuth.currentUserId);
+        if (typeof parsedAuth.darkMode === 'boolean') {
+          setDarkMode(parsedAuth.darkMode);
+        }
       }
 
       // Восстановление текущего раздела и выбранной карточки после перезагрузки (F5)
@@ -557,14 +561,17 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
           // ignore invalid JSON
         }
       }
-
-      setDarkMode(false);
     } catch (err) {
       console.error('Failed to hydrate state from localStorage:', err);
     } finally {
       setHydrated(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
 
   // Сохранение текущего маршрута навигации в localStorage, чтобы F5 оставлял на том же экране
   useEffect(() => {

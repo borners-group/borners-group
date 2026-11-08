@@ -11,10 +11,12 @@ import {
   ChevronRight,
   LayoutGrid,
   LogOut,
+  Moon,
   RotateCcw,
   Search,
   Settings,
   Sparkles,
+  Sun,
   Trash2,
   X,
 } from 'lucide-react';
@@ -195,6 +197,7 @@ export function AppShell() {
     simpleMode,
     setSimpleMode,
     darkMode,
+    setDarkMode,
     selectedProductId,
     selectedConceptId,
     selectedLaunchId,
@@ -1057,10 +1060,10 @@ export function AppShell() {
 
   return (
     <div>
-      <div className="min-h-screen bg-[#E4E8EE] text-[#111827] flex flex-col overflow-x-hidden">
+      <div className="min-h-screen bg-[#F6F7F9] dark:bg-[#0B0E14] text-[#0F172A] dark:text-[#EDF0F7] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-50 h-[58px] bg-white/95 backdrop-blur-md border-b border-[#CFD6E0] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+          <header className="sticky top-0 z-50 h-[56px] bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#E2E6EE] dark:border-[#222938] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -1329,12 +1332,23 @@ export function AppShell() {
                   setSearchModalOpen(true);
                 }}
                 aria-label="Глобальный поиск"
-                className="inline-flex items-center gap-1.5 h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-3 text-[12px] font-semibold text-[#1E293B] transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
               >
                 <span>Поиск</span>
-                <span className="hidden md:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] border border-[#E2E8F0]">
+                <span className="hidden md:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#121620] border border-[#E2E8F0] dark:border-[#222938]">
                   ⌘K
                 </span>
+              </button>
+
+              {/* Переключатель темы (Светлая / Тёмный обсидиан) */}
+              <button
+                type="button"
+                onClick={() => setDarkMode(!darkMode)}
+                title={darkMode ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
+                aria-label={darkMode ? 'Светлая тема' : 'Тёмная тема'}
+                className="inline-flex items-center justify-center h-8.5 w-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition cursor-pointer"
+              >
+                {darkMode ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
               </button>
 
               {/* Профиль и системное меню */}

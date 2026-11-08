@@ -2143,10 +2143,10 @@ export function GrowthScenariosShowcase({
               </div>
             </div>
 
-            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ НА КОНТРАСТНОЙ ПОДЛОЖКЕ #EEF1F6 */}
+            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ В ЛЁГКОМ ВОЗДУШНОМ СТИЛЕ */}
             <div
               data-tour="growth-scenarios"
-              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-[#EEF1F6] border-b border-[#DCE2EC]"
+              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-[#F8FAFC]/60 dark:bg-[#121620] border-b border-[#E2E6EE] dark:border-[#222938]"
             >
               {(() => {
                 const visibleScenarios =
@@ -2250,17 +2250,17 @@ export function GrowthScenariosShowcase({
                           }
                         }
                       }}
-                      className={`card-shimmer hover-lift group rounded-[16px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                      className={`hover-lift group rounded-xl p-4 text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-white text-[#111827] border-[1.5px] border-[#2C3444] shadow-[0_10px_28px_-6px_rgba(15,23,42,0.14)]'
-                          : 'bg-white/80 border border-[#DCE2EC] hover:border-[#94A3B8] hover:bg-white'
+                          ? 'bg-white dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7] border border-emerald-500/45 shadow-[0_6px_20px_-6px_rgba(16,185,129,0.14)]'
+                          : 'bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] hover:border-[#CBD5E1]'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
                           <span
-                            className={`text-[12.5px] font-bold truncate ${
-                              isSelected ? 'text-[#111827]' : 'text-[#475569]'
+                            className={`text-[13px] font-medium truncate ${
+                              isSelected ? 'text-[#0F172A] dark:text-[#EDF0F7]' : 'text-[#64748B]'
                             }`}
                           >
                             {sc.id === ACTING_2027_SCENARIO_ID
@@ -2270,8 +2270,8 @@ export function GrowthScenariosShowcase({
 
                           <div className="flex items-center gap-1 shrink-0">
                             {isSelected ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] text-[10px] font-bold">
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#0D9488] animate-pulse" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10.5px] font-medium">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                 Активен
                               </span>
                             ) : (
@@ -2296,7 +2296,7 @@ export function GrowthScenariosShowcase({
                                 setNewScenarioModalOpen(true);
                               }}
                               title={`Скопировать сценарий «${sc.title}»`}
-                              className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-semibold transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                              className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
                             >
                               Копия
                             </button>
@@ -2321,7 +2321,7 @@ export function GrowthScenariosShowcase({
                                   }
                                 }}
                                 title={`Переименовать сценарий «${sc.title}»`}
-                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-semibold transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
                               >
                                 Имя
                               </button>
@@ -2335,7 +2335,7 @@ export function GrowthScenariosShowcase({
                                 }}
                                 title={`Удалить сценарий «${sc.title}»`}
                                 aria-label={`Удалить сценарий ${sc.title}`}
-                                className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-bold transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
+                                className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-medium transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
                               >
                                 ×
                               </button>
@@ -2344,17 +2344,17 @@ export function GrowthScenariosShowcase({
                         </div>
 
                         <div className="mt-2.5 flex items-baseline justify-between gap-2">
-                          <div className="inline-flex items-baseline gap-1.5 font-mono text-[25px] xl:text-[27px] font-black tracking-[-0.035em] text-[#0F172A] leading-none">
+                          <div className="inline-flex items-baseline gap-1.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7] leading-none">
                             <span>{liveDecMlnStr}</span>
-                            <span className="font-sans text-[11.5px] font-bold tracking-normal text-[#64748B]">
+                            <span className="font-sans text-xs font-medium tracking-normal text-[#64748B]">
                               млн ₽ в дек
                             </span>
                           </div>
                           <span
-                            className={`font-mono text-[10.5px] font-extrabold px-2 py-0.5 rounded-md ${
+                            className={`font-mono text-[10.5px] font-medium px-2 py-0.5 rounded-md ${
                               pctNum >= 100
-                                ? 'bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488]'
-                                : 'bg-[#F1F5F9] text-[#64748B]'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]'
                             }`}
                           >
                             {pctNum.toFixed(0)}% цели
@@ -2362,34 +2362,31 @@ export function GrowthScenariosShowcase({
                         </div>
                       </div>
 
-                      {/* Анимированный прогресс-бар и сходящиеся итоги BORNERS / Холдинг */}
-                      <div className="mt-3.5 space-y-1.5">
-                        <div className="h-2 w-full rounded-full overflow-hidden bg-[#E2E8F0] p-0.5">
-                          <div
-                            style={{ width: `${progressWidth}%` }}
-                            className={`h-full rounded-full transition-all duration-700 ease-out ${
-                              isSelected
-                                ? pctNum >= 100
-                                  ? 'bg-gradient-to-r from-[#0D9488] to-[#10B981]'
-                                  : 'bg-gradient-to-r from-[#1E293B] to-[#334155]'
-                                : 'bg-[#94A3B8]'
-                            }`}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#64748B]">
+                      {/* Спокойные итоги и 3px полоса прогресса по нижнему краю */}
+                      <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] space-y-1">
+                        <div className="flex items-center justify-between gap-2 text-xs text-[#64748B]">
                           <span>Цель: {String(targetMlnNum).replace('.', ',')} млн</span>
-                          <span className="font-mono font-extrabold text-[#1E293B]">
+                          <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
                             {holdingCombinedMln ? `BORNERS: ${annualMln} млн` : `Год: ${annualMln} млн ₽`}
                           </span>
                         </div>
                         {holdingCombinedMln && (
-                          <div className="pt-1 border-t border-[#EEF2F6] flex items-center justify-between gap-1 text-[10.5px]">
+                          <div className="flex items-center justify-between gap-1 text-[11px]">
                             <span className="text-[#64748B] truncate">+ FUKAI 90,55 млн</span>
-                            <span className="font-mono font-extrabold text-[#0D9488] shrink-0">
+                            <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
                               Холдинг: {holdingCombinedMln} млн ₽
                             </span>
                           </div>
                         )}
+                      </div>
+
+                      <div className="absolute inset-x-0 bottom-0 h-[3px] bg-[#E2E8F0] dark:bg-[#222938]">
+                        <div
+                          style={{ width: `${progressWidth}%` }}
+                          className={`h-full transition-all duration-700 ease-out ${
+                            isSelected ? 'bg-emerald-500' : 'bg-[#94A3B8]/60'
+                          }`}
+                        />
                       </div>
                     </div>
                   );
@@ -2515,11 +2512,9 @@ export function GrowthScenariosShowcase({
                     : '';
 
                 const strokeColor =
-                  trajectoryChartMetric === 'profit'
-                    ? '#0D9488'
-                    : trajectoryChartMetric === 'procurement'
-                    ? '#475569'
-                    : '#2C3444';
+                  trajectoryChartMetric === 'procurement'
+                    ? '#6366F1'
+                    : '#10B981';
 
                 const metricLabelTitle =
                   trajectoryChartMetric === 'profit'
@@ -2727,16 +2722,12 @@ export function GrowthScenariosShowcase({
                               >
                                 <div
                                   style={{ height: `${barHeightPct}%` }}
-                                  className={`w-full max-w-[38px] rounded-t-[6px] transition-all duration-700 ease-out ${
+                                  className={`w-full max-w-[34px] rounded-t-[6px] transition-all duration-700 ease-out ${
                                     isSel
-                                      ? trajectoryChartMetric === 'profit'
-                                        ? 'bg-[#0D9488]/85 shadow-xs'
-                                        : 'bg-[#2C3444]/85 shadow-xs'
+                                      ? 'bg-emerald-500/40'
                                       : isDec
-                                      ? 'bg-[#0D9488]/75 group-hover:bg-[#0D9488]'
-                                      : trajectoryChartMetric === 'profit'
-                                      ? 'bg-[#0D9488]/25 group-hover:bg-[#0D9488]/45'
-                                      : 'bg-[#94A3B8]/35 group-hover:bg-[#64748B]/55'
+                                      ? 'bg-emerald-500/30 group-hover:bg-emerald-500/45'
+                                      : 'bg-emerald-500/10 group-hover:bg-emerald-500/22'
                                   }`}
                                 />
                               </button>
