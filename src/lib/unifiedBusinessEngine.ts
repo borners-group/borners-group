@@ -59,6 +59,7 @@ export interface CustomBatchPeriodDef {
   customOrderDateIso?: string | null; // ручная корректировка даты заказа до утверждения
   customSizeSharesPct?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> | null; // ручная корректировка долей % для конкретной партии
   customSizeBreakdownPacks?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> | null; // прямая ручная правка комплектов по размерам S–XXL
+  scenarioId?: number | null; // к какому сценарию относится ручная правка объёма (чтобы при смене сценария пересчитывалось по плану!)
 }
 
 export const DEFAULT_QUARTERLY_BATCH_PERIODS: CustomBatchPeriodDef[] = [
@@ -748,6 +749,7 @@ export function computeProcurementPlan(
 
   const allPeriodBatches: RecommendedProcurementBatch[] = [];
   let simStock = netOpeningAvailablePacks;
+  let unmetPriorDemandPacks = 0;
   let currentCursorM = 0;
   const moq = Math.max(1, fp.moqPacks || 1);
   const multiple = Math.max(1, fp.packMultiple || 1);
@@ -762,15 +764,21 @@ export function computeProcurementPlan(
     while (currentCursorM < startM) {
       const d = Math.max(0, plan.monthlyPacks[currentCursorM] || 0);
       const r = approvedByMonth[currentCursorM] || 0;
-      simStock = Math.max(0, simStock + r - d);
+      const netStep = simStock + r - d;
+      if (netStep < 0) {
+        unmetPriorDemandPacks += -netStep;
+        simStock = 0;
+      } else {
+        simStock = netStep;
+      }
       currentCursorM += 1;
     }
 
     const openingAvailableAtStartPacks = simStock;
     let periodDemandPacks = 0;
     let confirmedReceiptsInPeriodPacks = 0;
-    let tempRunning = openingAvailableAtStartPacks;
-    let maxIntraPeriodShortfall = 0;
+    let tempRunning = openingAvailableAtStartPacks - unmetPriorDemandPacks;
+    let maxIntraPeriodShortfall = Math.max(0, unmetPriorDemandPacks - openingAvailableAtStartPacks);
 
     for (let k = startM; k <= endM; k++) {
       const d = Math.max(0, plan.monthlyPacks[k] || 0);
@@ -789,19 +797,24 @@ export function computeProcurementPlan(
         ? Math.ceil((endMonthDemand * Math.max(0, fp.safetyStockDays)) / 30)
         : 0;
 
-    // Формула Раздела 4 ТЗ:
-    // потребность = max(0, сумма плановых выкупов за месяцы покрытия + целевой запас на конец периода - доступный остаток к началу покрытия - подтверждённые поступления)
+    // Формула Раздела 4 ТЗ (с учётом переходящего дефицита, если предыдущая партия была уменьшена вручную):
+    // потребность = max(0, сумма плановых выкупов за месяцы покрытия + переходящий дефицит + целевой запас на конец периода - доступный остаток к началу покрытия - подтверждённые поступления)
     const formulaNeed = Math.max(
       0,
       periodDemandPacks +
+        unmetPriorDemandPacks +
         targetSafety -
         openingAvailableAtStartPacks -
         confirmedReceiptsInPeriodPacks
     );
     const rawNetNeedPacks = Math.max(formulaNeed, maxIntraPeriodShortfall);
 
+    const isScenarioMatchingOverride =
+      !pDef.scenarioId || pDef.scenarioId === scenario.id;
     const hasCustomPacksOverride =
-      typeof pDef.customPacksQty === 'number' && pDef.customPacksQty > 0;
+      isScenarioMatchingOverride &&
+      typeof pDef.customPacksQty === 'number' &&
+      pDef.customPacksQty > 0;
     const shouldCreateBatch = rawNetNeedPacks > 0 || hasCustomPacksOverride;
 
     let recommendedPacks = 0;
@@ -896,11 +909,17 @@ export function computeProcurementPlan(
       });
     }
 
-    // Продвигаем симулируемый остаток через месяцы startM..endM с учётом запланированной партии
-    for (let k = startM; k <= endM; k++) {
-      const d = Math.max(0, plan.monthlyPacks[k] || 0);
-      const r = (approvedByMonth[k] || 0) + (k === startM ? recommendedPacks : 0);
-      simStock = Math.max(0, simStock + r - d);
+    // Продвигаем симулируемый остаток и переходящую потребность через месяцы startM..endM с учётом запланированной партии
+    const totalPeriodSupply =
+      openingAvailableAtStartPacks + confirmedReceiptsInPeriodPacks + recommendedPacks;
+    const totalPeriodRequirement = periodDemandPacks + unmetPriorDemandPacks;
+    const netAfterPeriod = totalPeriodSupply - totalPeriodRequirement;
+    if (netAfterPeriod < 0) {
+      simStock = 0;
+      unmetPriorDemandPacks = -netAfterPeriod;
+    } else {
+      simStock = netAfterPeriod;
+      unmetPriorDemandPacks = 0;
     }
     currentCursorM = Math.max(currentCursorM, endM + 1);
   }

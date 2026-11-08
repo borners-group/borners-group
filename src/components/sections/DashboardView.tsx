@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -50,6 +50,14 @@ export function DashboardView() {
   const [chartMetric, setChartMetric] = useState<'revenue' | 'profit'>('revenue');
   const [dashboardMode, setDashboardMode] = useState<'all' | 'miro'>('all');
   const { draftModules } = useDraftModules();
+
+  useEffect(() => {
+    const onResetHome = () => {
+      setDashboardMode('all');
+    };
+    window.addEventListener('borners-reset-to-home-summary', onResetHome);
+    return () => window.removeEventListener('borners-reset-to-home-summary', onResetHome);
+  }, []);
 
   const hasFinanceAccess = canUserViewFinance(currentUser);
 

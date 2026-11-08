@@ -619,7 +619,7 @@ export function SalesMatrixContourView() {
 // 03 · ЗАКУПКИ: УПРОЩЁННЫЙ 3-ЗОННЫЙ КОНТУР ПО ТЗ MVP (ЗОНА А / ЗОНА Б / ЗОНА В)
 // =============================================================================
 export function ProcurementContourView() {
-  const { tasks, navigateTo, notify } = usePlatform();
+  const { tasks, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
     orderedScenarios,
     currentScenario,
@@ -628,6 +628,7 @@ export function ProcurementContourView() {
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
     eligibleModels,
+    totals,
     updateModelSpec,
   } = useLiveScenarioPortfolio();
 
@@ -675,11 +676,18 @@ export function ProcurementContourView() {
   const procData = useMemo(() => {
     let approvedCount = 0;
     let approvedPacks = 0;
+    let approvedUnits = 0;
     let approvedRub = 0;
     let totalOpeningPacks = 0;
     let recPacks = 0;
     let recUnits = 0;
     let recBudgetRub = 0;
+    let annualDemandPacks = 0;
+    let annualDemandUnits = 0;
+    let firstWavePacks = 0;
+    let firstWaveUnits = 0;
+    let firstWaveBudgetRub = 0;
+    let firstWavePrepaymentRub = 0;
 
     const approvedOrdersFlat: {
       model: ScenarioModelSpec;
@@ -694,6 +702,7 @@ export function ProcurementContourView() {
       );
       approvedCount += confirmedPos.length;
       approvedPacks += plan.totalApprovedReceiptsPacks;
+      approvedUnits += plan.totalApprovedReceiptsUnits;
       approvedRub += confirmedPos.reduce((s, o) => s + o.totalOrderRub, 0);
       totalOpeningPacks += plan.netOpeningAvailablePacks;
       for (const po of plan.approvedOrders) {
@@ -702,18 +711,53 @@ export function ProcurementContourView() {
       recPacks += plan.totalRecommendedPacks;
       recUnits += plan.totalRecommendedUnits;
       recBudgetRub += plan.totalRecommendedBudgetRub || 0;
+      annualDemandPacks += plan.annualDemandPacks;
+      annualDemandUnits += plan.annualDemandUnits;
+
+      // Расчёт 1-й стартовой волны инвестиций (Партия №1 / Q1) по каждой модели
+      const firstDraft = plan.recommendedBatches[0];
+      const earliestPo = [...confirmedPos].sort(
+        (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+      )[0];
+      if (earliestPo && (!firstDraft || earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)) {
+        const prepayPct = m.sharedSupplyAndFact?.factoryParams.prepaymentPct ?? 30;
+        firstWavePacks += earliestPo.packsQty;
+        firstWaveUnits += earliestPo.packsQty * earliestPo.unitsInPack;
+        firstWaveBudgetRub += earliestPo.totalOrderRub;
+        firstWavePrepaymentRub += Math.round((earliestPo.totalOrderRub * prepayPct) / 100);
+      } else if (firstDraft) {
+        firstWavePacks += firstDraft.recommendedPacks;
+        firstWaveUnits += firstDraft.physicalUnitsQty;
+        firstWaveBudgetRub += firstDraft.estimatedTotalRub;
+        firstWavePrepaymentRub += firstDraft.prepaymentRub;
+      }
+
       return { model: m, plan };
     });
+
+    const totalScenarioPacks = approvedPacks + recPacks;
+    const totalScenarioUnits = approvedUnits + recUnits;
+    const totalScenarioBudgetRub = approvedRub + recBudgetRub;
 
     return {
       approvedCount,
       approvedPacks,
+      approvedUnits,
       approvedRub,
       totalOpeningPacks,
       approvedOrdersFlat,
       recPacks,
       recUnits,
       recBudgetRub,
+      annualDemandPacks,
+      annualDemandUnits,
+      firstWavePacks,
+      firstWaveUnits,
+      firstWaveBudgetRub,
+      firstWavePrepaymentRub,
+      totalScenarioPacks,
+      totalScenarioUnits,
+      totalScenarioBudgetRub,
       perSku,
     };
   }, [eligibleModels, currentScenario]);
@@ -828,19 +872,20 @@ export function ProcurementContourView() {
           )}
         </div>
 
-        {/* Правая часть: Итог по сценарию + Сводная по всем SKU */}
+        {/* Правая часть: Фильтр бренда (если включён) + Сводная по всем SKU */}
         <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#52514C]">
-          <span className="rounded-[9px] border border-[#E2E1D9] bg-[#FAF9F6] px-3 py-1.5">
-            Итого по сценарию:{' '}
-            <strong className="font-mono font-bold text-[#141413]">
-              {procData.recPacks.toLocaleString('ru-RU')} компл.
-            </strong>{' '}
-            ·{' '}
-            <strong className="font-mono font-bold text-[#141413]">
-              {formatMln(procData.recBudgetRub)}
-            </strong>
-          </span>
-          {subTab === 'batches' && (
+          {brandFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setBrandFilter('ALL')}
+              className="rounded-[9px] border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer inline-flex items-center gap-1.5"
+              title="Сбросить фильтр бренда и показать все модели сценария"
+            >
+              <span>Фильтр: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}</span>
+              <span className="font-bold">×</span>
+            </button>
+          )}
+          {subTab === 'batches' && eligibleModels.length > 0 && (
             <button
               type="button"
               onClick={() => setShowAllSkusTable((v) => !v)}
@@ -851,7 +896,7 @@ export function ProcurementContourView() {
               }`}
             >
               {showAllSkusTable
-                ? 'Скрыть сводную ▴'
+                ? 'Скрыть сводную всех SKU ▴'
                 : `Сводная всех SKU (${procData.perSku.length}) ▾`}
             </button>
           )}
@@ -869,8 +914,128 @@ export function ProcurementContourView() {
 
       {subTab === 'crm' ? (
         <RoadmapTasksView />
+      ) : eligibleModels.length === 0 ? (
+        /* ПУСТОЕ СОСТОЯНИЕ, ЕСЛИ В ВЫБРАННОМ СЦЕНАРИИ НЕТ МОДЕЛЕЙ ТЕКУЩЕГО БРЕНДА (например, выбран НА ТЕЛЕ в Исходном плане) */
+        <div className="rounded-[16px] border border-[#D8D7CF] bg-white p-6 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
+          <div className="max-w-2xl space-y-3">
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-900">
+              Фильтр бренда: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}
+            </span>
+            <h3 className="text-[18px] font-bold text-[#141413]">
+              В сценарии «{currentScenario.title}» нет моделей бренда «
+              {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}»
+            </h3>
+            <p className="text-[13.5px] leading-relaxed text-[#52514C]">
+              В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).
+            </p>
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setBrandFilter('ALL')}
+                className="h-9.5 rounded-[9px] bg-[#141413] px-4 text-[12.5px] font-semibold text-white hover:bg-[#2B2B29] transition cursor-pointer"
+              >
+                Показать все бренды ({currentScenario.title.split('·')[0].trim()})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedScenarioId(2)}
+                className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
+              >
+                Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)
+              </button>
+              {selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
+                <button
+                  type="button"
+                  onClick={() => setIncludeGroupPortfolioInS1(true)}
+                  className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-[#FAF9F6] px-3.5 text-[12px] font-semibold text-[#141413] hover:bg-[#EFEFE9] transition cursor-pointer"
+                >
+                  Подключить портфель группы в Сценарии №1
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       ) : (
         <>
+          {/* ИНВЕСТИЦИОННАЯ СВОДКА СЦЕНАРИЯ: ОТ ПЛАНА ПРОДАЖ К ЗАКУПКАМ И ДЕНЬГАМ НА СТАРТ */}
+          <div className="rounded-[16px] border border-[#D8D7CE] bg-white p-4 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {/* 1. Цель продаж сценария */}
+              <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#686762]">
+                    1. План продаж сценария
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('launch-calendar')}
+                    className="text-[11px] font-semibold text-[#141413] hover:underline cursor-pointer"
+                  >
+                    02 · Продажи ↗
+                  </button>
+                </div>
+                <div className="mt-1 font-mono text-[19px] font-extrabold text-[#141413]">
+                  {formatMln(totals.annualRevenueRub)}{' '}
+                  <span className="text-[12px] font-semibold text-[#686762]">/ год</span>
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#52514C]">
+                  Дек: <strong>{formatMln(totals.decRevenueRub)}</strong> · Выкупы:{' '}
+                  <strong>{procData.annualDemandPacks.toLocaleString('ru-RU')} компл.</strong> ({eligibleModels.length} мод.)
+                </div>
+              </div>
+
+              {/* 2. Сколько единиц товара нужно закупить под этот план продаж */}
+              <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-[#686762]">
+                  2. Нужно закупить под план
+                </div>
+                <div className="mt-1 font-mono text-[19px] font-extrabold text-[#141413]">
+                  {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#52514C]">
+                  {procData.totalScenarioUnits.toLocaleString('ru-RU')} физ. изд. (с учётом запаса и остатков)
+                </div>
+              </div>
+
+              {/* 3. СКОЛЬКО ДЕНЕГ НУЖНО ИНВЕСТИРОВАТЬ СРАЗУ (Партия №1 / Старт Q1) */}
+              <div className="rounded-[12px] border border-[#A7DFC0] bg-[#F2FBF6] px-4 py-3">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#13653F]">
+                    3. Вложить сразу (Партия №1 · Q1)
+                  </span>
+                  <span className="rounded-full bg-[#157347] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white">
+                    Старт
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-[20px] font-extrabold text-[#0F5132]">
+                  {formatMln(procData.firstWaveBudgetRub)}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#145A38]">
+                  <strong>Аванс 30% сейчас: {formatMln(procData.firstWavePrepaymentRub)}</strong> · 1-я волна: {procData.firstWavePacks.toLocaleString('ru-RU')} компл.
+                </div>
+              </div>
+
+              {/* 4. Полный оборотный бюджет на все 4 квартала года */}
+              <div className="rounded-[12px] border border-[#D8D7CE] bg-[#F5F4EE] px-4 py-3">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#4A4944]">
+                    4. Закупки за весь год (4 кварт.)
+                  </span>
+                  <span className="font-mono text-[11px] font-semibold text-[#52514C]">
+                    {totals.annualRevenueRub > 0
+                      ? `${((procData.totalScenarioBudgetRub / totals.annualRevenueRub) * 100).toFixed(1)}% от выр.`
+                      : ''}
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-[19px] font-extrabold text-[#141413]">
+                  {formatMln(procData.totalScenarioBudgetRub)}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#52514C]">
+                  Партии Q2–Q4 ({formatMln(Math.max(0, procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub))}) — из оборотной выручки
+                </div>
+              </div>
+            </div>
+          </div>
           {/* Сводная таблица по всем SKU портфеля (открывается по кнопке сверху) */}
           {showAllSkusTable && (
             <div className="rounded-[14px] border border-[#D8D7CF] bg-white p-4 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">

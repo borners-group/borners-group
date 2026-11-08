@@ -217,6 +217,100 @@ export function SkuProcurementMvpWorkbench({
     [fp.customBatchPeriods]
   );
 
+  const clearPeriodQtyOverrides = (
+    periods?: CustomBatchPeriodDef[]
+  ): CustomBatchPeriodDef[] | undefined => {
+    if (!Array.isArray(periods) || periods.length === 0) return undefined;
+    return periods.map((p) => ({
+      ...p,
+      customPacksQty: null,
+      customSizeBreakdownPacks: null,
+    }));
+  };
+
+  // Прямое изменение годового плана продаж модели прямо из контура «03 · Закупки» (пропорционально масштабирует 12 месяцев и сразу пересчитывает партии)
+  const handleUpdateAnnualSalesPacks = (nextAnnualPacks: number) => {
+    const cleanTarget = Math.max(0, Math.round(nextAnnualPacks));
+    const currentPlan =
+      model.plansByScenario[currentScenario.id] ||
+      model.plansByScenario[1] || {
+        scenarioId: currentScenario.id,
+        monthlyPacks: Array(12).fill(0),
+        monthlyPricesRub: Array(12).fill(model.retailPriceRub || 1990),
+        monthlyReceiptsPacks: Array(12).fill(0),
+        initialStockPacks: 0,
+        firstOrderPacks: 0,
+        nextOrderDateLabel: '',
+        salesStartMonthIdx: 0,
+        warehouseArrivalMonthIdx: 0,
+        warehouseArrivalDateLabel: '',
+      };
+
+    const existingMonths = currentPlan.monthlyPacks || Array(12).fill(0);
+    const currentSum = existingMonths.reduce((s, v) => s + Math.max(0, v || 0), 0);
+
+    let nextMonthlyPacks: number[];
+    if (cleanTarget === 0) {
+      nextMonthlyPacks = Array(12).fill(0);
+    } else if (currentSum > 0) {
+      const exacts = existingMonths.map((v) => (Math.max(0, v || 0) / currentSum) * cleanTarget);
+      const floored = exacts.map((x) => Math.floor(x));
+      let rem = cleanTarget - floored.reduce((s, v) => s + v, 0);
+      const order = exacts
+        .map((x, idx) => ({ idx, frac: x - Math.floor(x) }))
+        .sort((a, b) => b.frac - a.frac);
+      for (let i = 0; i < order.length && rem > 0; i++) {
+        floored[order[i].idx] += 1;
+        rem -= 1;
+      }
+      nextMonthlyPacks = floored;
+    } else {
+      const base = Math.floor(cleanTarget / 12);
+      let rem = cleanTarget - base * 12;
+      nextMonthlyPacks = Array.from({ length: 12 }, () => {
+        const add = rem > 0 ? 1 : 0;
+        if (rem > 0) rem -= 1;
+        return base + add;
+      });
+    }
+
+    onUpdateModel({
+      ...model,
+      plansByScenario: {
+        ...model.plansByScenario,
+        [currentScenario.id]: {
+          ...currentPlan,
+          scenarioId: currentScenario.id,
+          monthlyPacks: nextMonthlyPacks,
+        },
+      },
+      sharedSupplyAndFact: {
+        ...shared,
+        factoryParams: {
+          ...fp,
+          customBatchPeriods: clearPeriodQtyOverrides(fp.customBatchPeriods),
+        },
+      },
+    });
+    triggerSavedIndicator('Пересчитано от продаж');
+  };
+
+  const handleUpdatePrepaymentPct = (nextPct: number) => {
+    const cleanPct = Math.max(0, Math.min(100, Math.round(nextPct)));
+    onUpdateModel({
+      ...model,
+      sharedSupplyAndFact: {
+        ...shared,
+        factoryParams: {
+          ...fp,
+          prepaymentPct: cleanPct,
+          balancePaymentPct: 100 - cleanPct,
+        },
+      },
+    });
+    triggerSavedIndicator('Сохранено');
+  };
+
   const handleUpdateOpeningStock = (nextPacks: number) => {
     const clean = Math.max(0, Math.round(nextPacks));
     onUpdateModel({
@@ -224,9 +318,13 @@ export function SkuProcurementMvpWorkbench({
       sharedSupplyAndFact: {
         ...shared,
         actualOpeningStockPacks: clean,
+        factoryParams: {
+          ...fp,
+          customBatchPeriods: clearPeriodQtyOverrides(fp.customBatchPeriods),
+        },
       },
     });
-    triggerSavedIndicator('Сохранено');
+    triggerSavedIndicator('Пересчитано');
   };
 
   const handleUpdateUnitCost = (nextCostRub: number) => {
@@ -296,10 +394,11 @@ export function SkuProcurementMvpWorkbench({
         factoryParams: {
           ...fp,
           moqPacks: Math.max(1, Math.round(nextMoq)),
+          customBatchPeriods: clearPeriodQtyOverrides(fp.customBatchPeriods),
         },
       },
     });
-    triggerSavedIndicator('Сохранено');
+    triggerSavedIndicator('Пересчитано');
   };
 
   const handleUpdatePackMultiple = (nextMultiple: number) => {
@@ -310,10 +409,11 @@ export function SkuProcurementMvpWorkbench({
         factoryParams: {
           ...fp,
           packMultiple: Math.max(1, Math.round(nextMultiple)),
+          customBatchPeriods: clearPeriodQtyOverrides(fp.customBatchPeriods),
         },
       },
     });
-    triggerSavedIndicator('Сохранено');
+    triggerSavedIndicator('Пересчитано');
   };
 
   const handleUpdateSafetyDays = (nextDays: number) => {
@@ -324,10 +424,11 @@ export function SkuProcurementMvpWorkbench({
         factoryParams: {
           ...fp,
           safetyStockDays: Math.max(0, Math.round(nextDays)),
+          customBatchPeriods: clearPeriodQtyOverrides(fp.customBatchPeriods),
         },
       },
     });
-    triggerSavedIndicator('Сохранено');
+    triggerSavedIndicator('Пересчитано');
   };
 
   const handleUpdateModelSizeShare = (sz: 'S' | 'M' | 'L' | 'XL' | 'XXL', pct: number) => {
@@ -435,12 +536,49 @@ export function SkuProcurementMvpWorkbench({
     [proc.approvedOrders]
   );
 
-  // Редактирование параметров конкретной черновой партии (Зона В)
+  // Редактирование объёма конкретной партии с автоматическим пересчётом последующих партий по остаточной потребности плана продаж
+  const handleUpdateDraftBatchPacks = (periodId: string, nextPacks: number) => {
+    const cleanVal = Math.max(1, Math.round(nextPacks));
+    const targetIdx = activePeriods.findIndex((p) => p.id === periodId);
+    const nextPeriods = activePeriods.map((p, idx) => {
+      if (p.id === periodId) {
+        return {
+          ...p,
+          customPacksQty: cleanVal,
+          customSizeBreakdownPacks: null,
+          scenarioId: currentScenario.id,
+        };
+      }
+      // Сбрасываем ручной замок на последующих партиях, чтобы они автоматически пересчитались под годовую потребность!
+      if (targetIdx >= 0 && idx > targetIdx) {
+        return {
+          ...p,
+          customPacksQty: null,
+          customSizeBreakdownPacks: null,
+        };
+      }
+      return p;
+    });
+
+    onUpdateModel({
+      ...model,
+      sharedSupplyAndFact: {
+        ...shared,
+        factoryParams: {
+          ...fp,
+          customBatchPeriods: nextPeriods,
+        },
+      },
+    });
+    triggerSavedIndicator('Партии пересчитаны');
+  };
   const updateDraftPeriodDef = (
     periodId: string,
     updater: (prev: CustomBatchPeriodDef) => CustomBatchPeriodDef
   ) => {
-    const nextPeriods = activePeriods.map((p) => (p.id === periodId ? updater(p) : p));
+    const nextPeriods = activePeriods.map((p) =>
+      p.id === periodId ? { ...updater(p), scenarioId: currentScenario.id } : p
+    );
     onUpdateModel({
       ...model,
       sharedSupplyAndFact: {
@@ -663,6 +801,77 @@ export function SkuProcurementMvpWorkbench({
     (po) => po.confirmedByFactory !== false
   ).length;
 
+  const modelAnnualRevenueRub = useMemo(() => {
+    const plan = model.plansByScenario[currentScenario.id] || model.plansByScenario[1];
+    if (!plan) return proc.annualDemandPacks * (model.retailPriceRub || 0);
+    return plan.monthlyPacks.reduce((sum, packs, mIdx) => {
+      const price = plan.monthlyPricesRub?.[mIdx] || model.retailPriceRub || 0;
+      return sum + Math.max(0, packs || 0) * price;
+    }, 0);
+  }, [model, currentScenario.id, proc.annualDemandPacks]);
+
+  const approvedTotalRub = useMemo(
+    () =>
+      proc.approvedOrders
+        .filter((o) => o.confirmedByFactory !== false)
+        .reduce((s, o) => s + o.totalOrderRub, 0),
+    [proc.approvedOrders]
+  );
+
+  const totalModelSupplyPacks = proc.totalApprovedReceiptsPacks + proc.totalRecommendedPacks;
+  const totalModelSupplyUnits = proc.totalApprovedReceiptsUnits + proc.totalRecommendedUnits;
+  const totalModelSupplyBudgetRub =
+    approvedTotalRub + (proc.totalRecommendedBudgetRub || 0);
+
+  // Первая стартовая партия (Партия №1 · Q1) — сколько денег нужно вложить сразу для старта модели
+  const firstStartWave = useMemo(() => {
+    const firstDraft = proc.recommendedBatches[0];
+    const earliestPo = sortedApprovedOrders.find((o) => o.confirmedByFactory !== false);
+    const prepayPct = fp.prepaymentPct ?? 30;
+
+    if (
+      earliestPo &&
+      (!firstDraft || earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)
+    ) {
+      const totalRub = earliestPo.totalOrderRub;
+      const prepayRub = Math.round((totalRub * prepayPct) / 100);
+      return {
+        label: earliestPo.coverageMonthsLabel || `${MONTHS_SHORT[earliestPo.arrivalMonthIdx]} 2027`,
+        packs: earliestPo.packsQty,
+        units: earliestPo.packsQty * earliestPo.unitsInPack,
+        totalRub,
+        prepayRub,
+        balanceRub: totalRub - prepayRub,
+        orderDateIso: earliestPo.orderPlacementDateIso,
+        isApprovedPo: true,
+      };
+    }
+
+    if (firstDraft) {
+      return {
+        label: firstDraft.coverageMonthsLabel,
+        packs: firstDraft.recommendedPacks,
+        units: firstDraft.physicalUnitsQty,
+        totalRub: firstDraft.estimatedTotalRub,
+        prepayRub: firstDraft.prepaymentRub,
+        balanceRub: firstDraft.balancePaymentRub,
+        orderDateIso: firstDraft.recommendedOrderDateIso,
+        isApprovedPo: false,
+      };
+    }
+
+    return {
+      label: 'Янв–Мар 2027',
+      packs: 0,
+      units: 0,
+      totalRub: 0,
+      prepayRub: 0,
+      balanceRub: 0,
+      orderDateIso: '',
+      isApprovedPo: false,
+    };
+  }, [proc.recommendedBatches, sortedApprovedOrders, fp.prepaymentPct]);
+
   const handleApproveAllDraftBatches = () => {
     if (proc.recommendedBatches.length === 0) return;
     let updated = model;
@@ -731,12 +940,13 @@ export function SkuProcurementMvpWorkbench({
           </div>
         </div>
 
-        {/* 4 ПОКАЗАТЕЛЯ В ЕДИНОМ СПОКОЙНОМ СТИЛЕ (Без рваных чёрных рамок) */}
+        {/* 4 КЛЮЧЕВЫХ ПОКАЗАТЕЛЯ МОДЕЛИ: 1. План продаж -> 2. Нужно закупить -> 3. Вложить сразу (Партия №1) -> 4. Бюджет на год */}
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 1. План продаж (с прямым редактированием годового объёма выкупов!) */}
           <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-semibold text-[#686762] uppercase tracking-wide">
-                План продаж (год)
+              <span className="text-[11px] font-bold text-[#686762] uppercase tracking-wide">
+                1. План продаж (год)
               </span>
               {onOpenSalesMatrix && (
                 <button
@@ -748,18 +958,47 @@ export function SkuProcurementMvpWorkbench({
                 </button>
               )}
             </div>
-            <div className="mt-1 font-mono text-[20px] font-bold text-[#141413]">
-              {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="inline-flex items-center rounded-[8px] border border-[#D8D7CE] bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateAnnualSalesPacks(Math.max(0, proc.annualDemandPacks - 500))
+                  }
+                  className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                  title="Уменьшить годовой план продаж на 500 компл."
+                >
+                  −
+                </button>
+                <NumericInput
+                  ariaLabel="Годовой план продаж модели, комплектов"
+                  value={proc.annualDemandPacks}
+                  min={0}
+                  step={500}
+                  onChangeValue={handleUpdateAnnualSalesPacks}
+                  className="h-7 w-24 text-center font-mono text-[16px] font-extrabold text-[#141413] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleUpdateAnnualSalesPacks(proc.annualDemandPacks + 500)}
+                  className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                  title="Увеличить годовой план продаж на 500 компл."
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-[12px] font-semibold text-[#52514C]">компл.</span>
             </div>
-            <div className="mt-0.5 text-[11.5px] text-[#686762]">
-              {proc.annualDemandUnits.toLocaleString('ru-RU')} изд. · {currentScenario.title.split('·')[0].trim()}
+            <div className="mt-1 text-[11.5px] text-[#52514C]">
+              Выручка: <strong>{formatRubMillions(modelAnnualRevenueRub)}</strong> ({proc.annualDemandUnits.toLocaleString('ru-RU')} изд.)
             </div>
           </div>
 
+          {/* 2. Потребность в закупке под план продаж */}
           <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
             <div className="flex items-center justify-between gap-1">
-              <span className="text-[11px] font-semibold text-[#686762] uppercase tracking-wide">
-                Доступный товар
+              <span className="text-[11px] font-bold text-[#686762] uppercase tracking-wide">
+                2. Нужно закупить под план
               </span>
               {proc.approvedOrders.length > 0 && (
                 <button
@@ -771,171 +1010,137 @@ export function SkuProcurementMvpWorkbench({
                 </button>
               )}
             </div>
-            <div className="mt-1 font-mono text-[20px] font-bold text-[#141413]">
-              {(proc.netOpeningAvailablePacks + proc.totalApprovedReceiptsPacks).toLocaleString('ru-RU')} компл.
+            <div className="mt-1 font-mono text-[20px] font-extrabold text-[#141413]">
+              {totalModelSupplyPacks.toLocaleString('ru-RU')} компл.
             </div>
-            <div className="mt-0.5 text-[11.5px] text-[#686762]">
-              Склад: {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} · Утв. PO: {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} ({confirmedPoCount} шт.)
+            <div className="mt-0.5 text-[11.5px] text-[#52514C]">
+              {totalModelSupplyUnits.toLocaleString('ru-RU')} изд. · Склад: {proc.netOpeningAvailablePacks.toLocaleString('ru-RU')} · Утв. PO: {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')}
             </div>
           </div>
 
-          <div className="rounded-[12px] border border-[#D4D3C9] bg-[#F4F3EE] px-4 py-3">
-            <span className="text-[11px] font-semibold text-[#4A4944] uppercase tracking-wide">
-              К заказу на фабрике
-            </span>
-            <div className="mt-1 font-mono text-[20px] font-extrabold text-[#141413]">
-              {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
+          {/* 3. СКОЛЬКО ДЕНЕГ ВЛОЖИТЬ СРАЗУ (Партия №1 · Старт Q1 + Аванс 30%) */}
+          <div className="rounded-[12px] border border-[#A7DFC0] bg-[#F2FBF6] px-4 py-3">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-[#13653F] uppercase tracking-wide">
+                3. Вложить сразу (Партия №1)
+              </span>
+              <span className="rounded-full bg-[#157347] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white">
+                {firstStartWave.label}
+              </span>
             </div>
-            <div className="mt-0.5 text-[11.5px] text-[#5C5B55]">
-              {proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд. · {proc.recommendedBatches.length} кварт. парт.
+            <div className="mt-1 font-mono text-[20px] font-extrabold text-[#0F5132]">
+              {formatRubMillions(firstStartWave.totalRub)}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-[#145A38]">
+              <strong>Аванс {fp.prepaymentPct}% сейчас: {formatRubMillions(firstStartWave.prepayRub)}</strong> · {firstStartWave.packs.toLocaleString('ru-RU')} компл.
             </div>
           </div>
 
+          {/* 4. Бюджет закупки модели на весь год (4 квартала) */}
           <div className="rounded-[12px] border border-[#D4D3C9] bg-[#F4F3EE] px-4 py-3">
-            <span className="text-[11px] font-semibold text-[#4A4944] uppercase tracking-wide">
-              Стоимость заказа
-            </span>
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-[#4A4944] uppercase tracking-wide">
+                4. Бюджет на год (все партии)
+              </span>
+              <span className="font-mono text-[11px] font-semibold text-[#52514C]">
+                {modelAnnualRevenueRub > 0
+                  ? `${((totalModelSupplyBudgetRub / modelAnnualRevenueRub) * 100).toFixed(1)}% от выр.`
+                  : ''}
+              </span>
+            </div>
             <div className="mt-1 font-mono text-[20px] font-extrabold text-[#141413]">
-              {proc.totalRecommendedBudgetRub !== null
-                ? formatRubMillions(proc.totalRecommendedBudgetRub)
-                : 'Не заполнена себест.'}
+              {model.unitCostRub > 0
+                ? formatRubMillions(totalModelSupplyBudgetRub)
+                : 'Укажите себест.'}
             </div>
             <div className="mt-0.5 text-[11.5px] text-[#5C5B55]">
-              {proc.totalRecommendedBudgetRub !== null
-                ? `${proc.totalRecommendedBudgetRub.toLocaleString('ru-RU')} ₽ · по ${model.unitCostRub} ₽/компл.`
-                : 'Укажите себестоимость комплекта'}
+              {totalModelSupplyBudgetRub.toLocaleString('ru-RU')} ₽ · по {model.unitCostRub} ₽/компл. (Q2–Q4 из оборота)
             </div>
           </div>
         </div>
 
-        {/* Редактируемые параметры: ОДИН уровень чистых полей (без рамок внутри рамок!) */}
-        <div className="mt-4 border-t border-[#EAE9E2] pt-3.5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end">
-            {/* 1. Начальный остаток */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-[#52514C]">
-                Остаток на складе сейчас
-              </span>
-              <div className="relative flex items-center">
-                <NumericInput
-                  ariaLabel="Начальный остаток, комплектов"
-                  value={shared.actualOpeningStockPacks}
-                  min={0}
-                  step={50}
-                  onChangeValue={handleUpdateOpeningStock}
-                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-14 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
-                />
-                <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
-                  компл.
-                </span>
-              </div>
+        {/* КОМПАКТНАЯ ОДНОСТРОЧНАЯ ПОЛОСА КЛЮЧЕВЫХ ПАРАМЕТРОВ (Без 5 громоздких коробок!) */}
+        <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2.5 rounded-[11px] border border-[#EAE9E2] bg-[#FAF9F6] px-3.5 py-2.5 text-[12px]">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* 1. Себестоимость комплекта */}
+            <label className="inline-flex items-center gap-1.5 text-[#52514C]">
+              <span className="font-semibold">Себестоимость:</span>
+              <NumericInput
+                ariaLabel="Себестоимость комплекта, рублей"
+                value={model.unitCostRub || 0}
+                min={0}
+                step={10}
+                onChangeValue={handleUpdateUnitCost}
+                className="h-8 w-20 rounded-[7px] border border-[#D8D7CE] bg-white px-2 text-center font-mono text-[13.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
+              />
+              <span className="text-[11px] text-[#686762]">₽/компл.</span>
             </label>
 
-            {/* 2. Себестоимость комплекта */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-[#52514C]">
-                Себестоимость под ключ
-              </span>
-              <div className="relative flex items-center">
-                <NumericInput
-                  ariaLabel="Себестоимость комплекта, рублей"
-                  value={model.unitCostRub || 0}
-                  min={0}
-                  step={10}
-                  onChangeValue={handleUpdateUnitCost}
-                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-16 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
-                />
-                <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
-                  ₽/компл.
-                </span>
-              </div>
+            <span className="hidden sm:inline text-[#D8D7CE]">|</span>
+
+            {/* 2. Остаток на складе сейчас */}
+            <label className="inline-flex items-center gap-1.5 text-[#52514C]">
+              <span className="font-semibold">Остаток на складе:</span>
+              <NumericInput
+                ariaLabel="Начальный остаток, комплектов"
+                value={shared.actualOpeningStockPacks}
+                min={0}
+                step={50}
+                onChangeValue={handleUpdateOpeningStock}
+                className="h-8 w-20 rounded-[7px] border border-[#D8D7CE] bg-white px-2 text-center font-mono text-[13.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
+              />
+              <span className="text-[11px] text-[#686762]">компл.</span>
             </label>
 
-            {/* 3. Срок производства (дней) */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-[#52514C]">
-                Срок производства
-              </span>
-              <div className="relative flex items-center">
-                <NumericInput
-                  ariaLabel="Срок производства, дней"
-                  value={fp.productionLeadDays}
-                  min={1}
-                  max={365}
-                  step={5}
-                  onChangeValue={(nextProd) => {
-                    onUpdateModel({
-                      ...model,
-                      sharedSupplyAndFact: {
-                        ...shared,
-                        factoryParams: {
-                          ...fp,
-                          productionLeadDays: Math.max(1, Math.round(nextProd)),
-                        },
-                      },
-                    });
-                    triggerSavedIndicator('Сохранено');
-                  }}
-                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
-                />
-                <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
-                  дней
-                </span>
-              </div>
+            <span className="hidden sm:inline text-[#D8D7CE]">|</span>
+
+            {/* 3. Процент аванса фабрике (влияет на сумму стартового платежа!) */}
+            <label className="inline-flex items-center gap-1.5 text-[#52514C]">
+              <span className="font-semibold">Аванс фабрике:</span>
+              <NumericInput
+                ariaLabel="Аванс фабрике, %"
+                value={fp.prepaymentPct}
+                min={0}
+                max={100}
+                step={5}
+                onChangeValue={handleUpdatePrepaymentPct}
+                className="h-8 w-14 rounded-[7px] border border-[#D8D7CE] bg-white px-2 text-center font-mono text-[13.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
+              />
+              <span className="text-[11px] text-[#686762]">%</span>
             </label>
 
-            {/* 4. Срок доставки и приёмки (дней) */}
-            <label className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-[#52514C]">
-                Доставка в РФ (цикл {proc.totalLeadDays} дн.)
-              </span>
-              <div className="relative flex items-center">
-                <NumericInput
-                  ariaLabel="Срок доставки, дней"
-                  value={fp.logisticsLeadDays}
-                  min={0}
-                  max={365}
-                  step={2}
-                  onChangeValue={(nextLog) => {
-                    onUpdateModel({
-                      ...model,
-                      sharedSupplyAndFact: {
-                        ...shared,
-                        factoryParams: {
-                          ...fp,
-                          logisticsLeadDays: Math.max(0, Math.round(nextLog)),
-                        },
-                      },
-                    });
-                    triggerSavedIndicator('Сохранено');
-                  }}
-                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
-                />
-                <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
-                  дней
-                </span>
-              </div>
-            </label>
+            <span className="hidden sm:inline text-[#D8D7CE]">|</span>
 
-            {/* 5. Кнопка раскрытия дополнительных настроек (Размеры S–XXL, MOQ, кратность, страховой запас) */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-[#52514C]">
-                MOQ {fp.moqPacks.toLocaleString('ru-RU')} · Запас {fp.safetyStockDays} дн.
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowAdvancedSettings((v) => !v)}
-                className={`h-9.5 inline-flex items-center justify-between rounded-[9px] border px-3 text-[12px] font-semibold transition cursor-pointer ${
-                  showAdvancedSettings
-                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
-                    : 'border-[#D8D7CE] bg-[#F8F8F5] text-[#141413] hover:border-[#B8B7AE] hover:bg-white'
-                }`}
-              >
-                <span>Размеры S–XXL и MOQ</span>
-                <span>{showAdvancedSettings ? '▴' : '▾'}</span>
-              </button>
-            </div>
+            {/* 4. Полный цикл поставки */}
+            <label className="inline-flex items-center gap-1.5 text-[#52514C]">
+              <span className="font-semibold">Цикл поставки:</span>
+              <NumericInput
+                ariaLabel="Полный цикл производства и доставки, дней"
+                value={proc.totalLeadDays}
+                min={1}
+                max={365}
+                step={5}
+                onChangeValue={handleUpdateTotalLeadDays}
+                className="h-8 w-14 rounded-[7px] border border-[#D8D7CE] bg-white px-2 text-center font-mono text-[13.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
+              />
+              <span className="text-[11px] text-[#686762]">дн.</span>
+            </label>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAdvancedSettings((v) => !v)}
+            className={`h-8 inline-flex items-center gap-2 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer ${
+              showAdvancedSettings
+                ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
+                : 'border-[#D8D7CE] bg-white text-[#141413] hover:border-[#B8B7AE]'
+            }`}
+          >
+            <span>
+              Размеры S–XXL ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%) · MOQ {fp.moqPacks}
+            </span>
+            <span>{showAdvancedSettings ? '▴' : '▾'}</span>
+          </button>
         </div>
 
         {/* Раскрывающийся блок «Дополнительные настройки» (Единая размерная сетка S-XXL, MOQ, Кратность, Страховой запас) */}
@@ -1546,25 +1751,24 @@ export function SkuProcurementMvpWorkbench({
           </div>
         )}
 
-        {/* ЧИСТАЯ ИНТЕРАКТИВНАЯ ТАБЛИЦА КВАРТАЛЬНЫХ ПАРТИЙ (С прямым редактированием периода, даты, объёма и размеров S–XXL!) */}
+        {/* ЧИСТАЯ 5-КОЛОНОЧНАЯ ТАБЛИЦА КВАРТАЛЬНЫХ ПАРТИЙ (Без визуальной перегрузки, с подсветкой 1-й стартовой партии и автоматическим пересчётом по потребности!) */}
         {proc.recommendedBatches.length > 0 && (
           <div className="overflow-x-auto rounded-[12px] border border-[#E2E1D8]">
-            <table className="w-full min-w-[820px] border-collapse text-left">
+            <table className="w-full min-w-[780px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#E2E1D8] bg-[#F8F8F5] text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                  <th className="py-2.5 pl-4 pr-3">Партия и период покрытия</th>
-                  <th className="px-3 py-2.5 text-right">План продаж</th>
-                  <th className="px-3 py-2.5">Заказать до (дата)</th>
-                  <th className="px-3 py-2.5">Приход на склад</th>
+                  <th className="py-2.5 pl-4 pr-3">Партия и покрытие</th>
+                  <th className="px-3 py-2.5 text-right">Потребность (план)</th>
                   <th className="px-3 py-2.5 text-right">К заказу (компл.)</th>
-                  <th className="px-3 py-2.5 text-right">Сумма партии</th>
-                  <th className="py-2.5 pr-4 pl-3 text-right">Действия</th>
+                  <th className="px-3 py-2.5 text-right">Инвестиции и аванс</th>
+                  <th className="py-2.5 pr-4 pl-3 text-right">Размеры и заказ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE9E2]">
                 {proc.recommendedBatches.map((batch, bIdx) => {
                   const rowKey = `draft-${batch.periodId}`;
                   const isExpanded = activeExpandedKey === rowKey;
+                  const isFirstStartBatch = bIdx === 0 && proc.approvedOrders.length === 0;
                   const sizeTotalPacks = SIZES_LIST.reduce(
                     (s, sz) => s + (batch.sizeBreakdownPacks[sz] || 0),
                     0
@@ -1581,20 +1785,33 @@ export function SkuProcurementMvpWorkbench({
                       <tr
                         onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
                         className={`cursor-pointer transition-colors ${
-                          isExpanded ? 'bg-[#F8F8F4]' : 'bg-white hover:bg-[#FAF9F6]'
+                          isExpanded
+                            ? 'bg-[#F8F8F4]'
+                            : isFirstStartBatch
+                              ? 'bg-[#F6FCF8] hover:bg-[#EFF9F3]'
+                              : 'bg-white hover:bg-[#FAF9F6]'
                         }`}
                       >
-                        {/* 1. Партия и прямой выбор месяцев покрытия */}
+                        {/* 1. Партия, бейдж «Вложить сразу» для 1-й партии, период и даты */}
                         <td className="py-3 pl-4 pr-3">
-                          <div className="flex items-center gap-2.5">
-                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#D4D3C9] bg-[#F4F3EE] font-mono text-[11.5px] font-bold text-[#141413]">
+                          <div className="flex items-start gap-2.5">
+                            <span
+                              className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[11.5px] font-bold ${
+                                isFirstStartBatch
+                                  ? 'bg-[#157347] text-white'
+                                  : 'border border-[#D4D3C9] bg-[#F4F3EE] text-[#141413]'
+                              }`}
+                            >
                               {bIdx + 1}
                             </span>
                             <div>
                               <div
                                 onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1"
+                                className="flex flex-wrap items-center gap-1.5"
                               >
+                                <span className="text-[13px] font-bold text-[#141413]">
+                                  Партия №{bIdx + 1} ·
+                                </span>
                                 <select
                                   aria-label={`Начало периода партии №${bIdx + 1}`}
                                   value={batch.firstCoveredMonthIdx}
@@ -1606,7 +1823,7 @@ export function SkuProcurementMvpWorkbench({
                                       endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
                                     }));
                                   }}
-                                  className="h-7 rounded-[6px] border border-[#DFDED6] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none cursor-pointer"
+                                  className="h-6.5 rounded-[5px] border border-transparent bg-transparent px-1 text-[13px] font-bold text-[#141413] hover:border-[#D8D7CE] hover:bg-white focus:border-[#9E9D95] focus:bg-white focus:outline-none cursor-pointer"
                                 >
                                   {MONTHS_SHORT.map((m, idx) => (
                                     <option key={m} value={idx}>
@@ -1625,7 +1842,7 @@ export function SkuProcurementMvpWorkbench({
                                       endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
                                     }));
                                   }}
-                                  className="h-7 rounded-[6px] border border-[#DFDED6] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none cursor-pointer"
+                                  className="h-6.5 rounded-[5px] border border-transparent bg-transparent px-1 text-[13px] font-bold text-[#141413] hover:border-[#D8D7CE] hover:bg-white focus:border-[#9E9D95] focus:bg-white focus:outline-none cursor-pointer"
                                 >
                                   {MONTHS_SHORT.map((m, idx) => (
                                     <option
@@ -1637,89 +1854,69 @@ export function SkuProcurementMvpWorkbench({
                                     </option>
                                   ))}
                                 </select>
+
+                                {isFirstStartBatch ? (
+                                  <span className="rounded-full bg-[#157347] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white">
+                                    Вложить сразу · Старт
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-[#EFEFE9] px-2 py-0.5 text-[10px] font-semibold text-[#5C5B55]">
+                                    Из оборота
+                                  </span>
+                                )}
                               </div>
-                              <div className="mt-0.5 text-[11px] text-[#686762]">
-                                Партия №{bIdx + 1}
-                                {batch.isAdditionalOrder ? ' · Дополнительно к PO' : ''}
-                                {batch.isTestBatch
-                                  ? ` · Тестовая (${MODEL_SCALING_STAGE_LABELS_RU[proc.scalingStage]})`
-                                  : ''}
+
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#686762]"
+                              >
+                                <span>Приход к {formatHumanDateRu(batch.requiredArrivalDateIso)}</span>
+                                <span>·</span>
+                                <span>Заказ до:</span>
+                                <input
+                                  type="date"
+                                  aria-label={`Дата заказа партии №${bIdx + 1}`}
+                                  value={batch.recommendedOrderDateIso}
+                                  onChange={(e) => {
+                                    if (!e.target.value) return;
+                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                      ...prev,
+                                      customOrderDateIso: e.target.value,
+                                    }));
+                                  }}
+                                  className="h-6 rounded border border-transparent bg-transparent px-1 font-mono text-[11px] font-semibold text-[#141413] hover:border-[#D8D7CE] hover:bg-white focus:border-[#9E9D95] focus:bg-white focus:outline-none"
+                                />
                               </div>
                             </div>
                           </div>
                         </td>
 
-                        {/* 2. План продаж */}
-                        <td className="px-3 py-3 text-right font-mono text-[13.5px] font-semibold text-[#52514C]">
-                          {batch.periodDemandPacks.toLocaleString('ru-RU')} компл.
-                        </td>
-
-                        {/* 3. Заказать до — прямое поле ввода даты */}
-                        <td
-                          onClick={(e) => e.stopPropagation()}
-                          className="px-3 py-3"
-                        >
-                          <div className="flex flex-col items-start gap-0.5">
-                            <input
-                              type="date"
-                              aria-label={`Дата заказа партии №${bIdx + 1}`}
-                              value={batch.recommendedOrderDateIso}
-                              onChange={(e) => {
-                                if (!e.target.value) return;
-                                updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                  ...prev,
-                                  customOrderDateIso: e.target.value,
-                                }));
-                              }}
-                              className="h-8 rounded-[7px] border border-[#DFDED6] bg-white px-2 font-mono text-[12px] font-semibold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
-                            />
-                            {batch.hasCustomDateOverride && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                    ...prev,
-                                    customOrderDateIso: null,
-                                  }))
-                                }
-                                className="text-[10.5px] font-semibold text-[#686762] hover:text-[#141413] underline cursor-pointer"
-                              >
-                                ↺ авто-дата
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 4. Приход на склад */}
-                        <td className="px-3 py-3">
-                          <div className="font-mono text-[13px] font-medium text-[#141413]">
-                            {formatHumanDateRu(batch.requiredArrivalDateIso)}
+                        {/* 2. Потребность по плану продаж */}
+                        <td className="px-3 py-3 text-right">
+                          <div className="font-mono text-[13.5px] font-bold text-[#141413]">
+                            {batch.periodDemandPacks.toLocaleString('ru-RU')} компл.
                           </div>
                           <div className="text-[10.5px] text-[#686762]">
-                            цикл {proc.totalLeadDays} дн.
+                            выкупы периода{batch.safetyStockPacks > 0 ? ` (+${batch.safetyStockPacks.toLocaleString('ru-RU')} запас)` : ''}
                           </div>
                         </td>
 
-                        {/* 5. К заказу — прямое поле ввода комплектов со степпером - / + */}
+                        {/* 3. К заказу — прямое поле ввода комплектов (при изменении автоматически балансирует следующие партии!) */}
                         <td
                           onClick={(e) => e.stopPropagation()}
                           className="px-3 py-3 text-right"
                         >
                           <div className="inline-flex flex-col items-end">
-                            <div className="inline-flex items-center rounded-[8px] border border-[#DFDED6] bg-white p-0.5 hover:border-[#B8B7AE] focus-within:border-[#9E9D95]">
+                            <div className="inline-flex items-center rounded-[8px] border border-[#D8D7CE] bg-white p-0.5 hover:border-[#B8B7AE] focus-within:border-[#9E9D95]">
                               <button
                                 type="button"
                                 onClick={() => {
                                   const step = fp.packMultiple || 50;
                                   const nextVal = Math.max(step, batch.recommendedPacks - step);
-                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                    ...prev,
-                                    customPacksQty: nextVal,
-                                    customSizeBreakdownPacks: null,
-                                  }));
+                                  handleUpdateDraftBatchPacks(batch.periodId, nextVal);
                                 }}
                                 className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
-                                title="Уменьшить количество"
+                                title="Уменьшить количество (остаток перейдёт в следующую партию)"
                               >
                                 −
                               </button>
@@ -1729,11 +1926,7 @@ export function SkuProcurementMvpWorkbench({
                                 min={1}
                                 step={fp.packMultiple || 50}
                                 onChangeValue={(val) =>
-                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                    ...prev,
-                                    customPacksQty: val,
-                                    customSizeBreakdownPacks: null,
-                                  }))
+                                  handleUpdateDraftBatchPacks(batch.periodId, val)
                                 }
                                 className="h-7 w-20 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:outline-none"
                               />
@@ -1742,14 +1935,10 @@ export function SkuProcurementMvpWorkbench({
                                 onClick={() => {
                                   const step = fp.packMultiple || 50;
                                   const nextVal = batch.recommendedPacks + step;
-                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                    ...prev,
-                                    customPacksQty: nextVal,
-                                    customSizeBreakdownPacks: null,
-                                  }));
+                                  handleUpdateDraftBatchPacks(batch.periodId, nextVal);
                                 }}
                                 className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
-                                title="Увеличить количество"
+                                title="Увеличить количество (следующая партия уменьшится на эту разницу)"
                               >
                                 +
                               </button>
@@ -1775,17 +1964,23 @@ export function SkuProcurementMvpWorkbench({
                           </div>
                         </td>
 
-                        {/* 6. Сумма партии */}
+                        {/* 4. Деньги: Сумма партии + Аванс 30% сейчас */}
                         <td className="px-3 py-3 text-right">
-                          <div className="font-mono text-[15px] font-bold text-[#141413]">
+                          <div
+                            className={`font-mono text-[15px] font-extrabold ${
+                              isFirstStartBatch ? 'text-[#0F5132]' : 'text-[#141413]'
+                            }`}
+                          >
                             {formatRubMillions(batch.estimatedTotalRub)}
                           </div>
-                          <div className="font-mono text-[11px] text-[#686762]">
-                            {batch.estimatedTotalRub.toLocaleString('ru-RU')} ₽
+                          <div className="mt-0.5 text-[11px] text-[#52514C]">
+                            <strong className={isFirstStartBatch ? 'text-[#146C43]' : 'text-[#141413]'}>
+                              Аванс {fp.prepaymentPct}%: {formatRubMillions(batch.prepaymentRub)}
+                            </strong>
                           </div>
                         </td>
 
-                        {/* 7. Действия */}
+                        {/* 5. Размеры S–XXL и утверждение */}
                         <td
                           onClick={(e) => e.stopPropagation()}
                           className="py-3 pr-4 pl-3 text-right"
@@ -1797,7 +1992,7 @@ export function SkuProcurementMvpWorkbench({
                               className={`h-8 rounded-[7px] border px-2.5 text-[11.5px] font-semibold transition cursor-pointer ${
                                 isExpanded
                                   ? 'border-[#B8B7AE] bg-[#EAE9E2] text-[#141413]'
-                                  : 'border-[#D8D7CE] bg-[#F8F8F5] text-[#141413] hover:bg-[#EFEFE9]'
+                                  : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#EFEFE9]'
                               }`}
                             >
                               {isExpanded ? 'Скрыть ▴' : 'Размеры и расчёт ▾'}
@@ -1817,7 +2012,7 @@ export function SkuProcurementMvpWorkbench({
                       {/* Раскрываемая детализация партии: интерактивная размерная сетка S–XXL и управление партией без лишних кликов! */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="bg-[#FAF9F5] px-4 py-4">
+                          <td colSpan={5} className="bg-[#FAF9F5] px-4 py-4">
                             <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
                               <div className="text-[12.5px] font-bold text-[#141413]">
                                 Размерная сетка S–XXL и расчёт · Партия №{bIdx + 1} ({batch.coverageMonthsLabel})
@@ -1976,24 +2171,32 @@ export function SkuProcurementMvpWorkbench({
               <tfoot>
                 <tr className="border-t border-[#E2E1D8] bg-[#F8F8F5] text-[12.5px] font-bold text-[#141413]">
                   <td className="py-3 pl-4 pr-3">
-                    Итого к заказу ({proc.recommendedBatches.length} парт.)
+                    <div>Итого по плану ({proc.recommendedBatches.length} парт.)</div>
+                    <div className="text-[11px] font-normal text-[#686762]">
+                      Цикл производства и доставки: {proc.totalLeadDays} дн.
+                    </div>
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-[#52514C]">
                     {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
                   </td>
-                  <td colSpan={2} className="px-3 py-3 text-[11.5px] font-normal text-[#686762]">
-                    Цикл производства и доставки: {proc.totalLeadDays} дн.
+                  <td className="px-3 py-3 text-right font-mono">
+                    <div>{proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.</div>
+                    <div className="text-[10.5px] font-normal text-[#686762]">
+                      {proc.totalRecommendedUnits.toLocaleString('ru-RU')} физ. изд.
+                    </div>
                   </td>
                   <td className="px-3 py-3 text-right font-mono">
-                    {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
+                    <div>
+                      {proc.totalRecommendedBudgetRub !== null
+                        ? formatRubMillions(proc.totalRecommendedBudgetRub)
+                        : '—'}
+                    </div>
+                    <div className="text-[10.5px] font-semibold text-[#146C43]">
+                      Старт (1-я парт.): {formatRubMillions(firstStartWave.totalRub)}
+                    </div>
                   </td>
-                  <td className="px-3 py-3 text-right font-mono">
-                    {proc.totalRecommendedBudgetRub !== null
-                      ? formatRubMillions(proc.totalRecommendedBudgetRub)
-                      : '—'}
-                  </td>
-                  <td className="py-3 pr-4 pl-3 text-right font-mono text-[11px] font-normal text-[#686762]">
-                    {proc.totalRecommendedUnits.toLocaleString('ru-RU')} физ. изд.
+                  <td className="py-3 pr-4 pl-3 text-right text-[11px] font-semibold text-[#146C43]">
+                    Аванс 1-й парт.: {formatRubMillions(firstStartWave.prepayRub)}
                   </td>
                 </tr>
               </tfoot>

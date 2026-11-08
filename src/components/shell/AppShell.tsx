@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -461,6 +461,111 @@ export function AppShell() {
     return () => window.removeEventListener('wheel', onWheel);
   }, [canGoBack, canGoForward, goBack, goForward]);
 
+  // Переход на главную сводку («Стратегия роста BORNERS GROUP») из любого раздела или вложенного экрана
+  const handleGoHomeSummary = useCallback(() => {
+    setPlatformMode('management');
+    setBrandFilter('ALL');
+    setAtlasOpen(false);
+    try {
+      sessionStorage.removeItem('borners_open_scenario_model_id');
+      window.localStorage.setItem(
+        'borners_scenario_screen_state_v1',
+        JSON.stringify({ screen: 'scenarios', selectedModelId: 'scen-brn-001-sc' })
+      );
+    } catch {
+      // ignore
+    }
+    navigateTo('dashboard', { scenarioScreen: 'scenarios' });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('borners-reset-to-home-summary'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [navigateTo, setBrandFilter, setPlatformMode]);
+
+  // Контроль выхода новой версии сайта в стиле Peakly («BORNERS обновился · НОВОЕ»)
+  const currentBuildId = process.env.NEXT_PUBLIC_BUILD_ID || 'borners-2027-release';
+  const [updateBannerOpen, setUpdateBannerOpen] = useState(false);
+  const [updateDetailsOpen, setUpdateDetailsOpen] = useState(false);
+  const [detectedBuildId, setDetectedBuildId] = useState<string>(currentBuildId);
+  const [updateChanges, setUpdateChanges] = useState<string[]>([
+    'Закупки напрямую связаны с планом продаж: меняйте сценарий или годовой план выкупов — партии и бюджет пересчитываются мгновенно',
+    'Наглядно выделена сумма инвестиций сразу на старт (Партия №1 · Q1 и аванс 30% фабрике) отдельно от оборотного бюджета на год',
+    'Очищен интерфейс партий от визуального перегруза, исправлен пустой экран при фильтре бренда и настроен возврат на главную сводку по клику на логотип',
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const SEEN_BUILD_KEY = 'borners_seen_build_id_v1';
+
+    const checkRemoteVersion = async () => {
+      try {
+        const res = await fetch(`./version.json?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          buildId?: string;
+          changes?: string[];
+        };
+        if (Array.isArray(data.changes) && data.changes.length > 0) {
+          setUpdateChanges(data.changes);
+        }
+        const remoteId = data.buildId || currentBuildId;
+        setDetectedBuildId(remoteId);
+        const seenId = window.localStorage.getItem(SEEN_BUILD_KEY);
+        if (remoteId !== currentBuildId || seenId !== remoteId) {
+          setUpdateBannerOpen(true);
+        }
+      } catch {
+        // Fallback: проверим локальный seenId
+        try {
+          const seenId = window.localStorage.getItem(SEEN_BUILD_KEY);
+          if (seenId !== currentBuildId) {
+            setUpdateBannerOpen(true);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    checkRemoteVersion();
+    const intervalId = window.setInterval(checkRemoteVersion, 20000);
+    const onFocus = () => checkRemoteVersion();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') checkRemoteVersion();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [currentBuildId]);
+
+  const handleDismissUpdateBanner = useCallback(() => {
+    try {
+      window.localStorage.setItem('borners_seen_build_id_v1', detectedBuildId);
+    } catch {
+      // ignore
+    }
+    setUpdateBannerOpen(false);
+    setUpdateDetailsOpen(false);
+  }, [detectedBuildId]);
+
+  const handleApplySiteUpdate = useCallback(() => {
+    try {
+      window.localStorage.setItem('borners_seen_build_id_v1', detectedBuildId);
+    } catch {
+      // ignore
+    }
+    setUpdateBannerOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set('v', String(Date.now()).slice(-6));
+    window.location.replace(url.toString());
+  }, [detectedBuildId]);
+
   const searchResults = useMemo(() => {
     const q = globalSearchQuery.trim().toLowerCase();
     if (!q) return [];
@@ -898,11 +1003,8 @@ export function AppShell() {
             <div className="flex items-center gap-2.5 min-w-0">
               <button
                 type="button"
-                onClick={() => {
-                  setPlatformMode('management');
-                  navigateTo('dashboard');
-                  setAtlasOpen(false);
-                }}
+                onClick={handleGoHomeSummary}
+                title="Перейти на главную сводку сценариев BORNERS"
                 className="inline-flex items-center gap-2.5 pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
               >
                 <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F4F4F0] border-[1.5px] border-[#CECDC4] group-hover:border-[#141413] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
@@ -1091,6 +1193,10 @@ export function AppShell() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (item.key === 'summary') {
+                        handleGoHomeSummary();
+                        return;
+                      }
                       setPlatformMode('management');
                       navigateTo(item.target);
                       setAtlasOpen(false);
@@ -1322,7 +1428,13 @@ export function AppShell() {
             onClose={() => setAtlasOpen(false)}
             activeSection={activeSection}
             platformMode={platformMode}
-            onSelectSection={(sec) => navigateTo(sec)}
+            onSelectSection={(sec) => {
+              if (sec === 'dashboard') {
+                handleGoHomeSummary();
+                return;
+              }
+              navigateTo(sec);
+            }}
             onSetPlatformMode={setPlatformMode}
             currentUser={currentUser}
             recentSections={recentSections}
@@ -1847,6 +1959,87 @@ export function AppShell() {
             navigateTo(sec);
           }}
         />
+
+        {/* УВЕДОМЛЕНИЕ О НОВОЙ ВЕРСИИ САЙТА В СТИЛЕ PEAKLY («BORNERS обновился · НОВОЕ») */}
+        {updateBannerOpen && (
+          <div className="fixed bottom-5 left-5 z-50 w-[392px] max-w-[calc(100vw-2rem)]">
+            <div className="relative overflow-hidden rounded-[22px] border border-[#DCE0E8] bg-white pl-5 pr-4 pt-4 pb-4 shadow-[0_14px_38px_rgba(15,23,42,0.12)]">
+              {/* Тёмно-синяя акцентная полоска слева как в Peakly */}
+              <div className="absolute left-0 top-3.5 bottom-3.5 w-[5px] rounded-r-full bg-[#141A29]" />
+
+              <div className="flex items-start gap-3.5">
+                <div className="h-12 w-12 shrink-0 rounded-[15px] bg-[#EEF0F5] flex items-center justify-center text-[#1E2638]">
+                  <Sparkles className="h-5 w-5 stroke-[1.8]" />
+                </div>
+
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[16.5px] font-bold tracking-[-0.015em] text-[#0F141C]">
+                        BORNERS обновился
+                      </span>
+                      <span className="rounded-full bg-[#EEF0F5] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#263042]">
+                        НОВОЕ
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleDismissUpdateBanner}
+                      aria-label="Закрыть уведомление об обновлении"
+                      className="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[#4A5568] hover:bg-[#F1F5F9] hover:text-[#0F141C] transition cursor-pointer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <p className="mt-1 text-[13.5px] leading-[1.35] text-[#4A5568]">
+                    Выпустили техническое обновление. Обновите страницу, чтобы применить свежую версию.
+                  </p>
+                </div>
+              </div>
+
+              {updateDetailsOpen && (
+                <div className="mt-3.5 rounded-[14px] border border-[#E2E6EE] bg-[#F8FAFC] p-3 text-[12px] text-[#334155] space-y-1.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#0F141C]">
+                    Что вошло в обновление:
+                  </div>
+                  <ul className="space-y-1 list-disc pl-4">
+                    {updateChanges.map((item, idx) => (
+                      <li key={idx} className="leading-snug">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mt-4 grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setUpdateDetailsOpen((v) => !v)}
+                  className="h-11 rounded-full bg-[#0F141C] hover:bg-[#1E2638] text-white text-[14px] font-semibold inline-flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <span>{updateDetailsOpen ? 'Скрыть детали' : 'Что нового'}</span>
+                  <ArrowRight
+                    className={`h-4 w-4 transition-transform ${
+                      updateDetailsOpen ? '-rotate-90' : ''
+                    }`}
+                  />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleApplySiteUpdate}
+                  className="h-11 rounded-full bg-white hover:bg-[#F8FAFC] border border-[#CFD6E0] text-[#0F141C] text-[14px] font-semibold inline-flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  <span>Обновить</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 max-w-[340px] w-auto pointer-events-none">
           {toasts.map((t) => {
             const isWarn = t.type === 'warning';

@@ -1386,6 +1386,49 @@ test('29. Прямое инлайн-редактирование партий, �
   assert.equal(updatedPo.coverageMonthsLabel, 'Фев–Мар 2027');
 });
 
+test('30. Пересчёт партий по потребности плана продаж: изменение 1-й партии (вверх или вниз) автоматически балансирует 2-ю партию, а смена сценария сбрасывает чужие ручные правки', () => {
+  const s1Scenario = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const s2Scenario = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+  let sorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+
+  const basePlan = computeProcurementPlan(sorbet, s1Scenario);
+  const baseQ1 = basePlan.recommendedBatches[0].recommendedPacks;
+  const baseQ2 = basePlan.recommendedBatches[1].recommendedPacks;
+  const baseTotal = basePlan.totalRecommendedPacks;
+  assert.equal(baseTotal, 15950);
+
+  // 1. Уменьшаем 1-ю партию вручную до 2 000 компл. (меньше квартального спроса Q1 = 2 650 компл.)
+  // Вторая партия должна автоматически вырасти на 1 150 компл., чтобы годовая потребность (15 950 компл.) осталась полностью покрыта!
+  sorbet = {
+    ...sorbet,
+    sharedSupplyAndFact: {
+      ...sorbet.sharedSupplyAndFact!,
+      factoryParams: {
+        ...sorbet.sharedSupplyAndFact!.factoryParams,
+        customBatchPeriods: [
+          { id: 'q1', startMonthIdx: 0, endMonthIdx: 2, customPacksQty: 2000, scenarioId: 1 },
+          { id: 'q2', startMonthIdx: 3, endMonthIdx: 5 },
+          { id: 'q3', startMonthIdx: 6, endMonthIdx: 8 },
+          { id: 'q4', startMonthIdx: 9, endMonthIdx: 11 },
+        ],
+      },
+    },
+  };
+
+  const reducedQ1Plan = computeProcurementPlan(sorbet, s1Scenario);
+  assert.equal(reducedQ1Plan.recommendedBatches[0].recommendedPacks, 2000);
+  assert.equal(reducedQ1Plan.recommendedBatches[1].recommendedPacks, baseQ2 + (baseQ1 - 2000));
+  assert.equal(reducedQ1Plan.totalRecommendedPacks, baseTotal);
+
+  // 2. При переключении на Сценарий №2 ручная правка со scenarioId=1 не блокирует авторасчёт Сценария №2!
+  const s2Plan = computeProcurementPlan(sorbet, s2Scenario);
+  assert.equal(s2Plan.recommendedBatches[0].hasCustomPacksOverride, false);
+  assert.ok(s2Plan.recommendedBatches[0].recommendedPacks !== 2000);
+});
+
+
 
 
 

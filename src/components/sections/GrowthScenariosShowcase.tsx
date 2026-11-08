@@ -388,6 +388,33 @@ export function GrowthScenariosShowcase({
   const [newScenarioModalOpen, setNewScenarioModalOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
+  useEffect(() => {
+    const onResetHome = () => {
+      try {
+        sessionStorage.removeItem('borners_open_scenario_model_id');
+        window.localStorage.setItem(
+          'borners_scenario_screen_state_v1',
+          JSON.stringify({ screen: 'scenarios', selectedModelId })
+        );
+      } catch {
+        // ignore
+      }
+      setScreen('scenarios');
+      setMathBreakdownOpen(false);
+      setExportMenuOpen(false);
+      setNewModelModalOpen(false);
+      setNewScenarioModalOpen(false);
+      setPdfModalOpen(false);
+      setBrandFilterLocal('ALL');
+      setStatusFilterLocal('ALL');
+      setSearchQuery('');
+      pushScenarioStep('scenarios', selectedModelId);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('borners-reset-to-home-summary', onResetHome);
+    return () => window.removeEventListener('borners-reset-to-home-summary', onResetHome);
+  }, [pushScenarioStep, selectedModelId]);
+
   // Поля формы создания новой модели (Тест 11: короткая форма, работает со всеми брендами холдинга)
   const [draftBrand, setDraftBrand] = useState<string>('BORNERS');
   const [draftTitle, setDraftTitle] = useState('');
