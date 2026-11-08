@@ -102,16 +102,16 @@ export function PeaklyMasterCabinetsSummary({
       : 0;
 
   return (
-    <section className="rounded-[18px] bg-white border border-[#DCDAD0] overflow-hidden shadow-[0_6px_24px_-8px_rgba(15,23,42,0.05)]">
+    <section className="rounded-[16px] bg-white border border-[#E2E8F0] overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       {/* ШАПКА СВОДНОЙ ВСЕХ КАБИНЕТОВ */}
-      <div className="px-5 py-4 bg-gradient-to-r from-[#FAF9F5] via-[#F7FAF8] to-[#FAF9F5] border-b border-[#EAE9E2] flex flex-wrap items-center justify-between gap-3">
+      <div className="px-5 py-4 bg-white border-b border-[#EEF2F6] flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] font-mono text-[10.5px] font-bold uppercase tracking-wider">
-            <Layers className="h-3.5 w-3.5 text-[#059669]" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-mono text-[10.5px] font-bold uppercase tracking-wider">
+            <Layers className="h-3.5 w-3.5 text-[#2563EB]" />
             <span>Сводная кабинетов · 5 брендов</span>
           </span>
           <div>
-            <h2 className="text-[16px] md:text-[17.5px] font-extrabold tracking-[-0.02em] text-[#1E293B]">
+            <h2 className="text-[16px] md:text-[17.5px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
               Ключевые показатели по кабинетам и брендам BORNERS GROUP (2027–2028)
             </h2>
             <p className="text-[11.5px] text-[#64748B]">
@@ -124,7 +124,7 @@ export function PeaklyMasterCabinetsSummary({
           <button
             type="button"
             onClick={() => setMonthlyCashflowOpen((v) => !v)}
-            className="h-8 px-3 rounded-[9px] border border-[#D5D3CA] bg-white hover:bg-[#F4F3EE] text-[11.5px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 rounded-[9px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
           >
             <Calendar className="h-3.5 w-3.5 text-[#64748B]" />
             <span>{monthlyCashflowOpen ? 'Скрыть помесячный график ▴' : 'График денег 12 мес. ▾'}</span>
@@ -132,41 +132,41 @@ export function PeaklyMasterCabinetsSummary({
           <button
             type="button"
             onClick={() => onNavigateSection('roadmap-tasks')}
-            className="h-8 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold transition cursor-pointer shadow-2xs"
+            className="h-8 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11.5px] font-semibold transition cursor-pointer shadow-2xs"
           >
             Партии и закупки →
           </button>
         </div>
       </div>
 
-      {/* 5 ГЛАВНЫХ ПОКАЗАТЕЛЕЙ ВСЕХ КАБИНЕТОВ НА ГЛАВНОЙ (КРАСИВАЯ ЕДИНАЯ ПОЛОСА PEAKLY) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white border-b border-[#EAE9E2]">
+      {/* 5 ГЛАВНЫХ ПОКАЗАТЕЛЕЙ ВСЕХ КАБИНЕТОВ НА ГЛАВНОЙ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-[#EEF2F6] bg-white border-b border-[#EEF2F6]">
         {/* 1. План продаж (Все кабинеты) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2">
+        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#686762]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                 1. Продажи всех кабинетов
               </span>
-              <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10px] font-bold text-[#141413]">
+              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
                 {gt.modelsCount} SKU · {activeBrandsCount}/5 каб.
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#141413]">
+            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
               {formatMln(gt.annualRevenueRub)}
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11.5px] text-[#686762]">
+          <div className="flex items-center justify-between text-[11.5px] text-[#64748B]">
             <span>
               Пик дек:{' '}
-              <strong className="font-mono text-[#141413]">
+              <strong className="font-mono text-[#0F172A]">
                 {formatMln(gt.decemberRevenueRub)}
               </strong>
             </span>
             <button
               type="button"
               onClick={() => onNavigateSection('launch-calendar')}
-              className="font-bold text-[#141413] hover:underline cursor-pointer"
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
             >
               02 · Продажи →
             </button>
@@ -174,64 +174,64 @@ export function PeaklyMasterCabinetsSummary({
         </div>
 
         {/* 2. Объём и бюджет закупок */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2">
+        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#686762]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                 2. План закупок (Год)
               </span>
-              <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#52514C]">
+              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#475569]">
                 4 кварт. волны
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#141413]">
+            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
               {formatMln(gt.totalProcurementBudgetRub)}
             </div>
           </div>
-          <div className="text-[11px] text-[#52514C] font-medium truncate" title={multiBrandSummary.procurementBreakdownText}>
-            К заказу: <strong className="font-mono text-[#141413]">{multiBrandSummary.procurementBreakdownText}</strong>
+          <div className="text-[11px] text-[#64748B] font-medium truncate" title={multiBrandSummary.procurementBreakdownText}>
+            К заказу: <strong className="font-mono text-[#0F172A]">{multiBrandSummary.procurementBreakdownText}</strong>
           </div>
         </div>
 
         {/* 3. Вложить на старт (1-я волна Q1 + Аванс 30%) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-[#F4FBF7]/70">
+        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#146C43]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                 3. Старт 1-й партии (Q1)
               </span>
-              <span className="rounded-md bg-[#EAF6F0] border border-[#BCE3CF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#146C43]">
+              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
                 Аванс 30%
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F5132]">
+            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
               {formatMln(gt.firstWaveStartBudgetRub)}
             </div>
           </div>
-          <div className="text-[11.5px] text-[#145A38]">
+          <div className="text-[11.5px] text-[#64748B]">
             Предоплата сейчас:{' '}
-            <strong className="font-mono">{formatMln(gt.firstWavePrepaymentRub)}</strong>
+            <strong className="font-mono text-[#0F172A]">{formatMln(gt.firstWavePrepaymentRub)}</strong>
           </div>
         </div>
 
         {/* 4. Пик собственных денег (с учётом оборота WB) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-[#F5F9FF]/70">
+        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#1E40AF]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                 4. Пик своих денег (с WB)
               </span>
-              <span className="rounded-md bg-[#E8F0FE] px-2 py-0.5 font-mono text-[10px] font-bold text-[#1E3A8A]">
+              <span className="rounded-md bg-[#EFF6FF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#1D4ED8]">
                 Оборотный пик
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#1E3A8A]">
+            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
               {gt.verifiedOwnMoneyRequiredRub !== null
                 ? formatMln(gt.verifiedOwnMoneyRequiredRub)
                 : '—'}
             </div>
           </div>
-          <div className="text-[11px] text-[#1E40AF]">
+          <div className="text-[11px] text-[#64748B]">
             {gt.verifiedOwnMoneyRequiredRub !== null
               ? 'Дальнейшие партии — из выручки WB'
               : multiBrandSummary.ownMoneyStatusLabel}
@@ -239,31 +239,31 @@ export function PeaklyMasterCabinetsSummary({
         </div>
 
         {/* 5. Ожидаемая операционная прибыль */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2">
+        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#686762]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                 5. Ожидаемая прибыль
               </span>
-              <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10px] font-bold text-[#146C43]">
+              <span className="rounded-md bg-[#ECFDF5] px-2 py-0.5 font-mono text-[10px] font-bold text-[#059669]">
                 {groupMarginPct.toFixed(1).replace('.', ',')}% маржа
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#157347]">
+            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#059669]">
               +{formatMln(gt.annualEstimatedOperatingProfitRub)}
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11.5px] text-[#686762]">
+          <div className="flex items-center justify-between text-[11.5px] text-[#64748B]">
             <span>
               Себест. продаж:{' '}
-              <strong className="font-mono text-[#141413]">
+              <strong className="font-mono text-[#0F172A]">
                 {formatMln(gt.annualSoldGoodsCostRub)}
               </strong>
             </span>
             <button
               type="button"
               onClick={() => onNavigateSection('finance')}
-              className="font-bold text-[#141413] hover:underline cursor-pointer"
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
             >
               P&L →
             </button>
@@ -272,16 +272,16 @@ export function PeaklyMasterCabinetsSummary({
       </div>
 
       {/* КАРТОЧКИ-СТРОКИ 5 КАБИНЕТОВ / БРЕНДОВ С ИНДИВИДУАЛЬНЫМ СЦЕНАРИЕМ РАЗВИТИЯ КАЖДОГО БРЕНДА */}
-      <div className="p-4 md:p-5 bg-[#FAF9F6]/60 space-y-2.5">
+      <div className="p-4 md:p-5 bg-[#F8FAFC]/70 space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="text-[12.5px] font-bold text-[#141413]">
+          <div className="text-[12.5px] font-bold text-[#0F172A]">
             Кабинеты и бренды группы (нажмите на кабинет для фильтрации или выберите сценарий развития бренда)
           </div>
           {activeBrandFilter !== 'ALL' && (
             <button
               type="button"
               onClick={() => onSelectBrandFilter('ALL')}
-              className="text-[11.5px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-[7px] cursor-pointer transition"
+              className="text-[11.5px] font-bold text-[#1D4ED8] bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] px-2.5 py-1 rounded-[7px] cursor-pointer transition"
             >
               Показать все кабинеты (сейчас: {activeBrandFilter}) ×
             </button>
@@ -308,8 +308,8 @@ export function PeaklyMasterCabinetsSummary({
                 }}
                 className={`rounded-[13px] bg-white border transition-all px-4 py-3 cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${
                   isSelectedBrand
-                    ? 'border-2 border-[#10B981] bg-[#F8FAFC]/50 shadow-[0_4px_16px_-4px_rgba(16,185,129,0.12)]'
-                    : 'border-[#E2E0D8] hover:border-[#94A3B8]'
+                    ? 'border-[#2563EB] ring-2 ring-[#2563EB]/12 bg-white shadow-[0_4px_14px_-4px_rgba(37,99,235,0.12)]'
+                    : 'border-[#E2E8F0] hover:border-[#94A3B8]'
                 }`}
               >
                 {/* Левая часть: Бренд + Категория + Селектор сценария развития бренда */}
@@ -317,12 +317,10 @@ export function PeaklyMasterCabinetsSummary({
                   <div className={`h-9 w-1.5 rounded-full ${accent.accentBar}`} />
                   <div className="min-w-[135px]">
                     <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-extrabold text-[#1E293B]">
+                      <span className="text-[14px] font-extrabold text-[#0F172A]">
                         {b.displayCode}
                       </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-[5px] font-mono text-[10px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-                      >
+                      <span className="px-2 py-0.5 rounded-[5px] font-mono text-[10px] font-bold border bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]">
                         {b.modelsCount} SKU
                       </span>
                     </div>
@@ -334,7 +332,7 @@ export function PeaklyMasterCabinetsSummary({
                   {/* Индивидуальный сценарий развития бренда */}
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1.5 bg-[#FAF9F5] border border-[#E2E0D8] rounded-[9px] p-1"
+                    className="flex items-center gap-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-[9px] p-1"
                   >
                     <span className="text-[10.5px] font-semibold text-[#64748B] pl-1.5">
                       Сценарий:
@@ -350,7 +348,7 @@ export function PeaklyMasterCabinetsSummary({
                           onSelectActiveScenarioId(nextId);
                         }
                       }}
-                      className="h-7 px-2 rounded-[6px] bg-white border border-[#D8D6CE] text-[11.5px] font-bold text-[#1E293B] focus:outline-none cursor-pointer"
+                      className="h-7 px-2 rounded-[6px] bg-white border border-[#E2E8F0] text-[11.5px] font-bold text-[#0F172A] focus:outline-none cursor-pointer"
                     >
                       <option value="">Нет сценария</option>
                       {brandScenarios.map((sc) => (
@@ -359,19 +357,21 @@ export function PeaklyMasterCabinetsSummary({
                         </option>
                       ))}
                     </select>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onOpenCreateScenarioForBrand(
-                          b.brandCode,
-                          `${b.displayCode} — План развития 2027`
-                        )
-                      }
-                      title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
-                      className="h-7 px-2.5 rounded-[6px] bg-[#ECFDF5] hover:bg-[#D1FAE5] border border-[#A7F3D0] text-[#065F46] text-[11px] font-semibold transition cursor-pointer"
-                    >
-                      + Свой сценарий
-                    </button>
+                    {b.hasScenario && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenCreateScenarioForBrand(
+                            b.brandCode,
+                            `${b.displayCode} — План развития 2027`
+                          )
+                        }
+                        title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
+                        className="h-7 px-2.5 rounded-[6px] bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#BFDBFE] text-[#334155] hover:text-[#1D4ED8] text-[11px] font-semibold transition cursor-pointer"
+                      >
+                        + Сценарий
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -379,43 +379,43 @@ export function PeaklyMasterCabinetsSummary({
                 {b.hasScenario && b.hasModels ? (
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 flex-1 lg:max-w-[660px] text-right">
                     <div>
-                      <div className="text-[10px] font-bold uppercase text-[#686762]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
                         Продажи (Год / Дек)
                       </div>
-                      <div className="font-mono text-[13px] font-extrabold text-[#141413]">
+                      <div className="font-mono text-[13px] font-extrabold text-[#0F172A]">
                         {formatMln(b.annualRevenueRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#686760]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         дек: {formatMln(b.decemberRevenueRub)}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-[10px] font-bold uppercase text-[#686762]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
                         Закупки (Объём)
                       </div>
-                      <div className="font-mono text-[13px] font-bold text-[#141413]">
+                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
                         {b.totalProcurementQuantity.toLocaleString('ru-RU')} {b.primaryUnit}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#686760]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         {formatMln(b.totalProcurementBudgetRub)}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-[10px] font-bold uppercase text-[#146C43]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
                         Старт Q1 (Аванс)
                       </div>
-                      <div className="font-mono text-[13px] font-bold text-[#0F5132]">
+                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
                         {formatMln(b.firstWaveStartBudgetRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#146C43]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         аванс: {formatMln(b.firstWavePrepaymentRub)}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-[10px] font-bold uppercase text-[#1E40AF]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
                         Пик своих денег
                       </div>
                       <div className="font-mono text-[13px] font-bold text-[#1E3A8A]">
@@ -423,17 +423,17 @@ export function PeaklyMasterCabinetsSummary({
                           ? formatMln(b.verifiedOwnMoneyRequiredRub)
                           : '—'}
                       </div>
-                      <div className="text-[10px] text-[#686760]">с оборотом WB</div>
+                      <div className="text-[10px] text-[#64748B]">с оборотом WB</div>
                     </div>
 
                     <div>
-                      <div className="text-[10px] font-bold uppercase text-[#157347]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
                         Опер. прибыль
                       </div>
-                      <div className="font-mono text-[13px] font-extrabold text-[#157347]">
+                      <div className="font-mono text-[13px] font-extrabold text-[#059669]">
                         +{formatMln(b.annualEstimatedOperatingProfitRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#686760]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         COGS: {formatMln(b.annualSoldGoodsCostRub)}
                       </div>
                     </div>
@@ -441,9 +441,9 @@ export function PeaklyMasterCabinetsSummary({
                 ) : (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="flex flex-wrap items-center justify-between gap-3 flex-1 lg:max-w-[660px] rounded-[9px] bg-[#FAF9F6] border border-dashed border-[#CECDC4] px-3.5 py-2"
+                    className="flex flex-wrap items-center justify-between gap-3 flex-1 lg:max-w-[660px] rounded-[9px] bg-[#F8FAFC] border border-dashed border-[#CBD5E1] px-3.5 py-2"
                   >
-                    <span className="text-[11.5px] font-medium text-[#52514C]">
+                    <span className="text-[11.5px] font-medium text-[#64748B]">
                       {b.statusMessage || 'Нет данных по сценарию'}
                     </span>
                     <div className="flex items-center gap-2">
@@ -456,7 +456,7 @@ export function PeaklyMasterCabinetsSummary({
                               `${b.displayCode} — Базовый план 2027`
                             )
                           }
-                          className="h-7 px-2.5 rounded-[7px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11px] font-semibold transition cursor-pointer"
+                          className="h-7 px-3 rounded-[7px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold transition cursor-pointer shadow-2xs"
                         >
                           + Создать сценарий
                         </button>
@@ -464,7 +464,7 @@ export function PeaklyMasterCabinetsSummary({
                       <button
                         type="button"
                         onClick={() => onOpenCreateModelForBrand(b.brandCode)}
-                        className="h-7 px-2.5 rounded-[7px] border border-[#CBD5E1] bg-white text-[#1E293B] hover:border-[#146C43] hover:text-[#146C43] text-[11px] font-semibold transition cursor-pointer"
+                        className="h-7 px-2.5 rounded-[7px] border border-[#E2E8F0] bg-white text-[#334155] hover:border-[#94A3B8] hover:text-[#0F172A] text-[11px] font-semibold transition cursor-pointer"
                       >
                         + Добавить товар в {b.displayCode}
                       </button>
@@ -998,19 +998,19 @@ export function PeaklyCatalogGroupsAndBrandsView({
   return (
     <div className="space-y-4">
       {/* ПАНЕЛЬ ПЕРЕКЛЮЧЕНИЯ РЕЖИМОВ КАТАЛОГА И ГРУППИРОВКИ */}
-      <div className="rounded-[14px] bg-[#FAF9F6] border border-[#E2E1D9] p-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="rounded-[14px] bg-white border border-[#E2E8F0] p-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex flex-wrap items-center rounded-[11px] bg-[#F1F0EA] border border-[#DEDDD4] p-1 text-[12px] font-semibold">
+          <div className="inline-flex flex-wrap items-center rounded-[11px] bg-[#F1F5F9] border border-[#E2E8F0] p-1 text-[12px] font-semibold">
             <button
               type="button"
               onClick={() => setDisplayMode('groups')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer inline-flex items-center gap-1.5 ${
                 displayMode === 'groups'
-                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
-                  : 'text-[#52514C] hover:text-[#0F172A]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#E2E8F0]'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
-              <Folder className="h-3.5 w-3.5 text-[#059669]" />
+              <Folder className="h-3.5 w-3.5 text-[#2563EB]" />
               <span>Группы товаров ({visibleGroupsWithMetrics.length})</span>
             </button>
             <button
@@ -1018,8 +1018,8 @@ export function PeaklyCatalogGroupsAndBrandsView({
               onClick={() => setDisplayMode('brands')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer inline-flex items-center gap-1.5 ${
                 displayMode === 'brands'
-                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
-                  : 'text-[#52514C] hover:text-[#0F172A]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#E2E8F0]'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
               <Layers className="h-3.5 w-3.5 text-[#2563EB]" />
@@ -1030,8 +1030,8 @@ export function PeaklyCatalogGroupsAndBrandsView({
               onClick={() => setDisplayMode('grid')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer ${
                 displayMode === 'grid'
-                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
-                  : 'text-[#52514C] hover:text-[#0F172A]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#E2E8F0]'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
               Все карточки ({filteredModels.length})
@@ -1041,12 +1041,12 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Выбор магазина / кабинета WB */}
-          <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#D8D7CE] px-2.5 py-1 text-[12px]">
-            <span className="text-[#686760] font-medium">Кабинет:</span>
+          <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] px-2.5 py-1 text-[12px]">
+            <span className="text-[#64748B] font-medium">Магазин:</span>
             <select
               value={brandFilter}
               onChange={(e) => onSelectBrandFilter(e.target.value)}
-              className="font-bold text-[#1E293B] bg-transparent focus:outline-none cursor-pointer"
+              className="font-bold text-[#0F172A] bg-transparent focus:outline-none cursor-pointer"
             >
               <option value="ALL">Все кабинеты · WB ({models.filter((m) => m.launchStatus !== 'В архиве').length} SKU)</option>
               <option value="BORNERS">BORNERS · WB</option>
@@ -1062,7 +1062,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <button
                 type="button"
                 onClick={handleResetDefaultGroups}
-                className="h-8 px-2.5 rounded-[9px] border border-[#D8D7CE] bg-white hover:bg-[#F4F3EE] text-[11.5px] font-semibold text-[#52514C] cursor-pointer"
+                className="h-8 px-2.5 rounded-[9px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#475569] cursor-pointer"
                 title="Сбросить к авто-группировке по брендам и линейкам"
               >
                 ↺ Авто-группы
@@ -1070,7 +1070,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <button
                 type="button"
                 onClick={openCreateGroupModal}
-                className="h-8 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                className="h-8 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Добавить группу</span>
@@ -1081,21 +1081,18 @@ export function PeaklyCatalogGroupsAndBrandsView({
       </div>
 
       {/* =====================================================================
-          РЕЖИМ 1: ГРУППЫ ТОВАРОВ (КАК НА СКРИНЕ 2, НО В ПРЕМИАЛЬНОМ СТИЛЕ PEAKLY)
+          РЕЖИМ 1: ГРУППЫ ТОВАРОВ
          ===================================================================== */}
       {displayMode === 'groups' && (
         <div className="space-y-2.5">
           {visibleGroupsWithMetrics.map((gm) => {
             const { group } = gm;
             const isExpanded = Boolean(expandedGroupIds[group.id]);
-            const accent = getModelBrandAccentStyles(
-              group.brandCode === 'ALL' ? 'BORNERS' : group.brandCode
-            );
 
             return (
               <div
                 key={group.id}
-                className="rounded-[15px] bg-white border border-[#D8D7CE] hover:border-[#B8B7AE] transition-all overflow-hidden shadow-[0_2px_10px_-4px_rgba(20,20,19,0.05)]"
+                className="rounded-[14px] bg-white border border-[#E2E8F0] hover:border-[#CBD5E1] transition-all overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
               >
                 {/* Строка-папка группы товаров */}
                 <div
@@ -1105,36 +1102,32 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       [group.id]: !prev[group.id],
                     }))
                   }
-                  className="px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-[#FAF9F6]/80 transition"
+                  className="px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-[#F8FAFC]/80 transition"
                 >
                   {/* Иконка папки + Название группы + Бейдж количества артикулов + Бренд */}
                   <div className="flex items-center gap-3 min-w-[260px] flex-1">
-                    <div
-                      className={`h-10 w-10 rounded-[11px] border flex items-center justify-center shrink-0 ${accent.folderBg} ${accent.folderIconText}`}
-                    >
+                    <div className="h-9 w-9 rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] flex items-center justify-center shrink-0">
                       {isExpanded ? (
-                        <FolderOpen className="h-5 w-5" />
+                        <FolderOpen className="h-4.5 w-4.5 text-[#2563EB]" />
                       ) : (
-                        <Folder className="h-5 w-5" />
+                        <Folder className="h-4.5 w-4.5 text-[#64748B]" />
                       )}
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[15px] font-extrabold text-[#141413]">
+                        <span className="text-[14.5px] font-bold text-[#0F172A]">
                           {group.title}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-[7px] bg-[#F2F1EC] border border-[#E2E1D9] font-mono text-[11px] font-bold text-[#52514C]">
+                        <span className="px-2.5 py-0.5 rounded-[6px] bg-[#F1F5F9] font-mono text-[11px] font-semibold text-[#475569]">
                           {gm.modelsCount} артикулов
                         </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-[6px] font-mono text-[10px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-                        >
+                        <span className="px-2 py-0.5 rounded-[6px] font-mono text-[10px] font-semibold bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B]">
                           {group.cabinetLabel}
                         </span>
                       </div>
                       {group.subtitle && (
-                        <p className="text-[11.5px] text-[#686760] mt-0.5 truncate">
+                        <p className="text-[11.5px] text-[#64748B] mt-0.5 truncate">
                           {group.subtitle}
                         </p>
                       )}
@@ -1144,37 +1137,37 @@ export function PeaklyCatalogGroupsAndBrandsView({
                   {/* Сводные показатели группы (Продажи, Закупки, Партии и даты, Маржа) */}
                   <div className="flex flex-wrap items-center gap-5 text-right">
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#686762]">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                         Продажи (Год / Дек)
                       </div>
-                      <div className="font-mono text-[13.5px] font-extrabold text-[#141413]">
+                      <div className="font-mono text-[13px] font-extrabold text-[#0F172A]">
                         {formatMln(gm.annualRevenueRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#686760]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         дек: {formatMln(gm.decRevenueRub)} · {gm.annualPacks.toLocaleString('ru-RU')} {gm.primaryUnit}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#686762]">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                         Закупки и партии
                       </div>
-                      <div className="font-mono text-[13.5px] font-bold text-[#141413]">
+                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
                         {gm.procurementPacks.toLocaleString('ru-RU')} {gm.primaryUnit} · {formatMln(gm.procurementBudgetRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#157347] font-semibold">
+                      <div className="font-mono text-[10.5px] text-[#2563EB] font-semibold">
                         {gm.totalBatchesCount} парт. · заказ до {formatShortDateRu(gm.earliestOrderDateIso)}
                       </div>
                     </div>
 
                     <div className="hidden sm:block">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#146C43]">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                         Старт Q1 (Аванс)
                       </div>
-                      <div className="font-mono text-[13.5px] font-bold text-[#0F5132]">
+                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
                         {formatMln(gm.firstWaveStartRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#146C43]">
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
                         аванс: {formatMln(gm.firstWavePrepayRub)} · маржа {gm.avgMarginPct}%
                       </div>
                     </div>
@@ -1182,14 +1175,14 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     {/* Кнопки управления группой («Настройки группы» + Корзина + Стрелка раскрытия) */}
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-2 pl-2 border-l border-[#EAE9E2]"
+                      className="flex items-center gap-2 pl-2 border-l border-[#EEF2F6]"
                     >
                       <button
                         type="button"
                         onClick={() => openEditGroupModal(group)}
-                        className="h-8.5 px-3 rounded-[9px] border border-[#D8D7CE] bg-white hover:bg-[#FAF9F6] hover:border-[#141413] text-[12px] font-semibold text-[#141413] transition cursor-pointer inline-flex items-center gap-1.5"
+                        className="h-8.5 px-3 rounded-[9px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
                       >
-                        <SlidersHorizontal className="h-3.5 w-3.5 text-[#52514C]" />
+                        <SlidersHorizontal className="h-3.5 w-3.5 text-[#64748B]" />
                         <span>Настройки группы</span>
                       </button>
 
@@ -1197,7 +1190,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                         type="button"
                         onClick={() => handleDeleteGroup(group)}
                         title="Удалить группу"
-                        className="h-8.5 w-8.5 rounded-[9px] border border-transparent hover:border-rose-200 hover:bg-rose-50 text-[#8A8983] hover:text-rose-700 flex items-center justify-center transition cursor-pointer"
+                        className="h-8.5 w-8.5 rounded-[9px] border border-transparent hover:border-rose-200 hover:bg-rose-50 text-[#94A3B8] hover:text-rose-700 flex items-center justify-center transition cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -1210,7 +1203,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                             [group.id]: !prev[group.id],
                           }))
                         }
-                        className="h-8.5 w-8.5 rounded-[9px] bg-[#FAF9F6] hover:bg-[#EFEFE9] flex items-center justify-center text-[#141413] cursor-pointer"
+                        className="h-8.5 w-8.5 rounded-[9px] bg-[#F8FAFC] hover:bg-[#F1F5F9] flex items-center justify-center text-[#475569] cursor-pointer"
                       >
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4" />
@@ -1224,17 +1217,17 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
                 {/* Раскрытое содержимое группы: карточки артикулов */}
                 {isExpanded && (
-                  <div className="p-4 bg-[#FAF9F6] border-t border-[#EAE9E2]">
+                  <div className="p-4 bg-[#F8FAFC] border-t border-[#EEF2F6]">
                     {gm.models.length === 0 ? (
-                      <div className="rounded-[12px] border border-dashed border-[#CECDC4] bg-white p-5 flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-[12.5px] text-[#52514C]">
+                      <div className="rounded-[12px] border border-dashed border-[#CBD5E1] bg-white p-5 flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-[12.5px] text-[#64748B]">
                           В группе «{group.title}» пока не выбрано артикулов.
                         </span>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => openEditGroupModal(group)}
-                            className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
+                            className="h-8 px-3 rounded-[8px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11.5px] font-semibold cursor-pointer"
                           >
                             Выбрать артикулы для группы
                           </button>
@@ -1245,7 +1238,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                                 group.brandCode === 'ALL' ? 'BORNERS' : group.brandCode
                               )
                             }
-                            className="h-8 px-3 rounded-[8px] border border-[#D8D7CE] bg-white text-[11.5px] font-semibold text-[#1E293B] cursor-pointer"
+                            className="h-8 px-3 rounded-[8px] border border-[#E2E8F0] bg-white text-[11.5px] font-semibold text-[#334155] cursor-pointer"
                           >
                             + Новый артикул
                           </button>
@@ -1276,41 +1269,39 @@ export function PeaklyCatalogGroupsAndBrandsView({
             return (
               <div
                 key={sec.brandCode}
-                className="rounded-[18px] bg-white border border-[#D4D3CA] overflow-hidden shadow-[0_4px_18px_-6px_rgba(20,20,19,0.05)]"
+                className="rounded-[16px] bg-white border border-[#E2E8F0] overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]"
               >
                 {/* Шапка каталога конкретного бренда */}
-                <div className="px-5 py-4 bg-[#FAF9F6] border-b border-[#EAE9E2] flex flex-wrap items-center justify-between gap-4">
+                <div className="px-5 py-4 bg-[#F8FAFC] border-b border-[#EEF2F6] flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className={`h-10 w-2 rounded-full ${accent.accentBar}`} />
+                    <div className={`h-10 w-1.5 rounded-full ${accent.accentBar}`} />
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-[18px] font-extrabold text-[#141413]">
+                        <h3 className="text-[17px] font-extrabold text-[#0F172A]">
                           Каталог бренда {sec.displayCode}
                         </h3>
-                        <span
-                          className={`px-2.5 py-0.5 rounded-[6px] font-mono text-[11px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-                        >
+                        <span className="px-2.5 py-0.5 rounded-[6px] font-mono text-[11px] font-bold border bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]">
                           {sec.models.length} SKU · {sec.cabinetLabel}
                         </span>
-                        <span className="text-[11.5px] font-medium text-[#686760]">
+                        <span className="text-[11.5px] font-medium text-[#64748B]">
                           {sec.categoryLabel} ({sec.primaryUnit} / {sec.secondaryUnit})
                         </span>
                       </div>
-                      <div className="text-[11.5px] text-[#52514C] mt-0.5 flex flex-wrap items-center gap-3">
+                      <div className="text-[11.5px] text-[#64748B] mt-0.5 flex flex-wrap items-center gap-3">
                         <span>
-                          Продажи год: <strong className="font-mono text-[#141413]">{formatMln(sec.annualRevenueRub)}</strong> (дек: {formatMln(sec.decRevenueRub)})
+                          Продажи год: <strong className="font-mono text-[#0F172A]">{formatMln(sec.annualRevenueRub)}</strong> (дек: {formatMln(sec.decRevenueRub)})
                         </span>
                         <span>·</span>
                         <span>
-                          Закупки: <strong className="font-mono text-[#141413]">{sec.procurementPacks.toLocaleString('ru-RU')} {sec.primaryUnit}</strong> ({formatMln(sec.procurementBudgetRub)})
+                          Закупки: <strong className="font-mono text-[#0F172A]">{sec.procurementPacks.toLocaleString('ru-RU')} {sec.primaryUnit}</strong> ({formatMln(sec.procurementBudgetRub)})
                         </span>
                         <span>·</span>
                         <span>
-                          Старт Q1: <strong className="font-mono text-[#146C43]">{formatMln(sec.firstWaveStartRub)}</strong> (аванс {formatMln(sec.firstWavePrepayRub)})
+                          Старт Q1: <strong className="font-mono text-[#0F172A]">{formatMln(sec.firstWaveStartRub)}</strong> (аванс {formatMln(sec.firstWavePrepayRub)})
                         </span>
                         <span>·</span>
                         <span>
-                          Партий: <strong className="font-mono text-[#141413]">{sec.totalBatchesCount}</strong> (ближ. заказ до {formatShortDateRu(sec.earliestOrderDateIso)})
+                          Партий: <strong className="font-mono text-[#0F172A]">{sec.totalBatchesCount}</strong> (ближ. заказ до {formatShortDateRu(sec.earliestOrderDateIso)})
                         </span>
                       </div>
                     </div>
@@ -1318,8 +1309,8 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {onSelectScenarioForBrand && (
-                      <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#D8D7CE] px-2.5 py-1 text-[11.5px]">
-                        <span className="text-[#686760] font-medium">Сценарий:</span>
+                      <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#E2E8F0] px-2.5 py-1 text-[11.5px]">
+                        <span className="text-[#64748B] font-medium">Сценарий:</span>
                         <select
                           value={
                             selectedScenarioByBrand?.[sec.brandCode] ??
@@ -1333,7 +1324,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                               onSelectActiveScenarioId(nextId);
                             }
                           }}
-                          className="font-bold text-[#141413] bg-transparent focus:outline-none cursor-pointer max-w-[190px]"
+                          className="font-bold text-[#0F172A] bg-transparent focus:outline-none cursor-pointer max-w-[190px]"
                         >
                           {getScenariosForBrand(scenarios, sec.brandCode).map((sc) => (
                             <option key={sc.id} value={sc.id}>
@@ -1353,7 +1344,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                               )
                             }
                             title={`Создать свой сценарий для ${sec.displayCode}`}
-                            className="h-6 px-1.5 rounded bg-[#FAF9F6] hover:bg-[#EFEFE9] border border-[#D8D7CE] text-[10.5px] font-bold text-[#141413] cursor-pointer"
+                            className="h-6 px-1.5 rounded bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] text-[10.5px] font-bold text-[#334155] hover:text-[#1D4ED8] cursor-pointer"
                           >
                             + Свой
                           </button>
@@ -1364,7 +1355,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     <button
                       type="button"
                       onClick={() => onOpenCreateModel(sec.brandCode)}
-                      className="h-8.5 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer shrink-0 shadow-2xs"
+                      className="h-8.5 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold transition cursor-pointer shrink-0 shadow-2xs"
                     >
                       + Добавить товар в {sec.displayCode}
                     </button>
@@ -1374,17 +1365,17 @@ export function PeaklyCatalogGroupsAndBrandsView({
                 {/* Сетка карточек этого бренда */}
                 <div className="p-4 md:p-5">
                   {sec.models.length === 0 ? (
-                    <div className="rounded-[12px] border border-dashed border-[#CECDC4] bg-[#FAF9F6] p-6 text-center space-y-2">
-                      <div className="text-[14px] font-bold text-[#1E293B]">
+                    <div className="rounded-[12px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-6 text-center space-y-2">
+                      <div className="text-[14px] font-bold text-[#0F172A]">
                         Каталог бренда {sec.displayCode} пока пуст
                       </div>
-                      <p className="text-[12px] text-[#686760] max-w-md mx-auto">
+                      <p className="text-[12px] text-[#64748B] max-w-md mx-auto">
                         Добавьте первую позицию ({sec.categoryLabel}) — она автоматически получит единицу измерения «{sec.primaryUnit}» и нулевой стартовый план без выдуманных цифр.
                       </p>
                       <button
                         type="button"
                         onClick={() => onOpenCreateModel(sec.brandCode)}
-                        className="mt-1 h-8.5 px-4 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                        className="mt-1 h-8.5 px-4 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
                       >
                         + Создать первую карточку {sec.displayCode}
                       </button>

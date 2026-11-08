@@ -2,23 +2,23 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Monochrome-First дизайн-система в духе Peakly / Linear:
-   спокойный светлый холст + 100% чисто-белые карточки + цвет только как сигнал данных */
+/* Чистая современная SaaS дизайн-система:
+   свежий светлый сланцевый холст (#F6F8FB) + чисто-белые карточки (#FFFFFF) + тонкие 1px границы (#E4E8F0) */
 :root {
-  --bg-page: #F1F1ED;
+  --bg-page: #F6F8FB;
   --bg-card: #FFFFFF;
-  --bg-subtle: #EAEAE4;
-  --bg-warm-tint: #F7F7F4;
-  --text-primary: #141413;
-  --text-secondary: #5E5D58;
-  --border-color: #CECDC4;
-  --border-strong: #141413;
-  --bg-dark-block: #141413;
-  --brand-borners: #141413;
-  --brand-natele: #52524E;
-  --status-success: #157347;
-  --status-warning: #B45309;
-  --status-error: #C93B3B;
+  --bg-subtle: #EEF2F6;
+  --bg-warm-tint: #F8FAFC;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --border-color: #E2E8F0;
+  --border-strong: #2563EB;
+  --bg-dark-block: #0F172A;
+  --brand-borners: #1E3A8A;
+  --brand-natele: #475569;
+  --status-success: #059669;
+  --status-warning: #D97706;
+  --status-error: #DC2626;
 }
 
 html {
@@ -61,28 +61,32 @@ h2.font-serif-editorial {
   line-height: 1.22 !important;
 }
 
-/* Чёткие структурные линии таблиц и секций */
+/* Тонкие и чистые структурные линии таблиц и секций */
 table thead tr {
-  border-bottom: 1.5px solid #CECDC4 !important;
+  border-bottom: 1px solid #E2E8F0 !important;
 }
 
 table tbody tr + tr {
-  border-top: 1px solid #E4E3DC;
+  border-top: 1px solid #EEF2F6;
 }
 
-/* Замена старых рамок на единую чёткую архитектурную 1.5px границу по всей системе */
+/* Мягкие деликатные 1px рамки вместо тяжёлых бежевых 1.5px границ */
 .border-2.border-\[\#181715\],
 .border-\[\#E8E8E5\],
 .border-\[\#EAE6DF\],
 .border-\[\#E6E0D4\],
-.border-\[\#CFC8BC\] {
-  border-width: 1.5px !important;
-  border-color: #CECDC4 !important;
+.border-\[\#CFC8BC\],
+.border-\[\#D6D5CD\],
+.border-\[\#DEDDD5\],
+.border-\[\#CECDC4\] {
+  border-width: 1px !important;
+  border-color: #E2E8F0 !important;
 }
 
 .divide-\[\#E8E8E5\] > :not([hidden]) ~ :not([hidden]),
-.divide-\[\#CFC8BC\] > :not([hidden]) ~ :not([hidden]) {
-  border-color: #DFDED6 !important;
+.divide-\[\#CFC8BC\] > :not([hidden]) ~ :not([hidden]),
+.divide-\[\#EAE9E2\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #EEF2F6 !important;
 }
 
 /* Чистый и мягкий фокус без агрессивных чёрных рамок при клике */

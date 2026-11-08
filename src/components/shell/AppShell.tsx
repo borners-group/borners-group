@@ -995,10 +995,10 @@ export function AppShell() {
 
   return (
     <div>
-      <div className="min-h-screen bg-[#F1F1ED] text-[#141413] flex flex-col overflow-x-hidden">
+      <div className="min-h-screen bg-[#F6F8FB] text-[#0F172A] flex flex-col overflow-x-hidden">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-50 h-[58px] bg-white/97 backdrop-blur-md border-b-[1.5px] border-[#C8C7BE] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+          <header className="sticky top-0 z-50 h-[58px] bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -1007,7 +1007,7 @@ export function AppShell() {
                 title="Перейти на главную сводку сценариев BORNERS"
                 className="inline-flex items-center gap-2.5 pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
               >
-                <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F4F4F0] border-[1.5px] border-[#CECDC4] group-hover:border-[#141413] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
+                <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="./images/products/borners-lion-emblem.png"
@@ -1016,19 +1016,19 @@ export function AppShell() {
                   />
                 </span>
                 <span className="hidden sm:flex flex-col">
-                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#141413] leading-none">
-                    BORNERS<sup className="text-[9px] font-semibold ml-0.5 text-[#686762]">®</sup>
+                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#0F172A] leading-none">
+                    BORNERS<sup className="text-[9px] font-semibold ml-0.5 text-[#64748B]">®</sup>
                   </span>
-                  <span className="text-[9.5px] font-medium text-[#686762] mt-0.5">
+                  <span className="text-[9.5px] font-medium text-[#64748B] mt-0.5">
                     Strategy · 2027
                   </span>
                 </span>
               </button>
 
-              <div className="h-4 w-[1.5px] bg-[#D5D4CC] hidden sm:block" />
+              <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block" />
 
               {/* Кнопки Назад (←) и Вперёд (→) */}
-              <div className="inline-flex items-center rounded-[8px] bg-[#F4F4F0] border-[1.5px] border-[#CECDC4] p-0.5 shrink-0">
+              <div className="inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={goBack}
@@ -1037,8 +1037,8 @@ export function AppShell() {
                   aria-label="Назад"
                   className={`inline-flex items-center justify-center h-7 w-7 rounded-[6px] transition ${
                     canGoBack
-                      ? 'text-[#141413] hover:bg-white cursor-pointer'
-                      : 'text-[#B5B4AD] opacity-55 cursor-not-allowed'
+                      ? 'text-[#0F172A] hover:bg-white cursor-pointer'
+                      : 'text-[#94A3B8] opacity-55 cursor-not-allowed'
                   }`}
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -1051,8 +1051,8 @@ export function AppShell() {
                   aria-label="Вперёд"
                   className={`inline-flex items-center justify-center h-7 w-7 rounded-[6px] transition ${
                     canGoForward
-                      ? 'text-[#141413] hover:bg-white cursor-pointer'
-                      : 'text-[#B5B4AD] opacity-55 cursor-not-allowed'
+                      ? 'text-[#0F172A] hover:bg-white cursor-pointer'
+                      : 'text-[#94A3B8] opacity-55 cursor-not-allowed'
                   }`}
                 >
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -1060,7 +1060,7 @@ export function AppShell() {
               </div>
 
               {swipeFeedback && (
-                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3.5 py-1.5 rounded-full bg-[#141413]/92 text-white text-[12px] font-semibold shadow-lg flex items-center gap-1.5">
+                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3.5 py-1.5 rounded-full bg-[#0F172A]/92 text-white text-[12px] font-semibold shadow-lg flex items-center gap-1.5">
                   {swipeFeedback === 'back' ? (
                     <>
                       <ArrowLeft className="h-3.5 w-3.5" />
@@ -1080,7 +1080,7 @@ export function AppShell() {
                 <button
                   type="button"
                   onClick={() => setBrandDropdownOpen(!brandDropdownOpen)}
-                  className="h-8.5 px-3 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12.5px] text-[#141413] inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-8.5 px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12.5px] text-[#0F172A] inline-flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <span className="font-semibold truncate max-w-[120px] sm:max-w-none">
                     {brandFilter === 'ALL'
@@ -1096,7 +1096,7 @@ export function AppShell() {
                       : brands.find((b) => b.code === brandFilter || b.id === brandFilter)?.name ||
                         brandFilter}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-[#686762]" />
+                  <ChevronDown className="h-3.5 w-3.5 text-[#64748B]" />
                 </button>
 
                 {brandDropdownOpen && (
@@ -1105,7 +1105,7 @@ export function AppShell() {
                       className="fixed inset-0 z-40"
                       onClick={() => setBrandDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 mt-1.5 w-64 rounded-[14px] bg-white border border-[#D8D6CE] shadow-[0_18px_40px_rgba(15,23,42,0.12)] p-1.5 z-50 text-[12.5px] space-y-0.5">
+                    <div className="absolute left-0 mt-1.5 w-64 rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_16px_36px_rgba(15,23,42,0.1)] p-1.5 z-50 text-[12.5px] space-y-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1114,14 +1114,14 @@ export function AppShell() {
                         }}
                         className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
                           brandFilter === 'ALL'
-                            ? 'bg-[#ECFDF5] text-[#065F46] font-bold border border-[#A7F3D0]'
-                            : 'text-[#1E293B] hover:bg-[#F5F5F1]'
+                            ? 'bg-[#EFF6FF] text-[#1D4ED8] font-bold border border-[#BFDBFE]'
+                            : 'text-[#1E293B] hover:bg-[#F8FAFC]'
                         }`}
                       >
                         <span>Все бренды</span>
                         <span
                           className={`font-mono text-[10px] ${
-                            brandFilter === 'ALL' ? 'text-[#047857]' : 'text-[#8A8983]'
+                            brandFilter === 'ALL' ? 'text-[#2563EB]' : 'text-[#64748B]'
                           }`}
                         >
                           Сводка группы
@@ -1160,14 +1160,14 @@ export function AppShell() {
                             }}
                             className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
                               isSelected
-                                ? 'bg-[#ECFDF5] text-[#065F46] font-bold border border-[#A7F3D0]'
-                                : 'text-[#1E293B] hover:bg-[#F5F5F1]'
+                                ? 'bg-[#EFF6FF] text-[#1D4ED8] font-bold border border-[#BFDBFE]'
+                                : 'text-[#1E293B] hover:bg-[#F8FAFC]'
                             }`}
                           >
                             <span>{bItem.label}</span>
                             <span
                               className={`font-mono text-[10px] ${
-                                isSelected ? 'text-[#047857]' : 'text-[#8A8983]'
+                                isSelected ? 'text-[#2563EB]' : 'text-[#64748B]'
                               }`}
                             >
                               {bItem.sub}
@@ -1185,12 +1185,12 @@ export function AppShell() {
             <nav
               aria-label="Цепочка контуров BORNERS"
               data-tour="sidebar-nav"
-              className="hidden xl:flex items-center rounded-[11px] bg-[#F1F0EA] border border-[#DEDDD4] p-0.5 gap-0.5"
+              className="hidden xl:flex items-center rounded-[11px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 gap-0.5"
             >
               {pipelineSteps.map((item, idx) => (
                 <React.Fragment key={item.key}>
                   {idx > 0 && (
-                    <div className="h-3.5 w-[1px] bg-[#DEDDD4] mx-0.5 shrink-0" />
+                    <div className="h-3.5 w-[1px] bg-[#E2E8F0] mx-0.5 shrink-0" />
                   )}
                   <button
                     type="button"
@@ -1205,14 +1205,14 @@ export function AppShell() {
                     }}
                     className={`h-7.5 px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1.5 transition cursor-pointer ${
                       item.isActive
-                        ? 'bg-white text-[#0F172A] font-bold shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
-                        : 'text-[#5A5953] hover:text-[#0F172A] hover:bg-white/60 font-semibold'
+                        ? 'bg-white text-[#0F172A] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#E2E8F0]'
+                        : 'text-[#475569] hover:text-[#0F172A] hover:bg-white/60 font-semibold'
                     }`}
                   >
                     {item.step && (
                       <span
                         className={`font-mono text-[10.5px] ${
-                          item.isActive ? 'text-[#047857]' : 'text-[#7E7D77]'
+                          item.isActive ? 'text-[#2563EB]' : 'text-[#64748B]'
                         }`}
                       >
                         {item.step}
@@ -1223,8 +1223,8 @@ export function AppShell() {
                       <span
                         className={`font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
                           item.isActive
-                            ? 'bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]'
-                            : 'bg-white text-[#3F3E3A] border border-[#D8D6CE]'
+                            ? 'bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]'
+                            : 'bg-white text-[#475569] border border-[#E2E8F0]'
                         }`}
                       >
                         {item.badge}
@@ -1243,14 +1243,14 @@ export function AppShell() {
                 aria-expanded={atlasOpen}
                 className={`inline-flex items-center gap-1.5 h-8.5 px-3.5 rounded-[9px] border text-[12.5px] font-bold transition cursor-pointer ${
                   atlasOpen
-                    ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
-                    : 'bg-white hover:border-[#8A8983] text-[#1E293B] border-[#CECDC4]'
+                    ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'
+                    : 'bg-white hover:border-[#94A3B8] text-[#1E293B] border-[#E2E8F0]'
                 }`}
               >
                 <span>Все разделы</span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 transition-transform ${
-                    atlasOpen ? 'rotate-180 text-[#065F46]' : 'text-[#5E5D58]'
+                    atlasOpen ? 'rotate-180 text-[#1D4ED8]' : 'text-[#64748B]'
                   }`}
                 />
               </button>
@@ -1263,10 +1263,10 @@ export function AppShell() {
                   setSearchModalOpen(true);
                 }}
                 aria-label="Глобальный поиск"
-                className="inline-flex items-center gap-1.5 h-8.5 rounded-[9px] bg-white hover:border-[#8A8983] border border-[#CECDC4] px-3 text-[12px] font-semibold text-[#1E293B] transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-3 text-[12px] font-semibold text-[#1E293B] transition cursor-pointer"
               >
                 <span>Поиск</span>
-                <span className="hidden md:inline font-mono text-[10px] text-[#686762] px-1 py-0.2 rounded bg-[#F4F4F0] border border-[#D8D7CF]">
+                <span className="hidden md:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] border border-[#E2E8F0]">
                   ⌘K
                 </span>
               </button>
@@ -1276,9 +1276,9 @@ export function AppShell() {
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="inline-flex items-center gap-2 h-8.5 rounded-[9px] bg-white hover:border-[#8A8983] border border-[#CECDC4] pl-2 pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
+                  className="inline-flex items-center gap-2 h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] pl-2 pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
                 >
-                  <span className="h-5 w-5 rounded-[5px] bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] flex items-center justify-center font-mono text-[10px] font-bold">
+                  <span className="h-5 w-5 rounded-[5px] bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] flex items-center justify-center font-mono text-[10px] font-bold">
                     {currentUser.avatarInitials}
                   </span>
                   <span className="hidden sm:inline text-[#1E293B]">
