@@ -1021,8 +1021,13 @@ export function computeModelScenarioMetrics(
   const annualUnits = annualPacks * model.unitsInPack;
   const avgMonthlyPacks = Math.round(annualPacks / 12);
 
+  const targetMonthIdx = scenario.targetMonthIdx ?? 11;
+  const fallbackScenarioPriceRub =
+    plan.monthlyPricesRub[targetMonthIdx] ??
+    plan.monthlyPricesRub.find((p) => p > 0) ??
+    model.retailPriceRub;
   const avgRetailPriceRub =
-    annualPacks > 0 ? Math.round(annualRevenueRub / annualPacks) : model.retailPriceRub;
+    annualPacks > 0 ? Math.round(annualRevenueRub / annualPacks) : fallbackScenarioPriceRub;
 
   const noCostSpecified = model.unitCostRub <= 0;
 
@@ -1040,7 +1045,6 @@ export function computeModelScenarioMetrics(
       : 0;
 
   // Выручка в целевом месяце (декабрь = индекс 11)
-  const targetMonthIdx = scenario.targetMonthIdx ?? 11;
   const targetMonthRevenueRub = monthlyRevenuesRub[targetMonthIdx] || 0;
   const targetMonthPacks = plan.monthlyPacks[targetMonthIdx] || 0;
   const scenarioTargetRub =
@@ -1161,9 +1165,11 @@ export function autoDistributeScenarioByPriority(
   options?: {
     keepActingWbFixed?: boolean;
     targetMonthlyMlnOverride?: number;
+    includeGroupPortfolioInS1?: boolean;
   }
 ): ScenarioModelSpec[] {
   const keepActingWbFixed = options?.keepActingWbFixed ?? true;
+  const includeGroupPortfolioInS1 = options?.includeGroupPortfolioInS1 ?? false;
   const targetMln = options?.targetMonthlyMlnOverride ?? scenario.monthlyTargetMln;
   const targetDecRub = Math.round(targetMln * 1_000_000);
   const targetMonthIdx = scenario.targetMonthIdx ?? 11;
@@ -1180,7 +1186,7 @@ export function autoDistributeScenarioByPriority(
     ) {
       return false;
     }
-    if (isUnverifiedActingSku(m.code)) {
+    if (scenario.id === 1 && !includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
       return false;
     }
     return scenario.includedBrands.includes(m.brandId);

@@ -1521,6 +1521,102 @@ test('32. Комплексный аудит багов: синхронизаци
   assert.ok(showcaseSource.includes('Показать все модели сценария'));
 });
 
+test('33. Раунд 2 аудита багов: точность авто-расчёта в Сценариях №2/№3 и с FUKAI, 100% сходимость таблицы 5 брендов без потери WB 86205435, синхронизация цен и статусов жизненного цикла', () => {
+  const fullPortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ];
+  const scenActing = INITIAL_SCENARIOS.find((s) => s.id === 100)!;
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const scen2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+
+  // 1. В Сценарии №2 (150 млн) авто-расчёт учитывает все 7 действующих WB SKU (22,73 млн ₽ в дек) и не превышает цель на +7,69 млн ₽
+  const distributedS2 = autoDistributeScenarioByPriority(fullPortfolio, scen2, {
+    keepActingWbFixed: true,
+    targetMonthlyMlnOverride: 150,
+  });
+  const totalDecRevS2 = distributedS2.reduce(
+    (sum, m) => sum + computeModelScenarioMetrics(m, scen2).targetMonthRevenueRub,
+    0
+  );
+  // Разница с 150 млн ₽ должна быть минимальной (только из-за округления комплектов до целых штук, < 0.25 млн ₽)
+  assert.ok(
+    Math.abs(totalDecRevS2 - 150_000_000) < 250_000,
+    `Ожидалось ~150 млн ₽ в дек Сценария №2, получено ${totalDecRevS2}`
+  );
+
+  // А в Сценарии №1 с подключённым портфелем группы (includeGroupPortfolioInS1: true) все 23 SKU дают ровно ~100 млн ₽
+  const distributedS1WithFukai = autoDistributeScenarioByPriority(fullPortfolio, scen1, {
+    keepActingWbFixed: true,
+    targetMonthlyMlnOverride: 100,
+    includeGroupPortfolioInS1: true,
+  });
+  const totalDecRevS1WithFukai = distributedS1WithFukai.reduce(
+    (sum, m) => sum + computeModelScenarioMetrics(m, scen1).targetMonthRevenueRub,
+    0
+  );
+  assert.ok(
+    Math.abs(totalDecRevS1WithFukai - 100_000_000) < 250_000,
+    `Ожидалось ~100 млн ₽ в дек Сценария №1 (с FUKAI), получено ${totalDecRevS1WithFukai}`
+  );
+
+  // 2. Сводная таблица 5 брендов (computeGroupBrandsInvestmentReport) не теряет WB 86205435 (trus10): сумма моделей по строкам брендов = ИТОГО ПО ГРУППЕ
+  const actingBrandsReport = computeGroupBrandsInvestmentReport(
+    ACTING_2027_SCENARIO_MODELS,
+    scenActing
+  );
+  const sumActingBrandModels = actingBrandsReport.brands.reduce(
+    (sum, b) => sum + b.modelsCount,
+    0
+  );
+  const sumActingBrandRev = actingBrandsReport.brands.reduce(
+    (sum, b) => sum + b.annualRevenueRub,
+    0
+  );
+  assert.equal(sumActingBrandModels, actingBrandsReport.groupTotal.modelsCount);
+  assert.equal(sumActingBrandRev, actingBrandsReport.groupTotal.annualRevenueRub);
+
+  const s2BrandsReport = computeGroupBrandsInvestmentReport(fullPortfolio, scen2);
+  const sumS2BrandModels = s2BrandsReport.brands.reduce((sum, b) => sum + b.modelsCount, 0);
+  const sumS2BrandRev = s2BrandsReport.brands.reduce(
+    (sum, b) => sum + b.annualRevenueRub,
+    0
+  );
+  assert.equal(sumS2BrandModels, 23);
+  assert.equal(sumS2BrandModels, s2BrandsReport.groupTotal.modelsCount);
+  assert.equal(sumS2BrandRev, s2BrandsReport.groupTotal.annualRevenueRub);
+
+  // 3. computeModelScenarioMetrics использует цену сценария даже при 0 комплектов, а витрина и матрица продаж отображают met.avgRetailPriceRub
+  const sampleMod = S1_100M_SCENARIO_MODELS[0];
+  const zeroPacksCustomPriceMod = {
+    ...sampleMod,
+    plansByScenario: {
+      ...sampleMod.plansByScenario,
+      [scen2.id]: {
+        ...sampleMod.plansByScenario[scen2.id],
+        monthlyPacks: Array(12).fill(0),
+        monthlyPricesRub: Array(12).fill(3450),
+      },
+    },
+  };
+  const zeroMet = computeModelScenarioMetrics(zeroPacksCustomPriceMod, scen2);
+  assert.equal(zeroMet.avgRetailPriceRub, 3450);
+
+  // 4. Проверка синхронизации цены, годового бюджета закупок и статуса жизненного цикла в исходном коде компонентов
+  const workbenchSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/SkuProcurementMvpWorkbench.tsx'),
+    'utf-8'
+  );
+  const showcaseSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf-8'
+  );
+  assert.ok(workbenchSource.includes('modelStageStatus: nextStageStatus'));
+  assert.ok(showcaseSource.includes('v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub'));
+  assert.ok(showcaseSource.includes('generateNextUniqueModelCode'));
+});
+
+
 
 
 

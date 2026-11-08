@@ -1157,6 +1157,7 @@ export function GrowthScenariosShowcase({
       autoDistributeScenarioByPriority(prev, currentScenario, {
         keepActingWbFixed: true,
         targetMonthlyMlnOverride: targetMln,
+        includeGroupPortfolioInS1,
       })
     );
     notify(
@@ -1198,13 +1199,26 @@ export function GrowthScenariosShowcase({
     );
   };
 
+  const generateNextUniqueModelCode = (existingModels: ScenarioModelSpec[]): string => {
+    const usedNums = new Set<number>();
+    existingModels.forEach((m) => {
+      const match = m.code.match(/^№?0*(\d+)$/);
+      if (match) usedNums.add(Number(match[1]));
+    });
+    let candidate = Math.max(existingModels.length + 1, 24);
+    while (usedNums.has(candidate)) {
+      candidate += 1;
+    }
+    return `№${String(candidate).padStart(3, '0')}`;
+  };
+
   // Дублирование модели (п. 4.1)
   const handleDuplicateModel = (source: ScenarioModelSpec) => {
-    const nextNum = String(models.length + 1).padStart(3, '0');
+    const nextCode = generateNextUniqueModelCode(models);
     const copy: ScenarioModelSpec = {
       ...source,
       id: `scen-model-${Date.now()}`,
-      code: `№${nextNum}`,
+      code: nextCode,
       title: `${source.title} (КОПИЯ)`,
       launchStatus: 'В плане',
       hasActualSalesOrPurchases: false,
@@ -1244,7 +1258,7 @@ export function GrowthScenariosShowcase({
 
   // Создание новой модели через короткую форму (п. 7.1, Тест 11)
   const createAndSaveModel = (openCardAfterSave: boolean) => {
-    const nextNum = String(models.length + 1).padStart(3, '0');
+    const nextCode = generateNextUniqueModelCode(models);
     const cleanTitle = draftTitle.trim() || `НОВАЯ МОДЕЛЬ ${draftUnitsInPack} PACK`;
     const newId = `scen-model-${Date.now()}`;
 
@@ -1253,6 +1267,9 @@ export function GrowthScenariosShowcase({
     ];
     const plansByScenario: ScenarioModelSpec['plansByScenario'] = {};
     scenarios.forEach((sc) => {
+      if (sc.id === ACTING_2027_SCENARIO_ID && currentScenario.id !== ACTING_2027_SCENARIO_ID) {
+        return;
+      }
       plansByScenario[sc.id] = {
         scenarioId: sc.id,
         monthlyPacks: [...basePlanPacks],
@@ -1261,9 +1278,9 @@ export function GrowthScenariosShowcase({
         initialStockPacks: 0,
         firstOrderPacks: 6000,
         nextOrderDateLabel: '20 мая 2027',
-        salesStartMonthIdx: 2,
-        warehouseArrivalMonthIdx: 2,
-        warehouseArrivalDateLabel: '18 марта',
+        salesStartMonthIdx: 0,
+        warehouseArrivalMonthIdx: 0,
+        warehouseArrivalDateLabel: '1 января',
       };
     });
 
@@ -1281,7 +1298,7 @@ export function GrowthScenariosShowcase({
     const created: ScenarioModelSpec = {
       ...INITIAL_SCENARIO_MODELS[0],
       id: newId,
-      code: `№${nextNum}`,
+      code: nextCode,
       title: cleanTitle.toUpperCase(),
       subtitle: `${draftType} · ${draftUnitsInPack} шт. в комплекте`,
       brandId: draftBrand === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
@@ -2051,9 +2068,8 @@ export function GrowthScenariosShowcase({
                 currentAgg.annualBuyoutsPacks > 0
                   ? Math.round(currentAgg.annualRevenueRub / currentAgg.annualBuyoutsPacks)
                   : 0;
-              const procBudgetRub = isActing
-                ? currentAgg.totalPurchaseNeedRub
-                : v11ScenarioSummary.recommendedBudgetRub;
+              const procBudgetRub =
+                v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub;
               const procBudgetMln = (procBudgetRub / 1_000_000).toFixed(2).replace('.', ',');
               const cogsShareNum =
                 currentAgg.annualRevenueRub > 0
@@ -2386,7 +2402,17 @@ export function GrowthScenariosShowcase({
                       </thead>
                       <tbody className="divide-y divide-[#ECEBE4]">
                         {v11ScenarioSummary.brandsReport.brands.map((b) => (
-                          <tr key={b.brandCode} className="hover:bg-[#FAF9F6]">
+                          <tr
+                            key={b.brandCode}
+                            onClick={() => {
+                              setBrandFilterLocal(b.brandCode);
+                              setBrandFilter(b.brandCode);
+                            }}
+                            title={`Фильтровать витрину по бренду ${b.brandTitle}`}
+                            className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
+                              brandFilterLocal === b.brandCode ? 'bg-amber-50/70' : ''
+                            }`}
+                          >
                             <td className="py-2 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
                             <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
                               {b.modelsCount}
@@ -2430,7 +2456,14 @@ export function GrowthScenariosShowcase({
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t border-[#CECDC4]">
+                        <tr
+                          onClick={() => {
+                            setBrandFilterLocal('ALL');
+                            setBrandFilter('ALL');
+                          }}
+                          title="Показать все бренды группы"
+                          className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t border-[#CECDC4] cursor-pointer hover:bg-[#EFEFE9] transition"
+                        >
                           <td className="py-2.5 px-3">ИТОГО ПО ГРУППЕ</td>
                           <td className="py-2.5 px-2.5 text-right font-mono">
                             {v11ScenarioSummary.brandsReport.groupTotal.modelsCount}
@@ -2774,7 +2807,7 @@ export function GrowthScenariosShowcase({
                   )}
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
-                  {brandFilterLocal === 'NA_TELE' && (
+                  {brandFilterLocal === 'NA_TELE' && currentScenario.id !== 2 && (
                     <button
                       type="button"
                       onClick={() => setSelectedScenarioId(2)}
@@ -2783,7 +2816,9 @@ export function GrowthScenariosShowcase({
                       Переключить на Сценарий №2 (150 млн)
                     </button>
                   )}
-                  {(brandFilterLocal === 'AKUSHA' || brandFilterLocal === 'LISKANI') && (
+                  {(brandFilterLocal === 'NA_TELE' ||
+                    brandFilterLocal === 'AKUSHA' ||
+                    brandFilterLocal === 'LISKANI') && (
                     <button
                       type="button"
                       onClick={() => {
@@ -2792,7 +2827,13 @@ export function GrowthScenariosShowcase({
                       }}
                       className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
                     >
-                      + Добавить модель ({brandFilterLocal === 'AKUSHA' ? 'Акуша' : 'Liskani'})
+                      + Добавить модель (
+                      {brandFilterLocal === 'NA_TELE'
+                        ? 'НА ТЕЛЕ'
+                        : brandFilterLocal === 'AKUSHA'
+                          ? 'Акуша'
+                          : 'Liskani'}
+                      )
                     </button>
                   )}
                   <button
@@ -2913,7 +2954,7 @@ export function GrowthScenariosShowcase({
                             />
                           </div>
                           <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#141413] shadow-2xs">
-                            {mod.unitsInPack} шт. · {mod.retailPriceRub.toLocaleString('ru-RU')} ₽
+                            {mod.unitsInPack} шт. · {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                           </span>
                           <span className="absolute bottom-2 right-2 rounded-md bg-[#141413]/85 backdrop-blur-xs px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
                             {met.goalSharePct.toFixed(1).replace('.', ',')}%
@@ -3133,7 +3174,7 @@ export function GrowthScenariosShowcase({
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono text-[#262624] whitespace-nowrap">
-                            {mod.retailPriceRub.toLocaleString('ru-RU')} ₽
+                            {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                           </td>
                           <td
                             className="py-2.5 px-3 text-center"

@@ -438,7 +438,10 @@ export function SalesMatrixContourView() {
             {brandFilter === 'NA_TELE' && (
               <button
                 type="button"
-                onClick={() => setSelectedScenarioId(2)}
+                onClick={() => {
+                  setSelectedScenarioId(2);
+                  setBrandFilter('ALL');
+                }}
                 className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
               >
                 Переключить на Сценарий №2 · 150 млн
@@ -593,7 +596,7 @@ export function SalesMatrixContourView() {
                       </div>
                     </td>
                     <td className="py-2.5 px-2 text-right font-mono text-[#5E5D58] whitespace-nowrap">
-                      {mod.retailPriceRub.toLocaleString('ru-RU')} ₽
+                      {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                     </td>
                     {MONTHS_SHORT_RU.map((_, mIdx) => {
                       const valRub = met.monthlyRevenuesRub[mIdx] || 0;
@@ -1043,7 +1046,10 @@ export function ProcurementContourView() {
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedScenarioId(2)}
+                onClick={() => {
+                  setSelectedScenarioId(2);
+                  setBrandFilter('ALL');
+                }}
                 className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
               >
                 Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)
@@ -1761,7 +1767,10 @@ export function FinanceContourView() {
                 {brandFilter === 'NA_TELE' && (
                   <button
                     type="button"
-                    onClick={() => setSelectedScenarioId(2)}
+                    onClick={() => {
+                      setSelectedScenarioId(2);
+                      setBrandFilter('ALL');
+                    }}
                     className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
                   >
                     Переключить на Сценарий №2 · 150 млн

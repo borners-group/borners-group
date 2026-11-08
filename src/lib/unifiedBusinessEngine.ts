@@ -1951,7 +1951,9 @@ export function matchesBrandFilter(
   if (upperFilter === 'NA_TELE' || upperFilter === 'НА ТЕЛЕ') {
     return upperBrand === 'НА ТЕЛЕ' || upperBrand === 'NA_TELE' || model.brandId === 'NA_TELE';
   }
-  if (upperFilter === 'FUKAI') return upperBrand === 'FUKAI';
+  if (upperFilter === 'FUKAI') {
+    return upperBrand === 'FUKAI' || upperBrand === 'ПОДТВЕРДИТЬ БРЕНД';
+  }
   if (upperFilter === 'AKUSHA' || upperFilter === 'АКУША') {
     return upperBrand === 'АКУША' || upperBrand === 'AKUSHA';
   }

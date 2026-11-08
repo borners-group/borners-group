@@ -696,7 +696,7 @@ export function ScenarioModelCardScreen({
     commitWithAudit(
       {
         ...model,
-        retailPriceRub: scenario.id === 1 ? clean : model.retailPriceRub,
+        retailPriceRub: clean,
         plansByScenario: {
           ...model.plansByScenario,
           [scenario.id]: nextPlan,

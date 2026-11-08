@@ -369,8 +369,22 @@ export function SkuProcurementMvpWorkbench({
   };
 
   const handleUpdateScalingStage = (nextStage: ModelScalingStage) => {
+    const nextStageStatus =
+      nextStage === 'hypothesis'
+        ? 'Идея'
+        : nextStage === 'test'
+          ? 'Тест'
+          : 'Масштабирование';
+    const nextLaunchStatus =
+      nextStage === 'scaling'
+        ? 'Утверждено'
+        : nextStage === 'test'
+          ? 'В разработке'
+          : 'В плане';
     onUpdateModel({
       ...model,
+      modelStageStatus: nextStageStatus,
+      launchStatus: nextLaunchStatus,
       sharedSupplyAndFact: {
         ...shared,
         scalingStage: nextStage,
