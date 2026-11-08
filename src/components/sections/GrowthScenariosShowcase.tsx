@@ -461,6 +461,9 @@ export function GrowthScenariosShowcase({
     NA_TELE: 2,
   });
   const [groupMonthlyDetailsOpen, setGroupMonthlyDetailsOpen] = useState(false);
+  const [trajectoryChartMetric, setTrajectoryChartMetric] = useState<
+    'revenue' | 'profit' | 'procurement'
+  >('revenue');
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenId: number | null) => {
@@ -2031,10 +2034,10 @@ export function GrowthScenariosShowcase({
                           setSelectedScenarioId(sc.id);
                         }
                       }}
-                      className={`group rounded-[15px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                      className={`card-shimmer hover-lift group rounded-[16px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-white text-[#111827] border-[1.5px] border-[#2C3444] shadow-[0_8px_24px_-6px_rgba(15,23,42,0.12)]'
-                          : 'bg-white/75 border border-[#DCE2EC] hover:border-[#94A3B8] hover:bg-white'
+                          ? 'bg-white text-[#111827] border-[1.5px] border-[#2C3444] shadow-[0_10px_28px_-6px_rgba(15,23,42,0.14)]'
+                          : 'bg-white/80 border border-[#DCE2EC] hover:border-[#94A3B8] hover:bg-white'
                       }`}
                     >
                       <div>
@@ -2051,8 +2054,8 @@ export function GrowthScenariosShowcase({
 
                           <div className="flex items-center gap-1 shrink-0">
                             {isSelected ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-[10px] font-bold">
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#059669]" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] text-[10px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-[#0D9488] animate-pulse" />
                                 Активен
                               </span>
                             ) : (
@@ -2124,21 +2127,36 @@ export function GrowthScenariosShowcase({
                           </div>
                         </div>
 
-                        <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#111827]">
-                          {liveDecMlnStr} млн ₽{' '}
-                          <span className="font-sans text-[11.5px] font-normal text-[#64748B]">
-                            в дек
+                        <div className="mt-2.5 flex items-baseline justify-between gap-2">
+                          <div className="font-mono text-[22px] font-extrabold tracking-[-0.025em] text-[#111827]">
+                            {liveDecMlnStr} млн ₽{' '}
+                            <span className="font-sans text-[11.5px] font-normal text-[#64748B]">
+                              в дек
+                            </span>
+                          </div>
+                          <span
+                            className={`font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded ${
+                              pctNum >= 100
+                                ? 'bg-[#F0FDFA] text-[#0D9488]'
+                                : 'bg-[#F1F5F9] text-[#64748B]'
+                            }`}
+                          >
+                            {pctNum.toFixed(0)}% цели
                           </span>
                         </div>
                       </div>
 
-                      {/* Спокойный прогресс-бар и одна строка итога за год */}
+                      {/* Анимированный прогресс-бар и одна строка итога за год */}
                       <div className="mt-3 space-y-1.5">
                         <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#E2E8F0]">
                           <div
                             style={{ width: `${progressWidth}%` }}
-                            className={`h-full rounded-full transition-all ${
-                              isSelected ? 'bg-[#2C3444]' : 'bg-[#94A3B8]'
+                            className={`h-full rounded-full transition-all duration-700 ease-out ${
+                              isSelected
+                                ? pctNum >= 100
+                                  ? 'bg-[#0D9488]'
+                                  : 'bg-[#2C3444]'
+                                : 'bg-[#94A3B8]'
                             }`}
                           />
                         </div>
@@ -2155,7 +2173,7 @@ export function GrowthScenariosShowcase({
               })()}
             </div>
 
-            {/* ЧИСТАЯ ВОЗДУШНАЯ ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ (БЕЗ ТЯЖЁЛЫХ РАМОК ВОКРУГ КАЖДОГО МЕСЯЦА) */}
+            {/* ЖИВАЯ ИНТЕРАКТИВНАЯ ТРАЕКТОРИЯ 12 МЕСЯЦЕВ (ПЛАВНАЯ AREA-КРИВАЯ + АНИМИРОВАННЫЕ КОЛОНКИ + 3 РЕЖИМА) */}
             {(brandFilterLocal === 'ALL' ||
               getScenariosForBrand(
                 scenarios,
@@ -2169,44 +2187,68 @@ export function GrowthScenariosShowcase({
                     ? mbSummary.brands.find((r) => r.brandCode === activeBrandNorm)
                     : null;
 
+                const groupMarginRatio =
+                  mbSummary.groupTotal.annualRevenueRub > 0
+                    ? mbSummary.groupTotal.annualEstimatedOperatingProfitRub /
+                      mbSummary.groupTotal.annualRevenueRub
+                    : 0.4;
+
+                const brandMarginRatio =
+                  selectedBrandRow && selectedBrandRow.annualRevenueRub > 0
+                    ? selectedBrandRow.annualEstimatedOperatingProfitRub /
+                      selectedBrandRow.annualRevenueRub
+                    : groupMarginRatio;
+
                 const monthlySeries = MONTHS_SHORT_RU.map((mName, idx) => {
                   if (selectedBrandRow && selectedBrandRow.monthlyRows[idx]) {
                     const mm = selectedBrandRow.monthlyRows[idx];
+                    const revMln = mm.grossSalesRub / 1_000_000;
+                    const profMln = revMln * brandMarginRatio;
+                    const procMln = mm.factoryTotalOutflowRub / 1_000_000;
                     return {
                       monthLabel: mName,
                       revenueRub: mm.grossSalesRub,
-                      revenueMln: mm.grossSalesRub / 1_000_000,
-                      factoryOutflowMln: mm.factoryTotalOutflowRub / 1_000_000,
-                      bornersMln:
-                        selectedBrandRow.brandCode === 'BORNERS'
-                          ? mm.grossSalesRub / 1_000_000
-                          : 0,
-                      otherBrandsMln:
-                        selectedBrandRow.brandCode !== 'BORNERS'
-                          ? mm.grossSalesRub / 1_000_000
-                          : 0,
+                      revenueMln: revMln,
+                      profitMln: profMln,
+                      factoryOutflowMln: procMln,
+                      activeValMln:
+                        trajectoryChartMetric === 'profit'
+                          ? profMln
+                          : trajectoryChartMetric === 'procurement'
+                          ? procMln
+                          : revMln,
                     };
                   }
                   const totalMm = mbSummary.groupTotal.monthlyRows[idx];
                   const bornersRow = mbSummary.brands.find((r) => r.brandCode === 'BORNERS');
                   const bornersRub = bornersRow?.monthlyRows[idx]?.grossSalesRub || 0;
                   const totalRub = totalMm ? totalMm.grossSalesRub : bornersRub;
-                  const otherRub = Math.max(0, totalRub - bornersRub);
+                  const revMln = totalRub / 1_000_000;
+                  const profMln = revMln * groupMarginRatio;
+                  const procMln = (totalMm?.factoryTotalOutflowRub || 0) / 1_000_000;
                   return {
                     monthLabel: mName,
                     revenueRub: totalRub,
-                    revenueMln: totalRub / 1_000_000,
-                    factoryOutflowMln: (totalMm?.factoryTotalOutflowRub || 0) / 1_000_000,
-                    bornersMln: bornersRub / 1_000_000,
-                    otherBrandsMln: otherRub / 1_000_000,
+                    revenueMln: revMln,
+                    profitMln: profMln,
+                    factoryOutflowMln: procMln,
+                    activeValMln:
+                      trajectoryChartMetric === 'profit'
+                        ? profMln
+                        : trajectoryChartMetric === 'procurement'
+                        ? procMln
+                        : revMln,
                   };
                 });
 
                 const maxMonthMln = Math.max(
                   1,
-                  ...monthlySeries.map((pt) => pt.revenueMln)
+                  ...monthlySeries.map((pt) => pt.activeValMln)
                 );
-                const totalYearMln = monthlySeries.reduce((s, pt) => s + pt.revenueMln, 0);
+                const totalYearActiveMln = monthlySeries.reduce(
+                  (s, pt) => s + pt.activeValMln,
+                  0
+                );
                 const selPt =
                   monthlySeries[selectedChartMonthIdx] || monthlySeries[11];
 
@@ -2217,16 +2259,91 @@ export function GrowthScenariosShowcase({
                   }))
                   .filter((b) => b.revMln > 0.01);
 
+                // Геометрия плавной кубической кривой Безье (SVG Area + Spline) по 12 точкам
+                const svgW = 1200;
+                const svgH = 92;
+                const padTop = 14;
+                const padBottom = 8;
+                const usableH = svgH - padTop - padBottom;
+
+                const coords = monthlySeries.map((pt, idx) => {
+                  const x = ((idx + 0.5) / 12) * svgW;
+                  const ratio = Math.min(1, Math.max(0, pt.activeValMln / maxMonthMln));
+                  const y = padTop + usableH * (1 - ratio);
+                  return { x, y, val: pt.activeValMln };
+                });
+
+                let smoothPath = '';
+                coords.forEach((pt, idx) => {
+                  if (idx === 0) {
+                    smoothPath += `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+                  } else {
+                    const prev = coords[idx - 1];
+                    const cpx1 = prev.x + (pt.x - prev.x) * 0.45;
+                    const cpx2 = prev.x + (pt.x - prev.x) * 0.55;
+                    smoothPath += ` C ${cpx1.toFixed(1)} ${prev.y.toFixed(1)}, ${cpx2.toFixed(1)} ${pt.y.toFixed(1)}, ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+                  }
+                });
+
+                const areaPath =
+                  coords.length > 0
+                    ? `${smoothPath} L ${coords[coords.length - 1].x.toFixed(1)} ${svgH} L ${coords[0].x.toFixed(1)} ${svgH} Z`
+                    : '';
+
+                const strokeColor =
+                  trajectoryChartMetric === 'profit'
+                    ? '#0D9488'
+                    : trajectoryChartMetric === 'procurement'
+                    ? '#475569'
+                    : '#2C3444';
+
+                const metricLabelTitle =
+                  trajectoryChartMetric === 'profit'
+                    ? 'Ожидаемая операционная прибыль'
+                    : trajectoryChartMetric === 'procurement'
+                    ? 'График оплаты партий фабрикам'
+                    : 'Помесячная динамика выручки';
+
                 return (
                   <div className="px-6 py-5 bg-white">
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[14px] font-bold text-[#111827]">
-                          Помесячная динамика выручки {currentScenario.year || 2027}
-                        </span>
-                        <span className="text-[12px] text-[#64748B]">
-                          (млн ₽ · всего за год {totalYearMln.toFixed(2).replace('.', ',')} млн ₽)
-                        </span>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[14.5px] font-extrabold text-[#111827]">
+                              {metricLabelTitle} {currentScenario.year || 2027}
+                            </span>
+                            <span className="font-mono text-[12px] font-semibold px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] text-[#334155]">
+                              Итого за год: {trajectoryChartMetric === 'profit' ? '+' : ''}
+                              {totalYearActiveMln.toFixed(2).replace('.', ',')} млн ₽
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Переключатель метрики графика (Выручка | Опер. прибыль | Закупки) */}
+                        <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#CBD5E1] p-0.5 text-[11.5px]">
+                          {[
+                            { id: 'revenue' as const, label: 'Выручка' },
+                            { id: 'profit' as const, label: 'Опер. прибыль' },
+                            { id: 'procurement' as const, label: 'Оплаты партий' },
+                          ].map((mTab) => {
+                            const active = trajectoryChartMetric === mTab.id;
+                            return (
+                              <button
+                                key={mTab.id}
+                                type="button"
+                                onClick={() => setTrajectoryChartMetric(mTab.id)}
+                                className={`h-7 px-2.5 rounded-[7px] font-semibold transition cursor-pointer ${
+                                  active
+                                    ? 'bg-white text-[#111827] shadow-2xs border border-[#CBD5E1]'
+                                    : 'text-[#64748B] hover:text-[#111827]'
+                                }`}
+                              >
+                                {mTab.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-[12px]">
@@ -2237,8 +2354,11 @@ export function GrowthScenariosShowcase({
                           <span className="font-mono font-extrabold text-[#111827]">
                             {selPt.revenueMln.toFixed(2).replace('.', ',')} млн ₽
                           </span>
+                          <span className="font-mono font-bold text-[#0D9488] border-l border-[#CBD5E1] pl-2">
+                            прибыль +{selPt.profitMln.toFixed(2).replace('.', ',')} млн
+                          </span>
                           {brandMonthBreakdown.length > 1 && (
-                            <span className="hidden sm:inline text-[11px] text-[#64748B] border-l border-[#CBD5E1] pl-2">
+                            <span className="hidden xl:inline text-[11px] text-[#64748B] border-l border-[#CBD5E1] pl-2">
                               {brandMonthBreakdown
                                 .map(
                                   (b) =>
@@ -2258,60 +2378,146 @@ export function GrowthScenariosShowcase({
                       </div>
                     </div>
 
-                    {/* Чистый график из 12 столбцов без рамок-коробок */}
-                    <div className="grid grid-cols-6 sm:grid-cols-12 gap-2.5 pt-2">
-                      {monthlySeries.map((pt, idx) => {
-                        const isSel = selectedChartMonthIdx === idx;
-                        const isDec = idx === 11;
-                        const fillPct = Math.min(
-                          100,
-                          Math.max(12, Math.round((pt.revenueMln / maxMonthMln) * 100))
-                        );
+                    {/* ПЛАВНАЯ КУБИЧЕСКАЯ AREA-КРИВАЯ + АНИМИРОВАННЫЕ КОЛОНКИ 12 МЕСЯЦЕВ */}
+                    <div className="relative pt-1">
+                      {/* Верхняя плавная кривая тренда с градиентной заливкой */}
+                      <div className="h-[86px] w-full overflow-hidden rounded-t-[12px] bg-gradient-to-b from-[#F8FAFC] to-white border-x border-t border-[#EEF2F6]">
+                        <svg
+                          viewBox={`0 0 ${svgW} ${svgH}`}
+                          preserveAspectRatio="none"
+                          className="w-full h-full overflow-visible"
+                        >
+                          <defs>
+                            <linearGradient id="bornersTrajectoryGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={strokeColor} stopOpacity="0.22" />
+                              <stop offset="100%" stopColor={strokeColor} stopOpacity="0.01" />
+                            </linearGradient>
+                          </defs>
+                          {/* Горизонтальные направляющие линии */}
+                          <line
+                            x1="0"
+                            y1={padTop + usableH * 0.5}
+                            x2={svgW}
+                            y2={padTop + usableH * 0.5}
+                            stroke="#E2E8F0"
+                            strokeDasharray="4 6"
+                            strokeWidth="1"
+                          />
+                          {areaPath && (
+                            <path
+                              d={areaPath}
+                              fill="url(#bornersTrajectoryGrad)"
+                              className="transition-all duration-700 ease-out"
+                            />
+                          )}
+                          {smoothPath && (
+                            <path
+                              d={smoothPath}
+                              fill="none"
+                              stroke={strokeColor}
+                              strokeWidth="2.75"
+                              strokeLinecap="round"
+                              className="transition-all duration-700 ease-out"
+                            />
+                          )}
+                          {coords.map((pt, idx) => {
+                            const isSel = selectedChartMonthIdx === idx;
+                            const isDec = idx === 11;
+                            return (
+                              <g
+                                key={idx}
+                                className="cursor-pointer"
+                                onClick={() => setSelectedChartMonthIdx(idx)}
+                              >
+                                {(isSel || isDec) && (
+                                  <circle
+                                    cx={pt.x}
+                                    cy={pt.y}
+                                    r={isSel ? 9 : 7}
+                                    fill={isDec ? '#0D9488' : strokeColor}
+                                    fillOpacity="0.18"
+                                  />
+                                )}
+                                <circle
+                                  cx={pt.x}
+                                  cy={pt.y}
+                                  r={isSel ? 5 : isDec ? 4.5 : 3.2}
+                                  fill={isDec ? '#0D9488' : isSel ? strokeColor : '#FFFFFF'}
+                                  stroke={isDec ? '#0D9488' : strokeColor}
+                                  strokeWidth="2.2"
+                                  className="transition-all duration-500"
+                                />
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
 
-                        return (
-                          <button
-                            type="button"
-                            key={pt.monthLabel}
-                            onClick={() => setSelectedChartMonthIdx(idx)}
-                            className={`flex flex-col items-center rounded-[10px] py-2 px-1 transition cursor-pointer group ${
-                              isSel ? 'bg-[#F4F6F9]' : 'hover:bg-[#F8FAFC]'
-                            }`}
-                          >
-                            <span
-                              className={`font-mono text-[11.5px] mb-1.5 ${
-                                isSel || isDec
-                                  ? 'font-extrabold text-[#111827]'
-                                  : 'font-semibold text-[#475569] group-hover:text-[#111827]'
+                      {/* 12 интерактивных столбцов под кривой с плавной пружинной высотой */}
+                      <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 pt-2 px-1 pb-1 bg-white border-x border-b border-[#EEF2F6] rounded-b-[12px]">
+                        {monthlySeries.map((pt, idx) => {
+                          const isSel = selectedChartMonthIdx === idx;
+                          const isDec = idx === 11;
+                          const fillPct =
+                            pt.activeValMln <= 0.01
+                              ? 6
+                              : Math.min(
+                                  100,
+                                  Math.max(12, Math.round((pt.activeValMln / maxMonthMln) * 100))
+                                );
+
+                          return (
+                            <button
+                              type="button"
+                              key={pt.monthLabel}
+                              onClick={() => setSelectedChartMonthIdx(idx)}
+                              className={`flex flex-col items-center rounded-[10px] py-2 px-1 transition-all cursor-pointer group ${
+                                isSel
+                                  ? 'bg-[#EEF1F6] shadow-2xs'
+                                  : 'hover:bg-[#F8FAFC]'
                               }`}
                             >
-                              {pt.revenueMln.toFixed(1).replace('.', ',')}
-                            </span>
-
-                            <div className="w-full max-w-[44px] h-[68px] rounded-[6px] bg-[#EEF1F6] flex items-end overflow-hidden p-0.5">
-                              <div
-                                style={{ height: `${fillPct}%` }}
-                                className={`w-full rounded-[4px] transition-all ${
-                                  isSel
-                                    ? 'bg-[#2C3444]'
-                                    : isDec
-                                    ? 'bg-[#0D9488]'
-                                    : 'bg-[#94A3B8]/75 group-hover:bg-[#64748B]'
+                              <span
+                                className={`font-mono text-[11px] mb-1.5 transition-colors ${
+                                  isSel || isDec
+                                    ? 'font-extrabold text-[#111827]'
+                                    : 'font-semibold text-[#475569] group-hover:text-[#111827]'
                                 }`}
-                              />
-                            </div>
+                              >
+                                {trajectoryChartMetric === 'profit' && pt.activeValMln > 0 ? '+' : ''}
+                                {pt.activeValMln.toFixed(1).replace('.', ',')}
+                              </span>
 
-                            <span
-                              className={`text-[11px] mt-1.5 ${
-                                isSel || isDec
-                                  ? 'font-bold text-[#111827]'
-                                  : 'font-medium text-[#64748B]'
-                              }`}
-                            >
-                              {pt.monthLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <div className="w-full max-w-[42px] h-[54px] rounded-[6px] bg-[#EEF1F6] flex items-end overflow-hidden p-0.5">
+                                <div
+                                  style={{ height: `${fillPct}%` }}
+                                  className={`w-full rounded-[4px] transition-all duration-700 ease-out ${
+                                    isSel
+                                      ? trajectoryChartMetric === 'profit'
+                                        ? 'bg-[#0D9488]'
+                                        : 'bg-[#2C3444]'
+                                      : isDec
+                                      ? 'bg-[#0D9488]'
+                                      : trajectoryChartMetric === 'profit'
+                                      ? 'bg-[#0D9488]/60 group-hover:bg-[#0D9488]'
+                                      : 'bg-[#94A3B8]/75 group-hover:bg-[#64748B]'
+                                  }`}
+                                />
+                              </div>
+
+                              <span
+                                className={`text-[11px] mt-1.5 ${
+                                  isSel || isDec
+                                    ? 'font-bold text-[#111827]'
+                                    : 'font-medium text-[#64748B]'
+                                }`}
+                              >
+                                {pt.monthLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 );

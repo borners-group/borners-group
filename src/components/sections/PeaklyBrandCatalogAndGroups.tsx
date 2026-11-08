@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Check,
@@ -353,7 +353,60 @@ export function BrandCabinetsMatrixTable({
 }
 
 // =============================================================================
-// 1-B. 5 РАЗДЕЛЬНЫХ ВЫСОКОКОНТРАСТНЫХ KPI-КАРТОЧЕК ХОЛДИНГА + ПАНЕЛЬ КАБИНЕТОВ
+// ПЛАВНЫЙ СЧЁТЧИК ЧИСЕЛ (COUNT-UP С CUBIC-OUT ИНТЕРПОЛЯЦИЕЙ ПРИ СМЕНЕ СЦЕНАРИЯ)
+// =============================================================================
+function AnimatedMlnValue({
+  valueRub,
+  prefix = '',
+  suffix = ' млн ₽',
+}: {
+  valueRub: number;
+  prefix?: string;
+  suffix?: string;
+}) {
+  const [displayRub, setDisplayRub] = useState(valueRub);
+  const prevRubRef = useRef(valueRub);
+
+  useEffect(() => {
+    const startVal = prevRubRef.current;
+    const endVal = valueRub;
+    prevRubRef.current = valueRub;
+
+    if (Math.abs(endVal - startVal) < 1000) {
+      setDisplayRub(endVal);
+      return;
+    }
+
+    let rafId = 0;
+    const duration = 620;
+    const startTime = performance.now();
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayRub(startVal + (endVal - startVal) * eased);
+      if (progress < 1) {
+        rafId = requestAnimationFrame(step);
+      }
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [valueRub]);
+
+  const formatted = (displayRub / 1_000_000).toFixed(2).replace('.', ',');
+  return (
+    <span>
+      {prefix}
+      {formatted}
+      {suffix}
+    </span>
+  );
+}
+
+// =============================================================================
+// 1-B. 5 РАЗДЕЛЬНЫХ ВЫСОКОКОНТРАСТНЫХ KPI-КАРТОЧЕК ХОЛДИНГА + ВОДОПАД ВЫРУЧКИ
 // =============================================================================
 export interface PeaklyMasterCabinetsSummaryProps {
   multiBrandSummary: MultiBrandPortfolioSummaryResult;
@@ -381,6 +434,7 @@ export function PeaklyMasterCabinetsSummary({
 }: PeaklyMasterCabinetsSummaryProps) {
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(false);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
+  const [hoveredWaterfallKey, setHoveredWaterfallKey] = useState<string | null>(null);
 
   const gt = multiBrandSummary.groupTotal;
   const activeBrandsCount = multiBrandSummary.brands.filter(
@@ -391,190 +445,442 @@ export function PeaklyMasterCabinetsSummary({
       ? Math.round((gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub) * 1000) / 10
       : 0;
 
+  // Параметры анимированного кольца маржинальности (Profitability Ring)
+  const ringRadius = 34;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const clampedMargin = Math.min(Math.max(groupMarginPct, 0), 100);
+  const ringStrokeOffset = ringCircumference * (1 - clampedMargin / 100);
+
+  // Сегменты водопада «Куда уходит выручка холдинга» (Revenue Waterfall)
+  const waterfallSegments = useMemo(() => {
+    const rev = Math.max(gt.annualRevenueRub, 1);
+    const cogsRub = Math.max(0, gt.annualSoldGoodsCostRub);
+    const profitRub = Math.max(0, gt.annualEstimatedOperatingProfitRub);
+    const mpAndOpsTotalRub = Math.max(0, rev - cogsRub - profitRub);
+    const commissionLogisticsRub = mpAndOpsTotalRub * 0.72;
+    const adsAndTaxRub = mpAndOpsTotalRub * 0.28;
+
+    const raw = [
+      {
+        key: 'cogs',
+        label: 'Себестоимость (COGS)',
+        valueRub: cogsRub,
+        pct: (cogsRub / rev) * 100,
+        color: '#475569',
+      },
+      {
+        key: 'mp',
+        label: 'Комиссия и логистика WB',
+        valueRub: commissionLogisticsRub,
+        pct: (commissionLogisticsRub / rev) * 100,
+        color: '#78869B',
+      },
+      {
+        key: 'ads',
+        label: 'Продвижение и налоги',
+        valueRub: adsAndTaxRub,
+        pct: (adsAndTaxRub / rev) * 100,
+        color: '#A3B1C6',
+      },
+      {
+        key: 'profit',
+        label: 'Чистая операционная прибыль',
+        valueRub: profitRub,
+        pct: (profitRub / rev) * 100,
+        color: '#0D9488',
+      },
+    ];
+    return raw;
+  }, [
+    gt.annualRevenueRub,
+    gt.annualSoldGoodsCostRub,
+    gt.annualEstimatedOperatingProfitRub,
+  ]);
+
   return (
-    <div className="space-y-3">
-      {/* 5 ОТДЕЛЬНЫХ КАРТОЧЕК НА КОНТРАСТНОМ ХОЛСТЕ — ЛЕГКО ЧИТАЮТСЯ С ПЕРВОГО ВЗГЛЯДА */}
+    <div className="space-y-3.5">
+      {/* 5 ОТДЕЛЬНЫХ КАРТОЧЕК С АНИМАЦИЕЙ ЧИСЕЛ, МИКРО-ПРОГРЕССОМ И КОЛЬЦОМ МАРЖИ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* 1. Выручка холдинга */}
         <div
           onClick={() => onNavigateSection('launch-calendar')}
-          className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] hover:border-[#94A3B8] transition cursor-pointer flex flex-col justify-between"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] border-t-2 border-t-[#2C3444] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
-          <div className="text-[11.5px] font-semibold text-[#64748B] truncate">
-            Выручка холдинга ({activeBrandsCount} из 5 каб.)
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              Выручка холдинга ({activeBrandsCount}/5 каб.)
+            </span>
+            {/* Мини-спарклайн растущего тренда */}
+            <svg className="h-4 w-10 text-[#2C3444] shrink-0 opacity-75" viewBox="0 0 40 16" fill="none">
+              <path
+                d="M1 14L8 11.5L15 9.5L22 7.5L30 4.5L39 1.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
-          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#111827] leading-none">
-            {formatMln(gt.annualRevenueRub)}
+          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <AnimatedMlnValue valueRub={gt.annualRevenueRub} />
           </div>
-          <div className="mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between">
+          <div className="mt-3 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between">
             <span>Пик декабря</span>
             <strong className="font-mono text-[#111827]">{formatMln(gt.decemberRevenueRub)}</strong>
+          </div>
+          {/* Нижний прогресс-индикатор */}
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#EEF2F6]">
+            <div
+              className="h-full bg-[#2C3444] transition-all duration-700 ease-out"
+              style={{ width: `${Math.min(100, Math.max(15, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100))}%` }}
+            />
           </div>
         </div>
 
         {/* 2. План закупок (Год) */}
         <div
           onClick={() => onNavigateSection('roadmap-tasks')}
-          className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] hover:border-[#94A3B8] transition cursor-pointer flex flex-col justify-between"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] border-t-2 border-t-[#475569] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
-          <div className="text-[11.5px] font-semibold text-[#64748B] truncate">
-            План закупок на год
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              План закупок на год
+            </span>
+            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569]">
+              4 волны
+            </span>
           </div>
-          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#111827] leading-none">
-            {formatMln(gt.totalProcurementBudgetRub)}
+          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <AnimatedMlnValue valueRub={gt.totalProcurementBudgetRub} />
           </div>
           <div
-            className="mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] truncate"
+            className="mt-3 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between"
             title={multiBrandSummary.procurementBreakdownText}
           >
-            4 волны · <strong className="font-mono text-[#111827]">{gt.modelsCount} SKU</strong>
+            <span>Ассортимент в плане</span>
+            <strong className="font-mono text-[#111827]">{gt.modelsCount} SKU</strong>
+          </div>
+          {/* 4 квартальные волны внизу карточки */}
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] grid grid-cols-4 gap-0.5 bg-[#EEF2F6]">
+            <div className="bg-[#2C3444]" />
+            <div className="bg-[#475569]" />
+            <div className="bg-[#64748B]" />
+            <div className="bg-[#94A3B8]" />
           </div>
         </div>
 
         {/* 3. Старт 1-й партии (Q1) */}
         <div
           onClick={() => onNavigateSection('roadmap-tasks')}
-          className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] hover:border-[#94A3B8] transition cursor-pointer flex flex-col justify-between"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] border-t-2 border-t-[#0D9488] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
-          <div className="text-[11.5px] font-semibold text-[#64748B] truncate">
-            Старт 1-й партии (Q1)
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              Старт 1-й партии (Q1)
+            </span>
+            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F0FDFA] text-[#0D9488]">
+              30% аванс
+            </span>
           </div>
-          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#111827] leading-none">
-            {formatMln(gt.firstWaveStartBudgetRub)}
+          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <AnimatedMlnValue valueRub={gt.firstWaveStartBudgetRub} />
           </div>
-          <div className="mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between">
-            <span>Аванс 30% сейчас</span>
-            <strong className="font-mono text-[#111827]">{formatMln(gt.firstWavePrepaymentRub)}</strong>
+          <div className="mt-3 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between">
+            <span>Предоплата сейчас</span>
+            <strong className="font-mono text-[#0D9488]">{formatMln(gt.firstWavePrepaymentRub)}</strong>
+          </div>
+          {/* Пропорция 30% аванс / 70% остаток */}
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] flex bg-[#EEF2F6]">
+            <div className="h-full bg-[#0D9488] w-[30%]" />
+            <div className="h-full bg-[#CBD5E1] w-[70%]" />
           </div>
         </div>
 
         {/* 4. Пик своих денег (с оборотом WB) */}
-        <div className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] flex flex-col justify-between">
-          <div className="text-[11.5px] font-semibold text-[#64748B] truncate">
-            Пик своих денег (с WB)
+        <div className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] border-t-2 border-t-[#64748B] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] flex flex-col justify-between overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              Пик своих денег (с WB)
+            </span>
+            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155]">
+              Реинвест
+            </span>
           </div>
-          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#111827] leading-none">
-            {gt.verifiedOwnMoneyRequiredRub !== null
-              ? formatMln(gt.verifiedOwnMoneyRequiredRub)
-              : '—'}
+          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            {gt.verifiedOwnMoneyRequiredRub !== null ? (
+              <AnimatedMlnValue valueRub={gt.verifiedOwnMoneyRequiredRub} />
+            ) : (
+              '—'
+            )}
           </div>
-          <div className="mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] truncate">
-            Дальнейшие партии — из оборота WB
+          <div className="mt-3 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] truncate">
+            Дальнейшие волны — из выручки WB
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#EEF2F6]">
+            <div
+              className="h-full bg-[#64748B] transition-all duration-700 ease-out"
+              style={{
+                width: `${
+                  gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
+                    ? Math.min(100, Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100))
+                    : 25
+                }%`,
+              }}
+            />
           </div>
         </div>
 
-        {/* 5. Ожидаемая операционная прибыль */}
+        {/* 5. HERO-КАРТОЧКА ОЖИДАЕМОЙ ПРИБЫЛИ С АНИМИРОВАННЫМ КОЛЬЦОМ МАРЖИ И ОРБИТОЙ */}
         <div
           onClick={() => onNavigateSection('finance')}
-          className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] hover:border-[#94A3B8] transition cursor-pointer flex flex-col justify-between"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-[#F0FDFA]/90 via-white to-[#ECFDF5]/60 border border-[#99F6E4] p-4 md:p-5 shadow-[0_6px_20px_-4px_rgba(13,148,136,0.12)] cursor-pointer overflow-hidden flex items-center justify-between gap-3"
         >
-          <div className="text-[11.5px] font-semibold text-[#64748B] truncate">
-            Ожидаемая прибыль
+          {/* Мягкое изумрудное свечение и геометрическая орбита на фоне */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#0D9488]/15 blur-2xl"
+          />
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 text-[#0D9488] opacity-[0.10] animate-orbit-slow"
+            viewBox="0 0 220 220"
+            fill="none"
+          >
+            <circle cx="110" cy="110" r="76" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 8" />
+            <circle cx="110" cy="110" r="96" stroke="currentColor" strokeWidth="1" />
+          </svg>
+
+          <div className="relative z-10 min-w-0 flex-1 flex flex-col justify-between h-full">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#0D9488] truncate">
+              Ожидаемая прибыль
+            </div>
+            <div className="mt-1.5 font-mono text-[22px] xl:text-[23px] font-extrabold tracking-[-0.03em] text-[#065F46] leading-none">
+              <AnimatedMlnValue valueRub={gt.annualEstimatedOperatingProfitRub} prefix="+" />
+            </div>
+            <div className="mt-1.5 h-0.5 w-14 rounded-full bg-gradient-to-r from-[#0D9488] to-transparent" />
+            <div className="mt-2 text-[11px] text-[#475569] truncate">
+              COGS: <strong className="font-mono text-[#111827]">{formatMln(gt.annualSoldGoodsCostRub)}</strong>
+            </div>
           </div>
-          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#059669] leading-none">
-            +{formatMln(gt.annualEstimatedOperatingProfitRub)}
-          </div>
-          <div className="mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11.5px] text-[#64748B] flex items-center justify-between">
-            <span>Рентабельность</span>
-            <strong className="font-mono text-[#059669]">
-              {groupMarginPct.toFixed(1).replace('.', ',')}%
-            </strong>
+
+          {/* Анимированное круговое кольцо маржинальности (Profitability Ring) */}
+          <div className="relative z-10 shrink-0 h-[68px] w-[68px] rounded-full bg-white/90 border border-[#A7F3D0] p-1 shadow-2xs flex items-center justify-center">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+              <circle
+                cx="40"
+                cy="40"
+                r={ringRadius}
+                fill="none"
+                stroke="#E2E8F0"
+                strokeWidth="5.5"
+              />
+              <circle
+                cx="40"
+                cy="40"
+                r={ringRadius}
+                fill="none"
+                stroke="#0D9488"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+                strokeDasharray={ringCircumference}
+                strokeDashoffset={ringStrokeOffset}
+                className="transition-all duration-1000 ease-out"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span className="font-mono text-[12px] font-extrabold text-[#065F46] leading-none">
+                {groupMarginPct.toFixed(1).replace('.', ',')}%
+              </span>
+              <span className="text-[7.5px] font-bold uppercase tracking-wider text-[#64748B] mt-0.5">
+                маржа
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* СПОКОЙНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ КАБИНЕТОВ И БРЕНДОВ */}
-      <div className="rounded-[16px] bg-white border border-[#CFD6E0] px-4 py-2.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.05)] flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11.5px] font-semibold text-[#64748B] mr-1">
-            Кабинеты:
-          </span>
-          <button
-            type="button"
-            onClick={() => onSelectBrandFilter('ALL')}
-            className={`h-8 px-3 rounded-[9px] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
-              activeBrandFilter === 'ALL'
-                ? 'bg-[#2C3444] text-white border-[#2C3444]'
-                : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white hover:border-[#94A3B8]'
-            }`}
-          >
-            <span>Все (5)</span>
-            <span
-              className={`font-mono text-[11px] ${
-                activeBrandFilter === 'ALL' ? 'text-slate-300' : 'text-[#64748B]'
+      {/* ПАНЕЛЬ КАБИНЕТОВ + АНИМИРОВАННЫЙ ВОДОПАД СТРУКТУРЫ ВЫРУЧКИ (REVENUE WATERFALL) */}
+      <div className="rounded-[18px] bg-white border border-[#CFD6E0] p-4 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.05)] space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11.5px] font-semibold text-[#64748B] mr-1">
+              Кабинеты:
+            </span>
+            <button
+              type="button"
+              onClick={() => onSelectBrandFilter('ALL')}
+              className={`h-8 px-3 rounded-[9px] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                activeBrandFilter === 'ALL'
+                  ? 'bg-[#2C3444] text-white border-[#2C3444] shadow-2xs'
+                  : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white hover:border-[#94A3B8]'
               }`}
             >
-              {(gt.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
-            </span>
-          </button>
-
-          {multiBrandSummary.brands.map((b) => {
-            const isSelected =
-              activeBrandFilter !== 'ALL' &&
-              normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
-            const accent = getModelBrandAccentStyles(b.brandCode);
-            const hasRev = b.hasScenario && b.hasModels && b.annualRevenueRub > 0;
-
-            return (
-              <button
-                key={b.brandCode}
-                type="button"
-                onClick={() => {
-                  onSelectBrandFilter(isSelected ? 'ALL' : b.brandCode);
-                  if (!isSelected && b.selectedScenarioId !== null) {
-                    onSelectActiveScenarioId(b.selectedScenarioId);
-                  }
-                }}
-                className={`h-8 px-3 rounded-[9px] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
-                  isSelected
-                    ? 'bg-[#2C3444] text-white border-[#2C3444]'
-                    : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white hover:border-[#94A3B8]'
+              <span>Все (5)</span>
+              <span
+                className={`font-mono text-[11px] ${
+                  activeBrandFilter === 'ALL' ? 'text-slate-300' : 'text-[#64748B]'
                 }`}
               >
-                <span className={`h-2 w-2 rounded-full ${accent.accentBar}`} />
-                <span className="font-bold">{b.displayCode}</span>
-                <span
-                  className={`font-mono text-[11px] ${
-                    isSelected ? 'text-slate-300' : 'text-[#64748B]'
+                {(gt.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+              </span>
+            </button>
+
+            {multiBrandSummary.brands.map((b) => {
+              const isSelected =
+                activeBrandFilter !== 'ALL' &&
+                normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
+              const accent = getModelBrandAccentStyles(b.brandCode);
+              const hasRev = b.hasScenario && b.hasModels && b.annualRevenueRub > 0;
+
+              return (
+                <button
+                  key={b.brandCode}
+                  type="button"
+                  onClick={() => {
+                    onSelectBrandFilter(isSelected ? 'ALL' : b.brandCode);
+                    if (!isSelected && b.selectedScenarioId !== null) {
+                      onSelectActiveScenarioId(b.selectedScenarioId);
+                    }
+                  }}
+                  className={`h-8 px-3 rounded-[9px] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                    isSelected
+                      ? 'bg-[#2C3444] text-white border-[#2C3444] shadow-2xs'
+                      : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white hover:border-[#94A3B8]'
                   }`}
                 >
-                  {hasRev
-                    ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
-                    : `${b.modelsCount} SKU`}
-                </span>
-              </button>
-            );
-          })}
+                  <span className={`h-2 w-2 rounded-full ${accent.accentBar}`} />
+                  <span className="font-bold">{b.displayCode}</span>
+                  <span
+                    className={`font-mono text-[11px] ${
+                      isSelected ? 'text-slate-300' : 'text-[#64748B]'
+                    }`}
+                  >
+                    {hasRev
+                      ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                      : `${b.modelsCount} SKU`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCabinetsMatrixOpen((v) => !v)}
+              className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                cabinetsMatrixOpen
+                  ? 'bg-[#2C3444] border-[#2C3444] text-white'
+                  : 'bg-[#F8FAFC] hover:bg-white border-[#DCE2EC] text-[#334155]'
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>
+                {cabinetsMatrixOpen ? 'Скрыть сводную кабинетов ▴' : 'Сводная по кабинетам (5) ▾'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMonthlyCashflowOpen((v) => !v)}
+              className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                monthlyCashflowOpen
+                  ? 'bg-[#2C3444] border-[#2C3444] text-white'
+                  : 'bg-[#F8FAFC] hover:bg-white border-[#DCE2EC] text-[#334155]'
+              }`}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              <span>{monthlyCashflowOpen ? 'Скрыть Cashflow ▴' : 'График денег 12 мес. ▾'}</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setCabinetsMatrixOpen((v) => !v)}
-            className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
-              cabinetsMatrixOpen
-                ? 'bg-[#2C3444] border-[#2C3444] text-white'
-                : 'bg-[#F8FAFC] hover:bg-white border-[#DCE2EC] text-[#334155]'
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5" />
-            <span>
-              {cabinetsMatrixOpen ? 'Скрыть сводную кабинетов ▴' : 'Сводная по кабинетам (5) ▾'}
+        {/* ИНТЕРАКТИВНЫЙ АНИМИРОВАННЫЙ ВОДОПАД «КУДА УХОДИТ ВЫРУЧКА» (REVENUE WATERFALL) */}
+        <div className="pt-3 border-t border-[#EEF2F6] space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+            <span className="font-semibold text-[#64748B] uppercase tracking-[0.04em] text-[10.5px]">
+              Структура годовой выручки холдинга (наведите на сегмент для детализации)
             </span>
-          </button>
+            <div className="font-mono text-[11.5px] text-[#334155]">
+              {hoveredWaterfallKey ? (
+                (() => {
+                  const seg = waterfallSegments.find((s) => s.key === hoveredWaterfallKey);
+                  return seg ? (
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-[#111827]">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: seg.color }}
+                      />
+                      <span>{seg.label}:</span>
+                      <strong>{formatMln(seg.valueRub)}</strong>
+                      <span className="text-[#64748B]">({seg.pct.toFixed(1).replace('.', ',')}%)</span>
+                    </span>
+                  ) : null;
+                })()
+              ) : (
+                <span>
+                  База распределения: <strong className="text-[#111827]">{formatMln(gt.annualRevenueRub)}</strong> (100%)
+                </span>
+              )}
+            </div>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => setMonthlyCashflowOpen((v) => !v)}
-            className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
-              monthlyCashflowOpen
-                ? 'bg-[#2C3444] border-[#2C3444] text-white'
-                : 'bg-[#F8FAFC] hover:bg-white border-[#DCE2EC] text-[#334155]'
-            }`}
-          >
-            <Calendar className="h-3.5 w-3.5" />
-            <span>{monthlyCashflowOpen ? 'Скрыть Cashflow ▴' : 'График денег 12 мес. ▾'}</span>
-          </button>
+          {/* Мульти-сегментная анимированная полоса водопада */}
+          <div className="h-7 w-full rounded-[10px] bg-[#EEF2F6] overflow-hidden flex p-0.5 gap-0.5">
+            {waterfallSegments.map((seg) => {
+              const isHovered = hoveredWaterfallKey === seg.key;
+              return (
+                <div
+                  key={seg.key}
+                  onMouseEnter={() => setHoveredWaterfallKey(seg.key)}
+                  onMouseLeave={() => setHoveredWaterfallKey(null)}
+                  style={{
+                    width: `${Math.max(seg.pct, 2)}%`,
+                    backgroundColor: seg.color,
+                  }}
+                  className={`h-full first:rounded-l-[8px] last:rounded-r-[8px] relative flex items-center justify-center transition-all duration-700 ease-out cursor-pointer ${
+                    seg.key === 'profit' ? 'btn-shine-effect' : ''
+                  } ${
+                    hoveredWaterfallKey && !isHovered ? 'opacity-65' : 'opacity-100'
+                  }`}
+                >
+                  {seg.pct >= 9 && (
+                    <span className="font-mono text-[10.5px] font-bold text-white/95 truncate px-1.5">
+                      {seg.pct.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Компактная легенда водопада под полосой */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {waterfallSegments.map((seg) => (
+                <button
+                  key={seg.key}
+                  type="button"
+                  onMouseEnter={() => setHoveredWaterfallKey(seg.key)}
+                  onMouseLeave={() => setHoveredWaterfallKey(null)}
+                  onClick={() => onNavigateSection('finance')}
+                  className="inline-flex items-center gap-1.5 text-[11.5px] text-[#64748B] hover:text-[#111827] transition cursor-pointer"
+                >
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: seg.color }}
+                  />
+                  <span>{seg.label}</span>
+                  <strong className="font-mono text-[#111827]">
+                    {formatMln(seg.valueRub)}
+                  </strong>
+                  <span className="font-mono text-[10.5px] text-[#94A3B8]">
+                    ({seg.pct.toFixed(1).replace('.', ',')}%)
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
