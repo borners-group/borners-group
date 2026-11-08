@@ -437,7 +437,15 @@ export function PeaklyMasterCabinetsSummary({
   const [hoveredWaterfallKey, setHoveredWaterfallKey] = useState<string | null>(null);
   const [waterfallViewMode, setWaterfallViewMode] = useState<'pnl' | 'brands'>('pnl');
 
-  const gt = multiBrandSummary.groupTotal;
+  const holdingTotal = multiBrandSummary.groupTotal;
+  const normalizedSelectedBrand =
+    activeBrandFilter === 'ALL' ? 'ALL' : normalizePortfolioBrandCode(activeBrandFilter);
+  const selectedBrandRow =
+    normalizedSelectedBrand !== 'ALL'
+      ? multiBrandSummary.brands.find((b) => b.brandCode === normalizedSelectedBrand) || null
+      : null;
+  const gt = selectedBrandRow || holdingTotal;
+
   const activeBrandsCount = multiBrandSummary.brands.filter(
     (b) => b.hasScenario && b.hasModels
   ).length;
@@ -445,6 +453,10 @@ export function PeaklyMasterCabinetsSummary({
     gt.annualRevenueRub > 0
       ? Math.round((gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub) * 1000) / 10
       : 0;
+  const brandShareOfHoldingPct =
+    selectedBrandRow && holdingTotal.annualRevenueRub > 0
+      ? Math.round((selectedBrandRow.annualRevenueRub / holdingTotal.annualRevenueRub) * 1000) / 10
+      : null;
 
   // Параметры анимированного кольца маржинальности (Profitability Ring)
   const ringRadius = 34;
@@ -467,7 +479,7 @@ export function PeaklyMasterCabinetsSummary({
         label: 'Закупочная себестоимость',
         subtitle: 'Производство проданных партий',
         valueRub: cogsRub,
-        pct: (cogsRub / rev) * 100,
+        pct: gt.annualRevenueRub > 0 ? (cogsRub / rev) * 100 : 0,
         color: '#334155',
         badgeBg: 'bg-[#F1F5F9]',
         badgeText: 'text-[#334155]',
@@ -477,7 +489,7 @@ export function PeaklyMasterCabinetsSummary({
         label: 'Удержания маркетплейса',
         subtitle: 'Комиссия WB, логистика и хранение',
         valueRub: commissionLogisticsRub,
-        pct: (commissionLogisticsRub / rev) * 100,
+        pct: gt.annualRevenueRub > 0 ? (commissionLogisticsRub / rev) * 100 : 0,
         color: '#D97706',
         badgeBg: 'bg-[#FFFBEB]',
         badgeText: 'text-[#B45309]',
@@ -487,7 +499,7 @@ export function PeaklyMasterCabinetsSummary({
         label: 'Продвижение и налоги',
         subtitle: 'Реклама карточек (ДРР) и налог',
         valueRub: adsAndTaxRub,
-        pct: (adsAndTaxRub / rev) * 100,
+        pct: gt.annualRevenueRub > 0 ? (adsAndTaxRub / rev) * 100 : 0,
         color: '#6366F1',
         badgeBg: 'bg-[#EEF2FF]',
         badgeText: 'text-[#4338CA]',
@@ -495,9 +507,11 @@ export function PeaklyMasterCabinetsSummary({
       {
         key: 'profit',
         label: 'Чистая операционная прибыль',
-        subtitle: 'Свободный денежный поток холдинга',
+        subtitle: selectedBrandRow
+          ? `Денежный поток · ${selectedBrandRow.displayCode}`
+          : 'Свободный денежный поток холдинга',
         valueRub: profitRub,
-        pct: (profitRub / rev) * 100,
+        pct: gt.annualRevenueRub > 0 ? (profitRub / rev) * 100 : 0,
         color: '#0D9488',
         badgeBg: 'bg-[#F0FDFA]',
         badgeText: 'text-[#0D9488]',
@@ -507,11 +521,12 @@ export function PeaklyMasterCabinetsSummary({
     gt.annualRevenueRub,
     gt.annualSoldGoodsCostRub,
     gt.annualEstimatedOperatingProfitRub,
+    selectedBrandRow,
   ]);
 
-  // Режим 2: Доли брендов в годовой выручке
+  // Режим 2: Доли брендов в годовой выручке холдинга
   const brandSegments = useMemo(() => {
-    const rev = Math.max(gt.annualRevenueRub, 1);
+    const rev = Math.max(holdingTotal.annualRevenueRub, 1);
     const palette: Record<string, { color: string; badgeBg: string; badgeText: string }> = {
       BORNERS: { color: '#2C3444', badgeBg: 'bg-[#F1F5F9]', badgeText: 'text-[#1E293B]' },
       FUKAI: { color: '#0D9488', badgeBg: 'bg-[#F0FDFA]', badgeText: 'text-[#0D9488]' },
@@ -529,13 +544,13 @@ export function PeaklyMasterCabinetsSummary({
             ? `${b.modelsCount} SKU · прибыль +${formatMln(b.annualEstimatedOperatingProfitRub)}`
             : `${b.modelsCount} SKU · план не запущен`,
         valueRub: b.annualRevenueRub,
-        pct: gt.annualRevenueRub > 0 ? (b.annualRevenueRub / rev) * 100 : 0,
+        pct: holdingTotal.annualRevenueRub > 0 ? (b.annualRevenueRub / rev) * 100 : 0,
         color: style.color,
         badgeBg: style.badgeBg,
         badgeText: style.badgeText,
       };
     });
-  }, [multiBrandSummary.brands, gt.annualRevenueRub]);
+  }, [multiBrandSummary.brands, holdingTotal.annualRevenueRub]);
 
   const activeSegments = waterfallViewMode === 'pnl' ? pnlSegments : brandSegments;
 
@@ -543,7 +558,7 @@ export function PeaklyMasterCabinetsSummary({
     <div className="space-y-3.5">
       {/* 5 ОТДЕЛЬНЫХ КАРТОЧЕК С ЧИСТЫМ КОНТУРОМ, ВНУТРЕННИМ ПРОГРЕСС-БАРОМ И КОЛЬЦОМ МАРЖИ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* 1. Выручка холдинга */}
+        {/* 1. Выручка холдинга / Выручка выбранного кабинета */}
         <div
           onClick={() => onNavigateSection('launch-calendar')}
           className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
@@ -551,17 +566,25 @@ export function PeaklyMasterCabinetsSummary({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
-                Выручка холдинга ({activeBrandsCount}/5 каб.)
+                {selectedBrandRow
+                  ? `Выручка · ${selectedBrandRow.displayCode}`
+                  : `Выручка холдинга (${activeBrandsCount}/5 каб.)`}
               </span>
-              <svg className="h-4 w-9 text-[#2C3444] shrink-0 opacity-70" viewBox="0 0 40 16" fill="none">
-                <path
-                  d="M1 14L8 11.5L15 9.5L22 7.5L30 4.5L39 1.5"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              {selectedBrandRow && brandShareOfHoldingPct !== null ? (
+                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] shrink-0">
+                  {brandShareOfHoldingPct.toFixed(1).replace('.', ',')}% холд.
+                </span>
+              ) : (
+                <svg className="h-4 w-9 text-[#2C3444] shrink-0 opacity-70" viewBox="0 0 40 16" fill="none">
+                  <path
+                    d="M1 14L8 11.5L15 9.5L22 7.5L30 4.5L39 1.5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </div>
             <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
               <AnimatedMlnValue valueRub={gt.annualRevenueRub} />
@@ -573,10 +596,14 @@ export function PeaklyMasterCabinetsSummary({
               <div
                 className="h-full rounded-full bg-[#2C3444] transition-all duration-700 ease-out"
                 style={{
-                  width: `${Math.min(
-                    100,
-                    Math.max(18, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100)
-                  )}%`,
+                  width: `${
+                    gt.annualRevenueRub > 0
+                      ? Math.min(
+                          100,
+                          Math.max(18, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100)
+                        )
+                      : 0
+                  }%`,
                 }}
               />
             </div>
@@ -595,9 +622,11 @@ export function PeaklyMasterCabinetsSummary({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
-                План закупок на год
+                {selectedBrandRow
+                  ? `План закупок · ${selectedBrandRow.displayCode}`
+                  : 'План закупок на год'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569]">
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569] shrink-0">
                 4 волны
               </span>
             </div>
@@ -617,7 +646,11 @@ export function PeaklyMasterCabinetsSummary({
               className="text-[11px] text-[#64748B] flex items-center justify-between"
               title={multiBrandSummary.procurementBreakdownText}
             >
-              <span>Ассортимент в плане</span>
+              <span>
+                {selectedBrandRow && selectedBrandRow.totalProcurementQuantity > 0
+                  ? `${selectedBrandRow.totalProcurementQuantity.toLocaleString('ru-RU')} ${selectedBrandRow.primaryUnit}`
+                  : 'Ассортимент в плане'}
+              </span>
               <strong className="font-mono text-[#111827]">{gt.modelsCount} SKU</strong>
             </div>
           </div>
@@ -631,9 +664,11 @@ export function PeaklyMasterCabinetsSummary({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
-                Старт 1-й партии (Q1)
+                {selectedBrandRow
+                  ? `Старт 1-й партии · ${selectedBrandRow.displayCode}`
+                  : 'Старт 1-й партии (Q1)'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F0FDFA] text-[#0D9488]">
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F0FDFA] text-[#0D9488] shrink-0">
                 30% аванс
               </span>
             </div>
@@ -659,9 +694,11 @@ export function PeaklyMasterCabinetsSummary({
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
-                Пик своих денег (с WB)
+                {selectedBrandRow
+                  ? `Пик своих денег · ${selectedBrandRow.displayCode}`
+                  : 'Пик своих денег (с WB)'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155]">
+              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] shrink-0">
                 Реинвест
               </span>
             </div>
@@ -714,7 +751,9 @@ export function PeaklyMasterCabinetsSummary({
 
           <div className="relative z-10 min-w-0 flex-1 flex flex-col justify-between h-full">
             <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#0D9488] truncate">
-              Ожидаемая прибыль
+              {selectedBrandRow
+                ? `Прибыль · ${selectedBrandRow.displayCode}`
+                : 'Ожидаемая прибыль'}
             </div>
             <div className="mt-1.5 font-mono text-[22px] xl:text-[23px] font-extrabold tracking-[-0.03em] text-[#065F46] leading-none">
               <AnimatedMlnValue valueRub={gt.annualEstimatedOperatingProfitRub} prefix="+" />
@@ -783,7 +822,7 @@ export function PeaklyMasterCabinetsSummary({
                   activeBrandFilter === 'ALL' ? 'text-slate-300' : 'text-[#64748B]'
                 }`}
               >
-                {(gt.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+                {(holdingTotal.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
               </span>
             </button>
 
@@ -986,16 +1025,20 @@ export function PeaklyMasterCabinetsSummary({
         />
       )}
 
-      {/* ПОМЕСЯЧНЫЙ ГРАФИК ДЕНЕГ ХОЛДИНГА (12 МЕС.) ПО КНОПКЕ */}
+      {/* ПОМЕСЯЧНЫЙ ГРАФИК ДЕНЕГ ХОЛДИНГА / ВЫБРАННОГО КАБИНЕТА (12 МЕС.) ПО КНОПКЕ */}
       {monthlyCashflowOpen && (
         <div className="overflow-x-auto rounded-[16px] border border-[#CFD6E0] bg-white p-4 shadow-xs">
           <div className="text-[12.5px] font-bold text-[#111827] mb-2.5">
-            Помесячный денежный поток всех кабинетов BORNERS GROUP (12 месяцев, млн ₽)
+            {selectedBrandRow
+              ? `Помесячный денежный поток кабинета ${selectedBrandRow.displayCode} (12 месяцев, млн ₽)`
+              : 'Помесячный денежный поток всех кабинетов BORNERS GROUP (12 месяцев, млн ₽)'}
           </div>
           <table className="w-full min-w-[780px] text-left border-collapse text-[11px]">
             <thead>
               <tr className="border-b border-[#DCE2EC] text-[#64748B] bg-[#F4F6F9]">
-                <th className="py-2 px-2.5 font-bold">Показатель холдинга</th>
+                <th className="py-2 px-2.5 font-bold">
+                  {selectedBrandRow ? `Показатель · ${selectedBrandRow.displayCode}` : 'Показатель холдинга'}
+                </th>
                 {gt.monthlyRows.map((m) => (
                   <th key={m.monthIdx} className="py-2 px-1.5 text-right font-bold">
                     {m.monthLabel}

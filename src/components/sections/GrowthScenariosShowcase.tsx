@@ -730,6 +730,9 @@ export function GrowthScenariosShowcase({
       const isActingScenario = sc.id === ACTING_2027_SCENARIO_ID;
       const eligibleModels = models.filter((m) => {
         if (m.launchStatus === 'В архиве') return false;
+        if (brandFilterLocal !== 'ALL') {
+          if (!matchesBrandFilter(m, brandFilterLocal)) return false;
+        }
         if (sc.ownerBrandCode && sc.ownerBrandCode !== 'ALL') {
           return matchesBrandFilter(m, sc.ownerBrandCode);
         }
@@ -750,7 +753,11 @@ export function GrowthScenariosShowcase({
           ) {
             return false;
           }
-          if (!includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
+          if (
+            brandFilterLocal === 'ALL' &&
+            !includeGroupPortfolioInS1 &&
+            isUnverifiedActingSku(m.code)
+          ) {
             return false;
           }
         }
@@ -824,7 +831,9 @@ export function GrowthScenariosShowcase({
 
       const targetRub =
         sc.id === ACTING_2027_SCENARIO_ID
-          ? ACTING_2027_CONTROL_TOTALS.decemberRevenueRub
+          ? brandFilterLocal !== 'ALL' && targetMonthRevenueRub > 0
+            ? targetMonthRevenueRub
+            : ACTING_2027_CONTROL_TOTALS.decemberRevenueRub
           : sc.monthlyTargetMln * 1_000_000;
       const goalCompletionPct =
         targetRub > 0
@@ -856,7 +865,7 @@ export function GrowthScenariosShowcase({
       };
     }
     return map;
-  }, [scenarios, models, includeGroupPortfolioInS1]);
+  }, [scenarios, models, includeGroupPortfolioInS1, brandFilterLocal]);
 
   const currentAgg =
     scenarioAggregates[currentScenario.id] || scenarioAggregates[1];
@@ -2015,9 +2024,11 @@ export function GrowthScenariosShowcase({
                   const liveDecMlnStr = liveDecMlnNum.toFixed(2).replace('.', ',');
                   const targetMlnNum =
                     sc.id === ACTING_2027_SCENARIO_ID
-                      ? Math.round(
-                          (ACTING_2027_CONTROL_TOTALS.decemberRevenueRub / 1_000_000) * 100
-                        ) / 100
+                      ? brandFilterLocal !== 'ALL' && liveDecMlnNum > 0
+                        ? liveDecMlnNum
+                        : Math.round(
+                            (ACTING_2027_CONTROL_TOTALS.decemberRevenueRub / 1_000_000) * 100
+                          ) / 100
                       : sc.monthlyTargetMln;
                   const pctNum = agg ? agg.goalCompletionPct : 100;
                   const progressWidth = Math.min(100, Math.max(10, Math.round(pctNum)));
@@ -2027,11 +2038,19 @@ export function GrowthScenariosShowcase({
                       key={sc.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => setSelectedScenarioId(sc.id)}
+                      onClick={() => {
+                        setSelectedScenarioId(sc.id);
+                        if (brandFilterLocal !== 'ALL') {
+                          setSelectedScenarioForBrand(brandFilterLocal, sc.id);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           setSelectedScenarioId(sc.id);
+                          if (brandFilterLocal !== 'ALL') {
+                            setSelectedScenarioForBrand(brandFilterLocal, sc.id);
+                          }
                         }
                       }}
                       className={`card-shimmer hover-lift group rounded-[16px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
