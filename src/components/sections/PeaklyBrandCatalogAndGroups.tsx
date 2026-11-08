@@ -431,6 +431,9 @@ export interface PeaklyMasterCabinetsSummaryProps {
   onOpenCreateModelForBrand: (brandCode: string) => void;
   onNavigateSection: (section: 'product-catalog' | 'launch-calendar' | 'roadmap-tasks' | 'finance') => void;
   embeddedInHero?: boolean;
+  isStandaloneHome?: boolean;
+  onOpenStrategySummary?: () => void;
+  onOpenStudioCanvas?: () => void;
 }
 
 export function PeaklyMasterCabinetsSummary({
@@ -443,8 +446,11 @@ export function PeaklyMasterCabinetsSummary({
   onOpenCreateScenarioForBrand,
   onOpenCreateModelForBrand,
   onNavigateSection,
+  isStandaloneHome = false,
+  onOpenStrategySummary,
+  onOpenStudioCanvas,
 }: PeaklyMasterCabinetsSummaryProps) {
-  const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(false);
+  const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
   const [hoveredWaterfallKey, setHoveredWaterfallKey] = useState<string | null>(null);
   const [waterfallViewMode, setWaterfallViewMode] = useState<'pnl' | 'brands'>('pnl');
@@ -566,18 +572,18 @@ export function PeaklyMasterCabinetsSummary({
 
   const activeSegments = waterfallViewMode === 'pnl' ? pnlSegments : brandSegments;
 
-  // Живая мини-кривая (Area Sparkline) по 12 месяцам для первой Hero-карточки выручки
+  // Живая кривая (Area Sparkline) по 12 месяцам для флагманской Hero-карточки выручки
   const revSparkline = useMemo(() => {
     const rows = gt.monthlyRows || [];
     const values = rows.length === 12 ? rows.map((r) => r.grossSalesRub) : Array(12).fill(0);
     const maxV = Math.max(...values, 1);
     const minV = Math.min(...values, 0);
     const span = Math.max(maxV - minV, 1);
-    const w = 84;
-    const h = 28;
+    const w = 156;
+    const h = 46;
     const pts = values.map((v, i) => ({
-      x: Math.round((i / 11) * (w - 8) + 4),
-      y: Math.round(h - 4 - ((v - minV) / span) * (h - 9)),
+      x: Math.round((i / 11) * (w - 12) + 6),
+      y: Math.round(h - 6 - ((v - minV) / span) * (h - 14)),
     }));
     const linePath = pts
       .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
@@ -589,7 +595,10 @@ export function PeaklyMasterCabinetsSummary({
     return {
       linePath,
       areaPath,
-      lastPt: pts[pts.length - 1] || { x: 80, y: 6 },
+      firstPt: pts[0] || { x: 6, y: 38 },
+      lastPt: pts[pts.length - 1] || { x: 150, y: 8 },
+      janRub,
+      decRub,
       growthMult,
     };
   }, [gt.monthlyRows, gt.decemberRevenueRub]);
@@ -619,374 +628,496 @@ export function PeaklyMasterCabinetsSummary({
     return 82;
   }, [gt.totalProcurementBudgetRub, gt.verifiedOwnMoneyRequiredRub]);
 
-  // Краткая расшифровка слагаемых выручки холдинга (например: BORNERS 686,3 + FUKAI 90,6 млн)
-  const activeBrandsBreakdownShort = useMemo(() => {
-    const active = multiBrandSummary.brands.filter(
-      (b) => b.hasScenario && b.hasModels && b.annualRevenueRub > 0
-    );
-    if (active.length <= 1) return null;
-    return active
-      .map(
-        (b) =>
-          `${b.displayCode} ${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')}`
-      )
-      .join(' + ') + ' млн';
-  }, [multiBrandSummary.brands]);
+  // Активные кабинеты с выручкой для плашек расшифровки
+  const activeRevenueBrands = useMemo(
+    () =>
+      multiBrandSummary.brands.filter(
+        (b) => b.hasScenario && b.hasModels && b.annualRevenueRub > 0
+      ),
+    [multiBrandSummary.brands]
+  );
 
   return (
-    <div className="space-y-3.5">
-      {/* 5 ФЛАГМАНСКИХ HERO-КАРТОЧЕК ХОЛДИНГА: ПОШАГОВАЯ ЛОГИКА КАПИТАЛА (01 → 05) И ДОФАМИНОВАЯ ТИПОГРАФИКА */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* 01. ВЫРУЧКА ЗА ГОД */}
-        <div
-          onClick={() => onNavigateSection('launch-calendar')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-white via-white to-[#F8FAFC] border-[1.5px] border-[#CBD5E1] p-4 md:p-5 shadow-[0_10px_26px_-6px_rgba(15,23,42,0.08)] cursor-pointer flex flex-col justify-between overflow-hidden"
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0D9488]" />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#0D9488]/10 blur-2xl"
-          />
-
-          <div>
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#334155] truncate">
-                <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-[#0F172A] text-white shrink-0">
-                  01
-                </span>
-                <span className="truncate">
-                  {selectedBrandRow
-                    ? `Выручка · ${selectedBrandRow.displayCode}`
-                    : 'Выручка холдинга'}
-                </span>
-              </span>
-              {selectedBrandRow && brandShareOfHoldingPct !== null ? (
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
-                  {brandShareOfHoldingPct.toFixed(1).replace('.', ',')}% холд.
-                </span>
-              ) : revSparkline.growthMult && revSparkline.growthMult > 1 ? (
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
-                  ▲ ×{revSparkline.growthMult.toFixed(1).replace('.', ',')}
-                </span>
-              ) : null}
+    <div className="space-y-4">
+      {/* ФЛАГМАНСКАЯ ШАПКА ГЛАВНОЙ СТРАНИЦЫ СЕРВИСА (В РЕЖИМЕ ГЛАВНОЙ) */}
+      {isStandaloneHome && (
+        <div className="rounded-[20px] bg-white border border-[#CFD6E0] px-5 py-4 md:px-6 md:py-5 shadow-[0_6px_22px_-6px_rgba(15,23,42,0.06)] flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#0D9488]">
+              <span className="h-2 w-2 rounded-full bg-[#0D9488] animate-pulse" />
+              <span>Главная панель холдинга · BORNERS GROUP 2027–2028</span>
             </div>
+            <h1 className="text-[21px] md:text-[24px] font-black tracking-[-0.025em] text-[#0F172A] leading-tight">
+              {selectedBrandRow
+                ? `Кабинет ${selectedBrandRow.displayCode} · Финансовая и товарная сводка`
+                : 'Финансовый и операционный центр BORNERS GROUP'}
+            </h1>
+            <p className="text-[12.5px] text-[#64748B]">
+              Консолидация 5 кабинетов в реальном времени: годовая выручка, 4 волны закупок, пик своих денег и чистая прибыль
+            </p>
+          </div>
 
-            <div className="mt-2.5 flex items-end justify-between gap-2">
-              <div className="font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
-                <AnimatedMlnValue
-                  valueRub={gt.annualRevenueRub}
-                  unitClassName="text-[12.5px] font-bold tracking-normal text-[#475569] font-sans"
-                />
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpenStudioCanvas && (
+              <button
+                type="button"
+                onClick={onOpenStudioCanvas}
+                className="h-9 px-3.5 rounded-[10px] border border-[#DCE2EC] bg-[#F8FAFC] hover:bg-white hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] transition cursor-pointer"
+              >
+                Студия идей (Доска)
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onNavigateSection('product-catalog')}
+              className="h-9 px-3.5 rounded-[10px] border border-[#DCE2EC] bg-[#F8FAFC] hover:bg-white hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] transition cursor-pointer"
+            >
+              01 · Каталог ({gt.modelsCount} SKU)
+            </button>
+            {onOpenStrategySummary && (
+              <button
+                type="button"
+                onClick={onOpenStrategySummary}
+                className="h-9 px-4 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-bold transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+              >
+                <span>Сводка: Стратегия и 4 сценария</span>
+                <span>→</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* АРХИТЕКТУРНАЯ BENTO-СЕТКА 2+3: ДВЕ КРУПНЫЕ ФЛАГМАНСКИЕ КАРТОЧКИ СВЕРХУ + ТРИ ПРОСТОРНЫЕ КАРТОЧКИ КАПИТАЛА СНИЗУ */}
+      <div className="space-y-3.5">
+        {/* РЯД 1: 01 ВЫРУЧКА ХОЛДИНГА (6 КОЛОНОК) + 05 ЧИСТАЯ ПРИБЫЛЬ И МАРЖА (6 КОЛОНОК) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+          {/* 01. ГЛАВНАЯ HERO-КАРТОЧКА: ГОДОВАЯ ВЫРУЧКА ХОЛДИНГА */}
+          <div
+            onClick={() => onNavigateSection('launch-calendar')}
+            className="lg:col-span-6 card-shimmer hover-lift relative rounded-[20px] bg-gradient-to-br from-white via-white to-[#F0FDFA]/50 border-[1.5px] border-[#CBD5E1] p-5 md:p-6 shadow-[0_12px_30px_-8px_rgba(15,23,42,0.09)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0D9488]" />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#0D9488]/10 blur-2xl"
+            />
+
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.05em] text-[#1E293B]">
+                  <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded-[6px] bg-[#0F172A] text-white shrink-0">
+                    01
+                  </span>
+                  <span>
+                    {selectedBrandRow
+                      ? `Годовая выручка · Кабинет ${selectedBrandRow.displayCode}`
+                      : `Годовая выручка холдинга (${activeBrandsCount} из 5 каб.)`}
+                  </span>
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-[7px] bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B]">
+                    {gt.modelsCount} SKU
+                  </span>
+                  {selectedBrandRow && brandShareOfHoldingPct !== null ? (
+                    <span className="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-[7px] bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488]">
+                      {brandShareOfHoldingPct.toFixed(1).replace('.', ',')}% холдинга
+                    </span>
+                  ) : revSparkline.growthMult && revSparkline.growthMult > 1 ? (
+                    <span className="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-[7px] bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488]">
+                      ▲ ×{revSparkline.growthMult.toFixed(1).replace('.', ',')} к январю
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
-              {/* Живой мини-график 12 мес. с заливкой и светящейся точкой пика */}
-              <svg className="h-7 w-[74px] shrink-0 overflow-visible" viewBox="0 0 84 28" fill="none">
-                <defs>
-                  <linearGradient id="heroRevSparkFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0D9488" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#0D9488" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path d={revSparkline.areaPath} fill="url(#heroRevSparkFill)" />
-                <path
-                  d={revSparkline.linePath}
-                  stroke="#1E293B"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle
-                  cx={revSparkline.lastPt.x}
-                  cy={revSparkline.lastPt.y}
-                  r="4"
-                  fill="#0D9488"
-                  fillOpacity="0.25"
-                />
-                <circle
-                  cx={revSparkline.lastPt.x}
-                  cy={revSparkline.lastPt.y}
-                  r="2.4"
-                  fill="#0D9488"
-                />
-              </svg>
-            </div>
-          </div>
+              <div className="mt-3.5 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="font-mono text-[36px] sm:text-[40px] xl:text-[44px] font-black tracking-[-0.04em] text-[#0F172A] leading-none">
+                    <AnimatedMlnValue
+                      valueRub={gt.annualRevenueRub}
+                      unitClassName="text-[15px] font-extrabold tracking-normal text-[#475569] font-sans ml-1"
+                    />
+                  </div>
+                  <div className="mt-2 text-[12.5px] text-[#475569] flex flex-wrap items-center gap-2">
+                    <span>
+                      Пик декабря:{' '}
+                      <strong className="font-mono font-extrabold text-[#0F172A]">
+                        {formatMln(gt.decemberRevenueRub)}
+                      </strong>
+                    </span>
+                    <span className="text-[#CBD5E1]">·</span>
+                    <span>
+                      Старт января:{' '}
+                      <strong className="font-mono font-bold text-[#334155]">
+                        {formatMln(revSparkline.janRub)}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
 
-          <div className="mt-3.5 space-y-1.5">
-            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden p-0.5">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488] transition-all duration-700 ease-out"
-                style={{
-                  width: `${
-                    gt.annualRevenueRub > 0
-                      ? Math.min(
-                          100,
-                          Math.max(22, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100)
-                        )
-                      : 0
-                  }%`,
-                }}
-              />
+                {/* Крупный наглядный мини-график 12 месяцев */}
+                <div className="flex flex-col items-end">
+                  <svg
+                    className="h-[46px] w-[156px] shrink-0 overflow-visible"
+                    viewBox="0 0 156 46"
+                    fill="none"
+                  >
+                    <defs>
+                      <linearGradient id="heroRevSparkFillLg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0D9488" stopOpacity="0.30" />
+                        <stop offset="100%" stopColor="#0D9488" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+                    <path d={revSparkline.areaPath} fill="url(#heroRevSparkFillLg)" />
+                    <path
+                      d={revSparkline.linePath}
+                      stroke="#1E293B"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <circle
+                      cx={revSparkline.firstPt.x}
+                      cy={revSparkline.firstPt.y}
+                      r="2.5"
+                      fill="#64748B"
+                    />
+                    <circle
+                      cx={revSparkline.lastPt.x}
+                      cy={revSparkline.lastPt.y}
+                      r="5.5"
+                      fill="#0D9488"
+                      fillOpacity="0.25"
+                    />
+                    <circle
+                      cx={revSparkline.lastPt.x}
+                      cy={revSparkline.lastPt.y}
+                      r="3"
+                      fill="#0D9488"
+                    />
+                  </svg>
+                  <span className="font-mono text-[10px] text-[#64748B] mt-0.5">
+                    Динамика 12 мес. (янв → дек)
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="text-[11.5px] text-[#64748B] flex items-center justify-between gap-1">
-              <span className="truncate">
-                {!selectedBrandRow && activeBrandsBreakdownShort
-                  ? activeBrandsBreakdownShort
-                  : 'Пик декабря'}
-              </span>
-              <strong className="font-mono font-extrabold text-[#0F172A] shrink-0">
-                дек {formatMln(gt.decemberRevenueRub)}
-              </strong>
-            </div>
-          </div>
-        </div>
 
-        {/* 02. ПЛАН ЗАКУПОК НА ГОД */}
-        <div
-          onClick={() => onNavigateSection('roadmap-tasks')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#64748B]" />
-          <div>
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#475569] truncate">
-                <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] shrink-0">
-                  02
-                </span>
-                <span className="truncate">
-                  {selectedBrandRow
-                    ? `Закупки · ${selectedBrandRow.displayCode}`
-                    : 'Закупки на год'}
-                </span>
-              </span>
-              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F1F5F9] border border-[#E2E8F0] text-[#334155] shrink-0">
-                4 волны · {gt.modelsCount} SKU
-              </span>
-            </div>
-            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
-              <AnimatedMlnValue valueRub={gt.totalProcurementBudgetRub} />
-            </div>
-          </div>
-
-          <div className="mt-3.5 space-y-1.5">
-            <div className="h-2 w-full grid grid-cols-4 gap-1 bg-[#F1F5F9] p-0.5 rounded-full">
-              <div className="rounded-full bg-[#1E293B]" />
-              <div className="rounded-full bg-[#334155]" />
-              <div className="rounded-full bg-[#475569]" />
-              <div className="rounded-full bg-[#0D9488]" />
-            </div>
-            <div
-              className="text-[11.5px] text-[#64748B] flex items-center justify-between gap-1"
-              title={multiBrandSummary.procurementBreakdownText}
-            >
-              <span className="truncate">
-                {selectedBrandRow && selectedBrandRow.totalProcurementQuantity > 0
-                  ? `Объём: ${selectedBrandRow.totalProcurementQuantity.toLocaleString('ru-RU')} ${selectedBrandRow.primaryUnit}`
-                  : `Из выручки WB оплачивается`}
-              </span>
-              <strong className="font-mono font-extrabold text-[#0D9488] shrink-0">
-                {selectedBrandRow && selectedBrandRow.totalProcurementQuantity > 0
-                  ? `${gt.modelsCount} SKU`
-                  : `${selfFundedProcurementPct}% партий`}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* 03. СТАРТ 1-Й ПАРТИИ (Q1) */}
-        <div
-          onClick={() => onNavigateSection('roadmap-tasks')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488]" />
-          <div>
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#475569] truncate">
-                <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] shrink-0">
-                  03
-                </span>
-                <span className="truncate">
-                  {selectedBrandRow
-                    ? `Старт Q1 · ${selectedBrandRow.displayCode}`
-                    : 'Старт 1-й партии (Q1)'}
-                </span>
-              </span>
-              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
-                30% аванс
+            <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {!selectedBrandRow && activeRevenueBrands.length > 0 ? (
+                  activeRevenueBrands.map((b) => (
+                    <span
+                      key={b.brandCode}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[7px] bg-[#F8FAFC] border border-[#DCE2EC] text-[11.5px] font-semibold text-[#1E293B]"
+                    >
+                      <span className="font-bold">{b.displayCode}:</span>
+                      <span className="font-mono font-extrabold text-[#0F172A]">
+                        {formatMln(b.annualRevenueRub)}
+                      </span>
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[12px] text-[#64748B]">
+                    Годовой план выкупов по всем моделям кабинета
+                  </span>
+                )}
+              </div>
+              <span className="text-[11.5px] font-bold text-[#0D9488] hover:underline">
+                02 · План продаж →
               </span>
             </div>
-            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
-              <AnimatedMlnValue valueRub={gt.firstWaveStartBudgetRub} />
-            </div>
           </div>
 
-          <div className="mt-3.5 space-y-1.5">
-            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden flex gap-0.5 p-0.5">
-              <div className="h-full rounded-l-full bg-[#0D9488] w-[30%]" />
-              <div className="h-full rounded-r-full bg-[#94A3B8]/60 w-[70%]" />
-            </div>
-            <div className="text-[11.5px] text-[#64748B] flex items-center justify-between gap-1">
-              <span className="truncate">Аванс фабрике сейчас</span>
-              <strong className="font-mono font-extrabold text-[#0D9488] shrink-0">
-                {formatMln(gt.firstWavePrepaymentRub)}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* 04. ПИК СВОИХ ДЕНЕГ (МАКСИМУМ СОБСТВЕННОГО КАПИТАЛА) */}
-        <div className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] flex flex-col justify-between overflow-hidden">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488]" />
-          <div>
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.04em] text-[#475569] truncate">
-                <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] shrink-0">
-                  04
-                </span>
-                <span className="truncate">
-                  {selectedBrandRow
-                    ? `Пик денег · ${selectedBrandRow.displayCode}`
-                    : 'Пик своих денег'}
-                </span>
-              </span>
-              {ownCapitalRoiMult ? (
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
-                  ROI ×{ownCapitalRoiMult.toFixed(1).replace('.', ',')}
-                </span>
-              ) : (
-                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] shrink-0">
-                  С оборотом WB
-                </span>
-              )}
-            </div>
-            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
-              {gt.verifiedOwnMoneyRequiredRub !== null ? (
-                <AnimatedMlnValue valueRub={gt.verifiedOwnMoneyRequiredRub} />
-              ) : (
-                '—'
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3.5 space-y-1.5">
-            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden p-0.5">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#1E293B] to-[#0D9488] transition-all duration-700 ease-out"
-                style={{
-                  width: `${
-                    gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
-                      ? Math.min(100, Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100))
-                      : 25
-                  }%`,
-                }}
-              />
-            </div>
-            <div className="text-[11.5px] text-[#64748B] flex items-center justify-between gap-1">
-              <span className="truncate">Макс. вложений в оборот</span>
-              <strong className="font-mono font-extrabold text-[#0F172A] shrink-0">
-                {gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
-                  ? `${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}% от закупок`
-                  : 'реинвест WB'}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* 05. ДОФАМИНОВАЯ HERO-КАРТОЧКА ЧИСТОЙ ПРИБЫЛИ С КОЛЬЦОМ МАРЖИ И ОРБИТОЙ */}
-        <div
-          onClick={() => onNavigateSection('finance')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-[#ECFDF5] via-white to-[#CCFBF1]/75 border-[1.5px] border-[#6EE7B7] p-4 md:p-5 shadow-[0_12px_28px_-6px_rgba(13,148,136,0.20)] cursor-pointer overflow-hidden flex items-center justify-between gap-2.5"
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#10B981] via-[#0D9488] to-[#047857]" />
+          {/* 05. ГЛАВНАЯ ДОФАМИНОВАЯ HERO-КАРТОЧКА: ЧИСТАЯ ОПЕРАЦИОННАЯ ПРИБЫЛЬ И МАРЖА */}
           <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#10B981]/20 blur-2xl"
-          />
-          <svg
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 text-[#0D9488] opacity-[0.12] animate-orbit-slow"
-            viewBox="0 0 220 220"
-            fill="none"
+            onClick={() => onNavigateSection('finance')}
+            className="lg:col-span-6 card-shimmer hover-lift relative rounded-[20px] bg-gradient-to-br from-[#ECFDF5] via-white to-[#CCFBF1]/80 border-[1.5px] border-[#6EE7B7] p-5 md:p-6 shadow-[0_12px_32px_-8px_rgba(13,148,136,0.22)] cursor-pointer overflow-hidden flex flex-col justify-between"
           >
-            <circle cx="110" cy="110" r="76" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 8" />
-            <circle cx="110" cy="110" r="96" stroke="currentColor" strokeWidth="1" />
-          </svg>
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#10B981] via-[#0D9488] to-[#047857]" />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#10B981]/20 blur-2xl"
+            />
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-8 -top-8 h-44 w-44 text-[#0D9488] opacity-[0.12] animate-orbit-slow"
+              viewBox="0 0 220 220"
+              fill="none"
+            >
+              <circle cx="110" cy="110" r="76" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 8" />
+              <circle cx="110" cy="110" r="96" stroke="currentColor" strokeWidth="1" />
+            </svg>
 
-          <div className="relative z-10 min-w-0 flex-1 flex flex-col justify-between h-full">
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.05em] text-[#047857] truncate">
-              <span className="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-[#064E3B] text-white shrink-0">
-                05
-              </span>
-              <span className="truncate">
-                {selectedBrandRow
-                  ? `Прибыль · ${selectedBrandRow.displayCode}`
-                  : 'Чистая прибыль'}
+            <div className="relative z-10 flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2 text-[12px] font-extrabold uppercase tracking-[0.05em] text-[#047857]">
+                    <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded-[6px] bg-[#064E3B] text-white shrink-0">
+                      05
+                    </span>
+                    <span>
+                      {selectedBrandRow
+                        ? `Чистая операционная прибыль · ${selectedBrandRow.displayCode}`
+                        : 'Чистая операционная прибыль холдинга'}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="mt-3.5 font-mono text-[36px] sm:text-[40px] xl:text-[44px] font-black tracking-[-0.04em] text-[#064E3B] leading-none">
+                  <AnimatedMlnValue
+                    valueRub={gt.annualEstimatedOperatingProfitRub}
+                    prefix="+"
+                    unitClassName="text-[15px] font-extrabold tracking-normal text-[#0D9488] font-sans ml-1"
+                  />
+                </div>
+
+                <div className="mt-2 text-[12.5px] text-[#065F46] flex flex-wrap items-center gap-2">
+                  <span>
+                    С каждого 1 ₽ выручки:{' '}
+                    <strong className="font-mono font-extrabold text-[#064E3B]">
+                      +{Math.round(groupMarginPct)} коп. чистыми
+                    </strong>
+                  </span>
+                  <span className="text-[#A7F3D0]">·</span>
+                  <span>
+                    Себестоимость проданного:{' '}
+                    <strong className="font-mono font-bold text-[#0F172A]">
+                      {formatMln(gt.annualSoldGoodsCostRub)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Крупное анимированное кольцо маржинальности (Profitability Ring 86x86) */}
+              <div className="relative z-10 shrink-0 h-[86px] w-[86px] rounded-full bg-white/95 border-[1.5px] border-[#6EE7B7] p-1.5 shadow-[0_6px_16px_rgba(13,148,136,0.16)] flex items-center justify-center">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+                  <defs>
+                    <linearGradient id="profitRingGradLg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#10B981" />
+                      <stop offset="100%" stopColor="#047857" />
+                    </linearGradient>
+                  </defs>
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r={ringRadius}
+                    fill="none"
+                    stroke="#E2E8F0"
+                    strokeWidth="6.5"
+                  />
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r={ringRadius}
+                    fill="none"
+                    stroke="url(#profitRingGradLg)"
+                    strokeWidth="6.5"
+                    strokeLinecap="round"
+                    strokeDasharray={ringCircumference}
+                    strokeDashoffset={ringStrokeOffset}
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="font-mono text-[15px] font-black text-[#064E3B] leading-none">
+                    {groupMarginPct.toFixed(1).replace('.', ',')}%
+                  </span>
+                  <span className="text-[8.5px] font-extrabold uppercase tracking-wider text-[#0D9488] mt-0.5">
+                    маржа
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="relative z-10 mt-4 pt-3 border-t border-[#A7F3D0]/80 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {ownCapitalRoiMult && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[7px] bg-white/90 border border-[#6EE7B7] text-[11.5px] font-bold text-[#064E3B]">
+                    <span>Отдача на свой капитал:</span>
+                    <span className="font-mono font-black text-[#0D9488]">
+                      1 ₽ → +{ownCapitalRoiMult.toFixed(1).replace('.', ',')} ₽ прибыли
+                    </span>
+                  </span>
+                )}
+              </div>
+              <span className="text-[11.5px] font-bold text-[#047857] hover:underline">
+                04 · Финансы и P&L →
               </span>
             </div>
-            <div className="mt-2 font-mono text-[27px] xl:text-[30px] font-black tracking-[-0.04em] text-[#064E3B] leading-none">
-              <AnimatedMlnValue
-                valueRub={gt.annualEstimatedOperatingProfitRub}
-                prefix="+"
-                unitClassName="text-[12px] font-bold tracking-normal text-[#0D9488] font-sans"
-              />
+          </div>
+        </div>
+
+        {/* РЯД 2: ТРИ ПРОСТОРНЫЕ КАРТОЧКИ ЗАКУПОК И КАПИТАЛА (02, 03, 04 — ПО 1/3 ЭКРАНА БЕЗ ОБРЕЗАНИЯ ТЕКСТА) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* 02. ПЛАН ЗАКУПОК НА ГОД (4 ВОЛНЫ) */}
+          <div
+            onClick={() => onNavigateSection('roadmap-tasks')}
+            className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#64748B]" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[11.5px] font-extrabold uppercase tracking-[0.04em] text-[#334155]">
+                  <span className="font-mono text-[10.5px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] shrink-0">
+                    02
+                  </span>
+                  <span>
+                    {selectedBrandRow
+                      ? `План закупок · ${selectedBrandRow.displayCode}`
+                      : 'План закупок на год (4 волны)'}
+                  </span>
+                </span>
+                <span className="font-mono text-[10.5px] font-bold px-2.5 py-0.5 rounded-md bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] shrink-0">
+                  4 волны · {gt.modelsCount} SKU
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-baseline justify-between gap-2">
+                <div className="font-mono text-[30px] xl:text-[33px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
+                  <AnimatedMlnValue valueRub={gt.totalProcurementBudgetRub} />
+                </div>
+                <span className="text-[11px] font-semibold text-[#64748B]">
+                  бюджет партий
+                </span>
+              </div>
             </div>
-            <div className="mt-2 h-0.5 w-16 rounded-full bg-gradient-to-r from-[#10B981] via-[#0D9488] to-transparent" />
-            <div className="mt-2 text-[11.5px] text-[#065F46] truncate">
-              {ownCapitalRoiMult ? (
-                <>
-                  На 1 ₽ вложений →{' '}
-                  <strong className="font-mono font-extrabold text-[#064E3B]">
-                    +{ownCapitalRoiMult.toFixed(1).replace('.', ',')} ₽
-                  </strong>
-                </>
-              ) : (
-                <>
-                  Себестоимость:{' '}
-                  <strong className="font-mono font-extrabold text-[#0F172A]">
-                    {formatMln(gt.annualSoldGoodsCostRub)}
-                  </strong>
-                </>
-              )}
+
+            <div className="mt-3.5 space-y-2">
+              <div className="h-2.5 w-full grid grid-cols-4 gap-1 bg-[#F1F5F9] p-0.5 rounded-full">
+                <div className="rounded-full bg-[#1E293B]" />
+                <div className="rounded-full bg-[#334155]" />
+                <div className="rounded-full bg-[#475569]" />
+                <div className="rounded-full bg-[#0D9488]" />
+              </div>
+              <div
+                className="text-[12px] text-[#475569] flex items-center justify-between gap-2"
+                title={multiBrandSummary.procurementBreakdownText}
+              >
+                <span>
+                  {selectedBrandRow && selectedBrandRow.totalProcurementQuantity > 0
+                    ? `К заказу: ${selectedBrandRow.totalProcurementQuantity.toLocaleString('ru-RU')} ${selectedBrandRow.primaryUnit}`
+                    : 'Оплачивается из оборотной выручки WB'}
+                </span>
+                <strong className="font-mono font-extrabold text-[#0D9488] shrink-0">
+                  {selectedBrandRow && selectedBrandRow.totalProcurementQuantity > 0
+                    ? `${gt.modelsCount} SKU`
+                    : `${selfFundedProcurementPct}% годовых партий`}
+                </strong>
+              </div>
             </div>
           </div>
 
-          {/* Анимированное круговое кольцо маржинальности (Profitability Ring) */}
-          <div className="relative z-10 shrink-0 h-[72px] w-[72px] rounded-full bg-white/95 border border-[#6EE7B7] p-1 shadow-[0_4px_12px_rgba(13,148,136,0.14)] flex items-center justify-center">
-            <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
-              <defs>
-                <linearGradient id="profitRingGrad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#10B981" />
-                  <stop offset="100%" stopColor="#047857" />
-                </linearGradient>
-              </defs>
-              <circle
-                cx="40"
-                cy="40"
-                r={ringRadius}
-                fill="none"
-                stroke="#E2E8F0"
-                strokeWidth="6"
-              />
-              <circle
-                cx="40"
-                cy="40"
-                r={ringRadius}
-                fill="none"
-                stroke="url(#profitRingGrad)"
-                strokeWidth="6"
-                strokeLinecap="round"
-                strokeDasharray={ringCircumference}
-                strokeDashoffset={ringStrokeOffset}
-                className="transition-all duration-1000 ease-out"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="font-mono text-[13px] font-black text-[#064E3B] leading-none">
-                {groupMarginPct.toFixed(1).replace('.', ',')}%
-              </span>
-              <span className="text-[7.5px] font-extrabold uppercase tracking-wider text-[#0D9488] mt-0.5">
-                маржа
-              </span>
+          {/* 03. СТАРТ 1-Й ПАРТИИ (Q1 · АВАНС 30% И ДОПЛАТА 70%) */}
+          <div
+            onClick={() => onNavigateSection('roadmap-tasks')}
+            className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488]" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[11.5px] font-extrabold uppercase tracking-[0.04em] text-[#334155]">
+                  <span className="font-mono text-[10.5px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] shrink-0">
+                    03
+                  </span>
+                  <span>
+                    {selectedBrandRow
+                      ? `Старт 1-й партии (Q1) · ${selectedBrandRow.displayCode}`
+                      : 'Старт 1-й партии (Q1 · Запуск)'}
+                  </span>
+                </span>
+                <span className="font-mono text-[10.5px] font-bold px-2.5 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
+                  30% аванс / 70% отгр.
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-baseline justify-between gap-2">
+                <div className="font-mono text-[30px] xl:text-[33px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
+                  <AnimatedMlnValue valueRub={gt.firstWaveStartBudgetRub} />
+                </div>
+                <span className="text-[11px] font-semibold text-[#64748B]">
+                  1-я волна Q1
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3.5 space-y-2">
+              <div className="h-2.5 w-full rounded-full bg-[#E2E8F0] overflow-hidden flex gap-0.5 p-0.5">
+                <div className="h-full rounded-l-full bg-[#0D9488] w-[30%]" />
+                <div className="h-full rounded-r-full bg-[#94A3B8]/65 w-[70%]" />
+              </div>
+              <div className="text-[12px] text-[#475569] flex items-center justify-between gap-2">
+                <span>Аванс 30% фабрикам сейчас</span>
+                <strong className="font-mono font-extrabold text-[#0D9488] shrink-0">
+                  {formatMln(gt.firstWavePrepaymentRub)}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          {/* 04. ПИК СОБСТВЕННЫХ ДЕНЕГ В ОБОРОТЕ */}
+          <div className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] flex flex-col justify-between overflow-hidden">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488]" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-2 text-[11.5px] font-extrabold uppercase tracking-[0.04em] text-[#334155]">
+                  <span className="font-mono text-[10.5px] font-black px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] shrink-0">
+                    04
+                  </span>
+                  <span>
+                    {selectedBrandRow
+                      ? `Пик своих денег · ${selectedBrandRow.displayCode}`
+                      : 'Пик собственных денег в обороте'}
+                  </span>
+                </span>
+                {ownCapitalRoiMult ? (
+                  <span className="font-mono text-[10.5px] font-bold px-2.5 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
+                    ROI ×{ownCapitalRoiMult.toFixed(1).replace('.', ',')}
+                  </span>
+                ) : (
+                  <span className="font-mono text-[10.5px] font-bold px-2.5 py-0.5 rounded-md bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155] shrink-0">
+                    С оборотом WB
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-baseline justify-between gap-2">
+                <div className="font-mono text-[30px] xl:text-[33px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
+                  {gt.verifiedOwnMoneyRequiredRub !== null ? (
+                    <AnimatedMlnValue valueRub={gt.verifiedOwnMoneyRequiredRub} />
+                  ) : (
+                    '—'
+                  )}
+                </div>
+                <span className="text-[11px] font-semibold text-[#64748B]">
+                  макс. кассовый пик
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3.5 space-y-2">
+              <div className="h-2.5 w-full rounded-full bg-[#E2E8F0] overflow-hidden p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#1E293B] to-[#0D9488] transition-all duration-700 ease-out"
+                  style={{
+                    width: `${
+                      gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
+                        ? Math.min(100, Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100))
+                        : 25
+                    }%`,
+                  }}
+                />
+              </div>
+              <div className="text-[12px] text-[#475569] flex items-center justify-between gap-2">
+                <span>Доля своих средств от годовых закупок</span>
+                <strong className="font-mono font-extrabold text-[#0F172A] shrink-0">
+                  {gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
+                    ? `всего ${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}%`
+                    : 'реинвест WB'}
+                </strong>
+              </div>
             </div>
           </div>
         </div>
@@ -1376,6 +1507,117 @@ export function PeaklyMasterCabinetsSummary({
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* НАВИГАЦИОННЫЙ ХАБ РАЗДЕЛОВ НА ГЛАВНОЙ СТРАНИЦЕ СЕРВИСА */}
+      {isStandaloneHome && (
+        <div className="rounded-[20px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_6px_22px_-6px_rgba(15,23,42,0.06)] space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#475569]">
+              Быстрый переход по контурам управления BORNERS GROUP
+            </span>
+            <span className="text-[11.5px] text-[#64748B]">
+              Выберите рабочий контур для детальной работы со сценариями и карточками
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenStrategySummary?.()}
+              className="hover-lift rounded-[14px] p-4 text-left bg-gradient-to-br from-[#2C3444] to-[#1E293B] text-white border border-[#1E293B] shadow-xs cursor-pointer flex flex-col justify-between gap-3"
+            >
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-teal-300">
+                  Сводка · Сценарии
+                </div>
+                <div className="text-[14px] font-extrabold mt-1">
+                  Стратегия роста и матрица
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-300 flex items-center justify-between">
+                <span>4 сценария · 12 мес.</span>
+                <span className="font-bold text-white">Открыть →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateSection('product-catalog')}
+              className="hover-lift rounded-[14px] p-4 text-left bg-[#F8FAFC] hover:bg-white border border-[#DCE2EC] hover:border-[#94A3B8] cursor-pointer flex flex-col justify-between gap-3 transition"
+            >
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Контур 01 · Продукт
+                </div>
+                <div className="text-[14px] font-extrabold text-[#0F172A] mt-1">
+                  Каталог и группы SKU
+                </div>
+              </div>
+              <div className="text-[11px] text-[#64748B] flex items-center justify-between">
+                <span className="font-mono font-bold text-[#1E293B]">{gt.modelsCount} SKU</span>
+                <span className="font-semibold text-[#0D9488]">Перейти →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateSection('launch-calendar')}
+              className="hover-lift rounded-[14px] p-4 text-left bg-[#F8FAFC] hover:bg-white border border-[#DCE2EC] hover:border-[#94A3B8] cursor-pointer flex flex-col justify-between gap-3 transition"
+            >
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Контур 02 · Продажи
+                </div>
+                <div className="text-[14px] font-extrabold text-[#0F172A] mt-1">
+                  План продаж 12 мес.
+                </div>
+              </div>
+              <div className="text-[11px] text-[#64748B] flex items-center justify-between">
+                <span className="font-mono font-bold text-[#1E293B]">{formatMln(gt.annualRevenueRub)}</span>
+                <span className="font-semibold text-[#0D9488]">Перейти →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateSection('roadmap-tasks')}
+              className="hover-lift rounded-[14px] p-4 text-left bg-[#F8FAFC] hover:bg-white border border-[#DCE2EC] hover:border-[#94A3B8] cursor-pointer flex flex-col justify-between gap-3 transition"
+            >
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Контур 03 · Закупки
+                </div>
+                <div className="text-[14px] font-extrabold text-[#0F172A] mt-1">
+                  Партии и фабрики PO
+                </div>
+              </div>
+              <div className="text-[11px] text-[#64748B] flex items-center justify-between">
+                <span className="font-mono font-bold text-[#1E293B]">{formatMln(gt.totalProcurementBudgetRub)}</span>
+                <span className="font-semibold text-[#0D9488]">Перейти →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateSection('finance')}
+              className="hover-lift rounded-[14px] p-4 text-left bg-[#ECFDF5]/60 hover:bg-[#ECFDF5] border border-[#99F6E4] cursor-pointer flex flex-col justify-between gap-3 transition"
+            >
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#047857]">
+                  Контур 04 · Финансы
+                </div>
+                <div className="text-[14px] font-extrabold text-[#064E3B] mt-1">
+                  P&L и рентабельность
+                </div>
+              </div>
+              <div className="text-[11px] text-[#047857] flex items-center justify-between">
+                <span className="font-mono font-extrabold text-[#064E3B]">+{formatMln(gt.annualEstimatedOperatingProfitRub)}</span>
+                <span className="font-bold text-[#0D9488]">Перейти →</span>
+              </div>
+            </button>
+          </div>
         </div>
       )}
     </div>

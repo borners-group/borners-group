@@ -218,6 +218,18 @@ export function AppShell() {
   const [salesPlanSubTab, setSalesPlanSubTab] = useState<
     'sales-plan' | 'legacy-calendar'
   >('sales-plan');
+  const [homeSubView, setHomeSubView] = useState<'home' | 'summary'>('home');
+
+  useEffect(() => {
+    const onSubView = (e: Event) => {
+      const ce = e as CustomEvent<{ subView?: 'home' | 'summary' }>;
+      if (ce.detail?.subView) {
+        setHomeSubView(ce.detail.subView);
+      }
+    };
+    window.addEventListener('borners-set-home-subview', onSubView);
+    return () => window.removeEventListener('borners-set-home-subview', onSubView);
+  }, []);
 
   const {
     draftModules,
@@ -464,26 +476,39 @@ export function AppShell() {
     return () => window.removeEventListener('wheel', onWheel);
   }, [canGoBack, canGoForward, goBack, goForward]);
 
-  // Переход на главную сводку («Стратегия роста BORNERS GROUP») из любого раздела или вложенного экрана
-  const handleGoHomeSummary = useCallback(() => {
-    setPlatformMode('management');
-    setBrandFilter('ALL');
-    setAtlasOpen(false);
-    try {
-      sessionStorage.removeItem('borners_open_scenario_model_id');
-      window.localStorage.setItem(
-        'borners_scenario_screen_state_v1',
-        JSON.stringify({ screen: 'scenarios', selectedModelId: 'scen-brn-001-sc' })
-      );
-    } catch {
-      // ignore
-    }
-    navigateTo('dashboard', { scenarioScreen: 'scenarios' });
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('borners-reset-to-home-summary'));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, [navigateTo, setBrandFilter, setPlatformMode]);
+  // Переход на Главную страницу всего сервиса или в Сводку сценариев
+  const handleGoHomeSummary = useCallback(
+    (targetSubView: 'home' | 'summary' = 'home') => {
+      setPlatformMode('management');
+      setHomeSubView(targetSubView);
+      if (targetSubView === 'home') {
+        setBrandFilter('ALL');
+      }
+      setAtlasOpen(false);
+      try {
+        sessionStorage.removeItem('borners_open_scenario_model_id');
+        window.localStorage.setItem(
+          'borners_scenario_screen_state_v1',
+          JSON.stringify({ screen: 'scenarios', selectedModelId: 'scen-brn-001-sc' })
+        );
+      } catch {
+        // ignore
+      }
+      navigateTo('dashboard', { scenarioScreen: 'scenarios' });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('borners-set-home-subview', {
+            detail: { subView: targetSubView },
+          })
+        );
+        if (targetSubView === 'home') {
+          window.dispatchEvent(new CustomEvent('borners-reset-to-home-summary'));
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    },
+    [navigateTo, setBrandFilter, setPlatformMode]
+  );
 
   // Контроль выхода новой версии сайта в стиле Peakly («BORNERS обновился · НОВОЕ»)
   const currentBuildId = process.env.NEXT_PUBLIC_BUILD_ID || 'borners-2027-release';
@@ -946,13 +971,24 @@ export function AppShell() {
 
     return [
       {
+        key: 'home',
+        step: null as string | null,
+        label: 'Главная',
+        target: 'dashboard' as NavSectionId,
+        isActive:
+          platformMode === 'management' &&
+          activeSection === 'dashboard' &&
+          homeSubView === 'home',
+        badge: null as string | null,
+      },
+      {
         key: 'summary',
         step: null as string | null,
         label: 'Сводка',
         target: 'dashboard' as NavSectionId,
         isActive:
           platformMode === 'management' &&
-          (activeSection === 'dashboard' ||
+          ((activeSection === 'dashboard' && homeSubView === 'summary') ||
             activeSection === 'brand-strategy' ||
             activeSection === 'brand-portfolio'),
         badge: null as string | null,
@@ -1011,6 +1047,7 @@ export function AppShell() {
     currentUser,
     holdingSummary.groupTotal.annualRevenueRub,
     holdingSummary.groupTotal.modelsCount,
+    homeSubView,
     livePortfolio.eligibleModels.length,
     livePortfolio.factoryGroupsCount,
     livePortfolio.totals.annualRevenueRub,
@@ -1028,8 +1065,8 @@ export function AppShell() {
             <div className="flex items-center gap-2.5 min-w-0">
               <button
                 type="button"
-                onClick={handleGoHomeSummary}
-                title="Перейти на главную сводку сценариев BORNERS"
+                onClick={() => handleGoHomeSummary('home')}
+                title="Перейти на Главную страницу BORNERS GROUP"
                 className="inline-flex items-center gap-2.5 pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
               >
                 <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
@@ -1220,8 +1257,12 @@ export function AppShell() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (item.key === 'home') {
+                        handleGoHomeSummary('home');
+                        return;
+                      }
                       if (item.key === 'summary') {
-                        handleGoHomeSummary();
+                        handleGoHomeSummary('summary');
                         return;
                       }
                       setPlatformMode('management');

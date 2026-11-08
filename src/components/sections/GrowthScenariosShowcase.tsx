@@ -480,6 +480,30 @@ export function GrowthScenariosShowcase({
   const [trajectoryChartMetric, setTrajectoryChartMetric] = useState<
     'revenue' | 'profit' | 'procurement'
   >('revenue');
+  const [homeSubView, setHomeSubView] = useState<'home' | 'summary'>('home');
+
+  const switchHomeSubView = useCallback((nextView: 'home' | 'summary') => {
+    setHomeSubView(nextView);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('borners-set-home-subview', {
+          detail: { subView: nextView },
+        })
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  useEffect(() => {
+    const onSubView = (e: Event) => {
+      const ce = e as CustomEvent<{ subView?: 'home' | 'summary' }>;
+      if (ce.detail?.subView) {
+        setHomeSubView(ce.detail.subView);
+      }
+    };
+    window.addEventListener('borners-set-home-subview', onSubView);
+    return () => window.removeEventListener('borners-set-home-subview', onSubView);
+  }, []);
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenId: number | null) => {
@@ -1712,50 +1736,175 @@ export function GrowthScenariosShowcase({
         />
       )}
 
-      {/* ЭКРАН №1: ИСПОЛНИТЕЛЬНАЯ СВОДКА ХОЛДИНГА (ВЫСОКИЙ КОНТРАСТ СЕКЦИЙ И ЧИСТАЯ ИЕРАРХИЯ) */}
+      {/* ЭКРАН №1: ГЛАВНАЯ СТРАНИЦА ВСЕГО СЕРВИСА ИЛИ РАБОЧАЯ СВОДКА СЦЕНАРИЕВ */}
       {screen === 'scenarios' && (
-        <div className="space-y-8 pb-6">
+        <div className="space-y-6 pb-6">
           {/* =====================================================================
-              РАЗДЕЛ 01 · 5 ОТДЕЛЬНЫХ KPI-КАРТОЧЕК ХОЛДИНГА + ПАНЕЛЬ 5 КАБИНЕТОВ
+              РЕЖИМ «ГЛАВНАЯ»: ФЛАГМАНСКАЯ ГЛАВНАЯ СТРАНИЦА ВСЕГО СЕРВИСА BORNERS GROUP
           ===================================================================== */}
-          <PeaklyMasterCabinetsSummary
-            multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
-            scenarios={scenarios}
-            activeBrandFilter={brandFilterLocal}
-            onSelectBrandFilter={(bCode) => {
-              if (
-                bCode === 'FUKAI' &&
-                currentScenario.id === 1 &&
-                !includeGroupPortfolioInS1
-              ) {
-                setIncludeGroupPortfolioInS1(true);
-              }
-              setBrandFilterLocal(bCode);
-              setBrandFilter(bCode);
-            }}
-            onSelectScenarioForBrand={(bCode, scenId) => {
-              setSelectedScenarioForBrand(bCode, scenId);
-            }}
-            onSelectActiveScenarioId={(scenId) => {
-              setSelectedScenarioId(scenId);
-            }}
-            onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-              setDraftScenBrand(bCode);
-              setDraftScenTitle(defaultTitle);
-              setDraftCopyFromScenarioId(0);
-              setNewScenarioModalOpen(true);
-            }}
-            onOpenCreateModelForBrand={(bCode) => {
-              setDraftBrand(bCode);
-              setNewModelModalOpen(true);
-            }}
-            onNavigateSection={(sec) => navigateTo(sec)}
-          />
+          {homeSubView === 'home' && (
+            <PeaklyMasterCabinetsSummary
+              multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+              scenarios={scenarios}
+              activeBrandFilter={brandFilterLocal}
+              isStandaloneHome={true}
+              onOpenStrategySummary={() => switchHomeSubView('summary')}
+              onOpenStudioCanvas={onOpenStudioCanvas}
+              onSelectBrandFilter={(bCode) => {
+                if (
+                  bCode === 'FUKAI' &&
+                  currentScenario.id === 1 &&
+                  !includeGroupPortfolioInS1
+                ) {
+                  setIncludeGroupPortfolioInS1(true);
+                }
+                setBrandFilterLocal(bCode);
+                setBrandFilter(bCode);
+              }}
+              onSelectScenarioForBrand={(bCode, scenId) => {
+                setSelectedScenarioForBrand(bCode, scenId);
+              }}
+              onSelectActiveScenarioId={(scenId) => {
+                setSelectedScenarioId(scenId);
+              }}
+              onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+                setDraftScenBrand(bCode);
+                setDraftScenTitle(defaultTitle);
+                setDraftCopyFromScenarioId(0);
+                setNewScenarioModalOpen(true);
+              }}
+              onOpenCreateModelForBrand={(bCode) => {
+                setDraftBrand(bCode);
+                setNewModelModalOpen(true);
+              }}
+              onNavigateSection={(sec) => navigateTo(sec)}
+            />
+          )}
 
           {/* =====================================================================
-              РАЗДЕЛ 02 · СЦЕНАРИИ РАЗВИТИЯ И ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ
+              РЕЖИМ «СВОДКА»: СТРАТЕГИЯ РОСТА, 4 СЦЕНАРИЯ, ТРАЕКТОРИЯ И ТОВАРНАЯ МАТРИЦА
           ===================================================================== */}
-          <section className="rounded-[20px] bg-white border border-[#CFD6E0] overflow-hidden shadow-[0_6px_24px_-6px_rgba(15,23,42,0.07)]">
+          {homeSubView === 'summary' && (
+            <>
+              {/* КОМПАКТНАЯ ВЕРХНЯЯ ПАНЕЛЬ СВОДКИ С ПЕРЕХОДОМ НА ГЛАВНУЮ И ФИЛЬТРОМ КАБИНЕТОВ */}
+              <div className="rounded-[18px] bg-white border border-[#CFD6E0] px-4 py-3 shadow-[0_4px_14px_-4px_rgba(15,23,42,0.05)] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => switchHomeSubView('home')}
+                    className="h-8 px-3 rounded-[9px] bg-[#F8FAFC] hover:bg-[#EEF1F6] border border-[#CBD5E1] text-[12px] font-bold text-[#1E293B] transition cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <span>← Главная холдинга</span>
+                  </button>
+                  <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block" />
+                  <span className="text-[11.5px] font-semibold text-[#64748B]">Кабинеты:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrandFilterLocal('ALL');
+                      setBrandFilter('ALL');
+                      const bornersScenId = v11ScenarioSummary.multiBrandSummary.brands.find(
+                        (x) => x.brandCode === 'BORNERS'
+                      )?.selectedScenarioId;
+                      if (bornersScenId) {
+                        setSelectedScenarioId(bornersScenId);
+                      }
+                    }}
+                    className={`h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                      brandFilterLocal === 'ALL'
+                        ? 'bg-[#2C3444] text-white border-[#2C3444]'
+                        : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white'
+                    }`}
+                  >
+                    <span>Все (5)</span>
+                    <span className="font-mono text-[10.5px] opacity-80">
+                      {(
+                        v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                        1_000_000
+                      )
+                        .toFixed(1)
+                        .replace('.', ',')}{' '}
+                      млн
+                    </span>
+                  </button>
+
+                  {v11ScenarioSummary.multiBrandSummary.brands.map((b) => {
+                    const isSel =
+                      brandFilterLocal !== 'ALL' &&
+                      normalizePortfolioBrandCode(brandFilterLocal) === b.brandCode;
+                    return (
+                      <button
+                        key={b.brandCode}
+                        type="button"
+                        onClick={() => {
+                          if (isSel) {
+                            setBrandFilterLocal('ALL');
+                            setBrandFilter('ALL');
+                            const bornersScenId =
+                              v11ScenarioSummary.multiBrandSummary.brands.find(
+                                (x) => x.brandCode === 'BORNERS'
+                              )?.selectedScenarioId;
+                            if (bornersScenId) {
+                              setSelectedScenarioId(bornersScenId);
+                            }
+                          } else {
+                            setBrandFilterLocal(b.brandCode);
+                            setBrandFilter(b.brandCode);
+                            if (b.selectedScenarioId !== null) {
+                              setSelectedScenarioId(b.selectedScenarioId);
+                            }
+                          }
+                        }}
+                        className={`h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                          isSel
+                            ? 'bg-[#2C3444] text-white border-[#2C3444]'
+                            : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white'
+                        }`}
+                      >
+                        <span className="font-bold">{b.displayCode}</span>
+                        <span className="font-mono text-[10.5px] opacity-80">
+                          {b.annualRevenueRub > 0
+                            ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                            : `${b.modelsCount} SKU`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-2 text-[11.5px]">
+                  <span className="px-2.5 py-1 rounded-[8px] bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[#334155]">
+                    Холдинг:{' '}
+                    <strong className="font-extrabold text-[#0F172A]">
+                      {(
+                        v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                        1_000_000
+                      )
+                        .toFixed(2)
+                        .replace('.', ',')}{' '}
+                      млн ₽
+                    </strong>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-[8px] bg-[#ECFDF5] border border-[#A7F3D0] font-mono text-[#047857]">
+                    Прибыль:{' '}
+                    <strong className="font-extrabold text-[#064E3B]">
+                      +
+                      {(
+                        v11ScenarioSummary.multiBrandSummary.groupTotal
+                          .annualEstimatedOperatingProfitRub / 1_000_000
+                      )
+                        .toFixed(2)
+                        .replace('.', ',')}{' '}
+                      млн ₽
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* =====================================================================
+                  РАЗДЕЛ 02 · СЦЕНАРИИ РАЗВИТИЯ И ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ
+              ===================================================================== */}
+              <section className="rounded-[20px] bg-white border border-[#CFD6E0] overflow-hidden shadow-[0_6px_24px_-6px_rgba(15,23,42,0.07)]">
             {/* ВЕРХНЯЯ ПАНЕЛЬ СЦЕНАРИЕВ */}
             <div className="px-6 py-4 border-b border-[#DCE2EC] bg-white flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -2056,7 +2205,7 @@ export function GrowthScenariosShowcase({
                     : '0';
                   const holdingCombinedRub =
                     brandFilterLocal === 'ALL' && sc.id !== ACTING_2027_SCENARIO_ID && agg
-                      ? agg.annualRevenueRub + (includeGroupPortfolioInS1 && sc.id === 1 ? 0 : fukaiAnnualRub)
+                      ? agg.annualRevenueRub + fukaiAnnualRub
                       : null;
                   const holdingCombinedMln =
                     holdingCombinedRub !== null
@@ -3751,6 +3900,8 @@ export function GrowthScenariosShowcase({
               </div>
             )}
           </section>
+            </>
+          )}
         </div>
       )}
 
