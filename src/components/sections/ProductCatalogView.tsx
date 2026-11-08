@@ -28,8 +28,11 @@ import {
 import { INITIAL_SCENARIO_MODELS, ScenarioModelSpec } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
-import { STORAGE_KEY_MODELS } from '@/components/sections/GrowthScenariosShowcase';
-import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import {
+  detectModelBrandPortfolioLabel,
+  matchesBrandFilter,
+} from '@/lib/unifiedBusinessEngine';
 
 const STATUS_META: Record<ProductStatus, { label: string; dotColor: string }> = {
   in_development: {
@@ -92,25 +95,10 @@ export function ProductCatalogView() {
   const [productTypeFilter, setProductTypeFilter] = useState<string>('ALL');
   const [priceSegmentFilter, setPriceSegmentFilter] = useState<string>('ALL');
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [scenarioModels, setScenarioModels] = useState<ScenarioModelSpec[]>(
-    INITIAL_SCENARIO_MODELS
-  );
-
-  useEffect(() => {
-    const loadModels = () => {
-      const parsed = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-      if (Array.isArray(parsed)) {
-        setScenarioModels(parsed);
-      }
-    };
-    loadModels();
-    window.addEventListener('borners-scenario-models-changed', loadModels);
-    window.addEventListener('storage', loadModels);
-    return () => {
-      window.removeEventListener('borners-scenario-models-changed', loadModels);
-      window.removeEventListener('storage', loadModels);
-    };
-  }, []);
+  const {
+    models: scenarioModels,
+    updateModelsBatch,
+  } = useLiveScenarioPortfolio();
 
   // Однократная безопасная синхронизация моделей из «Сценариев роста» в основной «Каталог моделей (SKU)»
   // (не пересоздаёт удалённые/архивированные карточки и не создаёт дубликатов)
@@ -181,10 +169,7 @@ export function ProductCatalogView() {
   }, [scenarioModels]);
 
   const handleDeleteScenarioModel = (modelToDelete: ScenarioModelSpec) => {
-    const next = scenarioModels.filter((x) => x.id !== modelToDelete.id);
-    setScenarioModels(next);
-    safeSetStorageJson(STORAGE_KEY_MODELS, next);
-    window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+    updateModelsBatch((prev) => prev.filter((x) => x.id !== modelToDelete.id));
 
     // Одновременно удаляем (архивируем) связанный SKU из основного каталога
     const cleanCode = modelToDelete.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
@@ -212,18 +197,13 @@ export function ProductCatalogView() {
     const cleanSku = productToDelete.sku.trim().toUpperCase();
 
     // 1. Убираем совпадающую модель из сценариев роста
-    const nextScenarios = scenarioModels.filter((m) => {
-      const mCode = m.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '';
-      const mSku = `${m.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${mCode}`.toUpperCase();
-      return (
-        m.title.trim().toUpperCase() !== cleanName && mSku !== cleanSku
-      );
-    });
-    if (nextScenarios.length !== scenarioModels.length) {
-      setScenarioModels(nextScenarios);
-      safeSetStorageJson(STORAGE_KEY_MODELS, nextScenarios);
-      window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
-    }
+    updateModelsBatch((prev) =>
+      prev.filter((m) => {
+        const mCode = m.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '';
+        const mSku = `${m.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${mCode}`.toUpperCase();
+        return m.title.trim().toUpperCase() !== cleanName && mSku !== cleanSku;
+      })
+    );
 
     // 2. Архивируем саму карточку (и любые её дубли) в каталоге
     archiveEntity('product', productToDelete.id);
@@ -260,10 +240,35 @@ export function ProductCatalogView() {
   const hasFinance = canUserViewFinance(currentUser);
   const hasCostAccess = canUserViewCostPrice(currentUser);
 
+  const matchesProductBrandFilter = (p: Product, filter: string) => {
+    if (!filter || filter === 'ALL') return true;
+    const acting = getActingSkuByWbOrVendor(p.sku, p.name);
+    if (filter === 'FUKAI') {
+      return (
+        acting?.wbSku === '72302360' ||
+        p.name.toUpperCase().includes('FUKAI') ||
+        p.sku.toUpperCase().includes('FUKAI')
+      );
+    }
+    if (filter === 'AKUSHA') {
+      return (
+        p.name.toUpperCase().includes('АКУША') ||
+        p.name.toUpperCase().includes('AKUSHA')
+      );
+    }
+    if (filter === 'LISKANI') {
+      return (
+        p.name.toUpperCase().includes('LISKANI') ||
+        p.name.toUpperCase().includes('ЛИСКАНИ')
+      );
+    }
+    return p.brandId === filter;
+  };
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
-      if (!p.isArchived && (brandFilter === 'ALL' || p.brandId === brandFilter)) {
+      if (!p.isArchived && matchesProductBrandFilter(p, brandFilter)) {
         set.add(p.category);
       }
     });
@@ -273,7 +278,7 @@ export function ProductCatalogView() {
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       if (p.isArchived) return false;
-      if (brandFilter !== 'ALL' && p.brandId !== brandFilter) return false;
+      if (!matchesProductBrandFilter(p, brandFilter)) return false;
       if (categoryFilter !== 'ALL' && p.category !== categoryFilter) return false;
       if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
       if (productTypeFilter !== 'ALL' && p.productType !== productTypeFilter) return false;
@@ -368,10 +373,7 @@ export function ProductCatalogView() {
         },
       ],
     };
-    const nextScenarioList = [...scenarioModels, createdScenarioModel];
-    setScenarioModels(nextScenarioList);
-    safeSetStorageJson(STORAGE_KEY_MODELS, nextScenarioList);
-    window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+    updateModelsBatch((prev) => [...prev, createdScenarioModel]);
 
     setCreateModalOpen(false);
   };
@@ -511,7 +513,7 @@ export function ProductCatalogView() {
               Сквозная синхронизация со сценариями 2027
             </div>
             <h2 className="text-[19px] font-bold text-[#141413] mt-0.5">
-              Модели в сценариях развития ({scenarioModels.filter((m) => m.launchStatus !== 'В архиве' && (brandFilter === 'ALL' || m.brandId === brandFilter)).length} SKU)
+              Модели в сценариях развития ({scenarioModels.filter((m) => m.launchStatus !== 'В архиве' && (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))).length} SKU)
             </h2>
             <p className="text-[12px] text-[#5E5D58]">
               Нажмите на любую позицию, чтобы открыть паспорт изделия, матрицу 12 мес., закупки и экономику.
@@ -519,7 +521,7 @@ export function ProductCatalogView() {
           </div>
           <button
             type="button"
-            onClick={() => navigateTo('brand-strategy')}
+            onClick={() => navigateTo('dashboard', { scenarioScreen: 'scenarios' })}
             className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] transition cursor-pointer"
           >
             Открыть Сводку и сценарии →
@@ -531,11 +533,12 @@ export function ProductCatalogView() {
             .filter(
               (m) =>
                 m.launchStatus !== 'В архиве' &&
-                (brandFilter === 'ALL' || m.brandId === brandFilter)
+                (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
             )
             .map((m) => {
               const activePal = m.palettes[0];
               const colors = activePal ? activePal.colors : [];
+              const brandLbl = detectModelBrandPortfolioLabel(m);
               return (
                 <div
                   key={m.id}
@@ -545,14 +548,14 @@ export function ProductCatalogView() {
                     } catch {
                       // ignore
                     }
-                    navigateTo('brand-strategy');
+                    navigateTo('dashboard');
                   }}
                   className="group rounded-[14px] bg-white hover:bg-[#FAFAF7] border-[1.5px] border-[#CECDC4] hover:border-[#141413] p-4 transition-all cursor-pointer flex flex-col justify-between gap-3"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
                       <span className="font-mono text-[#52514C]">
-                        {m.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {m.code}
+                        {brandLbl} · {m.code}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <span className="px-2 py-0.5 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] text-[10px] text-[#141413]">

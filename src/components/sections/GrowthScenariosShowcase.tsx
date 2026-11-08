@@ -235,6 +235,10 @@ export function GrowthScenariosShowcase({
     try {
       const pendingModelId = sessionStorage.getItem('borners_open_scenario_model_id');
       if (pendingModelId) {
+        sessionStorage.removeItem('borners_open_scenario_model_id');
+        setSelectedModelId(pendingModelId);
+        setScreen('model');
+        pushScenarioStep('model', pendingModelId);
         screenHydratedRef.current = true;
         return;
       }
@@ -263,7 +267,7 @@ export function GrowthScenariosShowcase({
     } finally {
       screenHydratedRef.current = true;
     }
-  }, [initialModelId]);
+  }, [initialModelId, pushScenarioStep]);
 
   useEffect(() => {
     if (!screenHydratedRef.current) return;
@@ -916,6 +920,13 @@ export function GrowthScenariosShowcase({
         if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
           return false;
         }
+        if (
+          !includeGroupPortfolioInS1 &&
+          brandFilterLocal !== 'FUKAI' &&
+          isUnverifiedActingSku(m.code)
+        ) {
+          return false;
+        }
       } else if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
         return false;
       }
@@ -966,7 +977,15 @@ export function GrowthScenariosShowcase({
       });
     }
     return list;
-  }, [models, currentScenario, brandFilterLocal, statusFilterLocal, searchQuery, sortBy]);
+  }, [
+    models,
+    currentScenario,
+    includeGroupPortfolioInS1,
+    brandFilterLocal,
+    statusFilterLocal,
+    searchQuery,
+    sortBy,
+  ]);
 
   // Единая синхронизация модели сценария с основным Каталогом моделей (SKU)
   const syncScenarioModelToCatalog = useCallback(
@@ -2711,6 +2730,13 @@ export function GrowthScenariosShowcase({
                       key={bItem.id}
                       type="button"
                       onClick={() => {
+                        if (
+                          bItem.id === 'FUKAI' &&
+                          currentScenario.id === 1 &&
+                          !includeGroupPortfolioInS1
+                        ) {
+                          setIncludeGroupPortfolioInS1(true);
+                        }
                         setBrandFilterLocal(bItem.id);
                         setBrandFilter(bItem.id);
                       }}
@@ -2730,28 +2756,56 @@ export function GrowthScenariosShowcase({
               </span>
             </div>
 
-            {brandFilterLocal === 'NA_TELE' && filteredModels.length === 0 && (
-              <div className="rounded-[12px] bg-[#FAF9F6] border border-[#D8D7CF] px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-[12.5px]">
+            {filteredModels.length === 0 && (
+              <div className="rounded-[12px] bg-[#FAF9F6] border border-[#D8D7CF] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 text-[12.5px]">
                 <span className="text-[#262624] font-medium">
-                  В «{currentScenario.title}» модели <strong>НА ТЕЛЕ</strong> не включены (моно-цель BORNERS). Линейка НА ТЕЛЕ запускается в Сценарии №2 и №3.
+                  {brandFilterLocal === 'NA_TELE' ? (
+                    <>
+                      В «{currentScenario.title}» модели <strong>НА ТЕЛЕ</strong> не включены (моно-цель BORNERS). Линейка НА ТЕЛЕ запускается в Сценарии №2 и №3.
+                    </>
+                  ) : brandFilterLocal === 'AKUSHA' || brandFilterLocal === 'LISKANI' ? (
+                    <>
+                      Для бренда <strong>{brandFilterLocal === 'AKUSHA' ? 'Акуша' : 'Liskani'}</strong> в «{currentScenario.title}» пока не добавлено карточек SKU. Вы можете добавить модель для этого бренда или показать все бренды.
+                    </>
+                  ) : (
+                    <>
+                      По выбранным фильтрам в «{currentScenario.title}» не найдено моделей SKU.
+                    </>
+                  )}
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedScenarioId(2)}
-                    className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
-                  >
-                    Переключить на Сценарий №2 (150 млн)
-                  </button>
+                  {brandFilterLocal === 'NA_TELE' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedScenarioId(2)}
+                      className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+                    >
+                      Переключить на Сценарий №2 (150 млн)
+                    </button>
+                  )}
+                  {(brandFilterLocal === 'AKUSHA' || brandFilterLocal === 'LISKANI') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftBrand(brandFilterLocal);
+                        setNewModelModalOpen(true);
+                      }}
+                      className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+                    >
+                      + Добавить модель ({brandFilterLocal === 'AKUSHA' ? 'Акуша' : 'Liskani'})
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
                       setBrandFilterLocal('ALL');
                       setBrandFilter('ALL');
+                      setStatusFilterLocal('ALL');
+                      setSearchQuery('');
                     }}
                     className="h-8 px-3 rounded-[8px] bg-white border border-[#CFCEC6] hover:border-[#141413] text-[11.5px] font-semibold text-[#141413] cursor-pointer"
                   >
-                    Показать все бренды
+                    Показать все модели сценария
                   </button>
                 </div>
               </div>

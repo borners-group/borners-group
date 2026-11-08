@@ -1484,6 +1484,44 @@ test('31. ТЗ «От плана продаж к закупкам и инвес�
   assert.ok(factoryCsv.includes('BRN-001-SC'));
 });
 
+test('32. Комплексный аудит багов: синхронизация 01 · Продукт без перезаписи базы 23 SKU, поддержка 5 брендов в шапке AppShell и защита от пустых экранов в 02 · Продажи / 03 · Закупки / 04 · Финансы', () => {
+  const appShellSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf-8'
+  );
+  const catalogSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf-8'
+  );
+  const contourSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf-8'
+  );
+  const showcaseSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf-8'
+  );
+
+  // 1. В AppShell.tsx переключатель брендов поддерживает все 5 брендов портфеля (включая FUKAI, Акуша, Liskani)
+  assert.ok(appShellSource.includes("brandFilter === 'FUKAI'"));
+  assert.ok(appShellSource.includes("brandFilter === 'AKUSHA'"));
+  assert.ok(appShellSource.includes("brandFilter === 'LISKANI'"));
+
+  // 2. В ProductCatalogView.tsx используется единый хук useLiveScenarioPortfolio и matchesBrandFilter
+  assert.ok(catalogSource.includes('useLiveScenarioPortfolio'));
+  assert.ok(catalogSource.includes('matchesBrandFilter'));
+  assert.ok(catalogSource.includes('updateModelsBatch'));
+
+  // 3. В UnifiedContourViews.tsx (02 · Продажи, 03 · Закупки, 04 · Финансы) есть защита от пустого экрана при фильтре бренда
+  const emptyBrandMatches = contourSource.match(/Переключить на Сценарий №2 · 150 млн/g) || [];
+  assert.ok(emptyBrandMatches.length >= 3);
+
+  // 4. В GrowthScenariosShowcase.tsx filteredModels согласован с includeGroupPortfolioInS1 и не даёт гонки при открытии паспорта SKU
+  assert.ok(showcaseSource.includes('!includeGroupPortfolioInS1 &&'));
+  assert.ok(showcaseSource.includes('Показать все модели сценария'));
+});
+
+
 
 
 

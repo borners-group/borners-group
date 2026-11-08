@@ -1087,7 +1087,14 @@ export function AppShell() {
                       ? 'Все бренды'
                       : brandFilter === 'NA_TELE'
                       ? 'НА ТЕЛЕ'
-                      : 'BORNERS'}
+                      : brandFilter === 'FUKAI'
+                      ? 'FUKAI'
+                      : brandFilter === 'AKUSHA'
+                      ? 'Акуша'
+                      : brandFilter === 'LISKANI'
+                      ? 'Liskani'
+                      : brands.find((b) => b.code === brandFilter || b.id === brandFilter)?.name ||
+                        brandFilter}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-[#686762]" />
                 </button>
@@ -1148,31 +1155,48 @@ export function AppShell() {
                         })}
 
                       <div className="pt-2 mt-1 border-t border-[#DFDED6] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[#8A8983]">
-                        В проработке стратегии
+                        Новые бренды портфеля 2027
                       </div>
 
                       {brands
                         .filter((b) => b.isStrategyInDevelopment)
-                        .map((b) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            onClick={() => {
-                              setBrandDropdownOpen(false);
-                              notify(
-                                'warning',
-                                `Бренд «${b.name}» в проработке`,
-                                'Сейчас формируется стратегия и позиционирование бренда'
-                              );
-                            }}
-                            className="w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between text-[#8A8983] hover:bg-[#F5F5F1] cursor-not-allowed"
-                          >
-                            <span>{b.name}</span>
-                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#F5F5F1] border border-[#CECDC4]">
-                              2027
-                            </span>
-                          </button>
-                        ))}
+                        .map((b) => {
+                          const isSelected =
+                            brandFilter === b.code || brandFilter === b.id;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  b.code === 'FUKAI' &&
+                                  livePortfolio.selectedScenarioId === 1 &&
+                                  !livePortfolio.includeGroupPortfolioInS1
+                                ) {
+                                  livePortfolio.setIncludeGroupPortfolioInS1(true);
+                                }
+                                setBrandFilter(b.code);
+                                setBrandDropdownOpen(false);
+                              }}
+                              className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#141413] text-white font-semibold'
+                                  : 'text-[#141413] hover:bg-[#F5F5F1]'
+                              }`}
+                            >
+                              <span>{b.name}</span>
+                              <span
+                                className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
+                                  isSelected
+                                    ? 'bg-white/15 text-white border-white/25'
+                                    : 'bg-[#F5F5F1] text-[#8A8983] border-[#CECDC4]'
+                                }`}
+                              >
+                                2027
+                              </span>
+                            </button>
+                          );
+                        })}
                     </div>
                   </>
                 )}

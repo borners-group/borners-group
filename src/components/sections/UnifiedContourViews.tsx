@@ -182,7 +182,7 @@ function ScenarioContourHeader({
 // 02 · ПРОДАЖИ: СВОДНАЯ МАТРИЦА ПРОДАЖ ВСЕХ SKU НА 12 МЕСЯЦЕВ (2027)
 // =============================================================================
 export function SalesMatrixContourView() {
-  const { navigateTo, notify } = usePlatform();
+  const { navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
     scenarios,
     orderedScenarios,
@@ -421,6 +421,48 @@ export function SalesMatrixContourView() {
           </>
         }
       />
+
+      {eligibleModels.length === 0 && (
+        <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1 max-w-2xl">
+            <div className="text-[14.5px] font-bold text-[#141413]">
+              В сценарии «{currentScenario.title}» нет моделей выбранного бренда ({brandFilter})
+            </div>
+            <p className="text-[12.5px] text-[#5E5D58]">
+              {brandFilter === 'NA_TELE'
+                ? 'Линейка «НА ТЕЛЕ» запускается со Сценария №2 · 150 млн ₽/мес и Сценария №3 · 200 млн ₽/мес. В исходном плане и Сценарии №1 участвуют модели BORNERS и WB.'
+                : 'Для выбранного фильтра бренда в текущем сценарии нет активных SKU. Переключите сценарий или сбросьте фильтр бренда.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {brandFilter === 'NA_TELE' && (
+              <button
+                type="button"
+                onClick={() => setSelectedScenarioId(2)}
+                className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+              >
+                Переключить на Сценарий №2 · 150 млн
+              </button>
+            )}
+            {brandFilter === 'FUKAI' && selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
+              <button
+                type="button"
+                onClick={() => setIncludeGroupPortfolioInS1(true)}
+                className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+              >
+                Подключить портфель группы (с FUKAI)
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setBrandFilter('ALL')}
+              className="h-8.5 px-3.5 rounded-[9px] bg-[#FAF9F6] hover:bg-white border border-[#CFCEC6] hover:border-[#141413] text-[#141413] text-[12px] font-semibold cursor-pointer transition"
+            >
+              Показать все бренды
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 4 ключевых показателя продаж */}
       <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
@@ -1647,6 +1689,7 @@ export function FinanceContourView() {
   const openSkuPassport = (modelId: string) => {
     try {
       sessionStorage.setItem('borners_open_scenario_model_id', modelId);
+      sessionStorage.setItem('borners_open_scenario_model_tab', 'finance');
     } catch {
       // ignore
     }
@@ -1701,6 +1744,48 @@ export function FinanceContourView() {
             onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
             eligibleCount={eligibleModels.length}
           />
+
+          {eligibleModels.length === 0 && (
+            <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1 max-w-2xl">
+                <div className="text-[14.5px] font-bold text-[#141413]">
+                  В сценарии «{currentScenario.title}» нет моделей выбранного бренда ({brandFilter})
+                </div>
+                <p className="text-[12.5px] text-[#5E5D58]">
+                  {brandFilter === 'NA_TELE'
+                    ? 'Линейка «НА ТЕЛЕ» запускается со Сценария №2 · 150 млн ₽/мес и Сценария №3 · 200 млн ₽/мес. В исходном плане и Сценарии №1 участвуют модели BORNERS и WB.'
+                    : 'Для выбранного фильтра бренда в текущем сценарии нет активных SKU. Переключите сценарий или сбросьте фильтр бренда.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {brandFilter === 'NA_TELE' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedScenarioId(2)}
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                  >
+                    Переключить на Сценарий №2 · 150 млн
+                  </button>
+                )}
+                {brandFilter === 'FUKAI' && selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
+                  <button
+                    type="button"
+                    onClick={() => setIncludeGroupPortfolioInS1(true)}
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                  >
+                    Подключить портфель группы (с FUKAI)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBrandFilter('ALL')}
+                  className="h-8.5 px-3.5 rounded-[9px] bg-[#FAF9F6] hover:bg-white border border-[#CFCEC6] hover:border-[#141413] text-[#141413] text-[12px] font-semibold cursor-pointer transition"
+                >
+                  Показать все бренды
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (РАЗДЕЛ 07.1) */}
           <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
