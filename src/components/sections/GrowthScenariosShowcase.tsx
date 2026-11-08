@@ -63,7 +63,9 @@ import {
 } from '@/lib/useLiveScenarioPortfolio';
 import {
   computeFinancialPnL,
+  computeGroupBrandsInvestmentReport,
   computeProcurementPlan,
+  computeScenarioInvestmentSummary,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
@@ -857,6 +859,14 @@ export function GrowthScenariosShowcase({
       eligible,
       currentScenario
     );
+    const investmentSummary = computeScenarioInvestmentSummary(
+      eligible,
+      currentScenario
+    );
+    const brandsReport = computeGroupBrandsInvestmentReport(
+      eligible,
+      currentScenario
+    );
 
     return {
       eligibleModels: eligible,
@@ -875,6 +885,8 @@ export function GrowthScenariosShowcase({
       hypothesisModelsCount,
       orderDiscrepanciesCount,
       factoryGroups,
+      investmentSummary,
+      brandsReport,
     };
   }, [models, currentScenario, includeGroupPortfolioInS1]);
 
@@ -1701,7 +1713,7 @@ export function GrowthScenariosShowcase({
                       : 'bg-white text-[#141413] border-[#CFCEC6] hover:bg-[#F4F3EE]'
                   }`}
                 >
-                  <span>Разбор расчёта</span>
+                  <span>По брендам и расчёт</span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 transition-transform ${
                       mathBreakdownOpen ? 'rotate-180 text-white' : 'text-[#686760]'
@@ -2199,7 +2211,7 @@ export function GrowthScenariosShowcase({
                     </div>
                   </div>
 
-                  {/* Карточка 3: Товарный капитал (COGS) */}
+                  {/* Карточка 3: Вложить на старт и пик своих денег (с учётом оборота WB) */}
                   <div className="rounded-[14px] bg-white border border-[#DEDDD5] p-4 flex flex-col justify-between gap-3 shadow-[0_2px_8px_rgba(20,20,19,0.025)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
@@ -2208,31 +2220,34 @@ export function GrowthScenariosShowcase({
                             <Package className="h-3.5 w-3.5" />
                           </span>
                           <span className="text-[11px] font-bold uppercase tracking-wide text-[#52514C]">
-                            Товарный бюджет
+                            Вложить на старт (Q1)
                           </span>
                         </div>
                         <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 font-mono text-[10.5px] font-bold text-amber-900">
-                          {cogsSharePct}% COGS
+                          Аванс 30%: {(v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub / 1_000_000).toFixed(2).replace('.', ',')} млн
                         </span>
                       </div>
                       <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                        {procBudgetMln} млн ₽
+                        {(v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub / 1_000_000)
+                          .toFixed(2)
+                          .replace('.', ',')}{' '}
+                        млн ₽
                       </div>
                     </div>
 
                     <div className="space-y-1.5 pt-2 border-t border-[#EFEFE9]">
                       <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#5C5B55]">
                         <span>
-                          {isActing ? (
-                            'Товар + упаковка + приёмка'
-                          ) : (
-                            <>
-                              К заказу:{' '}
-                              <strong className="font-mono text-[#141413]">
-                                {v11ScenarioSummary.recommendedPacks.toLocaleString('ru-RU')} компл.
-                              </strong>
-                            </>
-                          )}
+                          Пик своих денег (с WB):{' '}
+                          <strong className="font-mono text-[#1E3A8A]">
+                            {(v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн
+                          </strong>{' '}
+                          <span className="text-[10.5px] text-[#686760]">
+                            (год: {procBudgetMln} млн)
+                          </span>
                         </span>
                         <button
                           type="button"
@@ -2246,7 +2261,7 @@ export function GrowthScenariosShowcase({
                     </div>
                   </div>
 
-                  {/* Карточка 4: Валовый денежный поток и P&L */}
+                  {/* Карточка 4: Ожидаемая прибыль (после себестоимости, комиссий WB, логистики и рекламы) */}
                   <div className="rounded-[14px] bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/90 p-4 flex flex-col justify-between gap-3 shadow-[0_2px_10px_rgba(16,185,129,0.06)]">
                     <div>
                       <div className="flex items-center justify-between gap-2">
@@ -2255,24 +2270,36 @@ export function GrowthScenariosShowcase({
                             <Wallet className="h-3.5 w-3.5" />
                           </span>
                           <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-950">
-                            Валовый поток и P&amp;L
+                            Ожидаемая прибыль
                           </span>
                         </div>
                         <span className="rounded-md bg-emerald-100/90 border border-emerald-300/80 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-emerald-900">
-                          {grossMarginPct}% маржа
+                          {v11ScenarioSummary.investmentSummary.operatingMarginPct
+                            .toFixed(1)
+                            .replace('.', ',')}% рентаб.
                         </span>
                       </div>
                       <div className="mt-2.5 font-mono text-[24px] font-extrabold tracking-[-0.02em] text-emerald-900">
-                        +{grossMarginMln} млн ₽
+                        +
+                        {(
+                          v11ScenarioSummary.investmentSummary.annualEstimatedOperatingProfitRub /
+                          1_000_000
+                        )
+                          .toFixed(2)
+                          .replace('.', ',')}{' '}
+                        млн ₽
                       </div>
                     </div>
 
                     <div className="space-y-1.5 pt-2 border-t border-emerald-200/60">
                       <div className="flex items-center justify-between gap-2 text-[11.5px] text-emerald-950/80">
                         <span>
-                          Ср. чек:{' '}
+                          Себест. продаж:{' '}
                           <strong className="font-mono text-[#141413]">
-                            {avgCheckRub.toLocaleString('ru-RU')} ₽/компл.
+                            {(v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
                           </strong>
                         </span>
                         <button
@@ -2467,9 +2494,146 @@ export function GrowthScenariosShowcase({
               </div>
             </div>
 
-            {/* Детальный разбор формулы декабря, весов приоритета и партий — открывается по кнопке «Разбор расчёта» */}
+            {/* Детальный разбор по брендам, формуле декабря и партиям — открывается по кнопке «По брендам и расчёт» */}
             {(mathBreakdownOpen || v11ContourExpanded) && (
               <div className="p-5 bg-[#FAF9F6] border-t border-[#E4E3DC] space-y-4">
+                {/* СВОДНАЯ ТАБЛИЦА ПО БРЕНДАМ И ГРУППЕ (РАЗДЕЛ 09.2 ТЗ) */}
+                <div className="rounded-[12px] bg-white border border-[#D8D7CF] p-4 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[13px] font-bold text-[#141413]">
+                      Сводная таблица инвестиций, закупок и прибыли по брендам группы (2027)
+                    </div>
+                    <span className="text-[11.5px] text-[#5E5D58]">
+                      Итого по группе рассчитано без двойного счёта · Пик своих денег учитывает возврат выручки с WB
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
+                    <table className="w-full min-w-[780px] text-left border-collapse text-[12px]">
+                      <thead>
+                        <tr className="bg-[#FAF9F6] text-[#5E5D58] border-b border-[#E4E3DC] text-[10.5px] uppercase tracking-wide">
+                          <th className="py-2 px-3 font-bold">Бренд</th>
+                          <th className="py-2 px-2.5 font-bold text-right">Моделей</th>
+                          <th className="py-2 px-3 font-bold text-right">Выручка 2027</th>
+                          <th className="py-2 px-3 font-bold text-right">К заказу</th>
+                          <th className="py-2 px-3 font-bold text-right bg-[#F2FBF6] text-[#0F5132]">
+                            Вложить на старт (Q1)
+                          </th>
+                          <th className="py-2 px-3 font-bold text-right bg-[#F4F8FF] text-[#1E3A8A]">
+                            Пик своих денег (с WB)
+                          </th>
+                          <th className="py-2 px-3 font-bold text-right">Закупки за год</th>
+                          <th className="py-2 px-3 font-bold text-right">Себест. продаж</th>
+                          <th className="py-2 px-3 font-bold text-right">Ожид. прибыль</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#ECEBE4]">
+                        {v11ScenarioSummary.brandsReport.brands.map((b) => (
+                          <tr key={b.brandCode} className="hover:bg-[#FAF9F6]">
+                            <td className="py-2 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
+                            <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                              {b.modelsCount}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-semibold text-[#141413]">
+                              {b.modelsCount > 0
+                                ? `${(b.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-[#52514C]">
+                              {b.modelsCount > 0
+                                ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono bg-[#F2FBF6]/60 text-[#0F5132] font-bold">
+                              {b.modelsCount > 0
+                                ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono bg-[#F4F8FF]/60 text-[#1E3A8A] font-bold">
+                              {b.modelsCount > 0
+                                ? `${(b.peakWorkingCapitalRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-[#141413]">
+                              {b.modelsCount > 0
+                                ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-[#52514C]">
+                              {b.modelsCount > 0
+                                ? `${(b.annualSoldGoodsCostRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
+                              {b.modelsCount > 0
+                                ? `+${(b.annualEstimatedOperatingProfitRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t border-[#CECDC4]">
+                          <td className="py-2.5 px-3">ИТОГО ПО ГРУППЕ</td>
+                          <td className="py-2.5 px-2.5 text-right font-mono">
+                            {v11ScenarioSummary.brandsReport.groupTotal.modelsCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">
+                            {(v11ScenarioSummary.brandsReport.groupTotal.annualRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">
+                            {v11ScenarioSummary.brandsReport.groupTotal.totalProcurementPacks.toLocaleString(
+                              'ru-RU'
+                            )}{' '}
+                            компл.
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
+                            {(v11ScenarioSummary.brandsReport.groupTotal.firstWaveStartBudgetRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
+                            {(v11ScenarioSummary.brandsReport.groupTotal.netOwnMoneyRequiredRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">
+                            {(
+                              v11ScenarioSummary.brandsReport.groupTotal.totalProcurementBudgetRub /
+                              1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">
+                            {(
+                              v11ScenarioSummary.brandsReport.groupTotal.annualSoldGoodsCostRub /
+                              1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-[#157347]">
+                            +
+                            {(
+                              v11ScenarioSummary.brandsReport.groupTotal
+                                .annualEstimatedOperatingProfitRub / 1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
                 {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                     <div className="rounded-[12px] bg-white border border-[#D8D7CF] p-4">

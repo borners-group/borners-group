@@ -15,7 +15,9 @@ import {
   PO_STATUS_LABELS_RU,
   approveRecommendedBatch,
   computeFinancialPnL,
+  computeGroupBrandsInvestmentReport,
   computeProcurementPlan,
+  computeScenarioInvestmentSummary,
   createCustomPurchaseOrder,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
@@ -23,6 +25,7 @@ import {
   groupRecommendedBatchesByFactory,
   removeApprovedPurchaseOrder,
   serializePurchaseOrdersToCsv,
+  serializeScenarioFactoryOrdersToCsv,
   serializeStructuredPlanToCsv,
   updateApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
@@ -627,6 +630,7 @@ export function ProcurementContourView() {
     setSelectedScenarioId,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
+    scenarioAllEligibleModels,
     eligibleModels,
     totals,
     updateModelSpec,
@@ -656,6 +660,10 @@ export function ProcurementContourView() {
   });
   const [skuSearch, setSkuSearch] = useState('');
   const [showAllSkusTable, setShowAllSkusTable] = useState(false);
+  const [showCashflowCalendar, setShowCashflowCalendar] = useState(false);
+  const [showBrandInvestmentTable, setShowBrandInvestmentTable] = useState(false);
+  const [initialCashMln, setInitialCashMln] = useState<number>(0);
+  const [wbLagMonths, setWbLagMonths] = useState<number>(0);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -762,6 +770,28 @@ export function ProcurementContourView() {
     };
   }, [eligibleModels, currentScenario]);
 
+  const investmentSummary = useMemo(
+    () =>
+      computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
+        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: wbLagMonths,
+      }),
+    [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
+  );
+
+  const brandsReport = useMemo(
+    () =>
+      computeGroupBrandsInvestmentReport(
+        scenarioAllEligibleModels,
+        currentScenario,
+        {
+          initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+          settlementLagMonths: wbLagMonths,
+        }
+      ),
+    [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
+  );
+
   const activeSkuModel = useMemo(() => {
     const found =
       eligibleModels.find((m) => m.id === selectedSkuId) ||
@@ -783,22 +813,27 @@ export function ProcurementContourView() {
     });
   }, [procData.perSku, skuSearch]);
 
-  const handleExportAllPoCsv = () => {
-    if (procData.approvedOrdersFlat.length === 0) {
-      notify('warning', 'Пока нет утверждённых заказов PO для экспорта');
-      return;
-    }
-    const csv = serializePurchaseOrdersToCsv(procData.approvedOrdersFlat);
+  const handleExportFactoryOrderCsv = (mode: 'all' | 'first_wave' = 'all') => {
+    const csv = serializeScenarioFactoryOrdersToCsv(
+      eligibleModels,
+      currentScenario,
+      mode
+    );
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `BORNERS_PO_2027_Scenario_${currentScenario.id}.csv`;
+    a.download =
+      mode === 'first_wave'
+        ? `BORNERS_Zakaz_Fabrike_Start_Q1_Scenario_${currentScenario.id}.csv`
+        : `BORNERS_Zakaz_Fabrike_2027_Scenario_${currentScenario.id}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     notify(
       'success',
-      `Экспортировано заказов PO: ${procData.approvedOrdersFlat.length}`
+      mode === 'first_wave'
+        ? 'Выгружен заказ фабрике на 1-ю волну (Q1) с размерами S–XXL'
+        : `Выгружена спецификация заказа фабрике (${eligibleModels.length} мод., размеры S–XXL)`
     );
   };
 
@@ -830,7 +865,7 @@ export function ProcurementContourView() {
                   : 'text-[#686762] hover:text-[#141413] border border-transparent'
               }`}
             >
-              03 · Закупки ({eligibleModels.length} мод. · {procData.approvedCount} PO)
+              03 · Закупки ({eligibleModels.length} мод. · {procData.approvedCount} утв.)
             </button>
             <button
               type="button"
@@ -872,7 +907,7 @@ export function ProcurementContourView() {
           )}
         </div>
 
-        {/* Правая часть: Фильтр бренда (если включён) + Сводная по всем SKU */}
+        {/* Правая часть: Фильтр бренда + График кэшфлоу + Сводная по брендам + Экспорт заказа фабрике */}
         <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#52514C]">
           {brandFilter !== 'ALL' && (
             <button
@@ -886,28 +921,55 @@ export function ProcurementContourView() {
             </button>
           )}
           {subTab === 'batches' && eligibleModels.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAllSkusTable((v) => !v)}
-              className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
-                showAllSkusTable
-                  ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
-                  : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
-              }`}
-            >
-              {showAllSkusTable
-                ? 'Скрыть сводную всех SKU ▴'
-                : `Сводная всех SKU (${procData.perSku.length}) ▾`}
-            </button>
-          )}
-          {procData.approvedOrdersFlat.length > 0 && (
-            <button
-              type="button"
-              onClick={handleExportAllPoCsv}
-              className="rounded-[9px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-1.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-            >
-              Экспорт PO ({procData.approvedOrdersFlat.length})
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowCashflowCalendar((v) => !v)}
+                className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
+                  showCashflowCalendar
+                    ? 'border-[#157347] bg-[#E9F7EF] text-[#0F5132]'
+                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                }`}
+              >
+                {showCashflowCalendar
+                  ? 'Скрыть кэшфлоу 12 мес. ▴'
+                  : 'Календарь денег и WB (12 мес.) ▾'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBrandInvestmentTable((v) => !v)}
+                className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
+                  showBrandInvestmentTable
+                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
+                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                }`}
+              >
+                {showBrandInvestmentTable
+                  ? 'Скрыть бренды ▴'
+                  : 'По брендам ▾'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAllSkusTable((v) => !v)}
+                className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
+                  showAllSkusTable
+                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
+                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                }`}
+              >
+                {showAllSkusTable
+                  ? 'Скрыть все SKU ▴'
+                  : `Все SKU (${procData.perSku.length}) ▾`}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportFactoryOrderCsv('all')}
+                className="rounded-[9px] border border-[#CFCEC6] bg-[#FAF9F6] px-3 py-1.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                title="Скачать таблицу заказа фабрике в Excel/CSV с размерами S–XXL, суммами, авансами и датами"
+              >
+                Экспорт заказа фабрике (CSV)
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -957,7 +1019,7 @@ export function ProcurementContourView() {
         </div>
       ) : (
         <>
-          {/* ИНВЕСТИЦИОННАЯ СВОДКА СЦЕНАРИЯ: ОТ ПЛАНА ПРОДАЖ К ЗАКУПКАМ И ДЕНЬГАМ НА СТАРТ */}
+          {/* ИНВЕСТИЦИОННАЯ СВОДКА СЦЕНАРИЯ (РАЗДЕЛ 07.1 ТЗ): 4 РАЗДЕЛЁННЫХ ПОКАЗАТЕЛЯ */}
           <div className="rounded-[16px] border border-[#D8D7CE] bg-white p-4 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 1. Цель продаж сценария */}
@@ -980,62 +1042,342 @@ export function ProcurementContourView() {
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-[#52514C]">
                   Дек: <strong>{formatMln(totals.decRevenueRub)}</strong> · Выкупы:{' '}
-                  <strong>{procData.annualDemandPacks.toLocaleString('ru-RU')} компл.</strong> ({eligibleModels.length} мод.)
+                  <strong>{procData.annualDemandPacks.toLocaleString('ru-RU')} компл.</strong>
                 </div>
               </div>
 
-              {/* 2. Сколько единиц товара нужно закупить под этот план продаж */}
-              <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
-                <div className="text-[11px] font-bold uppercase tracking-wide text-[#686762]">
-                  2. Нужно закупить под план
-                </div>
-                <div className="mt-1 font-mono text-[19px] font-extrabold text-[#141413]">
-                  {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
-                </div>
-                <div className="mt-0.5 text-[11.5px] text-[#52514C]">
-                  {procData.totalScenarioUnits.toLocaleString('ru-RU')} физ. изд. (с учётом запаса и остатков)
-                </div>
-              </div>
-
-              {/* 3. СКОЛЬКО ДЕНЕГ НУЖНО ИНВЕСТИРОВАТЬ СРАЗУ (Партия №1 / Старт Q1) */}
+              {/* 2. СКОЛЬКО ДЕНЕГ НУЖНО ВЛОЖИТЬ СРАЗУ НА СТАРТ (Партия №1 / Q1 + Аванс 30%) */}
               <div className="rounded-[12px] border border-[#A7DFC0] bg-[#F2FBF6] px-4 py-3">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-[#13653F]">
-                    3. Вложить сразу (Партия №1 · Q1)
+                    2. Вложить на старт (Партия №1)
                   </span>
                   <span className="rounded-full bg-[#157347] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white">
-                    Старт
+                    Старт Q1
                   </span>
                 </div>
                 <div className="mt-1 font-mono text-[20px] font-extrabold text-[#0F5132]">
-                  {formatMln(procData.firstWaveBudgetRub)}
+                  {formatMln(investmentSummary.firstWaveStartBudgetRub)}
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-[#145A38]">
-                  <strong>Аванс 30% сейчас: {formatMln(procData.firstWavePrepaymentRub)}</strong> · 1-я волна: {procData.firstWavePacks.toLocaleString('ru-RU')} компл.
+                  <strong>Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> · 1-я волна: {investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.
                 </div>
               </div>
 
-              {/* 4. Полный оборотный бюджет на все 4 квартала года */}
+              {/* 3. МАКСИМУМ СОБСТВЕННЫХ ДЕНЕГ (Пик капитала с учётом возврата выручки с WB) */}
+              <div className="rounded-[12px] border border-[#9EC5FE] bg-[#F4F8FF] px-4 py-3">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#1E40AF]">
+                    3. Пик своих денег (с оборотом WB)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCashflowCalendar((v) => !v)}
+                    className="text-[10.5px] font-bold text-[#1D4ED8] hover:underline cursor-pointer"
+                  >
+                    {showCashflowCalendar ? 'Скрыть ▴' : 'По месяцам ▾'}
+                  </button>
+                </div>
+                <div className="mt-1 font-mono text-[20px] font-extrabold text-[#1E3A8A]">
+                  {formatMln(investmentSummary.netOwnMoneyRequiredRub)}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#1E40AF]">
+                  Пик в <strong>{investmentSummary.peakMonthLabel} 2027</strong>
+                  {investmentSummary.selfFundingMonthLabel
+                    ? ` · С ${investmentSummary.selfFundingMonthLabel} — из выручки WB`
+                    : ' · Дальше — из выручки WB'}
+                </div>
+              </div>
+
+              {/* 4. Стоимость всех закупок за год vs Себестоимость проданного товара */}
               <div className="rounded-[12px] border border-[#D8D7CE] bg-[#F5F4EE] px-4 py-3">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-[#4A4944]">
                     4. Закупки за весь год (4 кварт.)
                   </span>
-                  <span className="font-mono text-[11px] font-semibold text-[#52514C]">
-                    {totals.annualRevenueRub > 0
-                      ? `${((procData.totalScenarioBudgetRub / totals.annualRevenueRub) * 100).toFixed(1)}% от выр.`
-                      : ''}
+                  <span className="font-mono text-[10.5px] font-semibold text-[#52514C]">
+                    {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
                   </span>
                 </div>
                 <div className="mt-1 font-mono text-[19px] font-extrabold text-[#141413]">
-                  {formatMln(procData.totalScenarioBudgetRub)}
+                  {formatMln(investmentSummary.totalProcurementBudgetRub)}
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-[#52514C]">
-                  Партии Q2–Q4 ({formatMln(Math.max(0, procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub))}) — из оборотной выручки
+                  Себест. продаж: <strong>{formatMln(investmentSummary.annualSoldGoodsCostRub)}</strong> · Прибыль: <strong className="text-[#157347]">+{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}</strong>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* РАСКРЫВАЮЩИЙСЯ ПОМЕСЯЧНЫЙ КАЛЕНДАРЬ ИНВЕСТИЦИЙ И ВОЗВРАТА ДЕНЕГ С WB (12 МЕС.) */}
+          {showCashflowCalendar && (
+            <div className="rounded-[16px] border border-[#C5D7F2] bg-white p-4 shadow-[0_2px_8px_rgba(20,20,19,0.04)] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[14px] font-extrabold text-[#141413]">
+                    Помесячный график вложений и возврата выручки с Wildberries (2027)
+                  </div>
+                  <div className="text-[12px] text-[#52514C]">
+                    Показывает, сколько собственных денег нужно в пике (<strong>{formatMln(investmentSummary.netOwnMoneyRequiredRub)}</strong> в <strong>{investmentSummary.peakMonthLabel} 2027</strong>) и как выручка WB перекрывает следующие партии Q2–Q4
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5 text-[12px]">
+                  <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
+                    <span className="text-[#52514C] font-medium">Деньги на счёте на старт:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={500}
+                      step={1}
+                      value={initialCashMln}
+                      onChange={(e) => setInitialCashMln(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-14 rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 text-right font-mono font-bold text-[#141413]"
+                    />
+                    <span className="text-[#686762]">млн ₽</span>
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
+                    <span className="text-[#52514C] font-medium">Выплаты WB:</span>
+                    <select
+                      value={wbLagMonths}
+                      onChange={(e) => setWbLagMonths(Number(e.target.value) || 0)}
+                      className="rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 font-semibold text-[#141413]"
+                    >
+                      <option value={0}>В месяц продаж (без задержки)</option>
+                      <option value={1}>Лаг 1 месяц</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCashflowCalendar(false)}
+                    className="text-[12px] font-semibold text-[#6E6D66] hover:text-[#141413] cursor-pointer"
+                  >
+                    Свернуть ▴
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
+                <table className="w-full min-w-[820px] border-collapse text-left text-[11.5px]">
+                  <thead>
+                    <tr className="border-b border-[#E4E3DC] bg-[#FAF9F6] text-[10.5px] font-bold uppercase tracking-wide text-[#5E5D58]">
+                      <th className="py-2 px-3 sticky left-0 bg-[#FAF9F6] border-r border-[#E4E3DC]">
+                        Поток денег (млн ₽)
+                      </th>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <th
+                          key={r.monthIdx}
+                          className={`py-2 px-2 text-right ${
+                            r.isPeakDeficitMonth ? 'bg-amber-50 text-amber-900' : ''
+                          }`}
+                        >
+                          {r.monthLabel}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#ECEBE4]">
+                    <tr>
+                      <td className="py-2 px-3 font-medium text-[#52514C] sticky left-0 bg-white border-r border-[#ECEBE4]">
+                        Выручка продаж (выкупы WB)
+                      </td>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <td key={r.monthIdx} className="py-2 px-2 text-right font-mono text-[#52514C]">
+                          {(r.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-3 font-semibold text-[#157347] sticky left-0 bg-white border-r border-[#ECEBE4]">
+                        + Поступления от WB на счёт (за вычетом комиссии, логистики и рекламы)
+                      </td>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <td key={r.monthIdx} className="py-2 px-2 text-right font-mono font-semibold text-[#157347]">
+                          +{(r.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-3 font-semibold text-[#B45309] sticky left-0 bg-white border-r border-[#ECEBE4]">
+                        − Оплаты фабрикам (авансы 30% + доплаты 70% перед отгрузкой)
+                      </td>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <td key={r.monthIdx} className="py-2 px-2 text-right font-mono text-[#B45309]">
+                          {r.factoryTotalOutflowRub > 0
+                            ? `−${(r.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}`
+                            : '0,0'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr className="bg-[#FAF9F6] font-semibold">
+                      <td className="py-2 px-3 text-[#141413] sticky left-0 bg-[#FAF9F6] border-r border-[#ECEBE4]">
+                        = Чистый поток месяца
+                      </td>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <td
+                          key={r.monthIdx}
+                          className={`py-2 px-2 text-right font-mono ${
+                            r.netMonthlyCashflowRub < 0 ? 'text-[#B45309]' : 'text-[#157347]'
+                          }`}
+                        >
+                          {r.netMonthlyCashflowRub >= 0 ? '+' : ''}
+                          {(r.netMonthlyCashflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr className="bg-[#F2F6FF] font-extrabold">
+                      <td className="py-2.5 px-3 text-[#1E3A8A] sticky left-0 bg-[#F2F6FF] border-r border-[#D5E2FA]">
+                        Накопленный баланс денег (минус = нужны свои деньги)
+                      </td>
+                      {investmentSummary.monthlyRows.map((r) => (
+                        <td
+                          key={r.monthIdx}
+                          className={`py-2.5 px-2 text-right font-mono ${
+                            r.isPeakDeficitMonth
+                              ? 'bg-amber-100/90 text-amber-950 underline decoration-amber-600'
+                              : r.cumulativeCashBalanceRub < 0
+                              ? 'text-rose-700'
+                              : 'text-[#157347]'
+                          }`}
+                        >
+                          {r.cumulativeCashBalanceRub >= 0 ? '+' : ''}
+                          {(r.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* РАСКРЫВАЮЩАЯСЯ СВОДНАЯ ТАБЛИЦА ИНВЕСТИЦИЙ И ПРИБЫЛИ ПО БРЕНДАМ ГРУППЫ (РАЗДЕЛ 09.2 ТЗ) */}
+          {showBrandInvestmentTable && (
+            <div className="rounded-[16px] border border-[#D8D7CF] bg-white p-4 shadow-[0_2px_8px_rgba(20,20,19,0.04)] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[14px] font-extrabold text-[#141413]">
+                    Сводная таблица инвестиций, закупок и прибыли по брендам группы (2027)
+                  </div>
+                  <div className="text-[12px] text-[#52514C]">
+                    Нажмите на строку бренда, чтобы отфильтровать модели. Строка «ИТОГО ПО ГРУППЕ» считает портфель без двойного счёта.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBrandInvestmentTable(false)}
+                  className="text-[12px] font-semibold text-[#6E6D66] hover:text-[#141413] cursor-pointer"
+                >
+                  Свернуть ▴
+                </button>
+              </div>
+              <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
+                <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-[#E4E3DC] bg-[#FAF9F6] text-[10.5px] font-bold uppercase tracking-wide text-[#5E5D58]">
+                      <th className="py-2.5 px-3">Бренд</th>
+                      <th className="py-2.5 px-2.5 text-right">Моделей</th>
+                      <th className="py-2.5 px-3 text-right">Выручка 2027</th>
+                      <th className="py-2.5 px-3 text-right">К закупке</th>
+                      <th className="py-2.5 px-3 text-right bg-[#F2FBF6] text-[#0F5132]">
+                        Вложить на старт (Q1 / Аванс 30%)
+                      </th>
+                      <th className="py-2.5 px-3 text-right bg-[#F4F8FF] text-[#1E3A8A]">
+                        Пик своих денег (с WB)
+                      </th>
+                      <th className="py-2.5 px-3 text-right">Закупки за год</th>
+                      <th className="py-2.5 px-3 text-right">Себест. продаж</th>
+                      <th className="py-2.5 px-3 text-right">Ожид. прибыль</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#ECEBE4]">
+                    {brandsReport.brands.map((b) => (
+                      <tr
+                        key={b.brandCode}
+                        onClick={() => setBrandFilter(b.brandCode)}
+                        className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
+                          brandFilter === b.brandCode ? 'bg-amber-50/60 font-semibold' : ''
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
+                        <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C]">
+                          {b.modelsCount}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#141413]">
+                          {b.modelsCount > 0 ? formatMln(b.annualRevenueRub) : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
+                          {b.modelsCount > 0
+                            ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
+                            : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono bg-[#F2FBF6]/60 text-[#0F5132]">
+                          {b.modelsCount > 0 ? (
+                            <div>
+                              <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
+                              <div className="text-[10.5px] text-[#145A38]">
+                                аванс: {formatMln(b.firstWavePrepaymentRub)}
+                              </div>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F4F8FF]/60 text-[#1E3A8A]">
+                          {b.modelsCount > 0 ? formatMln(b.peakWorkingCapitalRub) : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
+                          {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[#52514C]">
+                          {b.modelsCount > 0 ? formatMln(b.annualSoldGoodsCostRub) : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-[#157347]">
+                          {b.modelsCount > 0
+                            ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr
+                      onClick={() => setBrandFilter('ALL')}
+                      className="border-t-2 border-[#CECDC4] bg-[#F5F5F1] font-extrabold text-[#141413] cursor-pointer"
+                    >
+                      <td className="py-3 px-3">ИТОГО ПО ГРУППЕ (без дублей)</td>
+                      <td className="py-3 px-2.5 text-right font-mono">
+                        {brandsReport.groupTotal.modelsCount}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">
+                        {formatMln(brandsReport.groupTotal.annualRevenueRub)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">
+                        {brandsReport.groupTotal.totalProcurementPacks.toLocaleString('ru-RU')} компл.
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
+                        <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                        <div className="text-[10.5px] font-semibold">
+                          аванс: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
+                        {formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">
+                        {formatMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">
+                        {formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-[#157347]">
+                        +{formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
           {/* Сводная таблица по всем SKU портфеля (открывается по кнопке сверху) */}
           {showAllSkusTable && (
             <div className="rounded-[14px] border border-[#D8D7CF] bg-white p-4 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
@@ -1177,7 +1519,7 @@ export function ProcurementContourView() {
 // 04 · ФИНАНСЫ: РЕАЛЬНЫЙ P&L, КЭШФЛОУ И ОБОРОТНЫЙ КАПИТАЛ СЦЕНАРИЕВ 2027
 // =============================================================================
 export function FinanceContourView() {
-  const { currentUser, navigateTo } = usePlatform();
+  const { currentUser, navigateTo, brandFilter, setBrandFilter } = usePlatform();
   const {
     orderedScenarios,
     currentScenario,
@@ -1185,6 +1527,7 @@ export function FinanceContourView() {
     setSelectedScenarioId,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
+    scenarioAllEligibleModels,
     eligibleModels,
     totals,
   } = useLiveScenarioPortfolio();
@@ -1192,9 +1535,33 @@ export function FinanceContourView() {
   const [subTab, setSubTab] = useState<'scenarios-pnl' | 'legacy-plan-fact'>(
     'scenarios-pnl'
   );
+  const [initialCashMln, setInitialCashMln] = useState<number>(0);
+  const [wbLagMonths, setWbLagMonths] = useState<number>(0);
 
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
+
+  const investmentSummary = useMemo(
+    () =>
+      computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
+        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: wbLagMonths,
+      }),
+    [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
+  );
+
+  const brandsReport = useMemo(
+    () =>
+      computeGroupBrandsInvestmentReport(
+        scenarioAllEligibleModels,
+        currentScenario,
+        {
+          initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+          settlementLagMonths: wbLagMonths,
+        }
+      ),
+    [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
+  );
 
   const finSummary = useMemo(() => {
     let totalCogsRub = 0;
@@ -1260,10 +1627,10 @@ export function FinanceContourView() {
     return (
       <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-10 text-center space-y-2">
         <div className="text-[19px] font-bold text-[#141413]">
-          Доступ к разделу «Финансы и P&amp;L» ограничен
+          Доступ к разделу «Финансы и прибыль» ограничен
         </div>
         <p className="text-[13px] text-[#5E5D58]">
-          Текущая роль профиля не включает просмотр сводного P&amp;L и себестоимости партий.
+          Текущая роль профиля не включает просмотр сводной прибыли и себестоимости партий.
         </p>
       </div>
     );
@@ -1281,25 +1648,25 @@ export function FinanceContourView() {
   return (
     <div className="space-y-6 pb-16">
       <div className="rounded-[14px] bg-white border-[1.5px] border-[#C8C7BE] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12.5px] font-semibold">
+        <div className="inline-flex rounded-[9px] bg-[#F2F1EC] border border-[#E2E1D9] p-0.5 text-[12.5px] font-semibold">
           <button
             type="button"
             onClick={() => setSubTab('scenarios-pnl')}
             className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
               subTab === 'scenarios-pnl'
-                ? 'bg-[#141413] text-white'
-                : 'text-[#52514C] hover:text-[#141413]'
+                ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                : 'text-[#52514C] hover:text-[#141413] border border-transparent'
             }`}
           >
-            P&amp;L и оборотный капитал сценариев 2027
+            Инвестиции, денежный поток и прибыль сценариев 2027
           </button>
           <button
             type="button"
             onClick={() => setSubTab('legacy-plan-fact')}
             className={`h-8 px-3.5 rounded-[7px] transition cursor-pointer ${
               subTab === 'legacy-plan-fact'
-                ? 'bg-[#141413] text-white'
-                : 'text-[#52514C] hover:text-[#141413]'
+                ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                : 'text-[#52514C] hover:text-[#141413] border border-transparent'
             }`}
           >
             План / Факт и импорт таблиц CSV
@@ -1307,7 +1674,7 @@ export function FinanceContourView() {
         </div>
 
         <span className="text-[12px] text-[#5E5D58]">
-          Синхронизировано со сценариями 2027 (без фиктивной маржи при незаполненных комиссиях MP)
+          Единый расчёт от плана продаж к закупкам, пику собственных денег и прибыли по брендам
         </span>
       </div>
 
@@ -1316,9 +1683,9 @@ export function FinanceContourView() {
       ) : (
         <>
           <ScenarioContourHeader
-            stepCode="04 · Финансы · Сводный P&L и потребность в капитале"
-            title="Финансовая модель, денежный поток и юнит-экономика 2027"
-            subtitle="Единый расчёт выручки, себестоимости выкупленного товара (COGS), операционной прибыли и графика авансов фабрикам."
+            stepCode="04 · Финансы · Инвестиции, возврат с WB и прибыль"
+            title="Инвестиционная потребность, возврат выручки с WB и прибыль 2027"
+            subtitle="Раздельный расчёт: 1) Вложить на старт (Партия №1), 2) Пик своих денег с учётом возврата выручки WB, 3) Закупки за весь год и 4) Себестоимость продаж и прибыль."
             selectedScenarioId={selectedScenarioId}
             orderedScenarios={orderedScenarios}
             onSelectScenario={setSelectedScenarioId}
@@ -1327,118 +1694,316 @@ export function FinanceContourView() {
             eligibleCount={eligibleModels.length}
           />
 
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Плановая выручка 2027
+          {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (РАЗДЕЛ 07.1) */}
+          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
+            <div className="p-5 space-y-1 bg-[#F2FBF6]/50">
+              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#13653F]">
+                1. Вложить на старт (Партия №1 · Q1)
               </div>
-              <div className="text-[24px] font-bold text-[#141413]">
-                {formatMln(totals.annualRevenueRub)}
+              <div className="font-mono text-[24px] font-extrabold text-[#0F5132]">
+                {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто ролью'}
               </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                Декабрь 2027: {formatMln(totals.decRevenueRub)}
+              <div className="text-[11.5px] text-[#145A38]">
+                <strong>Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.)
+              </div>
+            </div>
+
+            <div className="p-5 space-y-1 bg-[#F4F8FF]/60">
+              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#1E40AF]">
+                2. Максимум своих денег (с оборотом WB)
+              </div>
+              <div className="font-mono text-[24px] font-extrabold text-[#1E3A8A]">
+                {formatMln(investmentSummary.netOwnMoneyRequiredRub)}
+              </div>
+              <div className="text-[11.5px] text-[#1E40AF]">
+                Пик в <strong>{investmentSummary.peakMonthLabel} 2027</strong>
+                {investmentSummary.selfFundingMonthLabel
+                  ? ` · С ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB`
+                  : ' · Учитывает возврат выручки с WB'}
               </div>
             </div>
 
             <div className="p-5 space-y-1">
               <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Товарная себестоимость (COGS)
+                3. Закупки за год vs Себест. продаж
               </div>
-              <div className="text-[24px] font-bold text-[#141413]">
-                {hasCost ? formatMln(finSummary.totalCogsRub) : 'Скрыто ролью'}
+              <div className="font-mono text-[24px] font-extrabold text-[#141413]">
+                {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто ролью'}
               </div>
               <div className="text-[11.5px] text-[#5E5D58]">
-                Валовая прибыль до MP:{' '}
-                {hasCost ? formatMln(finSummary.totalGrossProfitRub) : '—'}
+                Себестоимость проданного товара:{' '}
+                <strong>{hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : '—'}</strong>
               </div>
             </div>
 
             <div className="p-5 space-y-1">
               <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Операционная прибыль (честная)
+                4. Ожидаемая прибыль 2027 (после WB и рекламы)
               </div>
-              <div className="text-[24px] font-bold text-[#141413]">
-                {finSummary.filledOpCount > 0
-                  ? formatMln(finSummary.honestOpProfitRub)
-                  : 'Не рассчитана'}
+              <div className="font-mono text-[24px] font-extrabold text-[#157347]">
+                +{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}
               </div>
               <div className="text-[11.5px] text-[#5E5D58]">
-                Заполнены MP/OPEX: {finSummary.filledOpCount} из {eligibleModels.length} SKU
-              </div>
-            </div>
-
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
-                Пиковая потребность в капитале
-              </div>
-              <div className="text-[24px] font-bold text-[#141413]">
-                {formatMln(finSummary.peakCapitalRub)}
-              </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                С учётом авансов фабрикам (30% / 70%)
+                Выручка: <strong>{formatMln(totals.annualRevenueRub)}</strong> · Рентабельность:{' '}
+                <strong>{investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%</strong>
               </div>
             </div>
           </section>
 
-          {/* 1. Помесячный Cash Flow 2027 */}
+          {/* 01 · СВОДНАЯ ТАБЛИЦА ИНВЕСТИЦИЙ И ПРИБЫЛИ ПО БРЕНДАМ ГРУППЫ (РАЗДЕЛ 09.2 ТЗ) */}
           <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
-            <div>
-              <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                01 · Денежный поток 2027
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+                  01 · Сводная таблица по брендам и группе (2027)
+                </div>
+                <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
+                  Сколько нужно инвестировать и какая прибыль по каждому бренду и всей группе
+                </h2>
               </div>
-              <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                Помесячный Cash Flow: поступления от продаж и выплаты фабрикам (млн ₽)
-              </h2>
+              {brandFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setBrandFilter('ALL')}
+                  className="rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer"
+                >
+                  Сбросить фильтр бренда ({brandFilter}) ×
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
+              <table className="w-full min-w-[820px] border-collapse text-left text-[12.5px]">
+                <thead>
+                  <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4] text-[11px] uppercase tracking-wide">
+                    <th className="py-2.5 px-3.5 font-bold">Бренд</th>
+                    <th className="py-2.5 px-2.5 font-bold text-right">Моделей</th>
+                    <th className="py-2.5 px-3 font-bold text-right">План выручки 2027</th>
+                    <th className="py-2.5 px-3 font-bold text-right">К заказу</th>
+                    <th className="py-2.5 px-3 font-bold text-right bg-[#E9F7EF] text-[#0F5132]">
+                      Вложить на старт (Q1)
+                    </th>
+                    <th className="py-2.5 px-3 font-bold text-right bg-[#EDF4FF] text-[#1E3A8A]">
+                      Пик своих денег (с WB)
+                    </th>
+                    <th className="py-2.5 px-3 font-bold text-right">Закупки за год</th>
+                    <th className="py-2.5 px-3 font-bold text-right">Себест. продаж</th>
+                    <th className="py-2.5 px-3.5 font-bold text-right">Ожидаемая прибыль</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E4E3DC]">
+                  {brandsReport.brands.map((b) => (
+                    <tr
+                      key={b.brandCode}
+                      onClick={() => setBrandFilter(b.brandCode)}
+                      className={`hover:bg-[#FAFAF7] cursor-pointer transition ${
+                        brandFilter === b.brandCode ? 'bg-amber-50/60 font-semibold' : ''
+                      }`}
+                    >
+                      <td className="py-2.5 px-3.5 font-bold text-[#141413]">{b.brandTitle}</td>
+                      <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C]">
+                        {b.modelsCount}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
+                        {b.modelsCount > 0 ? formatMln(b.annualRevenueRub) : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
+                        {b.modelsCount > 0
+                          ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
+                          : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono bg-[#F2FBF6]/70 text-[#0F5132]">
+                        {b.modelsCount > 0 ? (
+                          <div>
+                            <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
+                            <div className="text-[10.5px] text-[#145A38]">
+                              аванс 30%: {formatMln(b.firstWavePrepaymentRub)}
+                            </div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F4F8FF]/70 text-[#1E3A8A]">
+                        {b.modelsCount > 0 ? formatMln(b.peakWorkingCapitalRub) : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
+                        {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-[#5E5D58]">
+                        {b.modelsCount > 0 ? formatMln(b.annualSoldGoodsCostRub) : '—'}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-mono font-bold text-[#157347]">
+                        {b.modelsCount > 0
+                          ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr
+                    onClick={() => setBrandFilter('ALL')}
+                    className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t-[1.5px] border-[#CECDC4] cursor-pointer"
+                  >
+                    <td className="py-3 px-3.5">ИТОГО ПО ГРУППЕ (без дублей)</td>
+                    <td className="py-3 px-2.5 text-right font-mono">
+                      {brandsReport.groupTotal.modelsCount}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono">
+                      {formatMln(brandsReport.groupTotal.annualRevenueRub)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono">
+                      {brandsReport.groupTotal.totalProcurementPacks.toLocaleString('ru-RU')} компл.
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
+                      <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                      <div className="text-[10.5px] font-semibold">
+                        аванс 30%: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
+                      {formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono">
+                      {formatMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono">
+                      {formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
+                    </td>
+                    <td className="py-3 px-3.5 text-right font-mono text-[#157347]">
+                      +{formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
+
+          {/* 02 · Помесячный график инвестиций и возврата выручки с WB (12 мес.) */}
+          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+                  02 · Денежный поток 2027 (помесячно)
+                </div>
+                <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
+                  График выплат фабрикам, возврата выручки с WB и накопленного баланса денег (млн ₽)
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 text-[12px]">
+                <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
+                  <span className="text-[#52514C] font-medium">Деньги на счёте на старт:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    step={1}
+                    value={initialCashMln}
+                    onChange={(e) => setInitialCashMln(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-14 rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 text-right font-mono font-bold text-[#141413]"
+                  />
+                  <span className="text-[#686762]">млн ₽</span>
+                </label>
+                <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
+                  <span className="text-[#52514C] font-medium">Выплаты WB:</span>
+                  <select
+                    value={wbLagMonths}
+                    onChange={(e) => setWbLagMonths(Number(e.target.value) || 0)}
+                    className="rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 font-semibold text-[#141413]"
+                  >
+                    <option value={0}>В месяц продаж (без задержки)</option>
+                    <option value={1}>Лаг 1 месяц</option>
+                  </select>
+                </label>
+              </div>
             </div>
 
             <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
               <table className="w-full text-left border-collapse text-[12px]">
                 <thead>
                   <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                    <th className="py-2.5 px-3 font-bold min-w-[205px] sticky left-0 z-10 bg-[#F5F5F1] border-r border-[#DFDED6]">
-                      Статья потока
+                    <th className="py-2.5 px-3 font-bold min-w-[240px] sticky left-0 z-10 bg-[#F5F5F1] border-r border-[#DFDED6]">
+                      Статья движения денег
                     </th>
-                    {MONTHS_SHORT_RU.map((m) => (
-                      <th key={m} className="py-2.5 px-2 font-bold text-right">
-                        {m}
+                    {investmentSummary.monthlyRows.map((r) => (
+                      <th
+                        key={r.monthIdx}
+                        className={`py-2.5 px-2 font-bold text-right ${
+                          r.isPeakDeficitMonth ? 'bg-amber-50 text-amber-900' : ''
+                        }`}
+                      >
+                        {r.monthLabel}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E4E3DC]">
                   <tr>
-                    <td className="py-2.5 px-3 font-semibold text-[#141413] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
-                      Поступления от продаж
+                    <td className="py-2.5 px-3 font-medium text-[#52514C] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
+                      Выручка продаж (выкупы WB)
                     </td>
-                    {finSummary.monthlyInflow.map((v, i) => (
-                      <td key={i} className="py-2.5 px-2 text-right font-mono text-[#157347] font-semibold">
-                        {(v / 1_000_000).toFixed(1).replace('.', ',')}
+                    {investmentSummary.monthlyRows.map((r) => (
+                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#52514C]">
+                        {(r.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
                       </td>
                     ))}
                   </tr>
                   <tr>
-                    <td className="py-2.5 px-3 font-semibold text-[#141413] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
-                      Оплаты фабрикам (30% / 70%)
+                    <td className="py-2.5 px-3 font-semibold text-[#157347] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
+                      + Поступления от WB на счёт (за вычетом комиссии, логистики и рекламы)
                     </td>
-                    {finSummary.monthlyProcOutflow.map((v, i) => (
-                      <td key={i} className="py-2.5 px-2 text-right font-mono text-[#5E5D58]">
-                        {v > 0 ? `−${(v / 1_000_000).toFixed(1).replace('.', ',')}` : '0,0'}
+                    {investmentSummary.monthlyRows.map((r) => (
+                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#157347] font-semibold">
+                        +{(r.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-[#B45309] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
+                      − Оплаты фабрикам (авансы 30% + доплаты 70%)
+                    </td>
+                    {investmentSummary.monthlyRows.map((r) => (
+                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#B45309]">
+                        {r.factoryTotalOutflowRub > 0
+                          ? `−${(r.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}`
+                          : '0,0'}
                       </td>
                     ))}
                   </tr>
                   <tr className="bg-[#FAFAF7] font-bold">
                     <td className="py-2.5 px-3 text-[#141413] sticky left-0 z-10 bg-[#FAFAF7] border-r border-[#ECEBE4]">
-                      Чистый поток месяца
+                      = Чистый поток месяца
                     </td>
-                    {finSummary.monthlyNet.map((v, i) => (
+                    {investmentSummary.monthlyRows.map((r) => (
                       <td
-                        key={i}
+                        key={r.monthIdx}
                         className={`py-2.5 px-2 text-right font-mono ${
-                          v < 0 ? 'text-[#B45309]' : 'text-[#141413]'
+                          r.netMonthlyCashflowRub < 0 ? 'text-[#B45309]' : 'text-[#157347]'
                         }`}
                       >
-                        {v >= 0 ? '+' : ''}
-                        {(v / 1_000_000).toFixed(1).replace('.', ',')}
+                        {r.netMonthlyCashflowRub >= 0 ? '+' : ''}
+                        {(r.netMonthlyCashflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="bg-[#F2F6FF] font-extrabold">
+                    <td className="py-2.5 px-3 text-[#1E3A8A] sticky left-0 z-10 bg-[#F2F6FF] border-r border-[#D5E2FA]">
+                      Накопленный баланс денег (минус = пик своих денег)
+                    </td>
+                    {investmentSummary.monthlyRows.map((r) => (
+                      <td
+                        key={r.monthIdx}
+                        className={`py-2.5 px-2 text-right font-mono ${
+                          r.isPeakDeficitMonth
+                            ? 'bg-amber-100/90 text-amber-950 underline decoration-amber-600'
+                            : r.cumulativeCashBalanceRub < 0
+                            ? 'text-rose-700'
+                            : 'text-[#157347]'
+                        }`}
+                      >
+                        {r.cumulativeCashBalanceRub >= 0 ? '+' : ''}
+                        {(r.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
                       </td>
                     ))}
                   </tr>
@@ -1447,14 +2012,14 @@ export function FinanceContourView() {
             </div>
           </section>
 
-          {/* 2. Юнит-экономика по моделям */}
+          {/* 03 · Юнит-экономика по моделям */}
           <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
             <div>
               <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                02 · Юнит-экономика по SKU
+                03 · Экономика по моделям
               </div>
               <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                Маржинальность и статус расходов по каждой модели ({finSummary.perSku.length} SKU)
+                Себестоимость, маржинальность и ожидаемая прибыль по каждой модели ({finSummary.perSku.length} мод.)
               </h2>
             </div>
 
@@ -1462,10 +2027,10 @@ export function FinanceContourView() {
               <table className="w-full text-left border-collapse text-[12.5px]">
                 <thead>
                   <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                    <th className="py-2.5 px-3.5 font-bold">SKU / Модель</th>
+                    <th className="py-2.5 px-3.5 font-bold">Модель / Артикул</th>
                     <th className="py-2.5 px-3 font-bold text-right">Цена компл.</th>
                     <th className="py-2.5 px-3 font-bold text-right">Себест. компл.</th>
-                    <th className="py-2.5 px-3 font-bold text-right">Валовая маржа</th>
+                    <th className="py-2.5 px-3 font-bold text-right">Валовая наценка</th>
                     <th className="py-2.5 px-3 font-bold text-right">Выручка 2027</th>
                     <th className="py-2.5 px-3.5 font-bold text-right">Опер. прибыль 2027</th>
                   </tr>
@@ -1477,7 +2042,7 @@ export function FinanceContourView() {
                       <tr
                         key={model.id}
                         onClick={() => openSkuPassport(model.id)}
-                        title="Нажмите, чтобы заполнить комиссии MP и OPEX в карточке SKU"
+                        title="Нажмите, чтобы открыть карточку модели и детальные расходы"
                         className="hover:bg-[#FAFAF7] cursor-pointer transition"
                       >
                         <td className="py-2.5 px-3.5">
@@ -1509,7 +2074,7 @@ export function FinanceContourView() {
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-[6px] bg-[#F3F3EE] border border-[#D8D7CF] text-[10.5px] font-semibold text-[#5E5D58]">
-                              Не заполнены MP/OPEX
+                              Уточнить логистику / расходы
                             </span>
                           )}
                         </td>

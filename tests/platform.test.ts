@@ -47,7 +47,9 @@ import {
   allocatePacksBySizeLargestRemainder,
   approveRecommendedBatch,
   computeFinancialPnL,
+  computeGroupBrandsInvestmentReport,
   computeProcurementPlan,
+  computeScenarioInvestmentSummary,
   createCustomPurchaseOrder,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
@@ -60,6 +62,7 @@ import {
   removeApprovedPurchaseOrder,
   roundNeedToMoqAndMultiple,
   serializePurchaseOrdersToCsv,
+  serializeScenarioFactoryOrdersToCsv,
   serializeStructuredPlanToCsv,
   updateApprovedPurchaseOrder,
 } from '../src/lib/unifiedBusinessEngine.ts';
@@ -1427,6 +1430,60 @@ test('30. Пересчёт партий по потребности плана �
   assert.equal(s2Plan.recommendedBatches[0].hasCustomPacksOverride, false);
   assert.ok(s2Plan.recommendedBatches[0].recommendedPacks !== 2000);
 });
+
+test('31. ТЗ «От плана продаж к закупкам и инвестициям (Разделы 07 и 09)»: разделение 4 показателей инвестиций, пик капитала с возвратом WB, сводная по 5 брендам без дублей и экспорт заказа фабрике с размерами S–XXL', () => {
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const fullPortfolio = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code));
+
+  // 1. Проверяем разделение 4 ключевых финансовых показателей сценария
+  const inv = computeScenarioInvestmentSummary(fullPortfolio, scen1, {
+    initialCashRub: 0,
+    settlementLagMonths: 0,
+  });
+
+  // А) Стоимость всех закупок за год > Себестоимость проданного товара (за счёт страхового запаса на конец периода)
+  assert.ok(inv.totalProcurementBudgetRub > 0);
+  assert.ok(inv.annualSoldGoodsCostRub > 0);
+  assert.ok(inv.totalProcurementBudgetRub >= inv.annualSoldGoodsCostRub);
+
+  // Б) Стартовая инвестиция (Партия №1 · Q1) и аванс 30% существенно меньше годового бюджета закупок
+  assert.ok(inv.firstWaveStartBudgetRub > 0);
+  assert.ok(inv.firstWavePrepaymentRub > 0);
+  assert.ok(inv.firstWaveStartBudgetRub < inv.totalProcurementBudgetRub);
+  assert.ok(inv.firstWavePrepaymentRub < inv.firstWaveStartBudgetRub);
+
+  // В) Пик собственных денег с учётом возврата выручки WB значительно меньше годового бюджета всех 4 кварталов!
+  assert.ok(inv.peakWorkingCapitalRub >= inv.firstWavePrepaymentRub);
+  assert.ok(inv.peakWorkingCapitalRub < inv.totalProcurementBudgetRub);
+  assert.equal(inv.monthlyRows.length, 12);
+
+  // Г) Если на счёте на старте есть 10 млн ₽ собственных денег — потребность в дополнительных деньгах снижается ровно на 10 млн ₽
+  const invWith10Mln = computeScenarioInvestmentSummary(fullPortfolio, scen1, {
+    initialCashRub: 10_000_000,
+    settlementLagMonths: 0,
+  });
+  assert.equal(
+    invWith10Mln.netOwnMoneyRequiredRub,
+    Math.max(0, inv.peakWorkingCapitalRub - 10_000_000)
+  );
+
+  // 2. Сводная по всем 5 брендам группы (BORNERS, FUKAI, НА ТЕЛЕ, Акуша, Liskani) + защита от двойного счёта
+  const duplicatedPortfolio = [...fullPortfolio, ...fullPortfolio.slice(0, 5)];
+  const report = computeGroupBrandsInvestmentReport(duplicatedPortfolio, scen1);
+  assert.equal(report.brands.length, 5);
+  assert.equal(report.groupTotal.modelsCount, fullPortfolio.length);
+  assert.equal(report.groupTotal.annualRevenueRub, inv.annualRevenueRub);
+
+  // 3. Экспорт заказа фабрике (CSV) содержит размеры S–XXL, аванс и доплату даже для плановых партий
+  const factoryCsv = serializeScenarioFactoryOrdersToCsv(fullPortfolio, scen1, 'all');
+  assert.ok(factoryCsv.includes('Размер S (компл.)'));
+  assert.ok(factoryCsv.includes('Размер XXL (компл.)'));
+  assert.ok(factoryCsv.includes('BRN-001-SC'));
+});
+
 
 
 

@@ -2210,3 +2210,590 @@ export function importStructuredScenarioPlan(
     duplicatesSkipped,
   };
 }
+
+// =============================================================================
+// РАЗДЕЛ 07 И 09 НОВОГО ТЗ (2027): ИНВЕСТИЦИОННЫЙ КАЛЬКУЛЯТОР, ПИК СОБСТВЕННЫХ
+// ДЕНЕГ С УЧЁТОМ ОБОРОТА WB, КАЛЕНДАРЬ КЭШФЛОУ 12 МЕС. И СВОДНАЯ ПО БРЕНДАМ
+// =============================================================================
+
+export interface ScenarioMonthlyCashflowRow {
+  monthIdx: number;
+  monthLabel: string;
+  grossSalesRub: number;
+  wbDeductionsAndAdsRub: number;
+  wbNetInflowRub: number;
+  factoryPrepaymentOutflowRub: number;
+  factoryBalanceOutflowRub: number;
+  factoryTotalOutflowRub: number;
+  netMonthlyCashflowRub: number;
+  cumulativeCashBalanceRub: number;
+  isPeakDeficitMonth: boolean;
+}
+
+export interface ScenarioInvestmentSummary {
+  modelsCount: number;
+  annualRevenueRub: number;
+  decemberRevenueRub: number;
+  annualDemandPacks: number;
+  annualDemandUnits: number;
+
+  // 1. Стоимость всех закупок за период (все партии 4 кварталов: утв. + план)
+  totalProcurementPacks: number;
+  totalProcurementUnits: number;
+  totalProcurementBudgetRub: number;
+  approvedOrdersCount: number;
+  approvedOrdersBudgetRub: number;
+  plannedBatchesCount: number;
+  plannedBatchesBudgetRub: number;
+
+  // 2. Себестоимость проданного товара (участвует в расчёте прибыли за период)
+  annualSoldGoodsCostRub: number;
+  annualGrossProfitRub: number;
+  annualWbDeductionsAndAdsRub: number;
+  annualEstimatedOperatingProfitRub: number;
+  operatingMarginPct: number;
+
+  // 3. Вложения до первых поступлений (Старт · Партия №1 / Q1 и аванс 30%)
+  firstWavePacks: number;
+  firstWaveUnits: number;
+  firstWaveStartBudgetRub: number;
+  firstWavePrepaymentRub: number;
+  firstWaveBalanceRub: number;
+
+  // 4. Максимальная потребность в собственных деньгах (Пик капитала с учётом возврата выручки WB)
+  initialCashOnHandRub: number;
+  settlementLagMonths: number;
+  peakWorkingCapitalRub: number;
+  netOwnMoneyRequiredRub: number;
+  peakMonthIdx: number;
+  peakMonthLabel: string;
+  selfFundingMonthIdx: number | null;
+  selfFundingMonthLabel: string | null;
+  yearEndCashBalanceRub: number;
+  monthlyRows: ScenarioMonthlyCashflowRow[];
+}
+
+export interface ScenarioInvestmentOptions {
+  initialCashRub?: number;
+  settlementLagMonths?: number;
+}
+
+/**
+ * Единый расчёт 4 разделённых финансовых показателей сценария (Раздел 07.1–07.3 ТЗ):
+ * 1) Стоимость всех закупок за год (4 квартала)
+ * 2) Себестоимость проданного товара (в прибыли)
+ * 3) Вложить на старт (Партия №1 · Q1 + аванс 30%)
+ * 4) Пик собственных денег с учётом помесячного возврата выручки с WB (за вычетом комиссии, логистики и рекламы)
+ */
+export function computeScenarioInvestmentSummary(
+  rawModels: ScenarioModelSpec[],
+  scenario: GrowthScenarioDef,
+  options: ScenarioInvestmentOptions = {}
+): ScenarioInvestmentSummary {
+  const initialCashOnHandRub = Math.max(0, Math.round(options.initialCashRub || 0));
+  const settlementLagMonths = Math.max(
+    0,
+    Math.min(3, Math.round(options.settlementLagMonths ?? 0))
+  );
+
+  // Защита от двойного счёта моделей по ID/коду
+  const seenModelIds = new Set<string>();
+  const uniqueModels: ScenarioModelSpec[] = [];
+  for (const rm of rawModels) {
+    if (!rm || rm.launchStatus === 'В архиве') continue;
+    const key = rm.id || rm.code;
+    if (seenModelIds.has(key)) continue;
+    seenModelIds.add(key);
+    uniqueModels.push(ensureModelUnifiedV11(rm));
+  }
+
+  let annualRevenueRub = 0;
+  let decemberRevenueRub = 0;
+  let annualDemandPacks = 0;
+  let annualDemandUnits = 0;
+
+  let totalProcurementPacks = 0;
+  let totalProcurementUnits = 0;
+  let totalProcurementBudgetRub = 0;
+  let approvedOrdersCount = 0;
+  let approvedOrdersBudgetRub = 0;
+  let plannedBatchesCount = 0;
+  let plannedBatchesBudgetRub = 0;
+
+  let annualSoldGoodsCostRub = 0;
+  let annualWbDeductionsAndAdsRub = 0;
+
+  let firstWavePacks = 0;
+  let firstWaveUnits = 0;
+  let firstWaveStartBudgetRub = 0;
+  let firstWavePrepaymentRub = 0;
+
+  const monthlyGrossSalesRub = Array(12).fill(0) as number[];
+  const monthlyWbDeductionsRub = Array(12).fill(0) as number[];
+  const monthlyPrepayOutflowRub = Array(12).fill(0) as number[];
+  const monthlyBalanceOutflowRub = Array(12).fill(0) as number[];
+
+  for (const m of uniqueModels) {
+    const proc = computeProcurementPlan(m, scenario);
+    const pnl = computeFinancialPnL(m, scenario, proc);
+    const shared = m.sharedSupplyAndFact!;
+    const prepayPct = shared.factoryParams.prepaymentPct ?? 30;
+
+    annualRevenueRub += pnl.annualRevenueRub;
+    decemberRevenueRub += pnl.targetMonthRevenueRub;
+    annualDemandPacks += proc.annualDemandPacks;
+    annualDemandUnits += proc.annualDemandUnits;
+
+    const confirmedPos = proc.approvedOrders.filter(
+      (po) => po.confirmedByFactory !== false
+    );
+    const modelApprovedRub = confirmedPos.reduce((s, po) => s + po.totalOrderRub, 0);
+    const modelPlannedRub = proc.totalRecommendedBudgetRub || 0;
+
+    approvedOrdersCount += confirmedPos.length;
+    approvedOrdersBudgetRub += modelApprovedRub;
+    plannedBatchesCount += proc.recommendedBatches.length;
+    plannedBatchesBudgetRub += modelPlannedRub;
+
+    totalProcurementPacks +=
+      proc.totalApprovedReceiptsPacks + proc.totalRecommendedPacks;
+    totalProcurementUnits +=
+      proc.totalApprovedReceiptsUnits + proc.totalRecommendedUnits;
+    totalProcurementBudgetRub += modelApprovedRub + modelPlannedRub;
+
+    // 2. Себестоимость проданного товара (выкупы * себестоимость комплекта)
+    const unitCost = Math.max(0, m.unitCostRub || 0);
+    const soldCost =
+      pnl.annualCogsRub !== null ? pnl.annualCogsRub : proc.annualDemandPacks * unitCost;
+    annualSoldGoodsCostRub += soldCost;
+
+    // 3. Вложения на старт (Партия №1 / Q1)
+    const firstDraft = proc.recommendedBatches[0];
+    const earliestPo = [...confirmedPos].sort(
+      (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+    )[0];
+    if (
+      earliestPo &&
+      (!firstDraft || earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)
+    ) {
+      firstWavePacks += earliestPo.packsQty;
+      firstWaveUnits += earliestPo.packsQty * earliestPo.unitsInPack;
+      firstWaveStartBudgetRub += earliestPo.totalOrderRub;
+      firstWavePrepaymentRub += Math.round((earliestPo.totalOrderRub * prepayPct) / 100);
+    } else if (firstDraft) {
+      firstWavePacks += firstDraft.recommendedPacks;
+      firstWaveUnits += firstDraft.physicalUnitsQty;
+      firstWaveStartBudgetRub += firstDraft.estimatedTotalRub;
+      firstWavePrepaymentRub += firstDraft.prepaymentRub;
+    }
+
+    // 4. Помесячные потоки WB и оплат фабрикам по модели
+    const plan =
+      m.plansByScenario[scenario.id] ||
+      m.plansByScenario[1] || {
+        monthlyPacks: Array(12).fill(0),
+        monthlyPricesRub: Array(12).fill(m.retailPriceRub),
+      };
+    const actingSku = getActingSkuByWbOrVendor(m.code, m.title);
+    const isUnmodifiedActing =
+      actingSku &&
+      plan.monthlyPacks.every((p, idx) => p === actingSku.monthly[idx]?.buyouts_sets) &&
+      plan.monthlyPricesRub.every(
+        (pr, idx) => pr === actingSku.monthly[idx]?.realization_price_rub
+      );
+
+    // Ставки удержаний WB и рекламы для реалистичного расчёта возврата выручки на счёт
+    const mpPct = m.marketplaceFeePct > 0 ? m.marketplaceFeePct : 22;
+    const adsPct = m.adsPct > 0 ? m.adsPct : 10;
+    const logRub = m.logisticsRub > 0 ? m.logisticsRub : 95;
+    const otherVarRub = shared.otherVariableRubPerPack || 0;
+
+    for (let idx = 0; idx < 12; idx++) {
+      const act = shared.actualSalesByMonth[idx];
+      const packsM =
+        act && act.actualBuyoutsPacks !== null
+          ? Math.max(0, act.actualBuyoutsPacks)
+          : Math.max(0, plan.monthlyPacks[idx] || 0);
+      const revM =
+        act && act.actualBuyoutsPacks !== null
+          ? packsM *
+            (act.actualPriceRub !== null
+              ? act.actualPriceRub
+              : plan.monthlyPricesRub[idx] ?? m.retailPriceRub)
+          : isUnmodifiedActing
+          ? actingSku.monthly[idx]?.revenue_rub || 0
+          : packsM * (plan.monthlyPricesRub[idx] ?? m.retailPriceRub);
+
+      const deductionsM =
+        Math.round((revM * (mpPct + adsPct)) / 100) +
+        packsM * (logRub + otherVarRub);
+
+      monthlyGrossSalesRub[idx] += revM;
+      monthlyWbDeductionsRub[idx] += Math.min(revM, deductionsM);
+      annualWbDeductionsAndAdsRub += Math.min(revM, deductionsM);
+    }
+
+    // График оплат фабрикам: аванс (в месяц размещения заказа) + доплата (к приходу партии)
+    for (const po of confirmedPos) {
+      const orderM = Math.max(
+        0,
+        po.arrivalMonthIdx - Math.ceil(po.leadTimeDaysAtApproval / 30)
+      );
+      const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
+      monthlyPrepayOutflowRub[orderM] += po.prepaymentRub;
+      monthlyBalanceOutflowRub[arrivalM] += po.balancePaymentRub;
+    }
+    for (const rb of proc.recommendedBatches) {
+      const orderM = Math.max(
+        0,
+        rb.firstCoveredMonthIdx - Math.ceil(rb.totalLeadDays / 30)
+      );
+      const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
+      monthlyPrepayOutflowRub[orderM] += rb.prepaymentRub;
+      monthlyBalanceOutflowRub[arrivalM] += rb.balancePaymentRub;
+    }
+  }
+
+  const firstWaveBalanceRub = Math.max(0, firstWaveStartBudgetRub - firstWavePrepaymentRub);
+  const annualGrossProfitRub = annualRevenueRub - annualSoldGoodsCostRub;
+  const annualEstimatedOperatingProfitRub =
+    annualGrossProfitRub - annualWbDeductionsAndAdsRub;
+  const operatingMarginPct =
+    annualRevenueRub > 0
+      ? Math.round((annualEstimatedOperatingProfitRub / annualRevenueRub) * 1000) / 10
+      : 0;
+
+  // Строим 12-месячный календарь кэшфлоу и находим точку максимального кассового разрыва (пик капитала)
+  const monthlyRows: ScenarioMonthlyCashflowRow[] = [];
+  let runningCashFromZero = 0;
+  let minCumulativeFromZero = 0;
+  let peakMonthIdx = 0;
+
+  for (let m = 0; m < 12; m++) {
+    const srcM = m - settlementLagMonths;
+    const grossSalesRub = srcM >= 0 ? monthlyGrossSalesRub[srcM] : 0;
+    const wbDeductionsAndAdsRub = srcM >= 0 ? monthlyWbDeductionsRub[srcM] : 0;
+    const wbNetInflowRub = Math.max(0, grossSalesRub - wbDeductionsAndAdsRub);
+
+    const factoryPrepaymentOutflowRub = monthlyPrepayOutflowRub[m] || 0;
+    const factoryBalanceOutflowRub = monthlyBalanceOutflowRub[m] || 0;
+    const factoryTotalOutflowRub =
+      factoryPrepaymentOutflowRub + factoryBalanceOutflowRub;
+
+    // Внутри месяца сначала уходят платежи фабрике на старт периода, затем поступает выручка WB.
+    // Для честной оценки пика капитала в Январе (месяц 0) проверяем также предоплату + доплату Партии №1 до прихода выручки:
+    const intraMonthLowBeforeInflow = runningCashFromZero - factoryTotalOutflowRub;
+    if (m === 0 && intraMonthLowBeforeInflow < minCumulativeFromZero) {
+      minCumulativeFromZero = intraMonthLowBeforeInflow;
+      peakMonthIdx = 0;
+    }
+
+    const netMonthlyCashflowRub = wbNetInflowRub - factoryTotalOutflowRub;
+    runningCashFromZero += netMonthlyCashflowRub;
+
+    if (runningCashFromZero < minCumulativeFromZero) {
+      minCumulativeFromZero = runningCashFromZero;
+      peakMonthIdx = m;
+    }
+
+    monthlyRows.push({
+      monthIdx: m,
+      monthLabel: MONTHS_SHORT[m],
+      grossSalesRub,
+      wbDeductionsAndAdsRub,
+      wbNetInflowRub,
+      factoryPrepaymentOutflowRub,
+      factoryBalanceOutflowRub,
+      factoryTotalOutflowRub,
+      netMonthlyCashflowRub,
+      cumulativeCashBalanceRub: initialCashOnHandRub + runningCashFromZero,
+      isPeakDeficitMonth: false,
+    });
+  }
+
+  if (monthlyRows[peakMonthIdx]) {
+    monthlyRows[peakMonthIdx].isPeakDeficitMonth = true;
+  }
+
+  // Пик потребности в оборотном капитале (от 0 ₽) — не меньше стартового аванса 1-й волны
+  const rawPeakWorkingCapitalRub = Math.max(
+    firstWavePrepaymentRub,
+    Math.abs(Math.min(0, minCumulativeFromZero))
+  );
+  const peakWorkingCapitalRub = rawPeakWorkingCapitalRub;
+  const netOwnMoneyRequiredRub = Math.max(
+    0,
+    peakWorkingCapitalRub - initialCashOnHandRub
+  );
+
+  // Месяц выхода на самоокупаемость (когда накопленный баланс после пика стабильно >= 0)
+  let selfFundingMonthIdx: number | null = null;
+  for (let m = peakMonthIdx; m < 12; m++) {
+    const allSubsequentNonNegative = monthlyRows
+      .slice(m)
+      .every((r) => r.cumulativeCashBalanceRub >= 0);
+    if (allSubsequentNonNegative && monthlyRows[m].cumulativeCashBalanceRub >= 0) {
+      selfFundingMonthIdx = m;
+      break;
+    }
+  }
+
+  return {
+    modelsCount: uniqueModels.length,
+    annualRevenueRub,
+    decemberRevenueRub,
+    annualDemandPacks,
+    annualDemandUnits,
+    totalProcurementPacks,
+    totalProcurementUnits,
+    totalProcurementBudgetRub,
+    approvedOrdersCount,
+    approvedOrdersBudgetRub,
+    plannedBatchesCount,
+    plannedBatchesBudgetRub,
+    annualSoldGoodsCostRub,
+    annualGrossProfitRub,
+    annualWbDeductionsAndAdsRub,
+    annualEstimatedOperatingProfitRub,
+    operatingMarginPct,
+    firstWavePacks,
+    firstWaveUnits,
+    firstWaveStartBudgetRub,
+    firstWavePrepaymentRub,
+    firstWaveBalanceRub,
+    initialCashOnHandRub,
+    settlementLagMonths,
+    peakWorkingCapitalRub,
+    netOwnMoneyRequiredRub,
+    peakMonthIdx,
+    peakMonthLabel: MONTHS_SHORT[peakMonthIdx] || 'Янв',
+    selfFundingMonthIdx,
+    selfFundingMonthLabel:
+      selfFundingMonthIdx !== null ? MONTHS_SHORT[selfFundingMonthIdx] : null,
+    yearEndCashBalanceRub:
+      monthlyRows[11]?.cumulativeCashBalanceRub ?? initialCashOnHandRub,
+    monthlyRows,
+  };
+}
+
+export interface BrandInvestmentSummaryRow {
+  brandCode: 'BORNERS' | 'FUKAI' | 'NA_TELE' | 'AKUSHA' | 'LISKANI';
+  brandTitle: string;
+  modelsCount: number;
+  decemberRevenueRub: number;
+  annualRevenueRub: number;
+  annualDemandPacks: number;
+  totalProcurementPacks: number;
+  totalProcurementUnits: number;
+  firstWaveStartBudgetRub: number;
+  firstWavePrepaymentRub: number;
+  peakWorkingCapitalRub: number;
+  totalProcurementBudgetRub: number;
+  annualSoldGoodsCostRub: number;
+  annualEstimatedOperatingProfitRub: number;
+  operatingMarginPct: number;
+}
+
+export interface GroupBrandsInvestmentReport {
+  brands: BrandInvestmentSummaryRow[];
+  groupTotal: ScenarioInvestmentSummary;
+}
+
+const PORTFOLIO_BRANDS_ORDER: {
+  code: BrandInvestmentSummaryRow['brandCode'];
+  title: string;
+}[] = [
+  { code: 'BORNERS', title: 'BORNERS' },
+  { code: 'FUKAI', title: 'FUKAI' },
+  { code: 'NA_TELE', title: 'НА ТЕЛЕ' },
+  { code: 'AKUSHA', title: 'Акуша' },
+  { code: 'LISKANI', title: 'Liskani' },
+];
+
+/**
+ * Сводный расчёт инвестиций, закупок и прибыли по каждому из 5 брендов холдинга + ИТОГО ГРУППА без двойного счёта (Раздел 09.2 ТЗ).
+ */
+export function computeGroupBrandsInvestmentReport(
+  eligibleModels: ScenarioModelSpec[],
+  scenario: GrowthScenarioDef,
+  options: ScenarioInvestmentOptions = {}
+): GroupBrandsInvestmentReport {
+  const seenIds = new Set<string>();
+  const dedupedModels: ScenarioModelSpec[] = [];
+  for (const m of eligibleModels) {
+    if (!m || m.launchStatus === 'В архиве') continue;
+    const key = m.id || m.code;
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+    dedupedModels.push(ensureModelUnifiedV11(m));
+  }
+
+  const brands: BrandInvestmentSummaryRow[] = PORTFOLIO_BRANDS_ORDER.map(
+    ({ code, title }) => {
+      const brandModels = dedupedModels.filter((m) => matchesBrandFilter(m, code));
+      const summary = computeScenarioInvestmentSummary(brandModels, scenario, {
+        initialCashRub: 0,
+        settlementLagMonths: options.settlementLagMonths ?? 0,
+      });
+      return {
+        brandCode: code,
+        brandTitle: title,
+        modelsCount: summary.modelsCount,
+        decemberRevenueRub: summary.decemberRevenueRub,
+        annualRevenueRub: summary.annualRevenueRub,
+        annualDemandPacks: summary.annualDemandPacks,
+        totalProcurementPacks: summary.totalProcurementPacks,
+        totalProcurementUnits: summary.totalProcurementUnits,
+        firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
+        peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        totalProcurementBudgetRub: summary.totalProcurementBudgetRub,
+        annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
+        annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
+        operatingMarginPct: summary.operatingMarginPct,
+      };
+    }
+  );
+
+  const groupTotal = computeScenarioInvestmentSummary(
+    dedupedModels,
+    scenario,
+    options
+  );
+
+  return {
+    brands,
+    groupTotal,
+  };
+}
+
+/**
+ * Выгрузка полной спецификации заказа фабрике в CSV для Excel (Раздел 06.5 ТЗ):
+ * включает как утверждённые заказы PO, так и плановые партии (или только 1-ю волну Q1),
+ * с разбивкой по размерам S–XXL, комплектам, физ. единицам, авансу 30%, доплате 70% и датам.
+ */
+export function serializeScenarioFactoryOrdersToCsv(
+  rawModels: ScenarioModelSpec[],
+  scenario: GrowthScenarioDef,
+  mode: 'all' | 'first_wave' | 'approved_only' = 'all'
+): string {
+  const header = [
+    'Тип партии',
+    'Номер заказа / Партия',
+    'Статус',
+    'Бренд',
+    'Артикул SKU',
+    'Название модели',
+    'Фабрика',
+    'Период покрытия',
+    'Заказать до (дата)',
+    'Приход на склад (дата)',
+    'Изделий в компл.',
+    'К заказу (компл.)',
+    'К заказу (физ. изд.)',
+    'Размер S (компл.)',
+    'Размер M (компл.)',
+    'Размер L (компл.)',
+    'Размер XL (компл.)',
+    'Размер XXL (компл.)',
+    'Себестоимость компл. ₽',
+    'Сумма партии ₽',
+    'Аванс ₽',
+    'Доплата перед отгрузкой ₽',
+  ].join(';');
+
+  const rows: string[] = [];
+  const seenIds = new Set<string>();
+
+  for (const rm of rawModels) {
+    if (!rm || rm.launchStatus === 'В архиве') continue;
+    const key = rm.id || rm.code;
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+
+    const model = ensureModelUnifiedV11(rm);
+    const brandLabel = detectModelBrandPortfolioLabel(model);
+    const proc = computeProcurementPlan(model, scenario);
+    const defaultShares = model.sharedSupplyAndFact?.factoryParams.sizeSharesPct || {
+      S: 10,
+      M: 25,
+      L: 35,
+      XL: 20,
+      XXL: 10,
+    };
+
+    const sortedPos = [...proc.approvedOrders].sort(
+      (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+    );
+
+    for (let idx = 0; idx < sortedPos.length; idx++) {
+      const po = sortedPos[idx];
+      if (mode === 'first_wave' && idx > 0 && po.arrivalMonthIdx > 2) continue;
+      const sizes =
+        po.sizeBreakdownPacks ||
+        allocatePacksBySizeLargestRemainder(po.packsQty, defaultShares);
+      rows.push(
+        [
+          'Утверждённый заказ фабрике',
+          po.orderNumber,
+          PO_STATUS_LABELS_RU[po.status] || po.status,
+          `"${brandLabel.replace(/"/g, '""')}"`,
+          model.code,
+          `"${(model.title || '').replace(/"/g, '""')}"`,
+          `"${(po.factoryName || '').replace(/"/g, '""')}"`,
+          po.coverageMonthsLabel || MONTHS_SHORT[po.arrivalMonthIdx] || '',
+          po.orderPlacementDateIso,
+          po.requiredArrivalDateIso,
+          po.unitsInPack,
+          po.packsQty,
+          po.physicalUnitsQty,
+          sizes.S,
+          sizes.M,
+          sizes.L,
+          sizes.XL,
+          sizes.XXL,
+          po.lockedUnitCostRub,
+          po.totalOrderRub,
+          po.prepaymentRub,
+          po.balancePaymentRub,
+        ].join(';')
+      );
+    }
+
+    if (mode !== 'approved_only') {
+      for (let idx = 0; idx < proc.recommendedBatches.length; idx++) {
+        const rb = proc.recommendedBatches[idx];
+        if (mode === 'first_wave' && idx > 0 && rb.firstCoveredMonthIdx > 2) continue;
+        rows.push(
+          [
+            'Плановая партия к заказу',
+            `Партия №${rb.batchIndex}`,
+            rb.isTestBatch ? 'Тестовая партия' : 'Черновик плана',
+            `"${brandLabel.replace(/"/g, '""')}"`,
+            model.code,
+            `"${(model.title || '').replace(/"/g, '""')}"`,
+            `"${(rb.factoryName || '').replace(/"/g, '""')}"`,
+            rb.coverageMonthsLabel,
+            rb.recommendedOrderDateIso,
+            rb.requiredArrivalDateIso,
+            model.unitsInPack,
+            rb.recommendedPacks,
+            rb.physicalUnitsQty,
+            rb.sizeBreakdownPacks.S,
+            rb.sizeBreakdownPacks.M,
+            rb.sizeBreakdownPacks.L,
+            rb.sizeBreakdownPacks.XL,
+            rb.sizeBreakdownPacks.XXL,
+            rb.unitCostRub,
+            rb.estimatedTotalRub,
+            rb.prepaymentRub,
+            rb.balancePaymentRub,
+          ].join(';')
+        );
+      }
+    }
+  }
+
+  return `\uFEFF${[header, ...rows].join('\n')}`;
+}
+
