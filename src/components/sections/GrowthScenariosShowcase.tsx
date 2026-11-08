@@ -2378,28 +2378,66 @@ export function GrowthScenariosShowcase({
                       </div>
                     </div>
 
-                    {/* ПЛАВНАЯ КУБИЧЕСКАЯ AREA-КРИВАЯ + АНИМИРОВАННЫЕ КОЛОНКИ 12 МЕСЯЦЕВ */}
-                    <div className="relative pt-1">
-                      {/* Верхняя плавная кривая тренда с градиентной заливкой */}
-                      <div className="h-[86px] w-full overflow-hidden rounded-t-[12px] bg-gradient-to-b from-[#F8FAFC] to-white border-x border-t border-[#EEF2F6]">
+                    {/* ЕДИНЫЙ КОМБИНИРОВАННЫЙ ГРАФИК 12 МЕСЯЦЕВ (БЕЗ ДВОЙНЫХ ЭТАЖЕЙ И БАТАРЕЕК) */}
+                    <div className="rounded-[14px] border border-[#E2E8F0] bg-gradient-to-b from-[#F8FAFC]/80 to-white px-3 pt-3.5 pb-2.5">
+                      {/* Ряд цифр над пиками месяцев */}
+                      <div className="grid grid-cols-12 gap-1.5 mb-1.5">
+                        {monthlySeries.map((pt, idx) => {
+                          const isSel = selectedChartMonthIdx === idx;
+                          const isDec = idx === 11;
+                          return (
+                            <button
+                              type="button"
+                              key={`val-${pt.monthLabel}`}
+                              onClick={() => setSelectedChartMonthIdx(idx)}
+                              className="text-center cursor-pointer"
+                            >
+                              <span
+                                className={`font-mono text-[11px] sm:text-[11.5px] transition-colors ${
+                                  isSel
+                                    ? 'font-extrabold text-[#111827] bg-[#EEF1F6] px-1.5 py-0.5 rounded-[5px]'
+                                    : isDec
+                                    ? 'font-extrabold text-[#0D9488]'
+                                    : 'font-semibold text-[#475569] hover:text-[#111827]'
+                                }`}
+                              >
+                                {trajectoryChartMetric === 'profit' && pt.activeValMln > 0 ? '+' : ''}
+                                {pt.activeValMln.toFixed(1).replace('.', ',')}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Единое поле графика: вертикальные столбики + плавная кривая Безье поверх их вершин */}
+                      <div className="relative h-[108px] w-full">
+                        {/* Фоновая SVG-область и плавная линия тренда */}
                         <svg
                           viewBox={`0 0 ${svgW} ${svgH}`}
                           preserveAspectRatio="none"
-                          className="w-full h-full overflow-visible"
+                          className="absolute inset-0 w-full h-full overflow-visible pointer-events-none z-10"
                         >
                           <defs>
                             <linearGradient id="bornersTrajectoryGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={strokeColor} stopOpacity="0.22" />
+                              <stop offset="0%" stopColor={strokeColor} stopOpacity="0.20" />
                               <stop offset="100%" stopColor={strokeColor} stopOpacity="0.01" />
                             </linearGradient>
                           </defs>
-                          {/* Горизонтальные направляющие линии */}
                           <line
                             x1="0"
-                            y1={padTop + usableH * 0.5}
+                            y1={padTop + usableH * 0.35}
                             x2={svgW}
-                            y2={padTop + usableH * 0.5}
+                            y2={padTop + usableH * 0.35}
                             stroke="#E2E8F0"
+                            strokeDasharray="4 6"
+                            strokeWidth="1"
+                          />
+                          <line
+                            x1="0"
+                            y1={padTop + usableH * 0.7}
+                            x2={svgW}
+                            y2={padTop + usableH * 0.7}
+                            stroke="#EEF2F6"
                             strokeDasharray="4 6"
                             strokeWidth="1"
                           />
@@ -2415,7 +2453,7 @@ export function GrowthScenariosShowcase({
                               d={smoothPath}
                               fill="none"
                               stroke={strokeColor}
-                              strokeWidth="2.75"
+                              strokeWidth="2.5"
                               strokeLinecap="round"
                               className="transition-all duration-700 ease-out"
                             />
@@ -2424,24 +2462,20 @@ export function GrowthScenariosShowcase({
                             const isSel = selectedChartMonthIdx === idx;
                             const isDec = idx === 11;
                             return (
-                              <g
-                                key={idx}
-                                className="cursor-pointer"
-                                onClick={() => setSelectedChartMonthIdx(idx)}
-                              >
+                              <g key={idx}>
                                 {(isSel || isDec) && (
                                   <circle
                                     cx={pt.x}
                                     cy={pt.y}
-                                    r={isSel ? 9 : 7}
+                                    r={isSel ? 8.5 : 7}
                                     fill={isDec ? '#0D9488' : strokeColor}
-                                    fillOpacity="0.18"
+                                    fillOpacity="0.20"
                                   />
                                 )}
                                 <circle
                                   cx={pt.x}
                                   cy={pt.y}
-                                  r={isSel ? 5 : isDec ? 4.5 : 3.2}
+                                  r={isSel ? 4.8 : isDec ? 4.2 : 3}
                                   fill={isDec ? '#0D9488' : isSel ? strokeColor : '#FFFFFF'}
                                   stroke={isDec ? '#0D9488' : strokeColor}
                                   strokeWidth="2.2"
@@ -2451,69 +2485,61 @@ export function GrowthScenariosShowcase({
                             );
                           })}
                         </svg>
+
+                        {/* 12 вертикальных колонок на единой оси */}
+                        <div className="relative z-0 grid grid-cols-12 gap-1.5 h-full items-end pt-[14px] pb-[6px]">
+                          {monthlySeries.map((pt, idx) => {
+                            const isSel = selectedChartMonthIdx === idx;
+                            const isDec = idx === 11;
+                            const ratio = Math.min(1, Math.max(0.05, pt.activeValMln / maxMonthMln));
+                            const barHeightPct = Math.round(ratio * 100);
+
+                            return (
+                              <button
+                                type="button"
+                                key={`bar-${pt.monthLabel}`}
+                                onClick={() => setSelectedChartMonthIdx(idx)}
+                                className="h-full flex flex-col justify-end items-center group cursor-pointer px-1"
+                              >
+                                <div
+                                  style={{ height: `${barHeightPct}%` }}
+                                  className={`w-full max-w-[38px] rounded-t-[6px] transition-all duration-700 ease-out ${
+                                    isSel
+                                      ? trajectoryChartMetric === 'profit'
+                                        ? 'bg-[#0D9488]/85 shadow-xs'
+                                        : 'bg-[#2C3444]/85 shadow-xs'
+                                      : isDec
+                                      ? 'bg-[#0D9488]/75 group-hover:bg-[#0D9488]'
+                                      : trajectoryChartMetric === 'profit'
+                                      ? 'bg-[#0D9488]/25 group-hover:bg-[#0D9488]/45'
+                                      : 'bg-[#94A3B8]/35 group-hover:bg-[#64748B]/55'
+                                  }`}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
-                      {/* 12 интерактивных столбцов под кривой с плавной пружинной высотой */}
-                      <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 pt-2 px-1 pb-1 bg-white border-x border-b border-[#EEF2F6] rounded-b-[12px]">
+                      {/* Нижняя ось X: месяцы */}
+                      <div className="grid grid-cols-12 gap-1.5 pt-2 border-t border-[#E2E8F0]">
                         {monthlySeries.map((pt, idx) => {
                           const isSel = selectedChartMonthIdx === idx;
                           const isDec = idx === 11;
-                          const fillPct =
-                            pt.activeValMln <= 0.01
-                              ? 6
-                              : Math.min(
-                                  100,
-                                  Math.max(12, Math.round((pt.activeValMln / maxMonthMln) * 100))
-                                );
-
                           return (
                             <button
                               type="button"
-                              key={pt.monthLabel}
+                              key={`lbl-${pt.monthLabel}`}
                               onClick={() => setSelectedChartMonthIdx(idx)}
-                              className={`flex flex-col items-center rounded-[10px] py-2 px-1 transition-all cursor-pointer group ${
+                              className={`text-center py-0.5 rounded-[5px] text-[11px] transition cursor-pointer ${
                                 isSel
-                                  ? 'bg-[#EEF1F6] shadow-2xs'
-                                  : 'hover:bg-[#F8FAFC]'
+                                  ? 'font-bold text-[#111827] bg-[#EEF1F6]'
+                                  : isDec
+                                  ? 'font-bold text-[#0D9488]'
+                                  : 'font-medium text-[#64748B] hover:text-[#111827]'
                               }`}
                             >
-                              <span
-                                className={`font-mono text-[11px] mb-1.5 transition-colors ${
-                                  isSel || isDec
-                                    ? 'font-extrabold text-[#111827]'
-                                    : 'font-semibold text-[#475569] group-hover:text-[#111827]'
-                                }`}
-                              >
-                                {trajectoryChartMetric === 'profit' && pt.activeValMln > 0 ? '+' : ''}
-                                {pt.activeValMln.toFixed(1).replace('.', ',')}
-                              </span>
-
-                              <div className="w-full max-w-[42px] h-[54px] rounded-[6px] bg-[#EEF1F6] flex items-end overflow-hidden p-0.5">
-                                <div
-                                  style={{ height: `${fillPct}%` }}
-                                  className={`w-full rounded-[4px] transition-all duration-700 ease-out ${
-                                    isSel
-                                      ? trajectoryChartMetric === 'profit'
-                                        ? 'bg-[#0D9488]'
-                                        : 'bg-[#2C3444]'
-                                      : isDec
-                                      ? 'bg-[#0D9488]'
-                                      : trajectoryChartMetric === 'profit'
-                                      ? 'bg-[#0D9488]/60 group-hover:bg-[#0D9488]'
-                                      : 'bg-[#94A3B8]/75 group-hover:bg-[#64748B]'
-                                  }`}
-                                />
-                              </div>
-
-                              <span
-                                className={`text-[11px] mt-1.5 ${
-                                  isSel || isDec
-                                    ? 'font-bold text-[#111827]'
-                                    : 'font-medium text-[#64748B]'
-                                }`}
-                              >
-                                {pt.monthLabel}
-                              </span>
+                              {pt.monthLabel}
                             </button>
                           );
                         })}
