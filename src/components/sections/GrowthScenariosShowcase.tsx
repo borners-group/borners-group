@@ -162,14 +162,28 @@ function overlayUserPlansBackup(
   const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
     STORAGE_KEY_USER_PLANS_BACKUP
   );
-  if (!backup || typeof backup !== 'object') return modelsList;
-  return modelsList.map((m) => {
+  return modelsList.map((rawM) => {
+    const isRawUnconfiguredWb =
+      Boolean(getActingSkuByWbOrVendor(rawM.code, rawM.title)) &&
+      (rawM.marketplaceFeePct ?? 0) === 0 &&
+      (rawM.logisticsRub ?? 0) === 0 &&
+      (rawM.adsPct ?? 0) === 0;
+    const m = isRawUnconfiguredWb
+      ? { ...rawM, marketplaceFeePct: 22, logisticsRub: 95, adsPct: 10 }
+      : rawM;
+
+    if (!backup || typeof backup !== 'object') return m;
     const saved =
       backup[m.id] ||
       Object.values(backup).find(
         (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
       );
     if (!saved) return m;
+    const isUnconfiguredActingWb =
+      Boolean(getActingSkuByWbOrVendor(m.code, m.title)) &&
+      (saved.marketplaceFeePct ?? 0) === 0 &&
+      (saved.logisticsRub ?? 0) === 0 &&
+      (saved.adsPct ?? 0) === 0;
     return {
       ...m,
       code: saved.code ?? m.code,
@@ -183,9 +197,11 @@ function overlayUserPlansBackup(
       unitsInPack: saved.unitsInPack ?? m.unitsInPack,
       retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
       unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
-      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
-      adsPct: saved.adsPct ?? m.adsPct,
+      marketplaceFeePct: isUnconfiguredActingWb
+        ? 22
+        : saved.marketplaceFeePct ?? m.marketplaceFeePct,
+      logisticsRub: isUnconfiguredActingWb ? 95 : saved.logisticsRub ?? m.logisticsRub,
+      adsPct: isUnconfiguredActingWb ? 10 : saved.adsPct ?? m.adsPct,
       priority: saved.priority ?? m.priority,
       launchStatus: saved.launchStatus ?? m.launchStatus,
       gallery: saved.gallery || m.gallery,

@@ -2616,7 +2616,7 @@ export function ScenarioModelCardScreen({
 
                   <div className="rounded-[12px] bg-[#F7F7F4] border border-[#DFDED6] p-3.5 space-y-1">
                     <span className="text-[11.5px] font-semibold text-[#5E5D58]">
-                      3. Расходы на продажи и работу
+                      3. Удержания WB, логистика и реклама
                     </span>
                     {periodSalesAndWorkExpenseRub !== null ? (
                       <>
@@ -2624,7 +2624,7 @@ export function ScenarioModelCardScreen({
                           {formatMln(periodSalesAndWorkExpenseRub)}
                         </div>
                         <div className="text-[11px] text-[#5E5D58]">
-                          {formatRub(periodSalesAndWorkExpenseRub)} (комиссия, доставка, реклама, постоянные)
+                          {formatRub(periodSalesAndWorkExpenseRub)} (комиссия WB, доставка, реклама, постоянные)
                         </div>
                       </>
                     ) : (

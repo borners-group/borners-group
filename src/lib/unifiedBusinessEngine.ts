@@ -349,6 +349,7 @@ export function getDefaultSharedSupplyAndFact(model: ScenarioModelSpec): SharedS
   // а для моделей без заданных расходов (DAILY, WOVEN 2PACK и др.) честно оставляем expensesFilled = false!
   const hasExplicitRates =
     isSorbetReference ||
+    Boolean(actingSku) ||
     (model.unitCostRub > 0 &&
       (model.marketplaceFeePct > 0 || model.logisticsRub > 0 || model.adsPct > 0));
 
@@ -369,9 +370,11 @@ export function getDefaultSharedSupplyAndFact(model: ScenarioModelSpec): SharedS
     costStatus,
     confirmedUnitCostRub: actingSku ? actingSku.unitCogRub : null,
     expensesFilled: hasExplicitRates,
-    otherVariableRubPerPack: isSorbetReference ? 35 : 0,
+    otherVariableRubPerPack: isSorbetReference ? 35 : actingSku ? 15 : 0,
     allocatedFixedOpexRubPerPack: isSorbetReference
       ? 65
+      : actingSku
+      ? 35
       : hasExplicitRates
       ? 55
       : null,
@@ -507,6 +510,31 @@ export function ensureModelUnifiedV11(model: ScenarioModelSpec): ScenarioModelSp
         expensesFilled: true,
         otherVariableRubPerPack: 35,
         allocatedFixedOpexRubPerPack: 65,
+      },
+    };
+  }
+
+  // Для 7 действующих артикулов WB (ИП Нерсесянц / BORNERS / FUKAI), если они были загружены из старого кэша с нулями (0/0/0),
+  // подставляем рабочие ставки WB (комиссия 22%, логистика 95 ₽, реклама 10%, прочие 15 ₽, постоянные 35 ₽)
+  const actingSku = getActingSkuByWbOrVendor(model.code, model.title);
+  if (
+    actingSku &&
+    model.marketplaceFeePct === 0 &&
+    model.logisticsRub === 0 &&
+    model.adsPct === 0
+  ) {
+    return {
+      ...model,
+      gallery: enrichedGallery,
+      marketplaceFeePct: 22,
+      logisticsRub: 95,
+      adsPct: 10,
+      sharedSupplyAndFact: {
+        ...mergedShared,
+        expensesFilled: true,
+        otherVariableRubPerPack: mergedShared.otherVariableRubPerPack || 15,
+        allocatedFixedOpexRubPerPack:
+          mergedShared.allocatedFixedOpexRubPerPack ?? 35,
       },
     };
   }
