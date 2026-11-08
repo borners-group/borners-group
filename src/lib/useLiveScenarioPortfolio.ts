@@ -221,7 +221,7 @@ export function useLiveScenarioPortfolio() {
     Partial<Record<CanonicalBrandCode, number | null>>
   >({
     BORNERS: 1,
-    FUKAI: 1,
+    FUKAI: ACTING_2027_SCENARIO_ID,
     AKUSHA: null,
     LISKANI: null,
     NA_TELE: 2,
@@ -263,7 +263,11 @@ export function useLiveScenarioPortfolio() {
       Partial<Record<CanonicalBrandCode, number | null>>
     >(STORAGE_KEY_SCENARIO_BY_BRAND);
     if (savedByBrand && typeof savedByBrand === 'object') {
-      setSelectedScenarioByBrandState((prev) => ({ ...prev, ...savedByBrand }));
+      const normalizedByBrand = { ...savedByBrand };
+      if (normalizedByBrand.FUKAI === 1) {
+        normalizedByBrand.FUKAI = ACTING_2027_SCENARIO_ID;
+      }
+      setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedByBrand }));
     }
   }, []);
 

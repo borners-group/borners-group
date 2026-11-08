@@ -1954,9 +1954,15 @@ export interface StructuredPlanRowV11 {
 
 export function detectModelBrandPortfolioLabel(
   model: ScenarioModelSpec
-): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'Акуша' | 'Liskani' | 'Подтвердить бренд' | string {
+): 'BORNERS' | 'FUKAI' | 'НА ТЕЛЕ' | 'AKUSHA' | 'LISKANI' | 'Подтвердить бренд' | string {
   if (model.customBrandLabel && model.customBrandLabel.trim().length > 0) {
-    return model.customBrandLabel.trim();
+    const raw = model.customBrandLabel.trim();
+    const upper = raw.toUpperCase();
+    if (upper === 'АКУША' || upper === 'AKUSHA') return 'AKUSHA';
+    if (['LISKANI', 'LISCANI', 'LEZKANI', 'ЛЕЗКАНИ', 'ЛИСКАНИ'].includes(upper)) {
+      return 'LISKANI';
+    }
+    return raw;
   }
   if (model.brandId === 'NA_TELE') return 'НА ТЕЛЕ';
   const digits = model.code.replace(/\D/g, '');
@@ -2654,8 +2660,8 @@ const PORTFOLIO_BRANDS_ORDER: {
   { code: 'BORNERS', title: 'BORNERS' },
   { code: 'FUKAI', title: 'FUKAI' },
   { code: 'NA_TELE', title: 'НА ТЕЛЕ' },
-  { code: 'AKUSHA', title: 'Акуша' },
-  { code: 'LISKANI', title: 'Liskani' },
+  { code: 'AKUSHA', title: 'AKUSHA' },
+  { code: 'LISKANI', title: 'LISKANI' },
 ];
 
 /**
@@ -2858,7 +2864,7 @@ export type CanonicalBrandCode =
 
 export interface BrandUnitConfig {
   brandCode: CanonicalBrandCode;
-  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISCANI' | 'НА ТЕЛЕ';
+  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'НА ТЕЛЕ';
   displayTitle: string;
   categoryDefault: string;
   primaryUnit: string; // компл. | пар | компл. штор
@@ -2888,7 +2894,7 @@ export const BRAND_UNIT_CONFIGS: Record<CanonicalBrandCode, BrandUnitConfig> = {
   AKUSHA: {
     brandCode: 'AKUSHA',
     displayCode: 'AKUSHA',
-    displayTitle: 'AKUSHA (Акуша)',
+    displayTitle: 'AKUSHA',
     categoryDefault: 'Обувь',
     primaryUnit: 'пар',
     secondaryUnit: 'пар обуви',
@@ -2896,8 +2902,8 @@ export const BRAND_UNIT_CONFIGS: Record<CanonicalBrandCode, BrandUnitConfig> = {
   },
   LISKANI: {
     brandCode: 'LISKANI',
-    displayCode: 'LISCANI',
-    displayTitle: 'LISCANI (Liskani)',
+    displayCode: 'LISKANI',
+    displayTitle: 'LISKANI',
     categoryDefault: 'Шторы и интерьерный текстиль',
     primaryUnit: 'компл. штор',
     secondaryUnit: 'п.м. ткани',
@@ -3266,9 +3272,9 @@ export function createBrandProductModel(
 
   const customBrandLabel =
     effectiveBrand === 'AKUSHA'
-      ? 'Акуша'
+      ? 'AKUSHA'
       : effectiveBrand === 'LISKANI'
-        ? 'Liskani'
+        ? 'LISKANI'
         : effectiveBrand === 'FUKAI'
           ? 'FUKAI'
           : effectiveBrand === 'NA_TELE'
@@ -3376,9 +3382,9 @@ export function changeModelBrandWithAudit(
   const unitCfg = BRAND_UNIT_CONFIGS[effectiveNext];
   const nextCustomLabel =
     effectiveNext === 'AKUSHA'
-      ? 'Акуша'
+      ? 'AKUSHA'
       : effectiveNext === 'LISKANI'
-        ? 'Liskani'
+        ? 'LISKANI'
         : effectiveNext === 'FUKAI'
           ? 'FUKAI'
           : effectiveNext === 'NA_TELE'
@@ -3414,7 +3420,7 @@ export function changeModelBrandWithAudit(
 
 export interface MultiBrandRowSummary {
   brandCode: CanonicalBrandCode;
-  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISCANI' | 'НА ТЕЛЕ';
+  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'НА ТЕЛЕ';
   brandTitle: string;
   primaryUnit: string;
   secondaryUnit: string;

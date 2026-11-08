@@ -1319,8 +1319,8 @@ test('28. Чистый экран «Закупки» (без дублей и а�
   assert.equal(initialDataCode.includes("code: 'AKUSHA'"), true);
   assert.equal(initialDataCode.includes("code: 'LISKANI'"), true);
   assert.equal(initialDataCode.includes("isStrategyInDevelopment: true"), false);
-  assert.equal(cardScreenCode.includes("'Акуша'"), true);
-  assert.equal(cardScreenCode.includes("'Liskani'"), true);
+  assert.equal(cardScreenCode.includes("'AKUSHA'"), true);
+  assert.equal(cardScreenCode.includes("'LISKANI'"), true);
 
   const baseSorbet = ensureModelUnifiedV11(
     S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!

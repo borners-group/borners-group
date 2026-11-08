@@ -102,19 +102,19 @@ export function PeaklyMasterCabinetsSummary({
       : 0;
 
   return (
-    <section className="rounded-[18px] bg-white border border-[#D4D3CA] overflow-hidden shadow-[0_6px_24px_-8px_rgba(20,20,19,0.06)]">
-      {/* ШАПКА БЛОКА В СТИЛЕ PEAKLY */}
-      <div className="px-5 py-4 bg-[#FAF9F6] border-b border-[#EAE9E2] flex flex-wrap items-center justify-between gap-3">
+    <section className="rounded-[18px] bg-white border border-[#DCDAD0] overflow-hidden shadow-[0_6px_24px_-8px_rgba(15,23,42,0.05)]">
+      {/* ШАПКА СВОДНОЙ ВСЕХ КАБИНЕТОВ */}
+      <div className="px-5 py-4 bg-gradient-to-r from-[#FAF9F5] via-[#F7FAF8] to-[#FAF9F5] border-b border-[#EAE9E2] flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#141413] text-white font-mono text-[10.5px] font-bold uppercase tracking-wider">
-            <Layers className="h-3.5 w-3.5" />
-            <span>Сводная всех кабинетов · Peakly Pulse</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] font-mono text-[10.5px] font-bold uppercase tracking-wider">
+            <Layers className="h-3.5 w-3.5 text-[#059669]" />
+            <span>Сводная кабинетов · 5 брендов</span>
           </span>
           <div>
-            <h2 className="text-[16px] md:text-[17.5px] font-extrabold tracking-[-0.02em] text-[#141413]">
-              Все важные показатели по кабинетам и брендам BORNERS GROUP (2027–2028)
+            <h2 className="text-[16px] md:text-[17.5px] font-extrabold tracking-[-0.02em] text-[#1E293B]">
+              Ключевые показатели по кабинетам и брендам BORNERS GROUP (2027–2028)
             </h2>
-            <p className="text-[11.5px] text-[#686760]">
+            <p className="text-[11.5px] text-[#64748B]">
               У каждого бренда свой независимый сценарий развития · Продажи, закупки, авансы фабрикам, пик своих денег и прибыль без двойного счёта
             </p>
           </div>
@@ -124,15 +124,15 @@ export function PeaklyMasterCabinetsSummary({
           <button
             type="button"
             onClick={() => setMonthlyCashflowOpen((v) => !v)}
-            className="h-8 px-3 rounded-[9px] border border-[#CFCEC6] bg-white hover:bg-[#F4F3EE] text-[11.5px] font-semibold text-[#141413] transition cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 rounded-[9px] border border-[#D5D3CA] bg-white hover:bg-[#F4F3EE] text-[11.5px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
           >
-            <Calendar className="h-3.5 w-3.5 text-[#52514C]" />
+            <Calendar className="h-3.5 w-3.5 text-[#64748B]" />
             <span>{monthlyCashflowOpen ? 'Скрыть помесячный график ▴' : 'График денег 12 мес. ▾'}</span>
           </button>
           <button
             type="button"
             onClick={() => onNavigateSection('roadmap-tasks')}
-            className="h-8 px-3 rounded-[9px] bg-[#157347] hover:bg-[#115E3A] text-white text-[11.5px] font-semibold transition cursor-pointer"
+            className="h-8 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold transition cursor-pointer shadow-2xs"
           >
             Партии и закупки →
           </button>
@@ -308,8 +308,8 @@ export function PeaklyMasterCabinetsSummary({
                 }}
                 className={`rounded-[13px] bg-white border transition-all px-4 py-3 cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${
                   isSelectedBrand
-                    ? 'border-2 border-[#141413] shadow-[0_4px_16px_-4px_rgba(20,20,19,0.1)]'
-                    : 'border-[#DEDDD5] hover:border-[#141413]'
+                    ? 'border-2 border-[#10B981] bg-[#F8FAFC]/50 shadow-[0_4px_16px_-4px_rgba(16,185,129,0.12)]'
+                    : 'border-[#E2E0D8] hover:border-[#94A3B8]'
                 }`}
               >
                 {/* Левая часть: Бренд + Категория + Селектор сценария развития бренда */}
@@ -317,7 +317,7 @@ export function PeaklyMasterCabinetsSummary({
                   <div className={`h-9 w-1.5 rounded-full ${accent.accentBar}`} />
                   <div className="min-w-[135px]">
                     <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-extrabold text-[#141413]">
+                      <span className="text-[14px] font-extrabold text-[#1E293B]">
                         {b.displayCode}
                       </span>
                       <span
@@ -326,7 +326,7 @@ export function PeaklyMasterCabinetsSummary({
                         {b.modelsCount} SKU
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#686760]">
+                    <div className="text-[11px] text-[#64748B]">
                       {unitCfg.categoryDefault} · ед.: <strong>{b.primaryUnit}</strong>
                     </div>
                   </div>
@@ -334,9 +334,9 @@ export function PeaklyMasterCabinetsSummary({
                   {/* Индивидуальный сценарий развития бренда */}
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1.5 bg-[#FAF9F6] border border-[#E2E1D9] rounded-[9px] p-1"
+                    className="flex items-center gap-1.5 bg-[#FAF9F5] border border-[#E2E0D8] rounded-[9px] p-1"
                   >
-                    <span className="text-[10.5px] font-semibold text-[#686760] pl-1.5">
+                    <span className="text-[10.5px] font-semibold text-[#64748B] pl-1.5">
                       Сценарий:
                     </span>
                     <select
@@ -350,7 +350,7 @@ export function PeaklyMasterCabinetsSummary({
                           onSelectActiveScenarioId(nextId);
                         }
                       }}
-                      className="h-7 px-2 rounded-[6px] bg-white border border-[#D8D7CE] text-[11.5px] font-bold text-[#141413] focus:outline-none cursor-pointer"
+                      className="h-7 px-2 rounded-[6px] bg-white border border-[#D8D6CE] text-[11.5px] font-bold text-[#1E293B] focus:outline-none cursor-pointer"
                     >
                       <option value="">Нет сценария</option>
                       {brandScenarios.map((sc) => (
@@ -368,7 +368,7 @@ export function PeaklyMasterCabinetsSummary({
                         )
                       }
                       title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
-                      className="h-7 px-2 rounded-[6px] bg-[#141413] hover:bg-[#2B2B29] text-white text-[11px] font-semibold cursor-pointer"
+                      className="h-7 px-2.5 rounded-[6px] bg-[#ECFDF5] hover:bg-[#D1FAE5] border border-[#A7F3D0] text-[#065F46] text-[11px] font-semibold transition cursor-pointer"
                     >
                       + Свой сценарий
                     </button>
@@ -456,7 +456,7 @@ export function PeaklyMasterCabinetsSummary({
                               `${b.displayCode} — Базовый план 2027`
                             )
                           }
-                          className="h-7 px-2.5 rounded-[7px] bg-[#141413] text-white text-[11px] font-semibold cursor-pointer"
+                          className="h-7 px-2.5 rounded-[7px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11px] font-semibold transition cursor-pointer"
                         >
                           + Создать сценарий
                         </button>
@@ -464,7 +464,7 @@ export function PeaklyMasterCabinetsSummary({
                       <button
                         type="button"
                         onClick={() => onOpenCreateModelForBrand(b.brandCode)}
-                        className="h-7 px-2.5 rounded-[7px] border border-[#141413] bg-white text-[#141413] hover:bg-[#141413] hover:text-white text-[11px] font-semibold transition cursor-pointer"
+                        className="h-7 px-2.5 rounded-[7px] border border-[#CBD5E1] bg-white text-[#1E293B] hover:border-[#146C43] hover:text-[#146C43] text-[11px] font-semibold transition cursor-pointer"
                       >
                         + Добавить товар в {b.displayCode}
                       </button>
@@ -831,7 +831,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
             onOpenModelPassport(mod.id);
           }
         }}
-        className="group relative rounded-[15px] bg-white border border-[#D8D7CF] hover:border-[#141413] p-4 text-left transition-all cursor-pointer flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(20,20,19,0.09)]"
+        className="group relative rounded-[15px] bg-white border border-[#DCDAD0] hover:border-[#94A3B8] p-4 text-left transition-all cursor-pointer flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(15,23,42,0.08)]"
       >
         <div>
           <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -874,10 +874,10 @@ export function PeaklyCatalogGroupsAndBrandsView({
                 customPhotoUrl={mainGallery?.url}
               />
             </div>
-            <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#141413]">
+            <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#1E293B]">
               {mod.unitsInPack} {unitCfg.secondaryUnit} · {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
             </span>
-            <span className="absolute bottom-2 right-2 rounded-md bg-[#141413]/85 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
+            <span className="absolute bottom-2 right-2 rounded-md bg-[#ECFDF5]/95 border border-[#A7F3D0] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#065F46]">
               маржа {met.unitMarginPct.toFixed(0)}%
             </span>
           </div>
@@ -1000,17 +1000,17 @@ export function PeaklyCatalogGroupsAndBrandsView({
       {/* ПАНЕЛЬ ПЕРЕКЛЮЧЕНИЯ РЕЖИМОВ КАТАЛОГА И ГРУППИРОВКИ */}
       <div className="rounded-[14px] bg-[#FAF9F6] border border-[#E2E1D9] p-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex flex-wrap items-center rounded-[10px] bg-white border border-[#D8D7CE] p-0.5 text-[12px] font-semibold shadow-2xs">
+          <div className="inline-flex flex-wrap items-center rounded-[11px] bg-[#F1F0EA] border border-[#DEDDD4] p-1 text-[12px] font-semibold">
             <button
               type="button"
               onClick={() => setDisplayMode('groups')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer inline-flex items-center gap-1.5 ${
                 displayMode === 'groups'
-                  ? 'bg-[#141413] text-white'
-                  : 'text-[#52514C] hover:text-[#141413]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                  : 'text-[#52514C] hover:text-[#0F172A]'
               }`}
             >
-              <Folder className="h-3.5 w-3.5" />
+              <Folder className="h-3.5 w-3.5 text-[#059669]" />
               <span>Группы товаров ({visibleGroupsWithMetrics.length})</span>
             </button>
             <button
@@ -1018,11 +1018,11 @@ export function PeaklyCatalogGroupsAndBrandsView({
               onClick={() => setDisplayMode('brands')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer inline-flex items-center gap-1.5 ${
                 displayMode === 'brands'
-                  ? 'bg-[#141413] text-white'
-                  : 'text-[#52514C] hover:text-[#141413]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                  : 'text-[#52514C] hover:text-[#0F172A]'
               }`}
             >
-              <Layers className="h-3.5 w-3.5" />
+              <Layers className="h-3.5 w-3.5 text-[#2563EB]" />
               <span>Раздельные каталоги брендов ({brandSections.length})</span>
             </button>
             <button
@@ -1030,8 +1030,8 @@ export function PeaklyCatalogGroupsAndBrandsView({
               onClick={() => setDisplayMode('grid')}
               className={`h-8 px-3 rounded-[8px] transition cursor-pointer ${
                 displayMode === 'grid'
-                  ? 'bg-[#141413] text-white'
-                  : 'text-[#52514C] hover:text-[#141413]'
+                  ? 'bg-white text-[#0F172A] shadow-[0_1px_4px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                  : 'text-[#52514C] hover:text-[#0F172A]'
               }`}
             >
               Все карточки ({filteredModels.length})
@@ -1040,20 +1040,20 @@ export function PeaklyCatalogGroupsAndBrandsView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Выбор магазина / кабинета WB (как на скрине 2) */}
+          {/* Выбор магазина / кабинета WB */}
           <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#D8D7CE] px-2.5 py-1 text-[12px]">
             <span className="text-[#686760] font-medium">Кабинет:</span>
             <select
               value={brandFilter}
               onChange={(e) => onSelectBrandFilter(e.target.value)}
-              className="font-bold text-[#141413] bg-transparent focus:outline-none cursor-pointer"
+              className="font-bold text-[#1E293B] bg-transparent focus:outline-none cursor-pointer"
             >
               <option value="ALL">Все кабинеты · WB ({models.filter((m) => m.launchStatus !== 'В архиве').length} SKU)</option>
               <option value="BORNERS">BORNERS · WB</option>
               <option value="NA_TELE">НА ТЕЛЕ · WB</option>
               <option value="FUKAI">FUKAI · WB</option>
               <option value="AKUSHA">AKUSHA · WB</option>
-              <option value="LISKANI">LISCANI · WB</option>
+              <option value="LISKANI">LISKANI · WB</option>
             </select>
           </div>
 
@@ -1070,7 +1070,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <button
                 type="button"
                 onClick={openCreateGroupModal}
-                className="h-8 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                className="h-8 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Добавить группу</span>
@@ -1234,7 +1234,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                           <button
                             type="button"
                             onClick={() => openEditGroupModal(group)}
-                            className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+                            className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
                           >
                             Выбрать артикулы для группы
                           </button>
@@ -1245,7 +1245,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                                 group.brandCode === 'ALL' ? 'BORNERS' : group.brandCode
                               )
                             }
-                            className="h-8 px-3 rounded-[8px] border border-[#D8D7CE] bg-white text-[11.5px] font-semibold text-[#141413] cursor-pointer"
+                            className="h-8 px-3 rounded-[8px] border border-[#D8D7CE] bg-white text-[11.5px] font-semibold text-[#1E293B] cursor-pointer"
                           >
                             + Новый артикул
                           </button>
@@ -1364,7 +1364,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     <button
                       type="button"
                       onClick={() => onOpenCreateModel(sec.brandCode)}
-                      className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer shrink-0"
+                      className="h-8.5 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer shrink-0 shadow-2xs"
                     >
                       + Добавить товар в {sec.displayCode}
                     </button>
@@ -1375,7 +1375,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                 <div className="p-4 md:p-5">
                   {sec.models.length === 0 ? (
                     <div className="rounded-[12px] border border-dashed border-[#CECDC4] bg-[#FAF9F6] p-6 text-center space-y-2">
-                      <div className="text-[14px] font-bold text-[#141413]">
+                      <div className="text-[14px] font-bold text-[#1E293B]">
                         Каталог бренда {sec.displayCode} пока пуст
                       </div>
                       <p className="text-[12px] text-[#686760] max-w-md mx-auto">
@@ -1384,7 +1384,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       <button
                         type="button"
                         onClick={() => onOpenCreateModel(sec.brandCode)}
-                        className="mt-1 h-8.5 px-4 rounded-[9px] bg-[#141413] text-white text-[12px] font-semibold cursor-pointer"
+                        className="mt-1 h-8.5 px-4 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
                       >
                         + Создать первую карточку {sec.displayCode}
                       </button>
@@ -1489,7 +1489,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                   <option value="NA_TELE">НА ТЕЛЕ · WB</option>
                   <option value="FUKAI">FUKAI · WB</option>
                   <option value="AKUSHA">AKUSHA · WB</option>
-                  <option value="LISKANI">LISCANI · WB</option>
+                  <option value="LISKANI">LISKANI · WB</option>
                   <option value="ALL">Все бренды</option>
                 </select>
               </div>
@@ -1584,7 +1584,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               </button>
               <button
                 type="submit"
-                className="h-9 px-4 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                className="h-9 px-4 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
                 <Check className="h-3.5 w-3.5" />
                 <span>Сохранить группу</span>
@@ -1793,7 +1793,7 @@ function QuickModelBatchesAndDatesModal({
             <button
               type="button"
               onClick={handleAddCustomBatch}
-              className="h-8.5 px-3 rounded-[9px] bg-[#141413] text-white text-[12px] font-semibold cursor-pointer inline-flex items-center gap-1.5"
+              className="h-8.5 px-3 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Добавить партию</span>

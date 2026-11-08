@@ -1875,11 +1875,11 @@ export function ProductCatalogView() {
                   onChange={(e) => setNewSkuForm({ ...newSkuForm, brandId: e.target.value })}
                   className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                 >
-                  <option value="BORNERS">BORNERS (мужское бельё)</option>
-                  <option value="NA_TELE">НА ТЕЛЕ (женское бельё)</option>
-                  <option value="FUKAI">FUKAI (трикотаж / бельё)</option>
-                  <option value="AKUSHA">AKUSHA (обувь)</option>
-                  <option value="LISKANI">LISCANI (шторы)</option>
+                  <option value="BORNERS">BORNERS</option>
+                  <option value="NA_TELE">НА ТЕЛЕ</option>
+                  <option value="FUKAI">FUKAI</option>
+                  <option value="AKUSHA">AKUSHA</option>
+                  <option value="LISKANI">LISKANI</option>
                 </select>
               </div>
               <div className="sm:col-span-2">

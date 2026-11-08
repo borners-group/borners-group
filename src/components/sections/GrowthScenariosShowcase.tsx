@@ -455,7 +455,7 @@ export function GrowthScenariosShowcase({
     Partial<Record<CanonicalBrandCode, number | null>>
   >({
     BORNERS: 1,
-    FUKAI: 1,
+    FUKAI: ACTING_2027_SCENARIO_ID,
     AKUSHA: null,
     LISKANI: null,
     NA_TELE: 2,
@@ -557,7 +557,11 @@ export function GrowthScenariosShowcase({
         STORAGE_KEY_SCENARIO_BY_BRAND
       );
       if (parsedBrandScen && typeof parsedBrandScen === 'object') {
-        setSelectedScenarioByBrandState((prev) => ({ ...prev, ...parsedBrandScen }));
+        const normalizedBrandScen = { ...parsedBrandScen };
+        if (normalizedBrandScen.FUKAI === 1) {
+          normalizedBrandScen.FUKAI = ACTING_2027_SCENARIO_ID;
+        }
+        setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedBrandScen }));
       }
 
       const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
@@ -1692,14 +1696,14 @@ export function GrowthScenariosShowcase({
                 </div>
 
                 {currentScenario.id === 1 && (
-                  <div className="inline-flex items-center rounded-[9px] bg-[#EFEFE9] border border-[#D8D7CF] p-0.5 text-[11.5px]">
+                  <div className="inline-flex items-center rounded-[10px] bg-[#F1F0EA] border border-[#DEDDD4] p-1 text-[11.5px]">
                     <button
                       type="button"
                       onClick={() => setIncludeGroupPortfolioInS1(false)}
                       className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
                         !includeGroupPortfolioInS1
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5C5B55] hover:text-[#141413]'
+                          ? 'bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                          : 'text-[#5C5B55] hover:text-[#0F172A]'
                       }`}
                     >
                       Цель BORNERS · 21 SKU
@@ -1709,8 +1713,8 @@ export function GrowthScenariosShowcase({
                       onClick={() => setIncludeGroupPortfolioInS1(true)}
                       className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
                         includeGroupPortfolioInS1
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5C5B55] hover:text-[#141413]'
+                          ? 'bg-white text-[#0F172A] shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                          : 'text-[#5C5B55] hover:text-[#0F172A]'
                       }`}
                     >
                       С FUKAI · 23 SKU
@@ -1740,13 +1744,13 @@ export function GrowthScenariosShowcase({
                       onChange={(e) =>
                         handleUpdateScenarioTargetMln(Number(e.target.value) || 100)
                       }
-                      className="w-12 text-right font-mono text-[12.5px] font-extrabold text-[#141413] bg-transparent focus:outline-none"
+                      className="w-12 text-right font-mono text-[12.5px] font-extrabold text-[#1E293B] bg-transparent focus:outline-none"
                     />
                     <span className="text-[11px] font-medium text-[#686760] mr-1">млн</span>
                     <button
                       type="button"
                       onClick={() => handleAutoCalculateByPriority()}
-                      className="h-7 px-2.5 rounded-[7px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[11.5px] font-semibold transition cursor-pointer"
+                      className="h-7 px-2.5 rounded-[7px] bg-[#ECFDF5] hover:bg-[#D1FAE5] border border-[#A7F3D0] text-[#065F46] text-[11.5px] font-semibold transition cursor-pointer"
                     >
                       Под цель
                     </button>
@@ -1759,14 +1763,14 @@ export function GrowthScenariosShowcase({
                   aria-expanded={mathBreakdownOpen}
                   className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                     mathBreakdownOpen
-                      ? 'bg-[#141413] text-white border-[#141413]'
-                      : 'bg-white text-[#141413] border-[#CFCEC6] hover:bg-[#F4F3EE]'
+                      ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
+                      : 'bg-white text-[#1E293B] border-[#CFCEC6] hover:bg-[#F4F3EE]'
                   }`}
                 >
                   <span>По брендам и расчёт</span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 transition-transform ${
-                      mathBreakdownOpen ? 'rotate-180 text-white' : 'text-[#686760]'
+                      mathBreakdownOpen ? 'rotate-180 text-[#059669]' : 'text-[#686760]'
                     }`}
                   />
                 </button>
@@ -1910,7 +1914,7 @@ export function GrowthScenariosShowcase({
                 <button
                   type="button"
                   onClick={() => setNewScenarioModalOpen(true)}
-                  className="h-8 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer"
+                  className="h-8 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                 >
                   + Новый сценарий
                 </button>
@@ -1934,7 +1938,7 @@ export function GrowthScenariosShowcase({
                   return (
                     <div className="col-span-full rounded-[14px] border border-dashed border-[#CECDC4] bg-[#FAF9F6] p-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-[13.5px] font-bold text-[#141413]">
+                        <div className="text-[13.5px] font-bold text-[#1E293B]">
                           Нет сценария для выбранного бренда ({brandFilterLocal})
                         </div>
                         <div className="text-[12px] text-[#5E5D58] mt-0.5">
@@ -1948,7 +1952,7 @@ export function GrowthScenariosShowcase({
                           setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
                           setNewScenarioModalOpen(true);
                         }}
-                        className="h-9 px-4 rounded-[10px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer"
+                        className="h-9 px-4 rounded-[10px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
                       >
                         + Создать сценарий бренда
                       </button>
@@ -1999,8 +2003,8 @@ export function GrowthScenariosShowcase({
                       }}
                       className={`group rounded-[14px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-white text-[#141413] border-2 border-[#141413] shadow-[0_6px_20px_-6px_rgba(20,20,19,0.10)]'
-                          : 'bg-[#FAF9F6]/70 border border-[#DEDDD5] hover:border-[#B8B7AE] hover:bg-white hover:shadow-[0_4px_14px_-4px_rgba(20,20,19,0.05)]'
+                          ? 'bg-white text-[#1E293B] border-2 border-[#10B981] shadow-[0_8px_22px_-6px_rgba(16,185,129,0.14)]'
+                          : 'bg-[#FAF9F6]/70 border border-[#DEDDD5] hover:border-[#94A3B8] hover:bg-white hover:shadow-[0_4px_14px_-4px_rgba(15,23,42,0.05)]'
                       }`}
                     >
                       <div>
@@ -2116,7 +2120,7 @@ export function GrowthScenariosShowcase({
                         </div>
                       </div>
 
-                      {/* Визуальный прогресс-бар выполнения цели декабря в стиле Peakly */}
+                      {/* Визуальный прогресс-бар выполнения цели декабря */}
                       <div className="mt-3 space-y-1.5">
                         <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#E6E5DD]">
                           <div
@@ -2158,322 +2162,329 @@ export function GrowthScenariosShowcase({
               })()}
             </div>
 
-            {/* РЯД 2: 4 ОБЪЁМНЫЕ БИЗНЕС-КАРТОЧКИ PEAKLY С ИКОНКАМИ, МИКРО-ШКАЛАМИ И АКЦЕНТАМИ */}
-            {(() => {
-              const isActing = currentScenario.id === ACTING_2027_SCENARIO_ID;
-              const annualRevMln = (currentAgg.annualRevenueRub / 1_000_000)
-                .toFixed(2)
-                .replace('.', ',');
-              const avgMonthlyMln = (currentAgg.annualRevenueRub / 12 / 1_000_000)
-                .toFixed(2)
-                .replace('.', ',');
-              const avgCheckRub =
-                currentAgg.annualBuyoutsPacks > 0
-                  ? Math.round(currentAgg.annualRevenueRub / currentAgg.annualBuyoutsPacks)
-                  : 0;
-              const procBudgetRub =
-                v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub;
-              const procBudgetMln = (procBudgetRub / 1_000_000).toFixed(2).replace('.', ',');
-              const cogsShareNum =
-                currentAgg.annualRevenueRub > 0
-                  ? Math.round((procBudgetRub / currentAgg.annualRevenueRub) * 1000) / 10
-                  : 0;
-              const cogsSharePct = cogsShareNum.toFixed(1).replace('.', ',');
-              const grossMarginRub = currentAgg.annualRevenueRub - procBudgetRub;
-              const grossMarginMln = (grossMarginRub / 1_000_000).toFixed(2).replace('.', ',');
-              const grossMarginNum =
-                currentAgg.annualRevenueRub > 0
-                  ? Math.round((grossMarginRub / currentAgg.annualRevenueRub) * 1000) / 10
-                  : 0;
-              const grossMarginPct = grossMarginNum.toFixed(1).replace('.', ',');
-              const wbShareDecPct =
-                currentAgg.targetMonthRevenueRub > 0
-                  ? Math.min(
-                      100,
-                      Math.round(
-                        (currentAgg.actingDecRevenueRub / currentAgg.targetMonthRevenueRub) * 100
-                      )
-                    )
-                  : 100;
-
-              return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white">
-                  {/* Колонка 1: Пик сезона (Декабрь 2027) */}
-                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                          Структура декабря 2027
-                        </span>
-                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
-                          {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} компл.
-                        </span>
-                      </div>
-                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                        {(currentAgg.targetMonthRevenueRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽
-                      </div>
-                    </div>
-
-                    {isActing ? (
-                      <div className="space-y-1.5">
-                        <div className="h-1.5 w-full rounded-full bg-[#157347]" />
-                        <div className="text-[11.5px] text-[#686762] flex items-center justify-between">
-                          <span>100% действующая база WB</span>
-                          <span className="font-mono font-bold text-[#141413]">7 SKU</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        <div className="h-1.5 w-full rounded-full bg-[#E4E3DC] overflow-hidden flex">
-                          <div
-                            style={{ width: `${wbShareDecPct}%` }}
-                            className="h-full bg-[#157347]"
-                            title="Действующая база WB"
-                          />
-                          <div
-                            style={{ width: `${100 - wbShareDecPct}%` }}
-                            className="h-full bg-[#8E8D85]"
-                            title="Новые модели 2027"
-                          />
-                        </div>
-                        <div className="text-[11.5px] text-[#686762] flex items-center justify-between gap-2">
-                          <span>
-                            База WB:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {(currentAgg.actingDecRevenueRub / 1_000_000)
-                                .toFixed(1)
-                                .replace('.', ',')}{' '}
-                              млн
-                            </strong>
-                          </span>
-                          <span>
-                            Новинки:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {(currentAgg.newDecRevenueRub / 1_000_000)
-                                .toFixed(1)
-                                .replace('.', ',')}{' '}
-                              млн
-                            </strong>
-                          </span>
-                        </div>
-                      </div>
-                    )}
+            {/* КОМПАКТНАЯ ПОЛОСА ПОМЕСЯЧНОЙ ТРАЕКТОРИИ ВЫРУЧКИ 2027 (показывается, когда у выбранного бренда есть сценарии) */}
+            {(brandFilterLocal === 'ALL' ||
+              getScenariosForBrand(
+                scenarios,
+                normalizePortfolioBrandCode(brandFilterLocal)
+              ).length > 0) && (
+              <div className="px-5 py-3.5 bg-white border-t border-[#EAE9E2]">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-[12px] font-bold text-[#1E293B]">
+                      Помесячная траектория выручки {currentScenario.year || 2027} (млн ₽)
+                    </span>
+                    <span className="text-[11px] text-[#686760]">
+                      нажмите на любой месяц для сверки
+                    </span>
                   </div>
 
-                  {/* Колонка 2: Годовой оборот 2027 */}
-                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                          Годовой оборот (12 мес.)
+                  <div className="flex items-center gap-2.5 text-[11.5px]">
+                    {(() => {
+                      const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
+                      const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
+                      const totSel = Math.round((bSel + nSel) * 100) / 100;
+                      return (
+                        <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] text-[#1E293B] px-2.5 py-0.5 font-mono text-[11px] font-bold">
+                          {MONTHS_SHORT_RU[selectedChartMonthIdx]} {currentScenario.year || 2027}:{' '}
+                          {totSel.toFixed(2).replace('.', ',')} млн ₽
                         </span>
-                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                          ~{avgMonthlyMln} млн/мес
-                        </span>
-                      </div>
-                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                        {annualRevMln} млн ₽
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
-                      <span>
-                        Выкупы:{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
-                        </strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('launch-calendar')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        02 · Продажи →
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Колонка 3: Вложить на старт (Q1) и пик своих денег */}
-                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                          Вложить на старт (Q1)
-                        </span>
-                        <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                          Аванс 30%: {(v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub / 1_000_000).toFixed(2).replace('.', ',')} млн
-                        </span>
-                      </div>
-                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                        {(v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
-                      <span>
-                        Пик с WB:{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {(v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub / 1_000_000)
-                            .toFixed(2)
-                            .replace('.', ',')}{' '}
-                          млн
-                        </strong>{' '}
-                        · год: {procBudgetMln} млн
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('roadmap-tasks')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        03 · Закупки →
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Колонка 4: Ожидаемая прибыль и P&L */}
-                  <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                          Ожидаемая прибыль и P&L
-                        </span>
-                        <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#146C43]">
-                          {v11ScenarioSummary.investmentSummary.operatingMarginPct
-                            .toFixed(1)
-                            .replace('.', ',')}% рентаб.
-                        </span>
-                      </div>
-                      <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#157347]">
-                        +
-                        {(
-                          v11ScenarioSummary.investmentSummary.annualEstimatedOperatingProfitRub /
-                          1_000_000
-                        )
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
-                      <span>
-                        Себест. продаж:{' '}
-                        <strong className="font-mono text-[#141413]">
-                          {(v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub / 1_000_000)
-                            .toFixed(2)
-                            .replace('.', ',')}{' '}
-                          млн ₽
-                        </strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('finance')}
-                        className="font-bold text-[#141413] hover:underline cursor-pointer shrink-0"
-                      >
-                        04 · Финансы →
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* РЯД 3: КОМПАКТНАЯ ПОЛОСА ПОМЕСЯЧНОЙ ТРАЕКТОРИИ ВЫРУЧКИ 2027 В СТИЛЕ PEAKLY */}
-            <div className="px-5 py-3.5 bg-white border-t border-[#EAE9E2]">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-[12px] font-bold text-[#141413]">
-                    Помесячная траектория выручки 2027 (млн ₽)
-                  </span>
-                  <span className="text-[11px] text-[#686760]">
-                    нажмите на любой месяц для сверки
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2.5 text-[11.5px]">
-                  {(() => {
-                    const bSel = currentAgg?.monthlyBornersMln[selectedChartMonthIdx] || 0;
-                    const nSel = currentAgg?.monthlyNaTeleMln[selectedChartMonthIdx] || 0;
-                    const totSel = Math.round((bSel + nSel) * 100) / 100;
-                    return (
-                      <span className="rounded-md bg-[#F4F3EE] border border-[#E2E1D9] text-[#141413] px-2.5 py-0.5 font-mono text-[11px] font-bold">
-                        {MONTHS_SHORT_RU[selectedChartMonthIdx]} 2027: {totSel.toFixed(2).replace('.', ',')} млн ₽
-                      </span>
-                    );
-                  })()}
-                  <button
-                    type="button"
-                    onClick={() => navigateTo('launch-calendar')}
-                    className="font-bold text-[#141413] hover:underline cursor-pointer transition"
-                  >
-                    Вся таблица 12 мес. →
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 gap-1.5 items-end h-[66px]">
-                {MONTHS_SHORT_RU.map((mName, idx) => {
-                  const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
-                  const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
-                  const totVal = Math.round((bVal + nVal) * 10) / 10;
-                  const barHeight = Math.max(10, Math.round((totVal / maxChartVal) * 36));
-                  const isSel = selectedChartMonthIdx === idx;
-                  const isDec = idx === 11;
-
-                  return (
+                      );
+                    })()}
                     <button
                       type="button"
-                      key={mName}
-                      onClick={() => setSelectedChartMonthIdx(idx)}
-                      className={`h-full flex flex-col items-center justify-end gap-1 rounded-[8px] px-1 py-1 transition cursor-pointer group ${
-                        isSel
-                          ? 'bg-[#EAF6F0]/70 ring-1 ring-[#BCE3CF]'
-                          : 'hover:bg-[#FAF9F6]'
-                      }`}
+                      onClick={() => navigateTo('launch-calendar')}
+                      className="font-bold text-[#0F5132] hover:underline cursor-pointer transition"
                     >
-                      <span
-                        className={`font-mono text-[10px] leading-none ${
-                          isSel || isDec
-                            ? 'font-bold text-[#141413]'
-                            : 'font-medium text-[#686760] group-hover:text-[#141413]'
-                        }`}
-                      >
-                        {totVal.toFixed(1).replace('.', ',')}
-                      </span>
-                      <div className="w-full flex justify-center items-end">
-                        <div
-                          style={{ height: `${barHeight}px` }}
-                          className={`w-full max-w-[26px] rounded-[4px] transition-all ${
-                            isSel || isDec
-                              ? 'bg-[#157347]'
-                              : 'bg-[#CFCEC6] group-hover:bg-[#8E8D85]'
-                          }`}
-                        />
-                      </div>
-                      <span
-                        className={`text-[10px] leading-none ${
-                          isSel || isDec
-                            ? 'font-bold text-[#141413]'
-                            : 'font-medium text-[#686760]'
-                        }`}
-                      >
-                        {mName}
-                      </span>
+                      Вся таблица 12 мес. →
                     </button>
-                  );
-                })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-12 gap-1.5 items-end h-[66px]">
+                  {MONTHS_SHORT_RU.map((mName, idx) => {
+                    const bVal = currentAgg?.monthlyBornersMln[idx] || 0;
+                    const nVal = currentAgg?.monthlyNaTeleMln[idx] || 0;
+                    const totVal = Math.round((bVal + nVal) * 10) / 10;
+                    const barHeight = Math.max(10, Math.round((totVal / maxChartVal) * 36));
+                    const isSel = selectedChartMonthIdx === idx;
+                    const isDec = idx === 11;
+
+                    return (
+                      <button
+                        type="button"
+                        key={mName}
+                        onClick={() => setSelectedChartMonthIdx(idx)}
+                        className={`h-full flex flex-col items-center justify-end gap-1 rounded-[8px] px-1 py-1 transition cursor-pointer group ${
+                          isSel
+                            ? 'bg-[#EAF6F0]/70 ring-1 ring-[#BCE3CF]'
+                            : 'hover:bg-[#FAF9F6]'
+                        }`}
+                      >
+                        <span
+                          className={`font-mono text-[10px] leading-none ${
+                            isSel || isDec
+                              ? 'font-bold text-[#0F5132]'
+                              : 'font-medium text-[#686760] group-hover:text-[#1E293B]'
+                          }`}
+                        >
+                          {totVal.toFixed(1).replace('.', ',')}
+                        </span>
+                        <div className="w-full flex justify-center items-end">
+                          <div
+                            style={{ height: `${barHeight}px` }}
+                            className={`w-full max-w-[26px] rounded-[4px] transition-all ${
+                              isSel || isDec
+                                ? 'bg-[#157347]'
+                                : 'bg-[#CFCEC6] group-hover:bg-[#8E8D85]'
+                            }`}
+                          />
+                        </div>
+                        <span
+                          className={`text-[10px] leading-none ${
+                            isSel || isDec
+                              ? 'font-bold text-[#0F5132]'
+                              : 'font-medium text-[#686760]'
+                          }`}
+                        >
+                          {mName}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Детальный разбор по брендам, формуле декабря и партиям — открывается по кнопке «По брендам и расчёт» */}
             {(mathBreakdownOpen || v11ContourExpanded) && (
               <div className="p-5 bg-[#FAF9F6] border-t border-[#E4E3DC] space-y-4">
+                {/* 4 ОБЪЁМНЫЕ БИЗНЕС-КАРТОЧКИ АКТИВНОГО СЦЕНАРИЯ */}
+                {(() => {
+                  const isActing = currentScenario.id === ACTING_2027_SCENARIO_ID;
+                  const annualRevMln = (currentAgg.annualRevenueRub / 1_000_000)
+                    .toFixed(2)
+                    .replace('.', ',');
+                  const avgMonthlyMln = (currentAgg.annualRevenueRub / 12 / 1_000_000)
+                    .toFixed(2)
+                    .replace('.', ',');
+                  const procBudgetRub =
+                    v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub;
+                  const procBudgetMln = (procBudgetRub / 1_000_000).toFixed(2).replace('.', ',');
+                  const wbShareDecPct =
+                    currentAgg.targetMonthRevenueRub > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            (currentAgg.actingDecRevenueRub / currentAgg.targetMonthRevenueRub) *
+                              100
+                          )
+                        )
+                      : 100;
+
+                  return (
+                    <div className="rounded-[12px] border border-[#D8D7CF] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white">
+                      {/* Колонка 1: Пик сезона (Декабрь 2027) */}
+                      <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                              Структура декабря 2027
+                            </span>
+                            <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
+                              {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} компл.
+                            </span>
+                          </div>
+                          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                            {(currentAgg.targetMonthRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </div>
+                        </div>
+
+                        {isActing ? (
+                          <div className="space-y-1.5">
+                            <div className="h-1.5 w-full rounded-full bg-[#157347]" />
+                            <div className="text-[11.5px] text-[#686762] flex items-center justify-between">
+                              <span>100% действующая база WB</span>
+                              <span className="font-mono font-bold text-[#141413]">7 SKU</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="h-1.5 w-full rounded-full bg-[#E4E3DC] overflow-hidden flex">
+                              <div
+                                style={{ width: `${wbShareDecPct}%` }}
+                                className="h-full bg-[#157347]"
+                                title="Действующая база WB"
+                              />
+                              <div
+                                style={{ width: `${100 - wbShareDecPct}%` }}
+                                className="h-full bg-[#8E8D85]"
+                                title="Новые модели 2027"
+                              />
+                            </div>
+                            <div className="text-[11.5px] text-[#686762] flex items-center justify-between gap-2">
+                              <span>
+                                База WB:{' '}
+                                <strong className="font-mono text-[#141413]">
+                                  {(currentAgg.actingDecRevenueRub / 1_000_000)
+                                    .toFixed(1)
+                                    .replace('.', ',')}{' '}
+                                  млн
+                                </strong>
+                              </span>
+                              <span>
+                                Новинки:{' '}
+                                <strong className="font-mono text-[#141413]">
+                                  {(currentAgg.newDecRevenueRub / 1_000_000)
+                                    .toFixed(1)
+                                    .replace('.', ',')}{' '}
+                                  млн
+                                </strong>
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Колонка 2: Годовой оборот 2027 */}
+                      <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                              Годовой оборот (12 мес.)
+                            </span>
+                            <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                              ~{avgMonthlyMln} млн/мес
+                            </span>
+                          </div>
+                          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                            {annualRevMln} млн ₽
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                          <span>
+                            Выкупы:{' '}
+                            <strong className="font-mono text-[#141413]">
+                              {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
+                            </strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => navigateTo('launch-calendar')}
+                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                          >
+                            02 · Продажи →
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Колонка 3: Вложить на старт (Q1) и пик своих денег */}
+                      <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                              Вложить на старт (Q1)
+                            </span>
+                            <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                              Аванс 30%:{' '}
+                              {(
+                                v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub /
+                                1_000_000
+                              )
+                                .toFixed(2)
+                                .replace('.', ',')}{' '}
+                              млн
+                            </span>
+                          </div>
+                          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
+                            {(
+                              v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub /
+                              1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                          <span>
+                            Пик с WB:{' '}
+                            <strong className="font-mono text-[#141413]">
+                              {(
+                                v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub /
+                                1_000_000
+                              )
+                                .toFixed(2)
+                                .replace('.', ',')}{' '}
+                              млн
+                            </strong>{' '}
+                            · год: {procBudgetMln} млн
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => navigateTo('roadmap-tasks')}
+                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                          >
+                            03 · Закупки →
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Колонка 4: Ожидаемая прибыль и P&L */}
+                      <div className="px-5 py-4 flex flex-col justify-between gap-2.5">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
+                              Ожидаемая прибыль и P&L
+                            </span>
+                            <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#146C43]">
+                              {v11ScenarioSummary.investmentSummary.operatingMarginPct
+                                .toFixed(1)
+                                .replace('.', ',')}% рентаб.
+                            </span>
+                          </div>
+                          <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#157347]">
+                            +
+                            {(
+                              v11ScenarioSummary.investmentSummary
+                                .annualEstimatedOperatingProfitRub / 1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
+                          <span>
+                            Себест. продаж:{' '}
+                            <strong className="font-mono text-[#141413]">
+                              {(
+                                v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub /
+                                1_000_000
+                              )
+                                .toFixed(2)
+                                .replace('.', ',')}{' '}
+                              млн ₽
+                            </strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => navigateTo('finance')}
+                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                          >
+                            04 · Финансы →
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* ГЛОБАЛЬНАЯ СВОДКА BORNERS GROUP С ВЫБОРОМ СЦЕНАРИЯ ПО КАЖДОМУ БРЕНДУ (РАЗДЕЛ 9 ТЗ) */}
                 <div className="rounded-[12px] bg-white border border-[#D8D7CF] p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2939,14 +2950,14 @@ export function GrowthScenariosShowcase({
 
               <div className="flex flex-wrap items-center gap-2">
                 {/* Переключатель Витрина | Таблица */}
-                <div className="inline-flex items-center rounded-[9px] bg-[#F4F3EE] border border-[#E2E1D9] p-0.5 text-[12px]">
+                <div className="inline-flex items-center rounded-[10px] bg-[#F1F0EA] border border-[#DEDDD4] p-1 text-[12px]">
                   <button
                     type="button"
                     onClick={() => setCatalogViewMode('grid')}
                     className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                       catalogViewMode === 'grid'
-                        ? 'bg-[#141413] text-white font-semibold'
-                        : 'text-[#5C5B55] hover:text-[#141413] font-semibold'
+                        ? 'bg-white text-[#0F172A] font-semibold shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                        : 'text-[#5C5B55] hover:text-[#0F172A] font-semibold'
                     }`}
                   >
                     Витрина
@@ -2956,8 +2967,8 @@ export function GrowthScenariosShowcase({
                     onClick={() => setCatalogViewMode('table')}
                     className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                       catalogViewMode === 'table'
-                        ? 'bg-[#141413] text-white font-semibold'
-                        : 'text-[#5C5B55] hover:text-[#141413] font-semibold'
+                        ? 'bg-white text-[#0F172A] font-semibold shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#D8D6CE]'
+                        : 'text-[#5C5B55] hover:text-[#0F172A] font-semibold'
                     }`}
                   >
                     Таблица ({filteredModels.length})
@@ -2969,7 +2980,7 @@ export function GrowthScenariosShowcase({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Поиск модели или WB..."
-                  className="h-8.5 px-3 rounded-[9px] bg-[#FAF9F6] focus:bg-white border border-[#CFCEC6] focus:border-[#141413] text-[12px] font-medium text-[#141413] placeholder:text-[#8E8D85] w-44 focus:outline-none"
+                  className="h-8.5 px-3 rounded-[9px] bg-[#FAF9F6] focus:bg-white border border-[#CFCEC6] focus:border-[#059669] text-[12px] font-medium text-[#1E293B] placeholder:text-[#8E8D85] w-44 focus:outline-none"
                 />
 
                 <select
@@ -2983,7 +2994,7 @@ export function GrowthScenariosShowcase({
                         | 'priority'
                     )
                   }
-                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#CFCEC6] hover:border-[#141413] text-[12px] font-semibold text-[#141413] cursor-pointer"
+                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#CFCEC6] hover:border-[#94A3B8] text-[12px] font-semibold text-[#1E293B] cursor-pointer"
                 >
                   <option value="default">По порядку</option>
                   <option value="dec_desc">Выручка дек. ↓</option>
@@ -2994,7 +3005,7 @@ export function GrowthScenariosShowcase({
                 <select
                   value={statusFilterLocal}
                   onChange={(e) => setStatusFilterLocal(e.target.value)}
-                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#CFCEC6] hover:border-[#141413] text-[12px] font-semibold text-[#141413] cursor-pointer"
+                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#CFCEC6] hover:border-[#94A3B8] text-[12px] font-semibold text-[#1E293B] cursor-pointer"
                 >
                   <option value="ALL">Все статусы</option>
                   <option value="В плане">В плане</option>
@@ -3006,7 +3017,7 @@ export function GrowthScenariosShowcase({
                 <button
                   type="button"
                   onClick={() => setNewModelModalOpen(true)}
-                  className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold transition cursor-pointer"
+                  className="h-8.5 px-3.5 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                 >
                   + Добавить модель
                 </button>
@@ -3021,8 +3032,8 @@ export function GrowthScenariosShowcase({
                   { id: 'BORNERS', label: 'BORNERS' },
                   { id: 'NA_TELE', label: 'НА ТЕЛЕ' },
                   { id: 'FUKAI', label: 'FUKAI' },
-                  { id: 'AKUSHA', label: 'Акуша' },
-                  { id: 'LISKANI', label: 'Liskani' },
+                  { id: 'AKUSHA', label: 'AKUSHA' },
+                  { id: 'LISKANI', label: 'LISKANI' },
                 ].map((bItem) => {
                   const active = brandFilterLocal === bItem.id;
                   return (
@@ -3042,8 +3053,8 @@ export function GrowthScenariosShowcase({
                       }}
                       className={`h-7.5 px-3 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer border ${
                         active
-                          ? 'bg-[#141413] text-white border-[#141413]'
-                          : 'bg-[#FAF9F6] text-[#52514C] border-[#E2E1D9] hover:border-[#141413] hover:text-[#141413]'
+                          ? 'bg-[#ECFDF5] text-[#065F46] border-[#6EE7B7] shadow-2xs'
+                          : 'bg-[#FAF9F6] text-[#52514C] border-[#E2E1D9] hover:border-[#94A3B8] hover:text-[#1E293B]'
                       }`}
                     >
                       {bItem.label}
@@ -3065,7 +3076,7 @@ export function GrowthScenariosShowcase({
                     </>
                   ) : brandFilterLocal === 'AKUSHA' || brandFilterLocal === 'LISKANI' ? (
                     <>
-                      Для бренда <strong>{brandFilterLocal === 'AKUSHA' ? 'Акуша' : 'Liskani'}</strong> в «{currentScenario.title}» пока не добавлено карточек SKU. Вы можете добавить модель для этого бренда или показать все бренды.
+                      Для бренда <strong>{brandFilterLocal === 'AKUSHA' ? 'AKUSHA' : 'LISKANI'}</strong> в «{currentScenario.title}» пока не добавлено карточек SKU. Вы можете добавить модель для этого бренда или показать все бренды.
                     </>
                   ) : (
                     <>
@@ -3078,7 +3089,7 @@ export function GrowthScenariosShowcase({
                     <button
                       type="button"
                       onClick={() => setSelectedScenarioId(2)}
-                      className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
                     >
                       Переключить на Сценарий №2 (150 млн)
                     </button>
@@ -3092,14 +3103,14 @@ export function GrowthScenariosShowcase({
                         setDraftBrand(brandFilterLocal);
                         setNewModelModalOpen(true);
                       }}
-                      className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
                     >
                       + Добавить модель (
                       {brandFilterLocal === 'NA_TELE'
                         ? 'НА ТЕЛЕ'
                         : brandFilterLocal === 'AKUSHA'
-                          ? 'Акуша'
-                          : 'Liskani'}
+                          ? 'AKUSHA'
+                          : 'LISKANI'}
                       )
                     </button>
                   )}
@@ -3111,7 +3122,7 @@ export function GrowthScenariosShowcase({
                       setStatusFilterLocal('ALL');
                       setSearchQuery('');
                     }}
-                    className="h-8 px-3 rounded-[8px] bg-white border border-[#CFCEC6] hover:border-[#141413] text-[11.5px] font-semibold text-[#141413] cursor-pointer"
+                    className="h-8 px-3 rounded-[8px] bg-white border border-[#CFCEC6] hover:border-[#94A3B8] text-[11.5px] font-semibold text-[#1E293B] cursor-pointer"
                   >
                     Показать все модели сценария
                   </button>
@@ -3484,8 +3495,8 @@ export function GrowthScenariosShowcase({
                   <option value="BORNERS">BORNERS</option>
                   <option value="NA_TELE">НА ТЕЛЕ</option>
                   <option value="FUKAI">FUKAI</option>
-                  <option value="AKUSHA">Акуша</option>
-                  <option value="LISKANI">Liskani (Лезкани)</option>
+                  <option value="AKUSHA">AKUSHA</option>
+                  <option value="LISKANI">LISKANI</option>
                 </select>
               </div>
 
@@ -3557,25 +3568,25 @@ export function GrowthScenariosShowcase({
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setNewModelModalOpen(false)}
-                className="h-9 px-3.5 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold cursor-pointer"
+                className="h-9 px-3.5 rounded-[10px] border border-[#DED8CC] text-[12px] font-semibold text-[#5E5D58] hover:text-[#1E293B] cursor-pointer"
               >
                 Отмена
               </button>
               <button
                 type="button"
                 onClick={() => createAndSaveModel(false)}
-                className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                className="h-9 px-3.5 rounded-[10px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
               >
                 <Check className="h-3.5 w-3.5" />
-                <span>Сохранить карточку</span>
+                <span>Сохранить</span>
               </button>
               <button
                 type="submit"
-                className="h-9 px-4 rounded-[10px] bg-[#1D1D1F] hover:bg-[#323236] text-white text-[12.5px] font-semibold cursor-pointer transition"
+                className="h-9 px-3.5 rounded-[10px] border border-[#A7F3D0] bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#065F46] text-[12px] font-semibold cursor-pointer transition"
               >
                 Сохранить и открыть →
               </button>
@@ -3618,7 +3629,7 @@ export function GrowthScenariosShowcase({
                 </label>
                 <input
                   type="text"
-                  placeholder="Например: LISCANI — базовый план 2028"
+                  placeholder="Например: LISKANI — базовый план 2028"
                   value={draftScenTitle}
                   onChange={(e) => setDraftScenTitle(e.target.value)}
                   className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
@@ -3642,8 +3653,8 @@ export function GrowthScenariosShowcase({
                     <option value="BORNERS">BORNERS</option>
                     <option value="FUKAI">FUKAI</option>
                     <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISCANI">LISCANI</option>
-                    <option value="НА ТЕЛЕ">НА ТЕЛЕ</option>
+                    <option value="LISKANI">LISKANI</option>
+                    <option value="NA_TELE">НА ТЕЛЕ</option>
                   </select>
                 </div>
                 <div>

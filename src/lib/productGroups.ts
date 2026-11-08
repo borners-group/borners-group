@@ -151,7 +151,7 @@ export function buildDefaultProductGroups(
     {
       id: 'grp-akusha-shoes',
       title: 'Обувная коллекция AKUSHA',
-      subtitle: 'Основная линейка обуви бренда Акуша (учёт в парах)',
+      subtitle: 'Основная линейка обуви бренда AKUSHA (учёт в парах)',
       brandCode: 'AKUSHA',
       cabinetLabel: 'AKUSHA · WB',
       modelIds: akushaModels.map((m) => m.id),
@@ -161,10 +161,10 @@ export function buildDefaultProductGroups(
     },
     {
       id: 'grp-liscani-curtains',
-      title: 'Шторы и текстиль LISCANI',
-      subtitle: 'Портьеры, блэкаут и тюль Liscani (комплекты штор и метраж ткани)',
+      title: 'Шторы и текстиль LISKANI',
+      subtitle: 'Портьеры, блэкаут и тюль LISKANI (комплекты штор и метраж ткани)',
       brandCode: 'LISKANI',
-      cabinetLabel: 'LISCANI · WB',
+      cabinetLabel: 'LISKANI · WB',
       modelIds: liscaniModels.map((m) => m.id),
       modelCodes: liscaniModels.map((m) => m.code),
       isSystemDefault: true,
@@ -364,7 +364,7 @@ export function computeProductGroupMetrics(
 
 export interface BrandCatalogSectionSummary {
   brandCode: CanonicalBrandCode;
-  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISCANI' | 'НА ТЕЛЕ';
+  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'НА ТЕЛЕ';
   brandTitle: string;
   cabinetLabel: string;
   categoryLabel: string;
@@ -499,12 +499,12 @@ export function getModelBrandAccentStyles(brandInput?: string): {
   switch (code) {
     case 'BORNERS':
       return {
-        badgeBg: 'bg-[#141413]',
-        badgeText: 'text-white',
-        badgeBorder: 'border-[#141413]',
-        folderBg: 'bg-[#F3F2EC] border-[#D8D7CE]',
-        folderIconText: 'text-[#141413]',
-        accentBar: 'bg-[#141413]',
+        badgeBg: 'bg-[#EEF2FA]',
+        badgeText: 'text-[#1E3A8A]',
+        badgeBorder: 'border-[#C7D5F2]',
+        folderBg: 'bg-[#F2F5FC] border-[#D3DEF5]',
+        folderIconText: 'text-[#1E40AF]',
+        accentBar: 'bg-[#2B4C9B]',
       };
     case 'NA_TELE':
       return {

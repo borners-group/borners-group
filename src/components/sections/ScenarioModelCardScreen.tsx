@@ -74,7 +74,7 @@ const STAGE_STATUS_OPTIONS: ModelPassportStageStatus[] = [
   'Приостановлен',
 ];
 
-const DEFAULT_BRAND_OPTIONS = ['BORNERS', 'НА ТЕЛЕ', 'FUKAI', 'Акуша', 'Liskani'];
+const DEFAULT_BRAND_OPTIONS = ['BORNERS', 'НА ТЕЛЕ', 'FUKAI', 'AKUSHA', 'LISKANI'];
 
 function StatusPill({ status }: { status: ValueStatusCode }) {
   const styles: Record<ValueStatusCode, string> = {
