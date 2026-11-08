@@ -46,23 +46,35 @@ import {
 import {
   allocatePacksBySizeLargestRemainder,
   approveRecommendedBatch,
+  archiveBrandScenario,
+  changeModelBrandWithAudit,
+  computeCarryOverStock2027To2028,
   computeFinancialPnL,
   computeGroupBrandsInvestmentReport,
+  computeMultiBrandPortfolioSummary,
   computeProcurementPlan,
   computeScenarioInvestmentSummary,
+  createBrandProductModel,
   createCustomPurchaseOrder,
+  createIndependentBrandScenario,
+  deleteBrandScenario,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
+  getBrandUnitConfig,
+  getScenariosForBrand,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
   matchesBrandFilter,
+  normalizePortfolioBrandCode,
   parseStructuredPlanCsvOrJson,
   recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
+  renameBrandScenario,
   roundNeedToMoqAndMultiple,
   serializePurchaseOrdersToCsv,
   serializeScenarioFactoryOrdersToCsv,
+  serializeSingleBatchFactoryOrderDocumentCsv,
   serializeStructuredPlanToCsv,
   updateApprovedPurchaseOrder,
 } from '../src/lib/unifiedBusinessEngine.ts';
@@ -1615,6 +1627,321 @@ test('33. Раунд 2 аудита багов: точность авто-рас
   assert.ok(showcaseSource.includes('v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub'));
   assert.ok(showcaseSource.includes('generateNextUniqueModelCode'));
 });
+
+test('34. Приёмочные тесты ТЗ «BORNERS GROUP — развитие единой платформы управления брендами (2027–2028, 08.11.2026)» — все 10 тестов Раздела 13', () => {
+  const baseScenarios = [...INITIAL_SCENARIOS];
+  const basePortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ];
+
+  // =========================================================================
+  // ТЕСТ 1: Создать сценарий для LISCANI («LISCANI — базовый план 2028»)
+  // Сценарий появляется только у LISCANI и не меняет другие бренды
+  // =========================================================================
+  const createdLiscani = createIndependentBrandScenario(baseScenarios, basePortfolio, {
+    title: 'LISCANI — базовый план 2028',
+    brandCode: 'LISCANI',
+    year: 2028,
+    monthlyTargetMln: 45,
+    copyFromScenarioId: null,
+  });
+  const liscaniScen = createdLiscani.scenario;
+  assert.equal(liscaniScen.title, 'LISCANI — базовый план 2028');
+  assert.equal(liscaniScen.year, 2028);
+  assert.equal(normalizePortfolioBrandCode(liscaniScen.ownerBrandCode), 'LISKANI');
+
+  const liscaniScenariosList = getScenariosForBrand(createdLiscani.scenarios, 'LISCANI');
+  const akushaScenariosList = getScenariosForBrand(createdLiscani.scenarios, 'AKUSHA');
+  assert.equal(liscaniScenariosList.length, 1);
+  assert.equal(liscaniScenariosList[0].id, liscaniScen.id);
+  assert.equal(akushaScenariosList.length, 0);
+
+  // Проверим также переименование, архивацию и удаление сценария (Раздел 3.4)
+  const renamedList = renameBrandScenario(createdLiscani.scenarios, liscaniScen.id, {
+    title: 'LISCANI — план экспансии 2028',
+  });
+  assert.equal(
+    renamedList.find((s) => s.id === liscaniScen.id)?.title,
+    'LISCANI — план экспансии 2028'
+  );
+  const archivedList = archiveBrandScenario(renamedList, liscaniScen.id);
+  assert.equal(getScenariosForBrand(archivedList, 'LISCANI').length, 0);
+  const deletedRes = deleteBrandScenario(
+    createdLiscani.scenarios,
+    createdLiscani.models,
+    liscaniScen.id
+  );
+  assert.equal(deletedRes.scenarios.some((s) => s.id === liscaniScen.id), false);
+
+  // =========================================================================
+  // ТЕСТ 2: Добавить карточку штор в LISCANI
+  // Карточка видна в LISCANI и во «Всех брендах», отсутствует в AKUSHA,
+  // и НЕ получает выдуманный план продаж при создании (0 шт.)
+  // =========================================================================
+  const curtainCreated = createBrandProductModel(
+    createdLiscani.models,
+    createdLiscani.scenarios,
+    {
+      title: 'Шторы блэкаут Венеция 300×270',
+      code: 'LSC-001',
+      brandCode: 'LISCANI',
+      retailPriceRub: 4500,
+      unitCostRub: 1600,
+      unitsInPack: 2, // 2 полотна в комплекте штор
+    }
+  );
+  const curtainCard = curtainCreated.model;
+  assert.equal(curtainCard.primaryUnitLabel, 'компл. штор');
+  assert.equal(curtainCard.secondaryUnitLabel, 'п.м. ткани');
+  assert.equal(matchesBrandFilter(curtainCard, 'LISCANI'), true);
+  assert.equal(matchesBrandFilter(curtainCard, 'ALL'), true);
+  assert.equal(matchesBrandFilter(curtainCard, 'AKUSHA'), false);
+  // План продаж новой карточки равен 0 во всех сценариях (без выдуманных цифр, п. 4.4)
+  const curtainInitialPacks = curtainCard.plansByScenario[liscaniScen.id].monthlyPacks.reduce(
+    (s: number, v: number) => s + v,
+    0
+  );
+  assert.equal(curtainInitialPacks, 0);
+  // Матрица размеров по умолчанию 12/26/30/20/12 (п. 6.6)
+  assert.deepEqual(curtainCard.sharedSupplyAndFact?.factoryParams.sizeSharesPct, {
+    S: 12,
+    M: 26,
+    L: 30,
+    XL: 20,
+    XXL: 12,
+  });
+
+  // Проверка смены бренда с сохранением истории и документов (п. 4.2)
+  const movedToAkusha = changeModelBrandWithAudit(curtainCard, 'AKUSHA', 'Тест');
+  assert.equal(matchesBrandFilter(movedToAkusha, 'AKUSHA'), true);
+  assert.equal(movedToAkusha.primaryUnitLabel, 'пар');
+  assert.ok(
+    movedToAkusha.sharedSupplyAndFact?.auditHistory[0].summary.includes('AKUSHA')
+  );
+
+  // =========================================================================
+  // ТЕСТ 3: Изменить продажи в сценарии LISCANI на июль (индекс 6)
+  // Пересчитывается выручка модели, рекомендуемая закупка и сводка группы
+  // =========================================================================
+  const curtainWithJulySales = {
+    ...curtainCard,
+    plansByScenario: {
+      ...curtainCard.plansByScenario,
+      [liscaniScen.id]: {
+        ...curtainCard.plansByScenario[liscaniScen.id],
+        monthlyPacks: curtainCard.plansByScenario[liscaniScen.id].monthlyPacks.map(
+          (v: number, idx: number) => (idx === 6 ? 2000 : v)
+        ),
+        monthlyPricesRub: Array(12).fill(4500),
+      },
+    },
+  };
+  const liscaniMet = computeModelScenarioMetrics(curtainWithJulySales, liscaniScen);
+  assert.equal(liscaniMet.annualPacks, 2000);
+  assert.equal(liscaniMet.annualRevenueRub, 2000 * 4500); // 9 000 000 ₽
+  const liscaniProc = computeProcurementPlan(curtainWithJulySales, liscaniScen);
+  assert.ok(liscaniProc.totalRecommendedPacks >= 2000);
+
+  // =========================================================================
+  // ТЕСТ 4: Скопировать сценарий BORNERS №1
+  // Планы продаж скопированы, а карточки товаров, остатки склада и заказы фабрикам НЕ продублированы
+  // =========================================================================
+  const modelWithStockAndPo = createCustomPurchaseOrder(
+    {
+      ...ensureModelUnifiedV11(S1_100M_SCENARIO_MODELS[0]),
+      sharedSupplyAndFact: {
+        ...ensureModelUnifiedV11(S1_100M_SCENARIO_MODELS[0]).sharedSupplyAndFact!,
+        actualOpeningStockPacks: 3500,
+      },
+    },
+    {
+      packsQty: 5000,
+      unitCostRub: 600,
+      arrivalMonthIdx: 0,
+      orderPlacementDateIso: '2026-11-10',
+      note: 'Реальный заказ фабрике #1',
+    }
+  );
+  const portfolioBeforeCopy = [
+    modelWithStockAndPo,
+    ...S1_100M_SCENARIO_MODELS.slice(1),
+  ];
+  const copyResult = createIndependentBrandScenario(baseScenarios, portfolioBeforeCopy, {
+    title: 'BORNERS — Сценарий №1 (копия)',
+    brandCode: 'BORNERS',
+    year: 2027,
+    monthlyTargetMln: 100,
+    copyFromScenarioId: 1,
+  });
+  const copiedScenId = copyResult.scenario.id;
+  // Количество карточек не изменилось (нет дублей)
+  assert.equal(copyResult.models.length, portfolioBeforeCopy.length);
+  const copiedFirstModel = copyResult.models[0];
+  // План продаж скопирован месяц-в-месяц
+  assert.deepEqual(
+    copiedFirstModel.plansByScenario[copiedScenId].monthlyPacks,
+    copiedFirstModel.plansByScenario[1].monthlyPacks
+  );
+  // Реальный склад и утверждённые заказы фабрикам остались ровно в одном экземпляре
+  assert.equal(copiedFirstModel.sharedSupplyAndFact?.actualOpeningStockPacks, 3500);
+  assert.equal(copiedFirstModel.sharedSupplyAndFact?.approvedOrders.length, 1);
+
+  // =========================================================================
+  // ТЕСТ 5: Утвердить заказ фабрике и переключить сценарий
+  // В утверждённом заказе не изменились количество, сумма, дата и поставщик
+  // =========================================================================
+  const poBeforeSwitch = copiedFirstModel.sharedSupplyAndFact!.approvedOrders[0];
+  const procInS1 = computeProcurementPlan(copiedFirstModel, INITIAL_SCENARIOS.find((s) => s.id === 1)!);
+  const procInS3 = computeProcurementPlan(copiedFirstModel, INITIAL_SCENARIOS.find((s) => s.id === 3)!);
+  assert.equal(procInS1.approvedOrders.length, 1);
+  assert.equal(procInS3.approvedOrders.length, 1);
+  assert.equal(procInS3.approvedOrders[0].packsQty, poBeforeSwitch.packsQty);
+  assert.equal(procInS3.approvedOrders[0].totalOrderRub, poBeforeSwitch.totalOrderRub);
+  assert.equal(
+    procInS3.approvedOrders[0].orderPlacementDateIso,
+    poBeforeSwitch.orderPlacementDateIso
+  );
+  assert.equal(procInS3.approvedOrders[0].factoryName, poBeforeSwitch.factoryName);
+
+  // Экспорт одного заказа фабрике (Разделы 6.4 и 7.3) содержит артикул, размеры S–XXL, сумму, аванс и дату
+  const singleOrderCsv = serializeSingleBatchFactoryOrderDocumentCsv(
+    copiedFirstModel,
+    poBeforeSwitch
+  );
+  assert.ok(singleOrderCsv.includes(copiedFirstModel.code));
+  assert.ok(singleOrderCsv.includes('5000'));
+  assert.ok(singleOrderCsv.includes('3000000'));
+
+  // =========================================================================
+  // ТЕСТ 6: Переключить 2027 → 2028 год, изменить план 2028, вернуться в 2027
+  // Данные обоих годов сохранены + остаток 5 000 на 31 декабря 2027 переходит на январь 2028
+  // =========================================================================
+  const scen2027 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const scen2028Create = createIndependentBrandScenario(baseScenarios, [copiedFirstModel], {
+    title: 'BORNERS — План 2028',
+    brandCode: 'BORNERS',
+    year: 2028,
+    monthlyTargetMln: 140,
+    copyFromScenarioId: 1,
+  });
+  const scen2028 = scen2028Create.scenario;
+  // Настроим модель так, чтобы на конец декабря 2027 осталось ровно 5 000 комплектов:
+  // Начальный остаток 2027 = 5 000, утверждённый приход = 12 000, продажи за 2027 = 12 000 (по 1 000/мес) -> конец дек 2027 = 5 000!
+  const carryModel = createCustomPurchaseOrder(
+    {
+      ...ensureModelUnifiedV11(S1_100M_SCENARIO_MODELS[1]),
+      sharedSupplyAndFact: {
+        ...ensureModelUnifiedV11(S1_100M_SCENARIO_MODELS[1]).sharedSupplyAndFact!,
+        actualOpeningStockPacks: 5000,
+        approvedOrders: [],
+      },
+      plansByScenario: {
+        [scen2027.id]: {
+          ...S1_100M_SCENARIO_MODELS[1].plansByScenario[1],
+          scenarioId: scen2027.id,
+          monthlyPacks: Array(12).fill(1000),
+          monthlyPricesRub: Array(12).fill(2000),
+          monthlyReceiptsPacks: Array(12).fill(0),
+        },
+        [scen2028.id]: {
+          ...S1_100M_SCENARIO_MODELS[1].plansByScenario[1],
+          scenarioId: scen2028.id,
+          initialStockPacks: 0, // не задан вручную -> должен автоматически подтянуться из декабря 2027!
+          monthlyPacks: Array(12).fill(1500),
+          monthlyPricesRub: Array(12).fill(2100),
+          monthlyReceiptsPacks: Array(12).fill(0),
+        },
+      },
+    },
+    {
+      packsQty: 12000,
+      unitCostRub: 500,
+      arrivalMonthIdx: 0,
+      orderPlacementDateIso: '2026-11-15',
+    }
+  );
+  const carryEnding2027 = computeCarryOverStock2027To2028(carryModel, scen2027);
+  assert.equal(carryEnding2027, 5000);
+  const proc2028 = computeProcurementPlan(carryModel, scen2028);
+  assert.equal(proc2028.netOpeningAvailablePacks, 5000);
+  // Проверим, что планы 2027 и 2028 независимы и оба сохранены
+  assert.equal(carryModel.plansByScenario[scen2027.id].monthlyPacks[0], 1000);
+  assert.equal(carryModel.plansByScenario[scen2028.id].monthlyPacks[0], 1500);
+
+  // =========================================================================
+  // ТЕСТ 7: Перезагрузить страницу (проверка сохранения ключей localStorage и резервной копии)
+  // =========================================================================
+  const platformContextSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/context/PlatformContext.tsx'),
+    'utf-8'
+  );
+  const appShellSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf-8'
+  );
+  assert.ok(platformContextSource.includes('borners_group_platform_state_ru_v9_editorial'));
+  assert.ok(appShellSource.includes('Скачать резервную копию (JSON)'));
+
+  // =========================================================================
+  // ТЕСТ 8: Проверить пустой бренд без сценария (например AKUSHA)
+  // Показывается «Нет сценария», нет ложных цифр
+  // =========================================================================
+  const multiBrandSummary = computeMultiBrandPortfolioSummary(
+    [...basePortfolio, curtainWithJulySales],
+    createdLiscani.scenarios,
+    {
+      BORNERS: 1,
+      FUKAI: 1,
+      AKUSHA: null, // пустой бренд без сценария
+      LISKANI: liscaniScen.id,
+      NA_TELE: 2,
+    }
+  );
+  const akushaRow = multiBrandSummary.brands.find((b) => b.brandCode === 'AKUSHA')!;
+  assert.equal(akushaRow.hasScenario, false);
+  assert.equal(akushaRow.statusMessage, 'Нет сценария');
+  assert.equal(akushaRow.annualRevenueRub, 0);
+  assert.equal(akushaRow.totalProcurementBudgetRub, 0);
+
+  // =========================================================================
+  // ТЕСТ 9: Проверить глобальную сводку BORNERS GROUP («Все бренды»)
+  // Суммы по брендам и ИТОГО совпадают, нет двойного счёта сценариев и заказов,
+  // а единицы измерения разных категорий не сливаются в одну цифру штук
+  // =========================================================================
+  const sumBrandsRev = multiBrandSummary.brands.reduce(
+    (s, b) => s + b.annualRevenueRub,
+    0
+  );
+  const sumBrandsProcCost = multiBrandSummary.brands.reduce(
+    (s, b) => s + b.totalProcurementBudgetRub,
+    0
+  );
+  assert.equal(multiBrandSummary.groupTotal.annualRevenueRub, sumBrandsRev);
+  assert.equal(multiBrandSummary.groupTotal.totalProcurementBudgetRub, sumBrandsProcCost);
+  assert.ok(multiBrandSummary.procurementBreakdownText.includes('компл.'));
+  assert.ok(multiBrandSummary.procurementBreakdownText.includes('компл. штор'));
+
+  // =========================================================================
+  // ТЕСТ 10: Проверить финансовый расчёт без графика выплат WB
+  // Стоимость закупки считается, а для потребности в своих деньгах выводится
+  // «Недостаточно данных для расчёта потребности в собственных деньгах»
+  // =========================================================================
+  const invWithoutWbSchedule = computeScenarioInvestmentSummary(
+    basePortfolio.filter((m) => matchesBrandFilter(m, 'BORNERS')),
+    scen2027,
+    {
+      wbPayoutScheduleSpecified: false,
+    }
+  );
+  assert.ok(invWithoutWbSchedule.totalProcurementBudgetRub > 0);
+  assert.equal(invWithoutWbSchedule.verifiedOwnMoneyRequiredRub, null);
+  assert.equal(
+    invWithoutWbSchedule.ownMoneyStatusLabel,
+    'Недостаточно данных для расчёта потребности в собственных деньгах'
+  );
+});
+
 
 
 

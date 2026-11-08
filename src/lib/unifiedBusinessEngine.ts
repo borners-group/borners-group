@@ -692,10 +692,37 @@ export function computeProcurementPlan(
     }
   }
 
-  const netOpeningAvailablePacks = Math.max(
+  let netOpeningAvailablePacks = Math.max(
     0,
     shared.actualOpeningStockPacks - shared.reservedStockPacks
   );
+
+  // Раздел 5.3 ТЗ: если это сценарий 2028 года, переносим конечный физический остаток 31 декабря 2027 года в начальный остаток января 2028 года
+  if (year === 2028) {
+    if (plan.initialStockPacks > 0) {
+      netOpeningAvailablePacks = Math.max(0, plan.initialStockPacks);
+    } else {
+      const ref2027Id = scenario.copiedFromScenarioId || 1;
+      const plan2027 =
+        model.plansByScenario[ref2027Id] ||
+        model.plansByScenario[1] ||
+        Object.values(model.plansByScenario).find((p) => p.scenarioId !== scenario.id);
+      if (plan2027) {
+        let stock2027 = Math.max(
+          0,
+          (shared.actualOpeningStockPacks || plan2027.initialStockPacks || 0) -
+            shared.reservedStockPacks
+        );
+        for (let m27 = 0; m27 < 12; m27++) {
+          const rec27 =
+            (approvedByMonth[m27] || 0) + (plan2027.monthlyReceiptsPacks?.[m27] || 0);
+          const dem27 = Math.max(0, plan2027.monthlyPacks?.[m27] || 0);
+          stock2027 = Math.max(0, stock2027 + rec27 - dem27);
+        }
+        netOpeningAvailablePacks = stock2027;
+      }
+    }
+  }
 
   // 1. Помесячный баланс реального обеспечения (ТОЛЬКО реальный остаток + подтверждённые фабрикой PO!)
   let runningAvailable = netOpeningAvailablePacks;
@@ -1959,11 +1986,12 @@ export function matchesBrandFilter(
   }
   if (
     upperFilter === 'LISKANI' ||
+    upperFilter === 'LISCANI' ||
     upperFilter === 'LEZKANI' ||
     upperFilter === 'ЛЕЗКАНИ' ||
     upperFilter === 'ЛИСКАНИ'
   ) {
-    return ['LISKANI', 'LEZKANI', 'ЛЕЗКАНИ', 'ЛИСКАНИ'].includes(upperBrand);
+    return ['LISKANI', 'LISCANI', 'LEZKANI', 'ЛЕЗКАНИ', 'ЛИСКАНИ'].includes(upperBrand);
   }
   return upperBrand === upperFilter;
 }
@@ -2265,6 +2293,9 @@ export interface ScenarioInvestmentSummary {
   // 4. Максимальная потребность в собственных деньгах (Пик капитала с учётом возврата выручки WB)
   initialCashOnHandRub: number;
   settlementLagMonths: number;
+  wbPayoutScheduleSpecified?: boolean;
+  verifiedOwnMoneyRequiredRub?: number | null;
+  ownMoneyStatusLabel?: string;
   peakWorkingCapitalRub: number;
   netOwnMoneyRequiredRub: number;
   peakMonthIdx: number;
@@ -2277,7 +2308,8 @@ export interface ScenarioInvestmentSummary {
 
 export interface ScenarioInvestmentOptions {
   initialCashRub?: number;
-  settlementLagMonths?: number;
+  settlementLagMonths?: number | null;
+  wbPayoutScheduleSpecified?: boolean;
 }
 
 /**
@@ -2293,6 +2325,11 @@ export function computeScenarioInvestmentSummary(
   options: ScenarioInvestmentOptions = {}
 ): ScenarioInvestmentSummary {
   const initialCashOnHandRub = Math.max(0, Math.round(options.initialCashRub || 0));
+  const wbPayoutScheduleSpecified =
+    options.wbPayoutScheduleSpecified !== undefined
+      ? options.wbPayoutScheduleSpecified
+      : options.settlementLagMonths !== null &&
+        (options.settlementLagMonths === undefined || options.settlementLagMonths >= 0);
   const settlementLagMonths = Math.max(
     0,
     Math.min(3, Math.round(options.settlementLagMonths ?? 0))
@@ -2518,15 +2555,21 @@ export function computeScenarioInvestmentSummary(
   }
 
   // Пик потребности в оборотном капитале (от 0 ₽) — не меньше стартового аванса 1-й волны
+  // Раздел 8.5 и Тест 10 ТЗ: если график выплат WB не указан, не выдумываем точную максимальную потребность в собственных деньгах
   const rawPeakWorkingCapitalRub = Math.max(
     firstWavePrepaymentRub,
     Math.abs(Math.min(0, minCumulativeFromZero))
   );
-  const peakWorkingCapitalRub = rawPeakWorkingCapitalRub;
-  const netOwnMoneyRequiredRub = Math.max(
-    0,
-    peakWorkingCapitalRub - initialCashOnHandRub
-  );
+  const peakWorkingCapitalRub = wbPayoutScheduleSpecified ? rawPeakWorkingCapitalRub : 0;
+  const netOwnMoneyRequiredRub = wbPayoutScheduleSpecified
+    ? Math.max(0, peakWorkingCapitalRub - initialCashOnHandRub)
+    : 0;
+  const verifiedOwnMoneyRequiredRub = wbPayoutScheduleSpecified
+    ? netOwnMoneyRequiredRub
+    : null;
+  const ownMoneyStatusLabel = wbPayoutScheduleSpecified
+    ? 'Рассчитано по календарю выплат WB и платежей фабрикам'
+    : 'Недостаточно данных для расчёта потребности в собственных деньгах';
 
   // Месяц выхода на самоокупаемость (когда накопленный баланс после пика стабильно >= 0)
   let selfFundingMonthIdx: number | null = null;
@@ -2565,6 +2608,9 @@ export function computeScenarioInvestmentSummary(
     firstWaveBalanceRub,
     initialCashOnHandRub,
     settlementLagMonths,
+    wbPayoutScheduleSpecified,
+    verifiedOwnMoneyRequiredRub,
+    ownMoneyStatusLabel,
     peakWorkingCapitalRub,
     netOwnMoneyRequiredRub,
     peakMonthIdx,
@@ -2798,4 +2844,1046 @@ export function serializeScenarioFactoryOrdersToCsv(
 
   return `\uFEFF${[header, ...rows].join('\n')}`;
 }
+
+// =============================================================================
+// ТЗ 08.11.2026: ЕДИНАЯ ПЛАТФОРМА УПРАВЛЕНИЯ НЕСКОЛЬКИМИ БРЕНДАМИ (2027–2028)
+// =============================================================================
+
+export type CanonicalBrandCode =
+  | 'BORNERS'
+  | 'FUKAI'
+  | 'AKUSHA'
+  | 'LISKANI'
+  | 'NA_TELE';
+
+export interface BrandUnitConfig {
+  brandCode: CanonicalBrandCode;
+  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISCANI' | 'НА ТЕЛЕ';
+  displayTitle: string;
+  categoryDefault: string;
+  primaryUnit: string; // компл. | пар | компл. штор
+  secondaryUnit: string; // изд. | пар обуви | п.м. ткани
+  secondaryPerPrimaryDefault: number;
+}
+
+export const BRAND_UNIT_CONFIGS: Record<CanonicalBrandCode, BrandUnitConfig> = {
+  BORNERS: {
+    brandCode: 'BORNERS',
+    displayCode: 'BORNERS',
+    displayTitle: 'BORNERS',
+    categoryDefault: 'Мужское бельё (комплекты)',
+    primaryUnit: 'компл.',
+    secondaryUnit: 'изд.',
+    secondaryPerPrimaryDefault: 4,
+  },
+  FUKAI: {
+    brandCode: 'FUKAI',
+    displayCode: 'FUKAI',
+    displayTitle: 'FUKAI',
+    categoryDefault: 'Базовые комплекты белья WB',
+    primaryUnit: 'компл.',
+    secondaryUnit: 'изд.',
+    secondaryPerPrimaryDefault: 4,
+  },
+  AKUSHA: {
+    brandCode: 'AKUSHA',
+    displayCode: 'AKUSHA',
+    displayTitle: 'AKUSHA (Акуша)',
+    categoryDefault: 'Обувь',
+    primaryUnit: 'пар',
+    secondaryUnit: 'пар обуви',
+    secondaryPerPrimaryDefault: 1,
+  },
+  LISKANI: {
+    brandCode: 'LISKANI',
+    displayCode: 'LISCANI',
+    displayTitle: 'LISCANI (Liskani)',
+    categoryDefault: 'Шторы и интерьерный текстиль',
+    primaryUnit: 'компл. штор',
+    secondaryUnit: 'п.м. ткани',
+    secondaryPerPrimaryDefault: 6,
+  },
+  NA_TELE: {
+    brandCode: 'NA_TELE',
+    displayCode: 'НА ТЕЛЕ',
+    displayTitle: 'НА ТЕЛЕ',
+    categoryDefault: 'Базовое и женское бельё',
+    primaryUnit: 'компл.',
+    secondaryUnit: 'изд.',
+    secondaryPerPrimaryDefault: 2,
+  },
+};
+
+export function normalizePortfolioBrandCode(
+  brandInput?: string | null
+): CanonicalBrandCode | 'ALL' {
+  if (!brandInput) return 'ALL';
+  const upper = brandInput.trim().toUpperCase();
+  if (upper === 'ALL' || upper === 'ВСЕ БРЕНДЫ') return 'ALL';
+  if (upper === 'BORNERS') return 'BORNERS';
+  if (upper === 'FUKAI' || upper === 'ПОДТВЕРДИТЬ БРЕНД') return 'FUKAI';
+  if (upper === 'AKUSHA' || upper === 'АКУША') return 'AKUSHA';
+  if (
+    upper === 'LISKANI' ||
+    upper === 'LISCANI' ||
+    upper === 'LEZKANI' ||
+    upper === 'ЛИСКАНИ' ||
+    upper === 'ЛЕЗКАНИ'
+  ) {
+    return 'LISKANI';
+  }
+  if (upper === 'NA_TELE' || upper === 'НА ТЕЛЕ') return 'NA_TELE';
+  return 'BORNERS';
+}
+
+export function getBrandUnitConfig(
+  brandOrModel: string | ScenarioModelSpec
+): BrandUnitConfig {
+  if (typeof brandOrModel === 'string') {
+    const code = normalizePortfolioBrandCode(brandOrModel);
+    return BRAND_UNIT_CONFIGS[code === 'ALL' ? 'BORNERS' : code];
+  }
+  const detectedLabel = detectModelBrandPortfolioLabel(brandOrModel);
+  const code = normalizePortfolioBrandCode(detectedLabel);
+  const base = BRAND_UNIT_CONFIGS[code === 'ALL' ? 'BORNERS' : code];
+  return {
+    ...base,
+    categoryDefault: brandOrModel.categoryLabel || base.categoryDefault,
+    primaryUnit: brandOrModel.primaryUnitLabel || base.primaryUnit,
+    secondaryUnit: brandOrModel.secondaryUnitLabel || base.secondaryUnit,
+  };
+}
+
+/**
+ * Раздел 3 и Тест 1, 8 ТЗ: Получение независимых сценариев конкретного бренда.
+ * Если строгий режим (onlyExplicitForNewBrands = true), для брендов AKUSHA / LISCANI / НА ТЕЛЕ
+ * возвращает только сценарии, явно созданные для этого бренда (если их ещё нет -> пустой массив => «Нет сценария»).
+ */
+export function getScenariosForBrand(
+  scenarios: GrowthScenarioDef[],
+  brandFilter: string,
+  options?: { yearFilter?: number | 'ALL'; onlyExplicitForNewBrands?: boolean }
+): GrowthScenarioDef[] {
+  const activeScenarios = scenarios.filter((s) => !s.isArchived);
+  const normBrand = normalizePortfolioBrandCode(brandFilter);
+  const yearFilter = options?.yearFilter ?? 'ALL';
+  const onlyExplicit = options?.onlyExplicitForNewBrands ?? false;
+
+  const byBrand = activeScenarios.filter((s) => {
+    if (normBrand === 'ALL') return true;
+    const owner = s.ownerBrandCode
+      ? normalizePortfolioBrandCode(s.ownerBrandCode)
+      : 'BORNERS';
+    if (s.ownerBrandCode === 'ALL') return !onlyExplicit;
+    if (owner === normBrand) return true;
+    // Для BORNERS и FUKAI базовые сценарии 100, 1, 2, 3 доступны по умолчанию
+    if (!s.ownerBrandCode && (normBrand === 'BORNERS' || normBrand === 'FUKAI')) {
+      return true;
+    }
+    if (!onlyExplicit && !s.ownerBrandCode && normBrand === 'NA_TELE' && (s.id === 2 || s.id === 3)) {
+      return true;
+    }
+    return false;
+  });
+
+  const byYear =
+    yearFilter === 'ALL'
+      ? byBrand
+      : byBrand.filter((s) => (s.year || 2027) === yearFilter);
+
+  return [...byYear].sort((a, b) =>
+    a.id === 100 ? -1 : b.id === 100 ? 1 : a.id - b.id
+  );
+}
+
+/**
+ * Раздел 5.3 и Тест 6 ТЗ: Расчёт переходящего физического остатка с 31 декабря 2027 года на 1 января 2028 года.
+ */
+export function computeCarryOverStock2027To2028(
+  rawModel: ScenarioModelSpec,
+  scenario2027OrId?: GrowthScenarioDef | number
+): number {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const scen2027Id =
+    typeof scenario2027OrId === 'number'
+      ? scenario2027OrId
+      : scenario2027OrId?.id || 1;
+  const plan2027 =
+    model.plansByScenario[scen2027Id] ||
+    model.plansByScenario[1] ||
+    Object.values(model.plansByScenario)[0];
+
+  const approvedByMonth = Array(12).fill(0);
+  for (const po of shared.approvedOrders) {
+    if (po.confirmedByFactory === false) continue;
+    if (po.arrivalMonthIdx >= 0 && po.arrivalMonthIdx < 12) {
+      approvedByMonth[po.arrivalMonthIdx] += po.packsQty;
+    }
+  }
+
+  let running = Math.max(
+    0,
+    (shared.actualOpeningStockPacks || plan2027?.initialStockPacks || 0) -
+      shared.reservedStockPacks
+  );
+  if (!plan2027) return running;
+
+  for (let m = 0; m < 12; m++) {
+    const receipts =
+      (approvedByMonth[m] || 0) + (plan2027.monthlyReceiptsPacks?.[m] || 0);
+    const demand = Math.max(0, plan2027.monthlyPacks?.[m] || 0);
+    running = Math.max(0, running + receipts - demand);
+  }
+  return running;
+}
+
+/**
+ * Раздел 3.1–3.4 и Тест 1, 4, 6 ТЗ: Создание независимого сценария бренда (или копирование из существующего)
+ * БЕЗ дублирования карточек товаров, фотографий, реальных складских остатков и утверждённых заказов фабрикам!
+ */
+export function createIndependentBrandScenario(
+  scenarios: GrowthScenarioDef[],
+  models: ScenarioModelSpec[],
+  input: {
+    title: string;
+    brandCode: string;
+    year?: number;
+    monthlyTargetMln: number;
+    copyFromScenarioId?: number | null;
+  }
+): {
+  scenario: GrowthScenarioDef;
+  scenarios: GrowthScenarioDef[];
+  models: ScenarioModelSpec[];
+} {
+  const normBrand = normalizePortfolioBrandCode(input.brandCode);
+  const effectiveBrand: CanonicalBrandCode =
+    normBrand === 'ALL' ? 'BORNERS' : normBrand;
+  const unitCfg = BRAND_UNIT_CONFIGS[effectiveBrand];
+  const year = input.year === 2028 ? 2028 : 2027;
+  const maxId = scenarios.reduce((mx, s) => Math.max(mx, s.id === 100 ? 3 : s.id), 3);
+  const newId = maxId + 1;
+  const copySourceId = input.copyFromScenarioId ?? null;
+  const sourceScenario =
+    copySourceId !== null ? scenarios.find((s) => s.id === copySourceId) : undefined;
+
+  const newScenario: GrowthScenarioDef = {
+    id: newId,
+    title: input.title.trim() || `${unitCfg.displayCode} — базовый план ${year}`,
+    monthlyTargetMln: Math.max(1, Number(input.monthlyTargetMln) || 50),
+    targetMonthLabel: `Декабрь ${year}`,
+    targetMonthIdx: 11,
+    scopeLabel: unitCfg.displayCode,
+    includedBrands:
+      effectiveBrand === 'NA_TELE' ? ['BORNERS', 'NA_TELE'] : ['BORNERS', 'NA_TELE'],
+    year,
+    ownerBrandCode: effectiveBrand,
+    copiedFromScenarioId: copySourceId,
+    isArchived: false,
+  };
+
+  // Обновляем только сценарные планы внутри существующих моделей (без дублирования карточек и заказов PO!)
+  const updatedModels = models.map((rawM) => {
+    const m = ensureModelUnifiedV11(rawM);
+    const belongsToBrand = matchesBrandFilter(m, effectiveBrand);
+    const sourcePlan =
+      copySourceId !== null ? m.plansByScenario[copySourceId] : undefined;
+
+    const carryOverStock =
+      year === 2028 && (!sourceScenario || sourceScenario.year === 2027)
+        ? computeCarryOverStock2027To2028(m, copySourceId || 1)
+        : sourcePlan?.initialStockPacks ?? 0;
+
+    const nextPlan =
+      sourcePlan && belongsToBrand
+        ? {
+            ...sourcePlan,
+            scenarioId: newId,
+            monthlyPacks: [...sourcePlan.monthlyPacks],
+            monthlyPricesRub: [...sourcePlan.monthlyPricesRub],
+            monthlyReceiptsPacks:
+              year === 2028 ? Array(12).fill(0) : [...sourcePlan.monthlyReceiptsPacks],
+            initialStockPacks: carryOverStock,
+          }
+        : {
+            scenarioId: newId,
+            monthlyPacks: Array(12).fill(0),
+            monthlyPricesRub: Array(12).fill(m.retailPriceRub),
+            monthlyReceiptsPacks: Array(12).fill(0),
+            initialStockPacks: belongsToBrand ? carryOverStock : 0,
+            firstOrderPacks: 0,
+            nextOrderDateLabel: `15 января ${year}`,
+            salesStartMonthIdx: 0,
+            warehouseArrivalMonthIdx: 0,
+            warehouseArrivalDateLabel: '1 января',
+          };
+
+    return {
+      ...m,
+      plansByScenario: {
+        ...m.plansByScenario,
+        [newId]: nextPlan,
+      },
+      // Физический склад и утверждённые заказы фабрикам остаются строго общими и неизменными!
+      sharedSupplyAndFact: m.sharedSupplyAndFact
+        ? {
+            ...m.sharedSupplyAndFact,
+            approvedOrders: [...m.sharedSupplyAndFact.approvedOrders],
+          }
+        : m.sharedSupplyAndFact,
+    };
+  });
+
+  return {
+    scenario: newScenario,
+    scenarios: [...scenarios, newScenario],
+    models: updatedModels,
+  };
+}
+
+export function renameBrandScenario(
+  scenarios: GrowthScenarioDef[],
+  scenarioId: number,
+  patch: { title?: string; monthlyTargetMln?: number; year?: number }
+): GrowthScenarioDef[] {
+  return scenarios.map((s) => {
+    if (s.id !== scenarioId) return s;
+    const nextYear = patch.year ?? s.year;
+    return {
+      ...s,
+      title: patch.title !== undefined ? patch.title.trim() || s.title : s.title,
+      monthlyTargetMln:
+        patch.monthlyTargetMln !== undefined
+          ? Math.max(1, patch.monthlyTargetMln)
+          : s.monthlyTargetMln,
+      year: nextYear,
+      targetMonthLabel: `Декабрь ${nextYear}`,
+    };
+  });
+}
+
+export function archiveBrandScenario(
+  scenarios: GrowthScenarioDef[],
+  scenarioId: number
+): GrowthScenarioDef[] {
+  if (scenarioId === 100) return scenarios;
+  return scenarios.map((s) =>
+    s.id === scenarioId ? { ...s, isArchived: true } : s
+  );
+}
+
+export function deleteBrandScenario(
+  scenarios: GrowthScenarioDef[],
+  models: ScenarioModelSpec[],
+  scenarioId: number
+): {
+  deleted: boolean;
+  reason?: string;
+  scenarios: GrowthScenarioDef[];
+  models: ScenarioModelSpec[];
+} {
+  if (scenarioId === 100 || scenarios.filter((s) => !s.isArchived).length <= 1) {
+    return {
+      deleted: false,
+      reason: 'Базовый сценарий нельзя удалить',
+      scenarios,
+      models,
+    };
+  }
+  const nextScenarios = scenarios.filter((s) => s.id !== scenarioId);
+  const nextModels = models.map((m) => {
+    const restPlans = { ...m.plansByScenario };
+    delete restPlans[scenarioId];
+    return {
+      ...m,
+      plansByScenario: restPlans,
+    };
+  });
+  return {
+    deleted: true,
+    scenarios: nextScenarios,
+    models: nextModels,
+  };
+}
+
+/**
+ * Раздел 4.4 и Тест 2 ТЗ: Создание нового товара внутри выбранного бренда.
+ * Автоматически привязывается к выбранному бренду (например LISCANI), получает правильные единицы измерения,
+ * размерную сетку 12/26/30/20/12 (Раздел 6.6) и НЕ получает выдуманный план продаж (0 по всем 12 месяцам до ввода пользователем).
+ */
+export function createBrandProductModel(
+  existingModels: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  input: {
+    title: string;
+    brandCode: string;
+    code?: string;
+    categoryLabel?: string;
+    retailPriceRub: number;
+    unitCostRub: number;
+    unitsInPack?: number;
+    factoryName?: string;
+    initialMonthlyPacks?: number[];
+  }
+): { model: ScenarioModelSpec; models: ScenarioModelSpec[] } {
+  const normBrand = normalizePortfolioBrandCode(input.brandCode);
+  const effectiveBrand: CanonicalBrandCode =
+    normBrand === 'ALL' ? 'BORNERS' : normBrand;
+  const unitCfg = BRAND_UNIT_CONFIGS[effectiveBrand];
+
+  const usedNums = new Set<number>();
+  existingModels.forEach((m) => {
+    const match = m.code.match(/(\d+)$/);
+    if (match) usedNums.add(Number(match[1]));
+  });
+  let candidate = Math.max(existingModels.length + 1, 24);
+  while (usedNums.has(candidate)) candidate += 1;
+
+  const prefix =
+    effectiveBrand === 'LISKANI'
+      ? 'LSC'
+      : effectiveBrand === 'AKUSHA'
+        ? 'AKU'
+        : effectiveBrand === 'FUKAI'
+          ? 'FUK'
+          : effectiveBrand === 'NA_TELE'
+            ? 'NTL'
+            : '№';
+  const generatedCode =
+    input.code?.trim() ||
+    (prefix === '№'
+      ? `№${String(candidate).padStart(3, '0')}`
+      : `${prefix}-${String(candidate).padStart(3, '0')}`);
+
+  const unitsInPack = Math.max(
+    1,
+    input.unitsInPack ?? unitCfg.secondaryPerPrimaryDefault
+  );
+  const cleanPrice = Math.max(0, Math.round(input.retailPriceRub || 1990));
+  const cleanCost = Math.max(0, Math.round(input.unitCostRub || 650));
+  const category = input.categoryLabel?.trim() || unitCfg.categoryDefault;
+
+  const customBrandLabel =
+    effectiveBrand === 'AKUSHA'
+      ? 'Акуша'
+      : effectiveBrand === 'LISKANI'
+        ? 'Liskani'
+        : effectiveBrand === 'FUKAI'
+          ? 'FUKAI'
+          : effectiveBrand === 'NA_TELE'
+            ? 'НА ТЕЛЕ'
+            : 'BORNERS';
+
+  // Раздел 4.4 ТЗ: товар НЕ получает выдуманный план продаж при создании (по умолчанию 0)
+  const monthlyPacks =
+    Array.isArray(input.initialMonthlyPacks) &&
+    input.initialMonthlyPacks.length === 12
+      ? [...input.initialMonthlyPacks]
+      : Array(12).fill(0);
+
+  const plansByScenario: ScenarioModelSpec['plansByScenario'] = {};
+  for (const sc of scenarios) {
+    if (sc.id === 100) continue;
+    plansByScenario[sc.id] = {
+      scenarioId: sc.id,
+      monthlyPacks: [...monthlyPacks],
+      monthlyPricesRub: Array(12).fill(cleanPrice),
+      monthlyReceiptsPacks: Array(12).fill(0),
+      initialStockPacks: 0,
+      firstOrderPacks: 0,
+      nextOrderDateLabel: `15 января ${sc.year || 2027}`,
+      salesStartMonthIdx: 0,
+      warehouseArrivalMonthIdx: 0,
+      warehouseArrivalDateLabel: '1 января',
+    };
+  }
+
+  const template = existingModels[0];
+  const baseCreated: ScenarioModelSpec = {
+    ...(template || ({} as ScenarioModelSpec)),
+    id: `scen-${effectiveBrand.toLowerCase()}-${Date.now()}-${candidate}`,
+    code: generatedCode,
+    title: input.title.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`,
+    subtitle: `${category} · ${unitsInPack} ${unitCfg.secondaryUnit} / ${unitCfg.primaryUnit}`,
+    brandId: effectiveBrand === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    customBrandLabel,
+    categoryLabel: category,
+    primaryUnitLabel: unitCfg.primaryUnit,
+    secondaryUnitLabel: unitCfg.secondaryUnit,
+    modelStageStatus: 'Идея',
+    launchStatus: 'В плане',
+    unitsInPack,
+    retailPriceRub: cleanPrice,
+    unitCostRub: cleanCost,
+    marketplaceFeePct: 22,
+    logisticsRub: 95,
+    adsPct: 10,
+    responsiblePerson: 'Владелец бренда',
+    priority: 'Высокий',
+    hasActualSalesOrPurchases: false,
+    palettes: template?.palettes || [],
+    gallery: [
+      {
+        id: `g-main-${Date.now()}`,
+        category: 'pack',
+        label: 'Главное фото',
+        isMain: true,
+      },
+    ],
+    attachedPdfs: [],
+    productionSteps: template?.productionSteps || [],
+    plansByScenario,
+  };
+
+  const unified = ensureModelUnifiedV11(baseCreated);
+  const withDefaultMatrix: ScenarioModelSpec = {
+    ...unified,
+    sharedSupplyAndFact: {
+      ...unified.sharedSupplyAndFact!,
+      scalingStage: 'hypothesis',
+      factoryParams: {
+        ...unified.sharedSupplyAndFact!.factoryParams,
+        factoryName:
+          input.factoryName?.trim() ||
+          unified.sharedSupplyAndFact!.factoryParams.factoryName,
+        // Раздел 6.6 ТЗ: размерная сетка по умолчанию S 12%, M 26%, L 30%, XL 20%, XXL 12% = 100%
+        sizeSharesPct: { S: 12, M: 26, L: 30, XL: 20, XXL: 12 },
+      },
+      approvedOrders: [],
+    },
+  };
+
+  return {
+    model: withDefaultMatrix,
+    models: [...existingModels, withDefaultMatrix],
+  };
+}
+
+/**
+ * Раздел 4.2 ТЗ: Смена бренда карточки товара с сохранением всей истории, фотографий и документов.
+ */
+export function changeModelBrandWithAudit(
+  rawModel: ScenarioModelSpec,
+  nextBrandInput: string,
+  author = 'Владелец'
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const prevBrand = detectModelBrandPortfolioLabel(model);
+  const normNext = normalizePortfolioBrandCode(nextBrandInput);
+  const effectiveNext: CanonicalBrandCode =
+    normNext === 'ALL' ? 'BORNERS' : normNext;
+  const unitCfg = BRAND_UNIT_CONFIGS[effectiveNext];
+  const nextCustomLabel =
+    effectiveNext === 'AKUSHA'
+      ? 'Акуша'
+      : effectiveNext === 'LISKANI'
+        ? 'Liskani'
+        : effectiveNext === 'FUKAI'
+          ? 'FUKAI'
+          : effectiveNext === 'NA_TELE'
+            ? 'НА ТЕЛЕ'
+            : 'BORNERS';
+
+  const shared = model.sharedSupplyAndFact!;
+  return {
+    ...model,
+    brandId: effectiveNext === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    customBrandLabel: nextCustomLabel,
+    primaryUnitLabel: unitCfg.primaryUnit,
+    secondaryUnitLabel: unitCfg.secondaryUnit,
+    sharedSupplyAndFact: {
+      ...shared,
+      passportVersion: (shared.passportVersion || 1) + 1,
+      auditHistory: [
+        {
+          id: `aud-brand-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          author,
+          category: 'product',
+          summary: `Карточка перенесена в каталог бренда ${unitCfg.displayCode}`,
+          beforeValue: prevBrand,
+          afterValue: unitCfg.displayCode,
+          passportVersion: (shared.passportVersion || 1) + 1,
+        },
+        ...(shared.auditHistory || []),
+      ],
+    },
+  };
+}
+
+export interface MultiBrandRowSummary {
+  brandCode: CanonicalBrandCode;
+  displayCode: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISCANI' | 'НА ТЕЛЕ';
+  brandTitle: string;
+  primaryUnit: string;
+  secondaryUnit: string;
+  availableScenarios: GrowthScenarioDef[];
+  selectedScenarioId: number | null;
+  selectedScenarioTitle: string;
+  hasScenario: boolean;
+  hasModels: boolean;
+  statusMessage: string | null; // «Нет сценария» или «Добавьте первую модель для планирования продаж»
+  modelsCount: number;
+  annualRevenueRub: number;
+  decemberRevenueRub: number;
+  totalProcurementQuantity: number;
+  totalProcurementSecondaryQuantity: number;
+  totalProcurementBudgetRub: number;
+  firstWaveStartBudgetRub: number;
+  firstWavePrepaymentRub: number;
+  peakWorkingCapitalRub: number;
+  verifiedOwnMoneyRequiredRub: number | null;
+  annualSoldGoodsCostRub: number;
+  annualEstimatedOperatingProfitRub: number;
+  monthlyRows: ScenarioMonthlyCashflowRow[];
+}
+
+export interface MultiBrandPortfolioSummaryResult {
+  brands: MultiBrandRowSummary[];
+  procurementBreakdownByUnit: {
+    brandCode: CanonicalBrandCode;
+    displayCode: string;
+    quantity: number;
+    unitLabel: string;
+  }[];
+  procurementBreakdownText: string;
+  wbPayoutScheduleSpecified: boolean;
+  ownMoneyStatusLabel: string;
+  groupTotal: {
+    modelsCount: number;
+    annualRevenueRub: number;
+    decemberRevenueRub: number;
+    totalProcurementBudgetRub: number;
+    firstWaveStartBudgetRub: number;
+    firstWavePrepaymentRub: number;
+    peakWorkingCapitalRub: number;
+    netOwnMoneyRequiredRub: number;
+    verifiedOwnMoneyRequiredRub: number | null;
+    annualSoldGoodsCostRub: number;
+    annualEstimatedOperatingProfitRub: number;
+    monthlyRows: ScenarioMonthlyCashflowRow[];
+  };
+}
+
+const MULTI_BRAND_TABLE_ORDER: CanonicalBrandCode[] = [
+  'BORNERS',
+  'FUKAI',
+  'AKUSHA',
+  'LISKANI',
+  'NA_TELE',
+];
+
+/**
+ * Раздел 9 и Тесты 8, 9, 10 ТЗ: Глобальная сводка BORNERS GROUP («Все бренды»).
+ * Для каждого бренда выбирается ОДИН свой сценарий (например: BORNERS — сценарий №2, AKUSHA — сценарий №1, LISCANI — сценарий №3).
+ * Все сценарии одного бренда никогда не суммируются одновременно (защита от двойного счёта продаж и реальных заказов фабрикам).
+ * Единицы измерения разных категорий (комплекты белья, пары обуви, шторы) не сливаются в одно бессмысленное число штук.
+ */
+export function computeMultiBrandPortfolioSummary(
+  rawModels: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>,
+  options: ScenarioInvestmentOptions = {}
+): MultiBrandPortfolioSummaryResult {
+  const initialCashOnHandRub = Math.max(0, Math.round(options.initialCashRub || 0));
+  const wbPayoutScheduleSpecified =
+    options.wbPayoutScheduleSpecified !== undefined
+      ? options.wbPayoutScheduleSpecified
+      : options.settlementLagMonths !== null &&
+        (options.settlementLagMonths === undefined || options.settlementLagMonths >= 0);
+  const settlementLagMonths = Math.max(
+    0,
+    Math.min(3, Math.round(options.settlementLagMonths ?? 0))
+  );
+
+  // Дедупликация карточек товаров по ID/коду (единый каталог, Раздел 4 и 10.3 ТЗ)
+  const seenModelKeys = new Set<string>();
+  const catalogModels: ScenarioModelSpec[] = [];
+  for (const rm of rawModels) {
+    if (!rm || rm.launchStatus === 'В архиве') continue;
+    const key = rm.id || rm.code;
+    if (seenModelKeys.has(key)) continue;
+    seenModelKeys.add(key);
+    catalogModels.push(ensureModelUnifiedV11(rm));
+  }
+
+  const combinedMonthlyGrossSalesRub = Array(12).fill(0) as number[];
+  const combinedMonthlyWbDeductionsRub = Array(12).fill(0) as number[];
+  const combinedMonthlyPrepayOutflowRub = Array(12).fill(0) as number[];
+  const combinedMonthlyBalanceOutflowRub = Array(12).fill(0) as number[];
+
+  let totalModelsCount = 0;
+  let totalAnnualRevenueRub = 0;
+  let totalDecemberRevenueRub = 0;
+  let totalProcurementBudgetRub = 0;
+  let totalFirstWaveStartBudgetRub = 0;
+  let totalFirstWavePrepaymentRub = 0;
+  let totalAnnualSoldGoodsCostRub = 0;
+  let totalAnnualOperatingProfitRub = 0;
+
+  const procurementBreakdownByUnit: MultiBrandPortfolioSummaryResult['procurementBreakdownByUnit'] =
+    [];
+
+  const brandRows: MultiBrandRowSummary[] = MULTI_BRAND_TABLE_ORDER.map(
+    (brandCode) => {
+      const cfg = BRAND_UNIT_CONFIGS[brandCode];
+      const brandModels = catalogModels.filter((m) =>
+        matchesBrandFilter(m, brandCode)
+      );
+      const availableScenarios = getScenariosForBrand(scenarios, brandCode, {
+        onlyExplicitForNewBrands: false,
+      });
+
+      const rawSelectedId =
+        brandCode === 'LISKANI'
+          ? (selectedScenarioByBrand.LISKANI ??
+            selectedScenarioByBrand.LISCANI)
+          : selectedScenarioByBrand[brandCode];
+
+      // Если передан null — у бренда явно «Нет сценария» (Тест 8)
+      const defaultScenarioId =
+        brandCode === 'BORNERS' || brandCode === 'FUKAI'
+          ? availableScenarios.find((s) => s.id === 1)?.id ??
+            availableScenarios[0]?.id ??
+            null
+          : availableScenarios.find(
+              (s) =>
+                s.ownerBrandCode &&
+                normalizePortfolioBrandCode(s.ownerBrandCode) === brandCode
+            )?.id ??
+            (brandModels.length > 0 ? availableScenarios[0]?.id ?? null : null);
+
+      const resolvedScenarioId =
+        rawSelectedId === null
+          ? null
+          : rawSelectedId !== undefined
+            ? rawSelectedId
+            : defaultScenarioId;
+
+      const selectedScenario =
+        resolvedScenarioId !== null
+          ? scenarios.find((s) => s.id === resolvedScenarioId && !s.isArchived) ||
+            null
+          : null;
+
+      if (!selectedScenario) {
+        return {
+          brandCode,
+          displayCode: cfg.displayCode,
+          brandTitle: cfg.displayTitle,
+          primaryUnit: cfg.primaryUnit,
+          secondaryUnit: cfg.secondaryUnit,
+          availableScenarios,
+          selectedScenarioId: null,
+          selectedScenarioTitle: 'Нет сценария',
+          hasScenario: false,
+          hasModels: brandModels.length > 0,
+          statusMessage: 'Нет сценария',
+          modelsCount: brandModels.length,
+          annualRevenueRub: 0,
+          decemberRevenueRub: 0,
+          totalProcurementQuantity: 0,
+          totalProcurementSecondaryQuantity: 0,
+          totalProcurementBudgetRub: 0,
+          firstWaveStartBudgetRub: 0,
+          firstWavePrepaymentRub: 0,
+          peakWorkingCapitalRub: 0,
+          verifiedOwnMoneyRequiredRub: wbPayoutScheduleSpecified ? 0 : null,
+          annualSoldGoodsCostRub: 0,
+          annualEstimatedOperatingProfitRub: 0,
+          monthlyRows: [],
+        };
+      }
+
+      if (brandModels.length === 0) {
+        return {
+          brandCode,
+          displayCode: cfg.displayCode,
+          brandTitle: cfg.displayTitle,
+          primaryUnit: cfg.primaryUnit,
+          secondaryUnit: cfg.secondaryUnit,
+          availableScenarios,
+          selectedScenarioId: selectedScenario.id,
+          selectedScenarioTitle: selectedScenario.title,
+          hasScenario: true,
+          hasModels: false,
+          statusMessage: 'Добавьте первую модель для планирования продаж',
+          modelsCount: 0,
+          annualRevenueRub: 0,
+          decemberRevenueRub: 0,
+          totalProcurementQuantity: 0,
+          totalProcurementSecondaryQuantity: 0,
+          totalProcurementBudgetRub: 0,
+          firstWaveStartBudgetRub: 0,
+          firstWavePrepaymentRub: 0,
+          peakWorkingCapitalRub: 0,
+          verifiedOwnMoneyRequiredRub: wbPayoutScheduleSpecified ? 0 : null,
+          annualSoldGoodsCostRub: 0,
+          annualEstimatedOperatingProfitRub: 0,
+          monthlyRows: [],
+        };
+      }
+
+      const summary = computeScenarioInvestmentSummary(
+        brandModels,
+        selectedScenario,
+        {
+          initialCashRub: 0,
+          settlementLagMonths,
+          wbPayoutScheduleSpecified,
+        }
+      );
+
+      totalModelsCount += summary.modelsCount;
+      totalAnnualRevenueRub += summary.annualRevenueRub;
+      totalDecemberRevenueRub += summary.decemberRevenueRub;
+      totalProcurementBudgetRub += summary.totalProcurementBudgetRub;
+      totalFirstWaveStartBudgetRub += summary.firstWaveStartBudgetRub;
+      totalFirstWavePrepaymentRub += summary.firstWavePrepaymentRub;
+      totalAnnualSoldGoodsCostRub += summary.annualSoldGoodsCostRub;
+      totalAnnualOperatingProfitRub += summary.annualEstimatedOperatingProfitRub;
+
+      if (summary.totalProcurementPacks > 0) {
+        procurementBreakdownByUnit.push({
+          brandCode,
+          displayCode: cfg.displayCode,
+          quantity: summary.totalProcurementPacks,
+          unitLabel: cfg.primaryUnit,
+        });
+      }
+
+      for (let m = 0; m < 12; m++) {
+        const r = summary.monthlyRows[m];
+        if (!r) continue;
+        combinedMonthlyGrossSalesRub[m] += r.grossSalesRub;
+        combinedMonthlyWbDeductionsRub[m] += r.wbDeductionsAndAdsRub;
+        combinedMonthlyPrepayOutflowRub[m] += r.factoryPrepaymentOutflowRub;
+        combinedMonthlyBalanceOutflowRub[m] += r.factoryBalanceOutflowRub;
+      }
+
+      return {
+        brandCode,
+        displayCode: cfg.displayCode,
+        brandTitle: cfg.displayTitle,
+        primaryUnit: cfg.primaryUnit,
+        secondaryUnit: cfg.secondaryUnit,
+        availableScenarios,
+        selectedScenarioId: selectedScenario.id,
+        selectedScenarioTitle: selectedScenario.title,
+        hasScenario: true,
+        hasModels: true,
+        statusMessage: null,
+        modelsCount: summary.modelsCount,
+        annualRevenueRub: summary.annualRevenueRub,
+        decemberRevenueRub: summary.decemberRevenueRub,
+        totalProcurementQuantity: summary.totalProcurementPacks,
+        totalProcurementSecondaryQuantity: summary.totalProcurementUnits,
+        totalProcurementBudgetRub: summary.totalProcurementBudgetRub,
+        firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
+        peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        verifiedOwnMoneyRequiredRub: summary.verifiedOwnMoneyRequiredRub ?? null,
+        annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
+        annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
+        monthlyRows: summary.monthlyRows,
+      };
+    }
+  );
+
+  // Строим единый 12-месячный календарь движения денег группы по выбранным сценариям брендов
+  const groupMonthlyRows: ScenarioMonthlyCashflowRow[] = [];
+  let runningCashFromZero = 0;
+  let minCumulativeFromZero = 0;
+  let peakMonthIdx = 0;
+
+  for (let m = 0; m < 12; m++) {
+    const grossSalesRub = combinedMonthlyGrossSalesRub[m] || 0;
+    const wbDeductionsAndAdsRub = combinedMonthlyWbDeductionsRub[m] || 0;
+    const wbNetInflowRub = Math.max(0, grossSalesRub - wbDeductionsAndAdsRub);
+    const factoryPrepaymentOutflowRub = combinedMonthlyPrepayOutflowRub[m] || 0;
+    const factoryBalanceOutflowRub = combinedMonthlyBalanceOutflowRub[m] || 0;
+    const factoryTotalOutflowRub =
+      factoryPrepaymentOutflowRub + factoryBalanceOutflowRub;
+
+    const intraLow = runningCashFromZero - factoryTotalOutflowRub;
+    if (m === 0 && intraLow < minCumulativeFromZero) {
+      minCumulativeFromZero = intraLow;
+      peakMonthIdx = 0;
+    }
+
+    const netMonthlyCashflowRub = wbNetInflowRub - factoryTotalOutflowRub;
+    runningCashFromZero += netMonthlyCashflowRub;
+    if (runningCashFromZero < minCumulativeFromZero) {
+      minCumulativeFromZero = runningCashFromZero;
+      peakMonthIdx = m;
+    }
+
+    groupMonthlyRows.push({
+      monthIdx: m,
+      monthLabel: MONTHS_SHORT[m],
+      grossSalesRub,
+      wbDeductionsAndAdsRub,
+      wbNetInflowRub,
+      factoryPrepaymentOutflowRub,
+      factoryBalanceOutflowRub,
+      factoryTotalOutflowRub,
+      netMonthlyCashflowRub,
+      cumulativeCashBalanceRub: initialCashOnHandRub + runningCashFromZero,
+      isPeakDeficitMonth: false,
+    });
+  }
+  if (groupMonthlyRows[peakMonthIdx]) {
+    groupMonthlyRows[peakMonthIdx].isPeakDeficitMonth = true;
+  }
+
+  const rawGroupPeak = Math.max(
+    totalFirstWavePrepaymentRub,
+    Math.abs(Math.min(0, minCumulativeFromZero))
+  );
+  const groupPeakWorkingCapitalRub = wbPayoutScheduleSpecified ? rawGroupPeak : 0;
+  const groupNetOwnMoneyRub = wbPayoutScheduleSpecified
+    ? Math.max(0, groupPeakWorkingCapitalRub - initialCashOnHandRub)
+    : 0;
+  const groupVerifiedOwnMoneyRub = wbPayoutScheduleSpecified
+    ? groupNetOwnMoneyRub
+    : null;
+  const ownMoneyStatusLabel = wbPayoutScheduleSpecified
+    ? 'Рассчитано по календарю выплат WB и платежей фабрикам'
+    : 'Недостаточно данных для расчёта потребности в собственных деньгах';
+
+  const procurementBreakdownText =
+    procurementBreakdownByUnit.length > 0
+      ? procurementBreakdownByUnit
+          .map(
+            (item) =>
+              `${item.displayCode}: ${item.quantity.toLocaleString('ru-RU')} ${item.unitLabel}`
+          )
+          .join(' · ')
+      : 'Нет партий к заказу';
+
+  return {
+    brands: brandRows,
+    procurementBreakdownByUnit,
+    procurementBreakdownText,
+    wbPayoutScheduleSpecified,
+    ownMoneyStatusLabel,
+    groupTotal: {
+      modelsCount: totalModelsCount,
+      annualRevenueRub: totalAnnualRevenueRub,
+      decemberRevenueRub: totalDecemberRevenueRub,
+      totalProcurementBudgetRub,
+      firstWaveStartBudgetRub: totalFirstWaveStartBudgetRub,
+      firstWavePrepaymentRub: totalFirstWavePrepaymentRub,
+      peakWorkingCapitalRub: groupPeakWorkingCapitalRub,
+      netOwnMoneyRequiredRub: groupNetOwnMoneyRub,
+      verifiedOwnMoneyRequiredRub: groupVerifiedOwnMoneyRub,
+      annualSoldGoodsCostRub: totalAnnualSoldGoodsCostRub,
+      annualEstimatedOperatingProfitRub: totalAnnualOperatingProfitRub,
+      monthlyRows: groupMonthlyRows,
+    },
+  };
+}
+
+/**
+ * Раздел 6.4 и 7.3 ТЗ: Выгрузка документа заказа конкретной партии/заказа для фабрики
+ * (содержит: название модели и артикул, фотографию при наличии, размеры и количества, цвета,
+ * общий объём, цену и стоимость заказа, условия предоплаты и остатка платежа, срок поставки и комментарии).
+ */
+export function serializeSingleBatchFactoryOrderDocumentCsv(
+  rawModel: ScenarioModelSpec,
+  batchOrPo: RecommendedProcurementBatch | ApprovedPurchaseOrder,
+  commentOverride?: string
+): string {
+  const model = ensureModelUnifiedV11(rawModel);
+  const unitCfg = getBrandUnitConfig(model);
+  const mainPhoto =
+    model.gallery.find((g) => g.isMain)?.url || model.gallery[0]?.url || 'Фото в карточке';
+  const colorsLabel =
+    model.palettes[0]?.colors?.map((c) => c.nameRu).join(', ') || 'Базовая палитра';
+
+  const isApprovedPo = 'orderNumber' in batchOrPo;
+  const orderTitle = isApprovedPo
+    ? batchOrPo.orderNumber
+    : `Партия №${batchOrPo.batchIndex}`;
+  const statusLabel = isApprovedPo
+    ? PO_STATUS_LABELS_RU[batchOrPo.status] || 'Утверждённый заказ фабрике'
+    : 'Плановая партия к заказу';
+  const factoryName = batchOrPo.factoryName || model.sharedSupplyAndFact?.factoryParams.factoryName || 'Фабрика';
+  const orderDate = isApprovedPo
+    ? batchOrPo.orderPlacementDateIso
+    : batchOrPo.recommendedOrderDateIso;
+  const arrivalDate = batchOrPo.requiredArrivalDateIso;
+  const qty = isApprovedPo ? batchOrPo.packsQty : batchOrPo.recommendedPacks;
+  const physicalQty = batchOrPo.physicalUnitsQty;
+  const unitCost = isApprovedPo ? batchOrPo.lockedUnitCostRub : batchOrPo.unitCostRub;
+  const totalRub = isApprovedPo ? batchOrPo.totalOrderRub : batchOrPo.estimatedTotalRub;
+  const prepayRub = batchOrPo.prepaymentRub;
+  const balanceRub = batchOrPo.balancePaymentRub;
+  const sizes =
+    batchOrPo.sizeBreakdownPacks ||
+    allocatePacksBySizeLargestRemainder(qty, {
+      S: 12,
+      M: 26,
+      L: 30,
+      XL: 20,
+      XXL: 12,
+    });
+  const comment =
+    commentOverride ??
+    (isApprovedPo ? batchOrPo.note || '' : `Период покрытия: ${batchOrPo.coverageMonthsLabel}`);
+
+  const header = [
+    'Документ заказа фабрике',
+    'Статус',
+    'Бренд',
+    'Артикул',
+    'Название модели',
+    'Фотография',
+    'Цвета',
+    'Фабрика',
+    'Дата заказа',
+    'Плановая дата поступления',
+    `Общий объём (${unitCfg.primaryUnit})`,
+    `Физический объём (${unitCfg.secondaryUnit})`,
+    'Размер S',
+    'Размер M',
+    'Размер L',
+    'Размер XL',
+    'Размер XXL',
+    'Закупочная цена ₽',
+    'Стоимость заказа ₽',
+    'Сумма предоплаты ₽',
+    'Остаток платежа ₽',
+    'Комментарий',
+  ].join(';');
+
+  const row = [
+    `"${orderTitle}"`,
+    `"${statusLabel}"`,
+    `"${unitCfg.displayCode}"`,
+    `"${model.code}"`,
+    `"${(model.title || '').replace(/"/g, '""')}"`,
+    `"${mainPhoto}"`,
+    `"${colorsLabel.replace(/"/g, '""')}"`,
+    `"${factoryName.replace(/"/g, '""')}"`,
+    orderDate,
+    arrivalDate,
+    qty,
+    physicalQty,
+    sizes.S,
+    sizes.M,
+    sizes.L,
+    sizes.XL,
+    sizes.XXL,
+    unitCost,
+    totalRub,
+    prepayRub,
+    balanceRub,
+    `"${comment.replace(/"/g, '""')}"`,
+  ].join(';');
+
+  return `\uFEFF${header}\n${row}`;
+}
+
 

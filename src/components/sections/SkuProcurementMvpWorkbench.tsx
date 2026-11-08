@@ -49,6 +49,7 @@ import {
   ensureModelUnifiedV11,
   recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
+  serializeSingleBatchFactoryOrderDocumentCsv,
   updateApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
 
@@ -901,6 +902,21 @@ export function SkuProcurementMvpWorkbench({
     );
   };
 
+  const handleExportSingleOrderCsv = (
+    batchOrOrder: RecommendedProcurementBatch | ApprovedPurchaseOrder,
+    fileSuffix: string
+  ) => {
+    const csv = serializeSingleBatchFactoryOrderDocumentCsv(model, batchOrOrder);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Zakaz_Fabrike_${model.code}_${fileSuffix}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerSavedIndicator('Выгружен заказ фабрике');
+  };
+
   return (
     <div className="space-y-4">
       {/* =====================================================================
@@ -1252,6 +1268,25 @@ export function SkuProcurementMvpWorkbench({
                   Базовая пропорция размеров S–XXL (применяется ко всем партиям модели, сумма = 100%)
                 </span>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateModel({
+                        ...model,
+                        sharedSupplyAndFact: {
+                          ...shared,
+                          factoryParams: {
+                            ...fp,
+                            sizeSharesPct: { S: 12, M: 26, L: 30, XL: 20, XXL: 12 },
+                          },
+                        },
+                      });
+                      triggerSavedIndicator('Матрица 12/26/30/20/12%');
+                    }}
+                    className="rounded border border-[#CFCEC6] bg-[#FAF9F6] px-2 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                  >
+                    Эталон 12/26/30/20/12%
+                  </button>
                   <span
                     className={`rounded px-2 py-0.5 font-mono text-[11px] font-bold ${
                       sizeShareSum === 100
@@ -1772,17 +1807,26 @@ export function SkuProcurementMvpWorkbench({
                           </label>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = removeApprovedPurchaseOrder(model, po.id);
-                            onUpdateModel(updated);
-                            triggerSavedIndicator('Заказ удалён');
-                          }}
-                          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
-                        >
-                          Вернуть в черновик / Удалить PO
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleExportSingleOrderCsv(po, po.orderNumber)}
+                            className="rounded-md border border-[#CFCEC6] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
+                          >
+                            Экспорт заказа фабрике (CSV)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = removeApprovedPurchaseOrder(model, po.id);
+                              onUpdateModel(updated);
+                              triggerSavedIndicator('Заказ удалён');
+                            }}
+                            className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
+                          >
+                            Вернуть в черновик / Удалить PO
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2122,19 +2166,30 @@ export function SkuProcurementMvpWorkbench({
                                 <span className="text-[11.5px] font-semibold text-[#141413]">
                                   Размеры партии S–XXL (нажмите на любое число комплектов или %, чтобы изменить напрямую):
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                      ...prev,
-                                      customSizeSharesPct: null,
-                                      customSizeBreakdownPacks: null,
-                                    }))
-                                  }
-                                  className="rounded border border-[#CFCEC6] bg-[#F8F8F5] px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-                                >
-                                  Выровнять по базовой матрице ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%)
-                                </button>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleExportSingleOrderCsv(batch, `Partiya_${bIdx + 1}`)
+                                    }
+                                    className="rounded border border-[#CFCEC6] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                                  >
+                                    Экспорт заказа фабрике (CSV)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                        ...prev,
+                                        customSizeSharesPct: null,
+                                        customSizeBreakdownPacks: null,
+                                      }))
+                                    }
+                                    className="rounded border border-[#CFCEC6] bg-[#F8F8F5] px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                                  >
+                                    Выровнять по базовой матрице ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%)
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">

@@ -94,6 +94,9 @@ export interface ScenarioModelSpec {
   subtitle: string;
   brandId: 'BORNERS' | 'NA_TELE';
   customBrandLabel?: string; // редактируемый бренд (BORNERS / FUKAI / НА ТЕЛЕ / свой бренд)
+  categoryLabel?: string; // категория товара (Мужское бельё / Обувь / Шторы и текстиль)
+  primaryUnitLabel?: string; // основная единица измерения (компл. / пар / компл. штор)
+  secondaryUnitLabel?: string; // дополнительная единица (изд. / п.м. ткани)
   wbArticle?: string; // редактируемый артикул WB
   modelStageStatus?: ModelPassportStageStatus; // статус жизненного цикла модели (Идея / В разработке / Тест / Масштабирование / Действующий / Приостановлен)
   description?: string; // текстовое описание и примечания к модели
@@ -148,6 +151,9 @@ export interface GrowthScenarioDef {
   scopeLabel: string;
   includedBrands: ('BORNERS' | 'NA_TELE')[];
   year: number;
+  ownerBrandCode?: 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'LISCANI' | 'NA_TELE' | 'ALL';
+  copiedFromScenarioId?: number | null;
+  isArchived?: boolean;
 }
 
 export const MONTHS_SHORT_RU = [
@@ -1068,7 +1074,24 @@ export function computeModelScenarioMetrics(
       : annualPacks * unitMarginRub;
 
   // Помесячное движение остатков (Конечный остаток = начальный остаток + поступления − продажи)
+  // Раздел 5.3 ТЗ: если сценарий 2028 года и initialStockPacks не задан явно, переносим конечный остаток 31 декабря 2027 года
   let runningStock = plan.initialStockPacks;
+  if (scenario.year === 2028 && runningStock === 0) {
+    const ref2027Id = scenario.copiedFromScenarioId || 1;
+    const plan2027 =
+      model.plansByScenario[ref2027Id] ||
+      model.plansByScenario[1] ||
+      Object.values(model.plansByScenario).find((p) => p.scenarioId !== scenario.id);
+    if (plan2027) {
+      let stock2027 = plan2027.initialStockPacks || 0;
+      for (let m = 0; m < 12; m++) {
+        stock2027 += (plan2027.monthlyReceiptsPacks[m] || 0) - (plan2027.monthlyPacks[m] || 0);
+      }
+      if (stock2027 > 0) {
+        runningStock = stock2027;
+      }
+    }
+  }
   const monthlyEndingStockPacks: number[] = [];
   const deficitMonths: { monthIdx: number; monthLabel: string; missingPacks: number }[] = [];
 

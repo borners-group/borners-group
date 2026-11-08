@@ -819,7 +819,8 @@ export function ProcurementContourView() {
     () =>
       computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
         initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-        settlementLagMonths: wbLagMonths,
+        settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+        wbPayoutScheduleSpecified: wbLagMonths >= 0,
       }),
     [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
   );
@@ -831,7 +832,7 @@ export function ProcurementContourView() {
         currentScenario,
         {
           initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-          settlementLagMonths: wbLagMonths,
+          settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
         }
       ),
     [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
@@ -1175,17 +1176,29 @@ export function ProcurementContourView() {
                           Пик своих денег (с WB)
                         </span>
                         <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#52514C]">
-                          {investmentSummary.peakMonthLabel} 2027
+                          {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+                          investmentSummary.verifiedOwnMoneyRequiredRub !== undefined
+                            ? `${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`
+                            : 'График WB не указан'}
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
-                        {formatMln(investmentSummary.netOwnMoneyRequiredRub)}
-                      </div>
-                      <div className="mt-1 text-[11.5px] text-[#686762]">
-                        {investmentSummary.selfFundingMonthLabel
-                          ? `С ${investmentSummary.selfFundingMonthLabel} — окупается из выручки WB`
-                          : 'Следующие партии — из выручки WB'}
-                      </div>
+                      {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+                      investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
+                        <>
+                          <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                            {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
+                          </div>
+                          <div className="mt-1 text-[11.5px] text-[#686762]">
+                            {investmentSummary.selfFundingMonthLabel
+                              ? `С ${investmentSummary.selfFundingMonthLabel} — окупается из выручки WB`
+                              : 'Следующие партии — из выручки WB'}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-1.5 text-[12px] font-semibold text-amber-800 leading-snug">
+                          {investmentSummary.ownMoneyStatusLabel}
+                        </div>
+                      )}
                     </div>
 
                     <div className="px-5 py-4">
@@ -1232,11 +1245,12 @@ export function ProcurementContourView() {
                           <span className="text-[#52514C] font-medium">Выплаты WB:</span>
                           <select
                             value={wbLagMonths}
-                            onChange={(e) => setWbLagMonths(Number(e.target.value) || 0)}
+                            onChange={(e) => setWbLagMonths(Number(e.target.value))}
                             className="font-semibold text-[#141413] bg-transparent focus:outline-none"
                           >
                             <option value={0}>В месяц продаж</option>
                             <option value={1}>Лаг 1 месяц</option>
+                            <option value={-1}>График WB не указан</option>
                           </select>
                         </label>
                       </div>
@@ -1601,7 +1615,8 @@ export function FinanceContourView() {
     () =>
       computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
         initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-        settlementLagMonths: wbLagMonths,
+        settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+        wbPayoutScheduleSpecified: wbLagMonths >= 0,
       }),
     [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
   );
@@ -1613,7 +1628,7 @@ export function FinanceContourView() {
         currentScenario,
         {
           initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-          settlementLagMonths: wbLagMonths,
+          settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
         }
       ),
     [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
@@ -1814,15 +1829,24 @@ export function FinanceContourView() {
               <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#1E40AF]">
                 2. Максимум своих денег (с оборотом WB)
               </div>
-              <div className="font-mono text-[24px] font-extrabold text-[#1E3A8A]">
-                {formatMln(investmentSummary.netOwnMoneyRequiredRub)}
-              </div>
-              <div className="text-[11.5px] text-[#1E40AF]">
-                Пик в <strong>{investmentSummary.peakMonthLabel} 2027</strong>
-                {investmentSummary.selfFundingMonthLabel
-                  ? ` · С ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB`
-                  : ' · Учитывает возврат выручки с WB'}
-              </div>
+              {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+              investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
+                <>
+                  <div className="font-mono text-[24px] font-extrabold text-[#1E3A8A]">
+                    {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
+                  </div>
+                  <div className="text-[11.5px] text-[#1E40AF]">
+                    Пик в <strong>{investmentSummary.peakMonthLabel} {currentScenario.year || 2027}</strong>
+                    {investmentSummary.selfFundingMonthLabel
+                      ? ` · С ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB`
+                      : ' · Учитывает возврат выручки с WB'}
+                  </div>
+                </>
+              ) : (
+                <div className="text-[12.5px] font-semibold text-amber-900 pt-1 leading-snug">
+                  {investmentSummary.ownMoneyStatusLabel}
+                </div>
+              )}
             </div>
 
             <div className="p-5 space-y-1">
@@ -2011,11 +2035,12 @@ export function FinanceContourView() {
                   <span className="text-[#52514C] font-medium">Выплаты WB:</span>
                   <select
                     value={wbLagMonths}
-                    onChange={(e) => setWbLagMonths(Number(e.target.value) || 0)}
+                    onChange={(e) => setWbLagMonths(Number(e.target.value))}
                     className="rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 font-semibold text-[#141413]"
                   >
                     <option value={0}>В месяц продаж (без задержки)</option>
                     <option value={1}>Лаг 1 месяц</option>
+                    <option value={-1}>График выплат WB не указан</option>
                   </select>
                 </label>
               </div>

@@ -395,14 +395,22 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Смена бренда модели (BORNERS / FUKAI / НА ТЕЛЕ / свой бренд, Стр. 3 ТЗ)
+  // Смена бренда модели (BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ / свой бренд, Раздел 4.2 ТЗ)
   const handleBrandSelectChange = (nextBrandLabel: string) => {
     if (nextBrandLabel === '__CREATE_NEW__') {
       setCreatingBrandOpen(true);
       return;
     }
     const clean = nextBrandLabel.trim();
-    if (!clean) return;
+    if (!clean || clean === brandPortfolioLabel) return;
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Перенести товар «${model.title}» (${model.code}) из бренда «${brandPortfolioLabel}» в каталог бренда «${clean}»? Вся история изменений и документы карточки будут сохранены.`
+      )
+    ) {
+      return;
+    }
     const nextBrandId: ScenarioModelSpec['brandId'] =
       clean === 'НА ТЕЛЕ' ? 'NA_TELE' : 'BORNERS';
     commitWithAudit(

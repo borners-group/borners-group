@@ -1090,9 +1090,9 @@ export function AppShell() {
                       : brandFilter === 'FUKAI'
                       ? 'FUKAI'
                       : brandFilter === 'AKUSHA'
-                      ? 'Акуша'
+                      ? 'AKUSHA (Акуша)'
                       : brandFilter === 'LISKANI'
-                      ? 'Liskani'
+                      ? 'LISCANI (Liskani)'
                       : brands.find((b) => b.code === brandFilter || b.id === brandFilter)?.name ||
                         brandFilter}
                   </span>
@@ -1105,7 +1105,7 @@ export function AppShell() {
                       className="fixed inset-0 z-40"
                       onClick={() => setBrandDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 mt-1.5 w-60 rounded-[14px] bg-white border-[1.5px] border-[#141413] shadow-[0_18px_40px_rgba(20,20,19,0.16)] p-1.5 z-50 text-[12.5px] space-y-0.5">
+                    <div className="absolute left-0 mt-1.5 w-64 rounded-[14px] bg-white border-[1.5px] border-[#141413] shadow-[0_18px_40px_rgba(20,20,19,0.16)] p-1.5 z-50 text-[12.5px] space-y-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1118,85 +1118,63 @@ export function AppShell() {
                             : 'text-[#141413] hover:bg-[#F5F5F1]'
                         }`}
                       >
-                        <span>Все бренды портфеля</span>
+                        <span>Все бренды</span>
+                        <span
+                          className={`font-mono text-[10px] ${
+                            brandFilter === 'ALL' ? 'text-white/75' : 'text-[#8A8983]'
+                          }`}
+                        >
+                          Сводка группы
+                        </span>
                       </button>
 
-                      {brands
-                        .filter((b) => !b.isStrategyInDevelopment)
-                        .map((b) => {
-                          const isSelected =
-                            brandFilter === b.code || brandFilter === b.id;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={() => {
-                                setBrandFilter(b.code);
-                                setBrandDropdownOpen(false);
-                              }}
-                              className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
-                                isSelected
-                                  ? 'bg-[#141413] text-white font-semibold'
-                                  : 'text-[#141413] hover:bg-[#F5F5F1]'
+                      {[
+                        { code: 'BORNERS', label: 'BORNERS', sub: 'Бельё · компл.' },
+                        { code: 'FUKAI', label: 'FUKAI', sub: 'База WB · компл.' },
+                        { code: 'AKUSHA', label: 'AKUSHA (Акуша)', sub: 'Обувь · пары' },
+                        { code: 'LISKANI', label: 'LISCANI (Liskani)', sub: 'Шторы · компл.' },
+                        { code: 'NA_TELE', label: 'НА ТЕЛЕ', sub: 'База и женское' },
+                      ].map((bItem) => {
+                        const isSelected = brandFilter === bItem.code;
+                        return (
+                          <button
+                            key={bItem.code}
+                            type="button"
+                            onClick={() => {
+                              if (
+                                bItem.code === 'FUKAI' &&
+                                livePortfolio.selectedScenarioId === 1 &&
+                                !livePortfolio.includeGroupPortfolioInS1
+                              ) {
+                                livePortfolio.setIncludeGroupPortfolioInS1(true);
+                              }
+                              const brandScenId =
+                                livePortfolio.selectedScenarioByBrand?.[
+                                  bItem.code as 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                                ];
+                              if (typeof brandScenId === 'number') {
+                                livePortfolio.setSelectedScenarioId(brandScenId);
+                              }
+                              setBrandFilter(bItem.code);
+                              setBrandDropdownOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#141413] text-white font-semibold'
+                                : 'text-[#141413] hover:bg-[#F5F5F1]'
+                            }`}
+                          >
+                            <span>{bItem.label}</span>
+                            <span
+                              className={`font-mono text-[10px] ${
+                                isSelected ? 'text-white/75' : 'text-[#8A8983]'
                               }`}
                             >
-                              <span>{b.name}</span>
-                              <span
-                                className={`font-mono text-[10px] uppercase ${
-                                  isSelected
-                                    ? 'text-white/75'
-                                    : 'text-[#8A8983]'
-                                }`}
-                              >
-                                Активен
-                              </span>
-                            </button>
-                          );
-                        })}
-
-                      <div className="pt-2 mt-1 border-t border-[#DFDED6] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[#8A8983]">
-                        Новые бренды портфеля 2027
-                      </div>
-
-                      {brands
-                        .filter((b) => b.isStrategyInDevelopment)
-                        .map((b) => {
-                          const isSelected =
-                            brandFilter === b.code || brandFilter === b.id;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={() => {
-                                if (
-                                  b.code === 'FUKAI' &&
-                                  livePortfolio.selectedScenarioId === 1 &&
-                                  !livePortfolio.includeGroupPortfolioInS1
-                                ) {
-                                  livePortfolio.setIncludeGroupPortfolioInS1(true);
-                                }
-                                setBrandFilter(b.code);
-                                setBrandDropdownOpen(false);
-                              }}
-                              className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
-                                isSelected
-                                  ? 'bg-[#141413] text-white font-semibold'
-                                  : 'text-[#141413] hover:bg-[#F5F5F1]'
-                              }`}
-                            >
-                              <span>{b.name}</span>
-                              <span
-                                className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
-                                  isSelected
-                                    ? 'bg-white/15 text-white border-white/25'
-                                    : 'bg-[#F5F5F1] text-[#8A8983] border-[#CECDC4]'
-                                }`}
-                              >
-                                2027
-                              </span>
-                            </button>
-                          );
-                        })}
+                              {bItem.sub}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -1389,6 +1367,45 @@ export function AppShell() {
                           </span>
                           <span className="font-mono text-[11px] text-[#686762]">
                             {trashItems.length}
+                          </span>
+                        </button>
+
+                        {/* Раздел 10.5 ТЗ: Резервная копия всех данных BORNERS GROUP */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              const payload = {
+                                backupVersion: '2026-11-08-v1',
+                                exportedAt: new Date().toISOString(),
+                                scenarios: livePortfolio.scenarios,
+                                models: livePortfolio.models,
+                                selectedScenarioByBrand: livePortfolio.selectedScenarioByBrand,
+                              };
+                              const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                                type: 'application/json;charset=utf-8',
+                              });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                              setProfileMenuOpen(false);
+                              notify(
+                                'success',
+                                '✓ Резервная копия сохранена',
+                                'Выгружены все бренды, карточки, фотографии, сценарии 2027–2028 и утверждённые заказы фабрикам.'
+                              );
+                            } catch {
+                              notify('error', 'Ошибка сохранения резервной копии');
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                        >
+                          <span>Скачать резервную копию (JSON)</span>
+                          <span className="font-mono text-[10.5px] text-emerald-700 font-semibold">
+                            Сохранено
                           </span>
                         </button>
                       </div>

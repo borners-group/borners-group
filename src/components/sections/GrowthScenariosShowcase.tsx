@@ -60,19 +60,28 @@ import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
+  STORAGE_KEY_SCENARIO_BY_BRAND,
 } from '@/lib/useLiveScenarioPortfolio';
 import {
+  CanonicalBrandCode,
   computeFinancialPnL,
   computeGroupBrandsInvestmentReport,
+  computeMultiBrandPortfolioSummary,
   computeProcurementPlan,
   computeScenarioInvestmentSummary,
+  createBrandProductModel,
+  createIndependentBrandScenario,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
+  getBrandUnitConfig,
+  getScenariosForBrand,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
   matchesBrandFilter,
+  normalizePortfolioBrandCode,
   parseStructuredPlanCsvOrJson,
+  renameBrandScenario,
   serializeStructuredPlanToCsv,
 } from '@/lib/unifiedBusinessEngine';
 
@@ -421,7 +430,7 @@ export function GrowthScenariosShowcase({
     return () => window.removeEventListener('borners-reset-to-home-summary', onResetHome);
   }, [pushScenarioStep, selectedModelId]);
 
-  // Поля формы создания новой модели (Тест 11: короткая форма, работает со всеми брендами холдинга)
+  // Поля формы создания новой модели (Тест 11 и Раздел 4.4 ТЗ: короткая форма, работает со всеми брендами холдинга)
   const [draftBrand, setDraftBrand] = useState<string>('BORNERS');
   const [draftTitle, setDraftTitle] = useState('');
   const [draftType, setDraftType] = useState('Боксеры (trunks)');
@@ -429,11 +438,57 @@ export function GrowthScenariosShowcase({
   const [draftRetailPrice, setDraftRetailPrice] = useState(1290);
   const [draftUnitCost, setDraftUnitCost] = useState(410);
 
-  // Поля формы создания нового сценария (п. 7.3)
+  // Поля формы создания нового сценария (Раздел 3.1–3.4 ТЗ: бренд, год 2027/2028, цель, копирование)
   const [draftScenTitle, setDraftScenTitle] = useState('');
-  const [draftScenTargetMln, setDraftScenTargetMln] = useState(250);
+  const [draftScenTargetMln, setDraftScenTargetMln] = useState(100);
+  const [draftScenYear, setDraftScenYear] = useState<number>(2027);
+  const [draftScenBrand, setDraftScenBrand] = useState<string>('BORNERS');
   const [draftScenScope, setDraftScenScope] = useState<'BORNERS' | 'GROUP'>('GROUP');
-  const [draftCopyFromScenarioId, setDraftCopyFromScenarioId] = useState<number>(2);
+  const [draftCopyFromScenarioId, setDraftCopyFromScenarioId] = useState<number>(0);
+
+  // Глобальная сводка BORNERS GROUP (Раздел 9 ТЗ): выбор одного сценария на каждый бренд + таблица «Подробнее» по месяцам
+  const [selectedScenarioByBrand, setSelectedScenarioByBrandState] = useState<
+    Partial<Record<CanonicalBrandCode, number | null>>
+  >({
+    BORNERS: 1,
+    FUKAI: 1,
+    AKUSHA: null,
+    LISKANI: null,
+    NA_TELE: 2,
+  });
+  const [groupMonthlyDetailsOpen, setGroupMonthlyDetailsOpen] = useState(false);
+
+  const setSelectedScenarioForBrand = useCallback(
+    (brandInput: string, scenId: number | null) => {
+      const code = normalizePortfolioBrandCode(brandInput);
+      if (code === 'ALL') return;
+      setSelectedScenarioByBrandState((prev) => {
+        const next = { ...prev, [code]: scenId };
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+          }, 0);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  // Автоматическая подстановка активного бренда при открытии форм «+ Добавить модель» и «+ Новый сценарий» (Раздел 3.1 и 4.4 ТЗ)
+  useEffect(() => {
+    if (brandFilter && brandFilter !== 'ALL') {
+      const norm = normalizePortfolioBrandCode(brandFilter);
+      if (norm !== 'ALL') {
+        setDraftBrand(norm);
+        setDraftScenBrand(norm);
+        const cfg = getBrandUnitConfig(norm);
+        setDraftType(cfg.categoryDefault);
+        setDraftUnitsInPack(cfg.secondaryPerPrimaryDefault);
+      }
+    }
+  }, [brandFilter]);
 
   const hydratedRef = useRef(false);
 
@@ -485,6 +540,12 @@ export function GrowthScenariosShowcase({
           safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
         }
         setScenarios(nextScen);
+      }
+      const parsedBrandScen = safeGetStorageJson<Record<string, number | null>>(
+        STORAGE_KEY_SCENARIO_BY_BRAND
+      );
+      if (parsedBrandScen && typeof parsedBrandScen === 'object') {
+        setSelectedScenarioByBrandState((prev) => ({ ...prev, ...parsedBrandScen }));
       }
 
       const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
@@ -650,6 +711,9 @@ export function GrowthScenariosShowcase({
       const isActingScenario = sc.id === ACTING_2027_SCENARIO_ID;
       const eligibleModels = models.filter((m) => {
         if (m.launchStatus === 'В архиве') return false;
+        if (sc.ownerBrandCode && sc.ownerBrandCode !== 'ALL') {
+          return matchesBrandFilter(m, sc.ownerBrandCode);
+        }
         if (isActingScenario) {
           return (
             Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
@@ -871,6 +935,11 @@ export function GrowthScenariosShowcase({
       eligible,
       currentScenario
     );
+    const multiBrandSummary = computeMultiBrandPortfolioSummary(
+      models,
+      scenarios,
+      selectedScenarioByBrand
+    );
 
     return {
       eligibleModels: eligible,
@@ -891,8 +960,9 @@ export function GrowthScenariosShowcase({
       factoryGroups,
       investmentSummary,
       brandsReport,
+      multiBrandSummary,
     };
-  }, [models, currentScenario, includeGroupPortfolioInS1]);
+  }, [models, scenarios, currentScenario, includeGroupPortfolioInS1, selectedScenarioByBrand]);
 
   // Отфильтрованные модели для каталога на Экране №1
   const filteredModels = useMemo(() => {
@@ -1256,68 +1326,23 @@ export function GrowthScenariosShowcase({
     );
   };
 
-  // Создание новой модели через короткую форму (п. 7.1, Тест 11)
+  // Создание новой модели через короткую форму (Раздел 4.4 и 4.5 ТЗ: привязка к выбранному бренду, без выдуманного плана продаж)
   const createAndSaveModel = (openCardAfterSave: boolean) => {
-    const nextCode = generateNextUniqueModelCode(models);
-    const cleanTitle = draftTitle.trim() || `НОВАЯ МОДЕЛЬ ${draftUnitsInPack} PACK`;
-    const newId = `scen-model-${Date.now()}`;
+    const activeBrandForCreation =
+      draftBrand ||
+      (brandFilterLocal !== 'ALL' ? brandFilterLocal : 'BORNERS');
+    const unitCfg = getBrandUnitConfig(activeBrandForCreation);
+    const cleanTitle =
+      draftTitle.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
 
-    const basePlanPacks = [
-      1800, 2200, 2700, 3200, 3800, 4200, 4600, 5100, 5600, 6200, 7100, 7500,
-    ];
-    const plansByScenario: ScenarioModelSpec['plansByScenario'] = {};
-    scenarios.forEach((sc) => {
-      if (sc.id === ACTING_2027_SCENARIO_ID && currentScenario.id !== ACTING_2027_SCENARIO_ID) {
-        return;
-      }
-      plansByScenario[sc.id] = {
-        scenarioId: sc.id,
-        monthlyPacks: [...basePlanPacks],
-        monthlyPricesRub: Array(12).fill(draftRetailPrice || 1290),
-        monthlyReceiptsPacks: [6000, 0, 10000, 0, 12000, 0, 15000, 0, 16000, 0, 0, 0],
-        initialStockPacks: 0,
-        firstOrderPacks: 6000,
-        nextOrderDateLabel: '20 мая 2027',
-        salesStartMonthIdx: 0,
-        warehouseArrivalMonthIdx: 0,
-        warehouseArrivalDateLabel: '1 января',
-      };
-    });
-
-    const resolvedCustomBrand =
-      draftBrand === 'AKUSHA'
-        ? 'Акуша'
-        : draftBrand === 'LISKANI'
-        ? 'Liskani'
-        : draftBrand === 'FUKAI'
-        ? 'FUKAI'
-        : draftBrand === 'NA_TELE'
-        ? 'НА ТЕЛЕ'
-        : 'BORNERS';
-
-    const created: ScenarioModelSpec = {
-      ...INITIAL_SCENARIO_MODELS[0],
-      id: newId,
-      code: nextCode,
+    const { model: created } = createBrandProductModel(models, scenarios, {
       title: cleanTitle.toUpperCase(),
-      subtitle: `${draftType} · ${draftUnitsInPack} шт. в комплекте`,
-      brandId: draftBrand === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
-      customBrandLabel: resolvedCustomBrand,
-      launchStatus: 'В плане',
-      unitsInPack: draftUnitsInPack,
-      retailPriceRub: draftRetailPrice || 1290,
-      unitCostRub: draftUnitCost || 410,
-      hasActualSalesOrPurchases: false,
-      gallery: [
-        {
-          id: `g-main-${Date.now()}`,
-          category: 'pack',
-          label: 'Главное фото',
-          isMain: true,
-        },
-      ],
-      plansByScenario,
-    };
+      brandCode: activeBrandForCreation,
+      categoryLabel: draftType || unitCfg.categoryDefault,
+      unitsInPack: draftUnitsInPack || unitCfg.secondaryPerPrimaryDefault,
+      retailPriceRub: draftRetailPrice || 1990,
+      unitCostRub: draftUnitCost || 650,
+    });
 
     commitModels((prev) => [...prev, created]);
     setSelectedModelId(created.id);
@@ -1332,8 +1357,8 @@ export function GrowthScenariosShowcase({
     }
     notify(
       'success',
-      `✓ Карточка ${created.code} / ${created.title} сохранена`,
-      'Модель сохранена в Сценариях роста и автоматически добавлена в «Модели (SKU)».'
+      `✓ Карточка ${created.code} / ${created.title} (${unitCfg.displayCode}) сохранена`,
+      'Модель добавлена в каталог бренда и общий каталог группы (план продаж: 0 до заполнения).'
     );
   };
 
@@ -1342,59 +1367,36 @@ export function GrowthScenariosShowcase({
     createAndSaveModel(true);
   };
 
-  // Создание нового сценария (п. 7.3 ТЗ: без дублирования товаров, копируются только коммерческие планы)
+  // Создание нового сценария (Раздел 3.1–3.4 и 5.3 ТЗ: независимый сценарий бренда на 2027 или 2028 год без дублирования товаров и заказов)
   const handleCreateNewScenario = (e: React.FormEvent) => {
     e.preventDefault();
-    const newScenId = Math.max(...scenarios.map((s) => s.id)) + 1;
-    const sourceScen =
-      scenarios.find((s) => s.id === draftCopyFromScenarioId) || scenarios[0];
-    const ratio =
-      sourceScen.monthlyTargetMln > 0
-        ? draftScenTargetMln / sourceScen.monthlyTargetMln
-        : 1;
+    const targetBrand =
+      draftScenBrand ||
+      (brandFilterLocal !== 'ALL' ? brandFilterLocal : 'BORNERS');
+    const copyId =
+      draftCopyFromScenarioId > 0 ? draftCopyFromScenarioId : null;
 
-    const newScen: GrowthScenarioDef = {
-      id: newScenId,
-      title: draftScenTitle.trim() || `Сценарий №${newScenId}`,
-      monthlyTargetMln: Math.max(10, draftScenTargetMln),
-      targetMonthLabel: 'Декабрь 2027',
-      targetMonthIdx: 11,
-      scopeLabel: draftScenScope === 'BORNERS' ? 'BORNERS' : 'группа',
-      includedBrands:
-        draftScenScope === 'BORNERS' ? ['BORNERS'] : ['BORNERS', 'NA_TELE'],
-      year: 2027,
-    };
+    const { scenario: newScen, scenarios: nextScenarios, models: nextModels } =
+      createIndependentBrandScenario(scenarios, models, {
+        title: draftScenTitle,
+        brandCode: targetBrand,
+        year: draftScenYear,
+        monthlyTargetMln: draftScenTargetMln,
+        copyFromScenarioId: copyId,
+      });
 
-    // Копируем коммерческие планы моделей под новый сценарий без дублирования самих моделей
-    commitModels((prev) =>
-      prev.map((m) => {
-        const srcPlan =
-          m.plansByScenario[sourceScen.id] || m.plansByScenario[1];
-        return {
-          ...m,
-          plansByScenario: {
-            ...m.plansByScenario,
-            [newScenId]: {
-              ...srcPlan,
-              scenarioId: newScenId,
-              monthlyPacks: srcPlan.monthlyPacks.map((p) =>
-                Math.round(p * ratio)
-              ),
-              firstOrderPacks: Math.round(srcPlan.firstOrderPacks * ratio),
-            },
-          },
-        };
-      })
-    );
-
-    commitScenarios((prev) => [...prev, newScen]);
-    setSelectedScenarioId(newScenId);
+    commitModels(nextModels);
+    commitScenarios(nextScenarios);
+    setSelectedScenarioId(newScen.id);
+    setSelectedScenarioForBrand(targetBrand, newScen.id);
     setNewScenarioModalOpen(false);
     setDraftScenTitle('');
     notify(
       'success',
-      `${newScen.title} (${newScen.monthlyTargetMln} млн ₽/мес) создан и сохранён`,
-      'Товары остались едиными, скопированы и масштабированы только планы продаж.'
+      `✓ Сценарий «${newScen.title}» (${newScen.year} г. · цель ${newScen.monthlyTargetMln} млн ₽/мес) создан`,
+      copyId
+        ? 'Скопированы плановые цены и объёмы продаж без дублирования карточек, остатков и утверждённых заказов фабрикам.'
+        : 'Создан независимый сценарий бренда. Заполните помесячный план продаж для моделей.'
     );
   };
 
@@ -1908,15 +1910,48 @@ export function GrowthScenariosShowcase({
               data-tour="growth-scenarios"
               className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-white border-b border-[#EAE9E2]"
             >
-              {[...scenarios]
-                .sort((a, b) =>
-                  a.id === ACTING_2027_SCENARIO_ID
-                    ? -1
-                    : b.id === ACTING_2027_SCENARIO_ID
-                    ? 1
-                    : a.id - b.id
-                )
-                .map((sc) => {
+              {(() => {
+                const visibleScenarios =
+                  brandFilterLocal === 'ALL'
+                    ? scenarios.filter((s) => !s.isArchived)
+                    : getScenariosForBrand(
+                        scenarios,
+                        normalizePortfolioBrandCode(brandFilterLocal)
+                      );
+                if (visibleScenarios.length === 0) {
+                  return (
+                    <div className="col-span-full rounded-[14px] border border-dashed border-[#CECDC4] bg-[#FAF9F6] p-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[13.5px] font-bold text-[#141413]">
+                          Нет сценария для выбранного бренда ({brandFilterLocal})
+                        </div>
+                        <div className="text-[12px] text-[#5E5D58] mt-0.5">
+                          Создайте независимый сценарий на 2027 или 2028 год — финансовые показатели не подменяются пустыми цифрами до создания сценария.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nb = normalizePortfolioBrandCode(brandFilterLocal);
+                          setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
+                          setNewScenarioModalOpen(true);
+                        }}
+                        className="h-9 px-4 rounded-[10px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer"
+                      >
+                        + Создать сценарий бренда
+                      </button>
+                    </div>
+                  );
+                }
+                return [...visibleScenarios]
+                  .sort((a, b) =>
+                    a.id === ACTING_2027_SCENARIO_ID
+                      ? -1
+                      : b.id === ACTING_2027_SCENARIO_ID
+                      ? 1
+                      : a.id - b.id
+                  )
+                  .map((sc) => {
                   const isSelected = sc.id === currentScenario.id;
                   const agg = scenarioAggregates[sc.id];
                   const annualMln = agg
@@ -1965,7 +2000,7 @@ export function GrowthScenariosShowcase({
                           >
                             {sc.id === ACTING_2027_SCENARIO_ID
                               ? 'Исходный план 2027 · ИП Нерсесянц'
-                              : `${sc.title} · ${sc.scopeLabel}`}
+                              : `${sc.title} · ${sc.year || 2027}`}
                           </span>
 
                           <div className="flex items-center gap-1 shrink-0">
@@ -1978,6 +2013,53 @@ export function GrowthScenariosShowcase({
                               <span className="px-1.5 py-0.5 rounded-[5px] bg-white border border-[#E2E1D9] text-[#686760] text-[10px] font-mono font-semibold">
                                 {agg?.modelsCount || 0} SKU
                               </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDraftScenTitle(`${sc.title} (копия)`);
+                                const nb = sc.ownerBrandCode
+                                  ? normalizePortfolioBrandCode(sc.ownerBrandCode)
+                                  : brandFilterLocal !== 'ALL'
+                                  ? normalizePortfolioBrandCode(brandFilterLocal)
+                                  : 'BORNERS';
+                                setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
+                                setDraftScenYear((sc.year as 2027 | 2028) || 2027);
+                                setDraftScenTargetMln(sc.monthlyTargetMln);
+                                setDraftCopyFromScenarioId(sc.id);
+                                setNewScenarioModalOpen(true);
+                              }}
+                              title={`Скопировать сценарий «${sc.title}»`}
+                              className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-semibold transition cursor-pointer bg-white hover:bg-[#F4F3EE] text-[#52514C] border border-[#CECDC4]"
+                            >
+                              Копия
+                            </button>
+                            {sc.id !== ACTING_2027_SCENARIO_ID && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const nextName =
+                                    typeof window !== 'undefined'
+                                      ? window.prompt('Новое название сценария:', sc.title)
+                                      : null;
+                                  if (nextName && nextName.trim()) {
+                                    commitScenarios((prev) =>
+                                      renameBrandScenario(prev, sc.id, { title: nextName.trim() })
+                                    );
+                                    notify(
+                                      'success',
+                                      'Сценарий переименован',
+                                      `Новое название: «${nextName.trim()}»`
+                                    );
+                                  }
+                                }}
+                                title={`Переименовать сценарий «${sc.title}»`}
+                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-semibold transition cursor-pointer bg-white hover:bg-[#F4F3EE] text-[#52514C] border border-[#CECDC4]"
+                              >
+                                Имя
+                              </button>
                             )}
                             {scenarios.length > 1 && sc.id !== ACTING_2027_SCENARIO_ID && (
                               <button
@@ -2042,17 +2124,26 @@ export function GrowthScenariosShowcase({
                             </strong>
                           </span>
                           <span>
-                            За год:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {annualMln} млн ₽
-                            </strong>{' '}
-                            · {agg?.modelsCount || 0} мод.
+                            {agg && agg.modelsCount === 0 ? (
+                              <span className="text-amber-800 font-semibold">
+                                Добавьте первую модель для планирования продаж
+                              </span>
+                            ) : (
+                              <>
+                                За год:{' '}
+                                <strong className="font-mono text-[#141413]">
+                                  {annualMln} млн ₽
+                                </strong>{' '}
+                                · {agg?.modelsCount || 0} мод.
+                              </>
+                            )}
                           </span>
                         </div>
                       </div>
                     </div>
                   );
-                })}
+                });
+              })()}
             </div>
 
             {/* РЯД 2: 4 ОБЪЁМНЫЕ БИЗНЕС-КАРТОЧКИ PEAKLY С ИКОНКАМИ, МИКРО-ШКАЛАМИ И АКЦЕНТАМИ */}
@@ -2371,89 +2462,150 @@ export function GrowthScenariosShowcase({
             {/* Детальный разбор по брендам, формуле декабря и партиям — открывается по кнопке «По брендам и расчёт» */}
             {(mathBreakdownOpen || v11ContourExpanded) && (
               <div className="p-5 bg-[#FAF9F6] border-t border-[#E4E3DC] space-y-4">
-                {/* СВОДНАЯ ТАБЛИЦА ПО БРЕНДАМ И ГРУППЕ (РАЗДЕЛ 09.2 ТЗ) */}
-                <div className="rounded-[12px] bg-white border border-[#D8D7CF] p-4 space-y-2.5">
+                {/* ГЛОБАЛЬНАЯ СВОДКА BORNERS GROUP С ВЫБОРОМ СЦЕНАРИЯ ПО КАЖДОМУ БРЕНДУ (РАЗДЕЛ 9 ТЗ) */}
+                <div className="rounded-[12px] bg-white border border-[#D8D7CF] p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[13px] font-bold text-[#141413]">
-                      Сводная таблица инвестиций, закупок и прибыли по брендам группы (2027)
+                    <div>
+                      <div className="text-[13px] font-bold text-[#141413]">
+                        Глобальная сводка BORNERS GROUP по 5 брендам (выбор сценария по каждому бренду)
+                      </div>
+                      <div className="text-[11.5px] text-[#5E5D58]">
+                        По каждому бренду суммируется ровно один выбранный сценарий · Закупки учитывают единицы измерения категории ({v11ScenarioSummary.multiBrandSummary.procurementBreakdownText})
+                      </div>
                     </div>
-                    <span className="text-[11.5px] text-[#5E5D58]">
-                      Итого по группе рассчитано без двойного счёта · Пик своих денег учитывает возврат выручки с WB
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGroupMonthlyDetailsOpen((v) => !v)}
+                      className="h-8 px-3 rounded-[9px] border border-[#CECDC4] bg-[#FAF9F6] hover:bg-[#F0EFE9] text-[11.5px] font-semibold text-[#141413] cursor-pointer"
+                    >
+                      {groupMonthlyDetailsOpen ? 'Скрыть 12 мес. ↑' : 'Подробнее (12 мес.) ↓'}
+                    </button>
                   </div>
                   <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
-                    <table className="w-full min-w-[780px] text-left border-collapse text-[12px]">
+                    <table className="w-full min-w-[920px] text-left border-collapse text-[12px]">
                       <thead>
                         <tr className="bg-[#FAF9F6] text-[#5E5D58] border-b border-[#E4E3DC] text-[10.5px] uppercase tracking-wide">
                           <th className="py-2 px-3 font-bold">Бренд</th>
-                          <th className="py-2 px-2.5 font-bold text-right">Моделей</th>
-                          <th className="py-2 px-3 font-bold text-right">Выручка 2027</th>
-                          <th className="py-2 px-3 font-bold text-right">К заказу</th>
+                          <th className="py-2 px-2.5 font-bold">Выбранный сценарий</th>
+                          <th className="py-2 px-2 font-bold text-right">Моделей</th>
+                          <th className="py-2 px-3 font-bold text-right">План продаж</th>
+                          <th className="py-2 px-3 font-bold text-right">Нужно закупить</th>
+                          <th className="py-2 px-3 font-bold text-right">Стоимость закупки</th>
                           <th className="py-2 px-3 font-bold text-right bg-[#F2FBF6] text-[#0F5132]">
                             Вложить на старт (Q1)
                           </th>
                           <th className="py-2 px-3 font-bold text-right bg-[#F4F8FF] text-[#1E3A8A]">
-                            Пик своих денег (с WB)
+                            Потребность в своих деньгах
                           </th>
-                          <th className="py-2 px-3 font-bold text-right">Закупки за год</th>
-                          <th className="py-2 px-3 font-bold text-right">Себест. продаж</th>
-                          <th className="py-2 px-3 font-bold text-right">Ожид. прибыль</th>
+                          <th className="py-2 px-3 font-bold text-right">Опер. прибыль</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#ECEBE4]">
-                        {v11ScenarioSummary.brandsReport.brands.map((b) => (
-                          <tr
-                            key={b.brandCode}
-                            onClick={() => {
-                              setBrandFilterLocal(b.brandCode);
-                              setBrandFilter(b.brandCode);
-                            }}
-                            title={`Фильтровать витрину по бренду ${b.brandTitle}`}
-                            className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
-                              brandFilterLocal === b.brandCode ? 'bg-amber-50/70' : ''
-                            }`}
-                          >
-                            <td className="py-2 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
-                            <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
-                              {b.modelsCount}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono font-semibold text-[#141413]">
-                              {b.modelsCount > 0
-                                ? `${(b.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-[#52514C]">
-                              {b.modelsCount > 0
-                                ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono bg-[#F2FBF6]/60 text-[#0F5132] font-bold">
-                              {b.modelsCount > 0
-                                ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono bg-[#F4F8FF]/60 text-[#1E3A8A] font-bold">
-                              {b.modelsCount > 0
-                                ? `${(b.peakWorkingCapitalRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-[#141413]">
-                              {b.modelsCount > 0
-                                ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono text-[#52514C]">
-                              {b.modelsCount > 0
-                                ? `${(b.annualSoldGoodsCostRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
-                              {b.modelsCount > 0
-                                ? `+${(b.annualEstimatedOperatingProfitRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
-                                : '—'}
-                            </td>
-                          </tr>
-                        ))}
+                        {v11ScenarioSummary.multiBrandSummary.brands.map((b) => {
+                          const brandScenarios = b.availableScenarios;
+                          const unitCfg = getBrandUnitConfig(b.brandCode);
+                          return (
+                            <tr
+                              key={b.brandCode}
+                              onClick={() => {
+                                setBrandFilterLocal(b.brandCode);
+                                setBrandFilter(b.brandCode);
+                                if (b.selectedScenarioId !== null) {
+                                  setSelectedScenarioId(b.selectedScenarioId);
+                                }
+                              }}
+                              title={`Открыть бренд ${b.brandTitle}`}
+                              className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
+                                brandFilterLocal === b.brandCode ? 'bg-amber-50/70' : ''
+                              }`}
+                            >
+                              <td className="py-2 px-3 font-bold text-[#141413]">
+                                <div>{b.brandTitle}</div>
+                                <div className="text-[10px] font-normal text-[#686760]">
+                                  {unitCfg.categoryDefault} · {b.primaryUnit}
+                                </div>
+                              </td>
+                              <td
+                                className="py-2 px-2.5"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <select
+                                    value={b.selectedScenarioId ?? ''}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const nextId = raw === '' ? null : Number(raw);
+                                      setSelectedScenarioForBrand(b.brandCode, nextId);
+                                      if (nextId !== null && brandFilterLocal === b.brandCode) {
+                                        setSelectedScenarioId(nextId);
+                                      }
+                                    }}
+                                    className="h-7 max-w-[210px] px-2 rounded-[7px] border border-[#D8D7CF] bg-white text-[11.5px] font-semibold text-[#141413]"
+                                  >
+                                    <option value="">Нет сценария</option>
+                                    {brandScenarios.map((sc) => (
+                                      <option key={sc.id} value={sc.id}>
+                                        {sc.title} ({sc.year || 2027})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDraftScenBrand(b.brandCode);
+                                      setDraftScenTitle(`${b.displayCode} — базовый план 2027`);
+                                      setDraftCopyFromScenarioId(0);
+                                      setNewScenarioModalOpen(true);
+                                    }}
+                                    title={`Создать сценарий для ${b.brandTitle}`}
+                                    className="h-7 px-2 rounded-[7px] border border-[#D8D7CF] bg-[#FAF9F6] hover:bg-[#EFEFE9] text-[11px] font-bold text-[#141413] cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="py-2 px-2 text-right font-mono text-[#52514C]">
+                                {b.modelsCount}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-semibold text-[#141413]">
+                                {b.statusMessage ? (
+                                  <span className="text-[10.5px] font-sans text-[#686760]">
+                                    {b.statusMessage}
+                                  </span>
+                                ) : (
+                                  `${(b.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-[#52514C]">
+                                {b.hasScenario && b.hasModels
+                                  ? `${b.totalProcurementQuantity.toLocaleString('ru-RU')} ${b.primaryUnit}`
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-[#141413]">
+                                {b.hasScenario && b.hasModels
+                                  ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono bg-[#F2FBF6]/60 text-[#0F5132] font-bold">
+                                {b.hasScenario && b.hasModels
+                                  ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono bg-[#F4F8FF]/60 text-[#1E3A8A] font-bold">
+                                {b.hasScenario && b.hasModels
+                                  ? b.verifiedOwnMoneyRequiredRub !== null
+                                    ? `${(b.verifiedOwnMoneyRequiredRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                    : v11ScenarioSummary.multiBrandSummary.ownMoneyStatusLabel
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
+                                {b.hasScenario && b.hasModels
+                                  ? `+${(b.annualEstimatedOperatingProfitRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr
@@ -2464,56 +2616,57 @@ export function GrowthScenariosShowcase({
                           title="Показать все бренды группы"
                           className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t border-[#CECDC4] cursor-pointer hover:bg-[#EFEFE9] transition"
                         >
-                          <td className="py-2.5 px-3">ИТОГО ПО ГРУППЕ</td>
-                          <td className="py-2.5 px-2.5 text-right font-mono">
-                            {v11ScenarioSummary.brandsReport.groupTotal.modelsCount}
+                          <td className="py-2.5 px-3" colSpan={2}>
+                            ИТОГО ПО ГРУППЕ
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono">
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.modelsCount}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono">
-                            {(v11ScenarioSummary.brandsReport.groupTotal.annualRevenueRub / 1_000_000)
+                            {(
+                              v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                              1_000_000
+                            )
                               .toFixed(2)
                               .replace('.', ',')}{' '}
                             млн ₽
                           </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-[11px]">
+                            {v11ScenarioSummary.multiBrandSummary.procurementBreakdownText}
+                          </td>
                           <td className="py-2.5 px-3 text-right font-mono">
-                            {v11ScenarioSummary.brandsReport.groupTotal.totalProcurementPacks.toLocaleString(
-                              'ru-RU'
-                            )}{' '}
-                            компл.
+                            {(
+                              v11ScenarioSummary.multiBrandSummary.groupTotal
+                                .totalProcurementBudgetRub / 1_000_000
+                            )
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
-                            {(v11ScenarioSummary.brandsReport.groupTotal.firstWaveStartBudgetRub / 1_000_000)
+                            {(
+                              v11ScenarioSummary.multiBrandSummary.groupTotal
+                                .firstWaveStartBudgetRub / 1_000_000
+                            )
                               .toFixed(2)
                               .replace('.', ',')}{' '}
                             млн ₽
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
-                            {(v11ScenarioSummary.brandsReport.groupTotal.netOwnMoneyRequiredRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono">
-                            {(
-                              v11ScenarioSummary.brandsReport.groupTotal.totalProcurementBudgetRub /
-                              1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono">
-                            {(
-                              v11ScenarioSummary.brandsReport.groupTotal.annualSoldGoodsCostRub /
-                              1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal
+                              .verifiedOwnMoneyRequiredRub !== null
+                              ? `${(
+                                  v11ScenarioSummary.multiBrandSummary.groupTotal
+                                    .verifiedOwnMoneyRequiredRub / 1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : v11ScenarioSummary.multiBrandSummary.ownMoneyStatusLabel}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono text-[#157347]">
                             +
                             {(
-                              v11ScenarioSummary.brandsReport.groupTotal
+                              v11ScenarioSummary.multiBrandSummary.groupTotal
                                 .annualEstimatedOperatingProfitRub / 1_000_000
                             )
                               .toFixed(2)
@@ -2524,6 +2677,69 @@ export function GrowthScenariosShowcase({
                       </tfoot>
                     </table>
                   </div>
+
+                  {/* ПОМЕСЯЧНАЯ ГЛОБАЛЬНАЯ СВОДКА ГРУППЫ ПО КНОПКЕ «ПОДРОБНЕЕ (12 МЕС.)» (П. 9.5 ТЗ) */}
+                  {groupMonthlyDetailsOpen && (
+                    <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC] bg-[#FAF9F6] p-3">
+                      <div className="text-[11.5px] font-bold text-[#141413] mb-2">
+                        Помесячный график BORNERS GROUP (12 месяцев): продажи, платежи фабрикам, поступления WB и потребность в своих деньгах
+                      </div>
+                      <table className="w-full min-w-[780px] text-left border-collapse text-[11px]">
+                        <thead>
+                          <tr className="border-b border-[#E4E3DC] text-[#5E5D58]">
+                            <th className="py-1.5 px-2 font-bold">Показатель группы</th>
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
+                              <th key={m.monthIdx} className="py-1.5 px-1.5 text-right font-bold">
+                                {m.monthLabel}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#ECEBE4] font-mono">
+                          <tr>
+                            <td className="py-1.5 px-2 font-sans font-semibold text-[#141413]">
+                              Продажи (млн ₽)
+                            </td>
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
+                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right">
+                                {(m.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="py-1.5 px-2 font-sans font-semibold text-rose-800">
+                              Платежи фабрикам (млн ₽)
+                            </td>
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
+                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-rose-800">
+                                {(m.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="py-1.5 px-2 font-sans font-semibold text-emerald-800">
+                              Поступления выручки WB (млн ₽)
+                            </td>
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
+                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-emerald-800">
+                                {(m.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr className="bg-white font-bold">
+                            <td className="py-1.5 px-2 font-sans text-[#1E3A8A]">
+                              Накопленный баланс / свои деньги (млн ₽)
+                            </td>
+                            {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
+                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#1E3A8A]">
+                                {(m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
+                              </td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
                 {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -3553,47 +3769,67 @@ export function GrowthScenariosShowcase({
                 </label>
                 <input
                   type="text"
-                  placeholder="Например: Сценарий №4 · Экспансия СНГ"
+                  placeholder="Например: LISCANI — базовый план 2028"
                   value={draftScenTitle}
                   onChange={(e) => setDraftScenTitle(e.target.value)}
                   className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Цель в месяц (млн ₽)
+                    Бренд сценария
+                  </label>
+                  <select
+                    value={draftScenBrand}
+                    onChange={(e) => {
+                      const nextBrand = normalizePortfolioBrandCode(e.target.value);
+                      setDraftScenBrand(nextBrand === 'ALL' ? 'BORNERS' : nextBrand);
+                      setDraftScenScope(nextBrand === 'BORNERS' ? 'BORNERS' : 'GROUP');
+                    }}
+                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
+                  >
+                    <option value="BORNERS">BORNERS</option>
+                    <option value="FUKAI">FUKAI</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISCANI">LISCANI</option>
+                    <option value="НА ТЕЛЕ">НА ТЕЛЕ</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                    Год планирования
+                  </label>
+                  <select
+                    value={draftScenYear}
+                    onChange={(e) =>
+                      setDraftScenYear(Number(e.target.value) === 2028 ? 2028 : 2027)
+                    }
+                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
+                  >
+                    <option value={2027}>2027 год</option>
+                    <option value={2028}>2028 год</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                    Цель / мес (млн ₽)
                   </label>
                   <input
                     type="number"
                     value={draftScenTargetMln}
                     onChange={(e) =>
-                      setDraftScenTargetMln(Math.max(10, Number(e.target.value) || 100))
+                      setDraftScenTargetMln(Math.max(1, Number(e.target.value) || 50))
                     }
-                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-bold"
+                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-bold"
                   />
-                </div>
-                <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Включённые бренды
-                  </label>
-                  <select
-                    value={draftScenScope}
-                    onChange={(e) =>
-                      setDraftScenScope(e.target.value as 'BORNERS' | 'GROUP')
-                    }
-                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
-                  >
-                    <option value="GROUP">Группа (BORNERS + НА ТЕЛЕ)</option>
-                    <option value="BORNERS">Только BORNERS</option>
-                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                  Скопировать базовые допущения из сценария
+                  Основа плана (копирование без дублирования карточек, склада и заказов)
                 </label>
                 <select
                   value={draftCopyFromScenarioId}
@@ -3602,9 +3838,10 @@ export function GrowthScenariosShowcase({
                   }
                   className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px]"
                 >
+                  <option value={0}>С нуля (пустой план без копирования)</option>
                   {scenarios.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.title} ({s.monthlyTargetMln} млн ₽ / мес)
+                      Скопировать из: {s.title} ({s.year || 2027} · {s.monthlyTargetMln} млн ₽ / мес)
                     </option>
                   ))}
                 </select>

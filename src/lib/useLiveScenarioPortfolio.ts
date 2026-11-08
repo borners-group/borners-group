@@ -21,10 +21,12 @@ import {
   isUnverifiedActingSku,
 } from '@/lib/scenarioS1_100M';
 import {
+  CanonicalBrandCode,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
   matchesBrandFilter,
+  normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 
@@ -33,6 +35,7 @@ export const STORAGE_KEY_MODELS = 'borners_tz_models_v1';
 export const STORAGE_KEY_USER_PLANS_BACKUP = 'borners_user_saved_plans_v1';
 export const STORAGE_KEY_ACTIVE_SCENARIO_ID = 'borners_active_scenario_id_v1';
 export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
+export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 
 interface UserSavedModelPlanBackup {
   id: string;
@@ -41,6 +44,9 @@ interface UserSavedModelPlanBackup {
   subtitle?: string;
   brandId?: ScenarioModelSpec['brandId'];
   customBrandLabel?: string;
+  categoryLabel?: string;
+  primaryUnitLabel?: string;
+  secondaryUnitLabel?: string;
   wbArticle?: string;
   modelStageStatus?: ScenarioModelSpec['modelStageStatus'];
   description?: string;
@@ -73,6 +79,9 @@ function syncUserPlansBackup(modelsList: ScenarioModelSpec[]) {
       subtitle: m.subtitle,
       brandId: m.brandId,
       customBrandLabel: m.customBrandLabel,
+      categoryLabel: m.categoryLabel,
+      primaryUnitLabel: m.primaryUnitLabel,
+      secondaryUnitLabel: m.secondaryUnitLabel,
       wbArticle: m.wbArticle,
       modelStageStatus: m.modelStageStatus,
       description: m.description,
@@ -116,6 +125,9 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
       subtitle: saved.subtitle ?? m.subtitle,
       brandId: saved.brandId ?? m.brandId,
       customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
+      categoryLabel: saved.categoryLabel ?? m.categoryLabel,
+      primaryUnitLabel: saved.primaryUnitLabel ?? m.primaryUnitLabel,
+      secondaryUnitLabel: saved.secondaryUnitLabel ?? m.secondaryUnitLabel,
       wbArticle: saved.wbArticle ?? m.wbArticle,
       modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
       description: saved.description ?? m.description,
@@ -169,7 +181,15 @@ export function filterModelsForScenario(
       ) {
         return false;
       }
-      if (!m.customBrandLabel && !scenario.includedBrands.includes(m.brandId)) {
+      if (
+        scenario.ownerBrandCode &&
+        scenario.ownerBrandCode !== 'ALL' &&
+        scenario.ownerBrandCode !== 'BORNERS'
+      ) {
+        if (!matchesBrandFilter(m, scenario.ownerBrandCode)) {
+          return false;
+        }
+      } else if (!m.customBrandLabel && !scenario.includedBrands.includes(m.brandId)) {
         return false;
       }
       if (
@@ -197,6 +217,15 @@ export function useLiveScenarioPortfolio() {
   const [models, setModels] = useState<ScenarioModelSpec[]>(DEFAULT_MODELS_LIST);
   const [selectedScenarioId, setSelectedScenarioIdState] = useState<number>(1);
   const [includeGroupPortfolioInS1, setIncludeGroupState] = useState<boolean>(false);
+  const [selectedScenarioByBrand, setSelectedScenarioByBrandState] = useState<
+    Partial<Record<CanonicalBrandCode, number | null>>
+  >({
+    BORNERS: 1,
+    FUKAI: 1,
+    AKUSHA: null,
+    LISKANI: null,
+    NA_TELE: null,
+  });
 
   const syncFromStorage = useCallback(() => {
     const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
@@ -229,6 +258,13 @@ export function useLiveScenarioPortfolio() {
     if (typeof savedGroupFlag === 'boolean') {
       setIncludeGroupState(savedGroupFlag);
     }
+
+    const savedByBrand = safeGetStorageJson<
+      Partial<Record<CanonicalBrandCode, number | null>>
+    >(STORAGE_KEY_SCENARIO_BY_BRAND);
+    if (savedByBrand && typeof savedByBrand === 'object') {
+      setSelectedScenarioByBrandState((prev) => ({ ...prev, ...savedByBrand }));
+    }
   }, []);
 
   useEffect(() => {
@@ -260,6 +296,40 @@ export function useLiveScenarioPortfolio() {
       window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
     }
   }, []);
+
+  const setSelectedScenarioForBrand = useCallback(
+    (brandInput: string, scenarioId: number | null) => {
+      const code = normalizePortfolioBrandCode(brandInput);
+      if (code === 'ALL') return;
+      setSelectedScenarioByBrandState((prev) => {
+        const next = { ...prev, [code]: scenarioId };
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+          }, 0);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const updateScenariosBatch = useCallback(
+    (updater: (prev: GrowthScenarioDef[]) => GrowthScenarioDef[]) => {
+      setScenarios((prev) => {
+        const next = updater(prev);
+        safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+          }, 0);
+        }
+        return next;
+      });
+    },
+    []
+  );
 
   const updateModelSpec = useCallback((updated: ScenarioModelSpec) => {
     setModels((prev) => {
@@ -294,13 +364,15 @@ export function useLiveScenarioPortfolio() {
 
   const orderedScenarios = useMemo(
     () =>
-      [...scenarios].sort((a, b) =>
-        a.id === ACTING_2027_SCENARIO_ID
-          ? -1
-          : b.id === ACTING_2027_SCENARIO_ID
-          ? 1
-          : a.id - b.id
-      ),
+      [...scenarios]
+        .filter((s) => !s.isArchived)
+        .sort((a, b) =>
+          a.id === ACTING_2027_SCENARIO_ID
+            ? -1
+            : b.id === ACTING_2027_SCENARIO_ID
+            ? 1
+            : a.id - b.id
+        ),
     [scenarios]
   );
 
@@ -373,6 +445,8 @@ export function useLiveScenarioPortfolio() {
     currentScenario,
     selectedScenarioId,
     setSelectedScenarioId,
+    selectedScenarioByBrand,
+    setSelectedScenarioForBrand,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
     scenarioAllEligibleModels,
@@ -381,5 +455,6 @@ export function useLiveScenarioPortfolio() {
     totals,
     updateModelSpec,
     updateModelsBatch,
+    updateScenariosBatch,
   };
 }
