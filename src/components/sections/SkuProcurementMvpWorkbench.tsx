@@ -118,13 +118,15 @@ function NumericInput({
       step={step}
       value={draft}
       placeholder={placeholder}
-      onFocus={(e) => {
+      onFocus={() => {
         setFocused(true);
-        e.currentTarget.select();
       }}
       onChange={(e) => {
-        const nextRaw = e.target.value;
+        let nextRaw = e.target.value;
         if (!/^[0-9\s.,]*$/.test(nextRaw)) return;
+        if (nextRaw.length > 1 && /^0+\d/.test(nextRaw.trim())) {
+          nextRaw = nextRaw.trim().replace(/^0+(?=\d)/, '');
+        }
         setDraft(nextRaw);
         const trimmed = nextRaw.trim();
         if (trimmed !== '') {
@@ -700,7 +702,7 @@ export function SkuProcurementMvpWorkbench({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11.5px] font-medium text-[#6B6A64]">Статус:</span>
             <div
-              className="inline-flex items-center rounded-[8px] border border-[#DFDED6] bg-[#F6F6F2] p-0.5"
+              className="inline-flex items-center rounded-[9px] border border-[#E2E1D9] bg-[#F2F1EC] p-0.5"
               title="Пока у модели статус «Гипотеза» или «Тест», к утверждению формируется только первая тестовая партия"
             >
               {(['hypothesis', 'test', 'scaling'] as ModelScalingStage[]).map((st) => {
@@ -710,10 +712,10 @@ export function SkuProcurementMvpWorkbench({
                     key={st}
                     type="button"
                     onClick={() => handleUpdateScalingStage(st)}
-                    className={`rounded-[6px] px-2.5 py-1 text-[11.5px] font-semibold transition cursor-pointer ${
+                    className={`rounded-[7px] px-2.5 py-1 text-[11.5px] font-semibold transition cursor-pointer ${
                       active
-                        ? 'bg-[#141413] text-white'
-                        : 'text-[#5C5B55] hover:text-[#141413]'
+                        ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                        : 'text-[#686762] hover:text-[#141413] border border-transparent'
                     }`}
                   >
                     {MODEL_SCALING_STAGE_LABELS_RU[st]}
@@ -821,7 +823,7 @@ export function SkuProcurementMvpWorkbench({
                   min={0}
                   step={50}
                   onChangeValue={handleUpdateOpeningStock}
-                  className="h-9.5 w-full rounded-[9px] border border-[#CFCEC6] bg-white pr-14 pl-3 font-mono text-[14px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-14 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
                 />
                 <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
                   компл.
@@ -841,7 +843,7 @@ export function SkuProcurementMvpWorkbench({
                   min={0}
                   step={10}
                   onChangeValue={handleUpdateUnitCost}
-                  className="h-9.5 w-full rounded-[9px] border border-[#CFCEC6] bg-white pr-16 pl-3 font-mono text-[14px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-16 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
                 />
                 <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
                   ₽/компл.
@@ -874,7 +876,7 @@ export function SkuProcurementMvpWorkbench({
                     });
                     triggerSavedIndicator('Сохранено');
                   }}
-                  className="h-9.5 w-full rounded-[9px] border border-[#CFCEC6] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
                 />
                 <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
                   дней
@@ -907,7 +909,7 @@ export function SkuProcurementMvpWorkbench({
                     });
                     triggerSavedIndicator('Сохранено');
                   }}
-                  className="h-9.5 w-full rounded-[9px] border border-[#CFCEC6] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                  className="h-9.5 w-full rounded-[9px] border border-[#D8D7CE] bg-white pr-12 pl-3 font-mono text-[14px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:bg-[#FCFBF9] focus:outline-none transition-colors"
                 />
                 <span className="pointer-events-none absolute right-3 text-[11px] font-medium text-[#787770]">
                   дней
@@ -925,8 +927,8 @@ export function SkuProcurementMvpWorkbench({
                 onClick={() => setShowAdvancedSettings((v) => !v)}
                 className={`h-9.5 inline-flex items-center justify-between rounded-[9px] border px-3 text-[12px] font-semibold transition cursor-pointer ${
                   showAdvancedSettings
-                    ? 'border-[#141413] bg-[#141413] text-white'
-                    : 'border-[#CFCEC6] bg-[#F8F8F5] text-[#141413] hover:border-[#141413] hover:bg-white'
+                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
+                    : 'border-[#D8D7CE] bg-[#F8F8F5] text-[#141413] hover:border-[#B8B7AE] hover:bg-white'
                 }`}
               >
                 <span>Размеры S–XXL и MOQ</span>
@@ -1078,7 +1080,7 @@ export function SkuProcurementMvpWorkbench({
             <button
               type="button"
               onClick={() => setShowAddCustomModal((v) => !v)}
-              className="h-8.5 rounded-[8px] border border-[#D8D7CE] bg-white px-3 text-[12px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
+              className="h-8.5 rounded-[8px] border border-[#D8D7CE] bg-white px-3 text-[12px] font-semibold text-[#141413] hover:border-[#B8B7AE] hover:bg-[#FAF9F6] cursor-pointer"
             >
               + Своя партия
             </button>
@@ -1095,7 +1097,7 @@ export function SkuProcurementMvpWorkbench({
               <button
                 type="button"
                 onClick={handleApproveAllDraftBatches}
-                className="h-8.5 rounded-[8px] bg-[#141413] px-3.5 text-[12px] font-semibold text-white hover:bg-[#2B2B29] cursor-pointer"
+                className="h-8.5 rounded-[8px] border border-[#BCE3CF] bg-[#EAF6F0] px-3.5 text-[12px] font-semibold text-[#146C43] hover:bg-[#157347] hover:text-white transition cursor-pointer"
               >
                 ✓ Утвердить все ({proc.recommendedBatches.length})
               </button>
@@ -1466,15 +1468,15 @@ export function SkuProcurementMvpWorkbench({
                               </label>
                             );
                           })}
-                          <div className="flex flex-col justify-between rounded-[8px] border border-[#141413] bg-[#141413] px-2.5 py-2 text-white">
+                          <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-gray-300">ИТОГО</span>
-                              <span className="font-mono text-[10px] text-gray-300">100%</span>
+                              <span className="font-bold text-[#146C43]">ИТОГО</span>
+                              <span className="font-mono text-[10px] text-[#146C43]">100%</span>
                             </div>
-                            <div className="my-1 font-mono text-[15px] font-extrabold">
+                            <div className="my-1 font-mono text-[15px] font-extrabold text-[#141413]">
                               {poSizeTotal.toLocaleString('ru-RU')} компл.
                             </div>
-                            <div className="font-mono text-[10px] text-gray-300">
+                            <div className="font-mono text-[10px] text-[#52514C]">
                               {(poSizeTotal * po.unitsInPack).toLocaleString('ru-RU')} изд.
                             </div>
                           </div>
@@ -1604,7 +1606,7 @@ export function SkuProcurementMvpWorkbench({
                                       endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
                                     }));
                                   }}
-                                  className="h-7 rounded-[6px] border border-[#D8D7CE] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none cursor-pointer"
+                                  className="h-7 rounded-[6px] border border-[#DFDED6] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none cursor-pointer"
                                 >
                                   {MONTHS_SHORT.map((m, idx) => (
                                     <option key={m} value={idx}>
@@ -1623,7 +1625,7 @@ export function SkuProcurementMvpWorkbench({
                                       endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
                                     }));
                                   }}
-                                  className="h-7 rounded-[6px] border border-[#D8D7CE] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none cursor-pointer"
+                                  className="h-7 rounded-[6px] border border-[#DFDED6] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none cursor-pointer"
                                 >
                                   {MONTHS_SHORT.map((m, idx) => (
                                     <option
@@ -1669,7 +1671,7 @@ export function SkuProcurementMvpWorkbench({
                                   customOrderDateIso: e.target.value,
                                 }));
                               }}
-                              className="h-8 rounded-[7px] border border-[#CFCEC6] bg-white px-2 font-mono text-[12px] font-semibold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none"
+                              className="h-8 rounded-[7px] border border-[#DFDED6] bg-white px-2 font-mono text-[12px] font-semibold text-[#141413] hover:border-[#B8B7AE] focus:border-[#9E9D95] focus:outline-none"
                             />
                             {batch.hasCustomDateOverride && (
                               <button
@@ -1704,7 +1706,7 @@ export function SkuProcurementMvpWorkbench({
                           className="px-3 py-3 text-right"
                         >
                           <div className="inline-flex flex-col items-end">
-                            <div className="inline-flex items-center rounded-[8px] border border-[#CFCEC6] bg-white p-0.5 hover:border-[#141413] focus-within:border-[#141413]">
+                            <div className="inline-flex items-center rounded-[8px] border border-[#DFDED6] bg-white p-0.5 hover:border-[#B8B7AE] focus-within:border-[#9E9D95]">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1794,7 +1796,7 @@ export function SkuProcurementMvpWorkbench({
                               onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
                               className={`h-8 rounded-[7px] border px-2.5 text-[11.5px] font-semibold transition cursor-pointer ${
                                 isExpanded
-                                  ? 'border-[#141413] bg-[#141413] text-white'
+                                  ? 'border-[#B8B7AE] bg-[#EAE9E2] text-[#141413]'
                                   : 'border-[#D8D7CE] bg-[#F8F8F5] text-[#141413] hover:bg-[#EFEFE9]'
                               }`}
                             >
@@ -1804,7 +1806,7 @@ export function SkuProcurementMvpWorkbench({
                             <button
                               type="button"
                               onClick={() => handleApproveDraftBatch(batch)}
-                              className="h-8 rounded-[7px] border border-[#141413] bg-white px-3 text-[11.5px] font-semibold text-[#141413] hover:bg-[#141413] hover:text-white transition cursor-pointer"
+                              className="h-8 rounded-[7px] border border-[#BCE3CF] bg-[#F3FAF6] px-3 text-[11.5px] font-semibold text-[#146C43] hover:bg-[#157347] hover:text-white transition cursor-pointer"
                             >
                               ✓ Утвердить заказ
                             </button>
@@ -1950,15 +1952,15 @@ export function SkuProcurementMvpWorkbench({
                                     </div>
                                   );
                                 })}
-                                <div className="flex flex-col justify-between rounded-[8px] border border-[#141413] bg-[#141413] px-2.5 py-2 text-white">
-                                  <div className="flex items-center justify-between text-[11px] font-semibold text-gray-300">
+                                <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#146C43]">
                                     <span>ИТОГО</span>
                                     <span>100%</span>
                                   </div>
-                                  <div className="my-1.5 font-mono text-[15px] font-extrabold">
+                                  <div className="my-1.5 font-mono text-[15px] font-extrabold text-[#141413]">
                                     {sizeTotalPacks.toLocaleString('ru-RU')} компл.
                                   </div>
-                                  <div className="font-mono text-[10px] text-gray-300">
+                                  <div className="font-mono text-[10px] text-[#52514C]">
                                     {(sizeTotalPacks * model.unitsInPack).toLocaleString('ru-RU')} изд.
                                   </div>
                                 </div>

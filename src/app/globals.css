@@ -85,24 +85,25 @@ table tbody tr + tr {
   border-color: #DFDED6 !important;
 }
 
-/* Чистый фокус: без обводки при клике мышью, чёткое кольцо при навигации с клавиатуры */
-button:focus:not(:focus-visible),
-a:focus:not(:focus-visible),
-input:focus:not(:focus-visible),
-select:focus:not(:focus-visible),
-textarea:focus:not(:focus-visible),
-[role="button"]:focus:not(:focus-visible) {
-  outline: none;
-}
-
+/* Чистый и мягкий фокус без агрессивных чёрных рамок при клике */
+button:focus,
+a:focus,
+input:focus,
+select:focus,
+textarea:focus,
+[role="button"]:focus,
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid #141413;
-  outline-offset: 2px;
+  outline: none !important;
+}
+
+::selection {
+  background-color: #DCECE3;
+  color: #141413;
 }
 
 /* Тонкие минималистичные скроллбары */

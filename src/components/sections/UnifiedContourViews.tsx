@@ -776,14 +776,14 @@ export function ProcurementContourView() {
       <div className="rounded-[14px] bg-white border border-[#D8D7CF] px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
         {/* Левая часть: Вкладки Закупки / Задачи CRM + Сценарии */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex rounded-[9px] bg-[#F4F3EE] border border-[#E2E1D9] p-0.5 text-[12px] font-bold">
+          <div className="inline-flex rounded-[9px] bg-[#F2F1EC] border border-[#E2E1D9] p-0.5 text-[12px] font-bold">
             <button
               type="button"
               onClick={() => setSubTab('batches')}
               className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                 subTab === 'batches'
-                  ? 'bg-[#141413] text-white'
-                  : 'text-[#5C5B55] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                  : 'text-[#686762] hover:text-[#141413] border border-transparent'
               }`}
             >
               03 · Закупки ({eligibleModels.length} мод. · {procData.approvedCount} PO)
@@ -793,8 +793,8 @@ export function ProcurementContourView() {
               onClick={() => setSubTab('crm')}
               className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                 subTab === 'crm'
-                  ? 'bg-[#141413] text-white'
-                  : 'text-[#5C5B55] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                  : 'text-[#686762] hover:text-[#141413] border border-transparent'
               }`}
             >
               Задачи CRM ({openTasksCount})
@@ -802,7 +802,7 @@ export function ProcurementContourView() {
           </div>
 
           {subTab === 'batches' && (
-            <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#FAF9F6] border border-[#E2E1D9] p-0.5">
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F2F1EC] border border-[#E2E1D9] p-0.5">
               {orderedScenarios.map((sc) => {
                 const active = sc.id === selectedScenarioId;
                 const shortTitle =
@@ -816,8 +816,8 @@ export function ProcurementContourView() {
                     onClick={() => setSelectedScenarioId(sc.id)}
                     className={`h-8 px-2.5 rounded-[7px] text-[11.5px] font-bold transition cursor-pointer ${
                       active
-                        ? 'bg-[#141413] text-white'
-                        : 'text-[#5C5B55] hover:text-[#141413]'
+                        ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
+                        : 'text-[#686762] hover:text-[#141413] border border-transparent'
                     }`}
                   >
                     {shortTitle}
@@ -846,8 +846,8 @@ export function ProcurementContourView() {
               onClick={() => setShowAllSkusTable((v) => !v)}
               className={`rounded-[9px] border px-3 py-1.5 text-[12px] font-semibold transition cursor-pointer ${
                 showAllSkusTable
-                  ? 'border-[#141413] bg-[#141413] text-white'
-                  : 'border-[#CFCEC6] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                  ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
+                  : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
               }`}
             >
               {showAllSkusTable
