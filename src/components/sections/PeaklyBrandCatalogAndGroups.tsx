@@ -353,32 +353,34 @@ export function BrandCabinetsMatrixTable({
 }
 
 // =============================================================================
-// ПЛАВНЫЙ СЧЁТЧИК ЧИСЕЛ (COUNT-UP С CUBIC-OUT ИНТЕРПОЛЯЦИЕЙ ПРИ СМЕНЕ СЦЕНАРИЯ)
+// ПЛАВНЫЙ СЧЁТЧИК ЧИСЕЛ (COUNT-UP С CUBIC-OUT ИНТЕРПОЛЯЦИЕЙ НА СТАРТЕ И ПРИ СМЕНЕ)
 // =============================================================================
 function AnimatedMlnValue({
   valueRub,
   prefix = '',
-  suffix = ' млн ₽',
+  suffix = 'млн ₽',
+  unitClassName = 'text-[12.5px] font-bold tracking-normal text-[#64748B] font-sans',
 }: {
   valueRub: number;
   prefix?: string;
   suffix?: string;
+  unitClassName?: string;
 }) {
-  const [displayRub, setDisplayRub] = useState(valueRub);
-  const prevRubRef = useRef(valueRub);
+  const [displayRub, setDisplayRub] = useState(0);
+  const prevRubRef = useRef(0);
 
   useEffect(() => {
     const startVal = prevRubRef.current;
     const endVal = valueRub;
     prevRubRef.current = valueRub;
 
-    if (Math.abs(endVal - startVal) < 1000) {
+    if (Math.abs(endVal - startVal) < 500) {
       setDisplayRub(endVal);
       return;
     }
 
     let rafId = 0;
-    const duration = 620;
+    const duration = 720;
     const startTime = performance.now();
 
     const step = (now: number) => {
@@ -397,10 +399,12 @@ function AnimatedMlnValue({
 
   const formatted = (displayRub / 1_000_000).toFixed(2).replace('.', ',');
   return (
-    <span>
-      {prefix}
-      {formatted}
-      {suffix}
+    <span className="inline-flex items-baseline gap-1.5">
+      <span>
+        {prefix}
+        {formatted}
+      </span>
+      {suffix && <span className={unitClassName}>{suffix.trim()}</span>}
     </span>
   );
 }
@@ -554,62 +558,133 @@ export function PeaklyMasterCabinetsSummary({
 
   const activeSegments = waterfallViewMode === 'pnl' ? pnlSegments : brandSegments;
 
+  // Живая мини-кривая (Area Sparkline) по 12 месяцам для первой Hero-карточки выручки
+  const revSparkline = useMemo(() => {
+    const rows = gt.monthlyRows || [];
+    const values = rows.length === 12 ? rows.map((r) => r.grossSalesRub) : Array(12).fill(0);
+    const maxV = Math.max(...values, 1);
+    const minV = Math.min(...values, 0);
+    const span = Math.max(maxV - minV, 1);
+    const w = 84;
+    const h = 28;
+    const pts = values.map((v, i) => ({
+      x: Math.round((i / 11) * (w - 8) + 4),
+      y: Math.round(h - 4 - ((v - minV) / span) * (h - 9)),
+    }));
+    const linePath = pts
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+      .join(' ');
+    const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${h} L ${pts[0].x} ${h} Z`;
+    const janRub = values[0] || 0;
+    const decRub = values[11] || gt.decemberRevenueRub || 0;
+    const growthMult = janRub > 0 ? Math.round((decRub / janRub) * 10) / 10 : null;
+    return {
+      linePath,
+      areaPath,
+      lastPt: pts[pts.length - 1] || { x: 80, y: 6 },
+      growthMult,
+    };
+  }, [gt.monthlyRows, gt.decemberRevenueRub]);
+
   return (
     <div className="space-y-3.5">
-      {/* 5 ОТДЕЛЬНЫХ КАРТОЧЕК С ЧИСТЫМ КОНТУРОМ, ВНУТРЕННИМ ПРОГРЕСС-БАРОМ И КОЛЬЦОМ МАРЖИ */}
+      {/* 5 ФЛАГМАНСКИХ HERO-КАРТОЧЕК ХОЛДИНГА С КРУПНОЙ ДОФАМИНОВОЙ ТИПОГРАФИКОЙ, СВЕЧЕНИЕМ И КОЛЬЦОМ МАРЖИ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* 1. Выручка холдинга / Выручка выбранного кабинета */}
+        {/* 1. ФЛАГМАНСКАЯ HERO-КАРТОЧКА: Выручка холдинга / Выручка выбранного кабинета */}
         <div
           onClick={() => onNavigateSection('launch-calendar')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-white via-white to-[#F0FDFA]/55 border-[1.5px] border-[#CBD5E1] p-4 md:p-5 shadow-[0_10px_26px_-6px_rgba(15,23,42,0.09)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
+          {/* Верхний градиентный акцент */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1E293B] via-[#0D9488] to-[#3B82F6]" />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#0D9488]/10 blur-2xl"
+          />
+
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
-                {selectedBrandRow
-                  ? `Выручка · ${selectedBrandRow.displayCode}`
-                  : `Выручка холдинга (${activeBrandsCount}/5 каб.)`}
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-[#475569] truncate">
+                <span className="h-2 w-2 rounded-full bg-[#0D9488] animate-pulse shrink-0" />
+                <span className="truncate">
+                  {selectedBrandRow
+                    ? `Выручка · ${selectedBrandRow.displayCode}`
+                    : `Выручка холдинга (${activeBrandsCount}/5)`}
+                </span>
               </span>
               {selectedBrandRow && brandShareOfHoldingPct !== null ? (
-                <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] shrink-0">
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
                   {brandShareOfHoldingPct.toFixed(1).replace('.', ',')}% холд.
                 </span>
-              ) : (
-                <svg className="h-4 w-9 text-[#2C3444] shrink-0 opacity-70" viewBox="0 0 40 16" fill="none">
-                  <path
-                    d="M1 14L8 11.5L15 9.5L22 7.5L30 4.5L39 1.5"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
+              ) : revSparkline.growthMult && revSparkline.growthMult > 1 ? (
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
+                  ▲ ×{revSparkline.growthMult.toFixed(1).replace('.', ',')} к янв
+                </span>
+              ) : null}
             </div>
-            <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
-              <AnimatedMlnValue valueRub={gt.annualRevenueRub} />
+
+            <div className="mt-2.5 flex items-end justify-between gap-2">
+              <div className="font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
+                <AnimatedMlnValue
+                  valueRub={gt.annualRevenueRub}
+                  unitClassName="text-[12.5px] font-bold tracking-normal text-[#475569] font-sans"
+                />
+              </div>
+
+              {/* Живой мини-график 12 мес. с заливкой и светящейся точкой пика */}
+              <svg className="h-7 w-[76px] shrink-0 overflow-visible" viewBox="0 0 84 28" fill="none">
+                <defs>
+                  <linearGradient id="heroRevSparkFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#0D9488" stopOpacity="0.28" />
+                    <stop offset="100%" stopColor="#0D9488" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d={revSparkline.areaPath} fill="url(#heroRevSparkFill)" />
+                <path
+                  d={revSparkline.linePath}
+                  stroke="#1E293B"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle
+                  cx={revSparkline.lastPt.x}
+                  cy={revSparkline.lastPt.y}
+                  r="4"
+                  fill="#0D9488"
+                  fillOpacity="0.25"
+                />
+                <circle
+                  cx={revSparkline.lastPt.x}
+                  cy={revSparkline.lastPt.y}
+                  r="2.4"
+                  fill="#0D9488"
+                />
+              </svg>
             </div>
           </div>
 
-          <div className="mt-3 space-y-1.5">
-            <div className="h-1.5 w-full rounded-full bg-[#EEF2F6] overflow-hidden">
+          <div className="mt-3.5 space-y-1.5">
+            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden p-0.5">
               <div
-                className="h-full rounded-full bg-[#2C3444] transition-all duration-700 ease-out"
+                className="h-full rounded-full bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#0D9488] transition-all duration-700 ease-out"
                 style={{
                   width: `${
                     gt.annualRevenueRub > 0
                       ? Math.min(
                           100,
-                          Math.max(18, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100)
+                          Math.max(22, (gt.decemberRevenueRub / Math.max(gt.annualRevenueRub / 6, 1)) * 100)
                         )
                       : 0
                   }%`,
                 }}
               />
             </div>
-            <div className="text-[11px] text-[#64748B] flex items-center justify-between">
+            <div className="text-[11.5px] text-[#64748B] flex items-center justify-between">
               <span>Пик декабря</span>
-              <strong className="font-mono text-[#111827]">{formatMln(gt.decemberRevenueRub)}</strong>
+              <strong className="font-mono font-extrabold text-[#0F172A]">
+                {formatMln(gt.decemberRevenueRub)}
+              </strong>
             </div>
           </div>
         </div>
@@ -617,33 +692,34 @@ export function PeaklyMasterCabinetsSummary({
         {/* 2. План закупок (Год) */}
         <div
           onClick={() => onNavigateSection('roadmap-tasks')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#334155] to-[#64748B]" />
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B] truncate">
                 {selectedBrandRow
                   ? `План закупок · ${selectedBrandRow.displayCode}`
                   : 'План закупок на год'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569] shrink-0">
+              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F1F5F9] border border-[#E2E8F0] text-[#334155] shrink-0">
                 4 волны
               </span>
             </div>
-            <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
               <AnimatedMlnValue valueRub={gt.totalProcurementBudgetRub} />
             </div>
           </div>
 
-          <div className="mt-3 space-y-1.5">
-            <div className="h-1.5 w-full grid grid-cols-4 gap-1">
-              <div className="rounded-full bg-[#2C3444]" />
+          <div className="mt-3.5 space-y-1.5">
+            <div className="h-2 w-full grid grid-cols-4 gap-1 bg-[#F1F5F9] p-0.5 rounded-full">
+              <div className="rounded-full bg-[#1E293B]" />
+              <div className="rounded-full bg-[#334155]" />
               <div className="rounded-full bg-[#475569]" />
-              <div className="rounded-full bg-[#64748B]" />
-              <div className="rounded-full bg-[#94A3B8]" />
+              <div className="rounded-full bg-[#0D9488]" />
             </div>
             <div
-              className="text-[11px] text-[#64748B] flex items-center justify-between"
+              className="text-[11.5px] text-[#64748B] flex items-center justify-between"
               title={multiBrandSummary.procurementBreakdownText}
             >
               <span>
@@ -651,7 +727,7 @@ export function PeaklyMasterCabinetsSummary({
                   ? `${selectedBrandRow.totalProcurementQuantity.toLocaleString('ru-RU')} ${selectedBrandRow.primaryUnit}`
                   : 'Ассортимент в плане'}
               </span>
-              <strong className="font-mono text-[#111827]">{gt.modelsCount} SKU</strong>
+              <strong className="font-mono font-extrabold text-[#0F172A]">{gt.modelsCount} SKU</strong>
             </div>
           </div>
         </div>
@@ -659,50 +735,54 @@ export function PeaklyMasterCabinetsSummary({
         {/* 3. Старт 1-й партии (Q1) */}
         <div
           onClick={() => onNavigateSection('roadmap-tasks')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] cursor-pointer flex flex-col justify-between overflow-hidden"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] cursor-pointer flex flex-col justify-between overflow-hidden"
         >
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#0D9488] to-[#14B8A6]" />
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B] truncate">
                 {selectedBrandRow
                   ? `Старт 1-й партии · ${selectedBrandRow.displayCode}`
                   : 'Старт 1-й партии (Q1)'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F0FDFA] text-[#0D9488] shrink-0">
+              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488] shrink-0">
                 30% аванс
               </span>
             </div>
-            <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
               <AnimatedMlnValue valueRub={gt.firstWaveStartBudgetRub} />
             </div>
           </div>
 
-          <div className="mt-3 space-y-1.5">
-            <div className="h-1.5 w-full rounded-full bg-[#EEF2F6] overflow-hidden flex gap-0.5">
+          <div className="mt-3.5 space-y-1.5">
+            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden flex gap-0.5 p-0.5">
               <div className="h-full rounded-l-full bg-[#0D9488] w-[30%]" />
-              <div className="h-full rounded-r-full bg-[#CBD5E1] w-[70%]" />
+              <div className="h-full rounded-r-full bg-[#94A3B8]/60 w-[70%]" />
             </div>
-            <div className="text-[11px] text-[#64748B] flex items-center justify-between">
+            <div className="text-[11.5px] text-[#64748B] flex items-center justify-between">
               <span>Предоплата сейчас</span>
-              <strong className="font-mono text-[#0D9488]">{formatMln(gt.firstWavePrepaymentRub)}</strong>
+              <strong className="font-mono font-extrabold text-[#0D9488]">
+                {formatMln(gt.firstWavePrepaymentRub)}
+              </strong>
             </div>
           </div>
         </div>
 
         {/* 4. Пик своих денег (с оборотом WB) */}
-        <div className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)] flex flex-col justify-between overflow-hidden">
+        <div className="card-shimmer hover-lift relative rounded-[18px] bg-white border border-[#CFD6E0] p-4 md:p-5 shadow-[0_8px_22px_-6px_rgba(15,23,42,0.07)] flex flex-col justify-between overflow-hidden">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#4F46E5] to-[#0D9488]" />
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11.5px] font-semibold text-[#64748B] truncate">
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B] truncate">
                 {selectedBrandRow
                   ? `Пик своих денег · ${selectedBrandRow.displayCode}`
                   : 'Пик своих денег (с WB)'}
               </span>
-              <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] shrink-0">
+              <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#EEF2FF] border border-[#C7D2FE] text-[#4338CA] shrink-0">
                 Реинвест
               </span>
             </div>
-            <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.025em] text-[#111827] leading-none">
+            <div className="mt-2.5 font-mono text-[28px] xl:text-[31px] font-black tracking-[-0.038em] text-[#0F172A] leading-none">
               {gt.verifiedOwnMoneyRequiredRub !== null ? (
                 <AnimatedMlnValue valueRub={gt.verifiedOwnMoneyRequiredRub} />
               ) : (
@@ -711,10 +791,10 @@ export function PeaklyMasterCabinetsSummary({
             </div>
           </div>
 
-          <div className="mt-3 space-y-1.5">
-            <div className="h-1.5 w-full rounded-full bg-[#EEF2F6] overflow-hidden">
+          <div className="mt-3.5 space-y-1.5">
+            <div className="h-2 w-full rounded-full bg-[#E2E8F0] overflow-hidden p-0.5">
               <div
-                className="h-full rounded-full bg-[#475569] transition-all duration-700 ease-out"
+                className="h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#0D9488] transition-all duration-700 ease-out"
                 style={{
                   width: `${
                     gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
@@ -724,24 +804,25 @@ export function PeaklyMasterCabinetsSummary({
                 }}
               />
             </div>
-            <div className="text-[11px] text-[#64748B] truncate">
+            <div className="text-[11.5px] text-[#64748B] truncate">
               Дальнейшие волны — из выручки WB
             </div>
           </div>
         </div>
 
-        {/* 5. HERO-КАРТОЧКА ОЖИДАЕМОЙ ПРИБЫЛИ С АНИМИРОВАННЫМ КОЛЬЦОМ МАРЖИ И ОРБИТОЙ */}
+        {/* 5. ДОФАМИНОВАЯ HERO-КАРТОЧКА ПРИБЫЛИ С АНИМИРОВАННЫМ КОЛЬЦОМ МАРЖИ И ОРБИТОЙ */}
         <div
           onClick={() => onNavigateSection('finance')}
-          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-[#F0FDFA]/90 via-white to-[#ECFDF5]/60 border border-[#99F6E4] p-4 md:p-5 shadow-[0_6px_20px_-4px_rgba(13,148,136,0.12)] cursor-pointer overflow-hidden flex items-center justify-between gap-3"
+          className="card-shimmer hover-lift relative rounded-[18px] bg-gradient-to-br from-[#ECFDF5] via-white to-[#CCFBF1]/70 border-[1.5px] border-[#6EE7B7] p-4 md:p-5 shadow-[0_12px_28px_-6px_rgba(13,148,136,0.18)] cursor-pointer overflow-hidden flex items-center justify-between gap-2.5"
         >
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#10B981] via-[#0D9488] to-[#047857]" />
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#0D9488]/15 blur-2xl"
+            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#10B981]/20 blur-2xl"
           />
           <svg
             aria-hidden="true"
-            className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 text-[#0D9488] opacity-[0.10] animate-orbit-slow"
+            className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 text-[#0D9488] opacity-[0.12] animate-orbit-slow"
             viewBox="0 0 220 220"
             fill="none"
           >
@@ -750,38 +831,51 @@ export function PeaklyMasterCabinetsSummary({
           </svg>
 
           <div className="relative z-10 min-w-0 flex-1 flex flex-col justify-between h-full">
-            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#0D9488] truncate">
-              {selectedBrandRow
-                ? `Прибыль · ${selectedBrandRow.displayCode}`
-                : 'Ожидаемая прибыль'}
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#047857] truncate">
+              <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+              <span className="truncate">
+                {selectedBrandRow
+                  ? `Прибыль · ${selectedBrandRow.displayCode}`
+                  : 'Ожидаемая прибыль'}
+              </span>
             </div>
-            <div className="mt-1.5 font-mono text-[22px] xl:text-[23px] font-extrabold tracking-[-0.03em] text-[#065F46] leading-none">
-              <AnimatedMlnValue valueRub={gt.annualEstimatedOperatingProfitRub} prefix="+" />
+            <div className="mt-2 font-mono text-[27px] xl:text-[30px] font-black tracking-[-0.04em] text-[#064E3B] leading-none">
+              <AnimatedMlnValue
+                valueRub={gt.annualEstimatedOperatingProfitRub}
+                prefix="+"
+                unitClassName="text-[12px] font-bold tracking-normal text-[#0D9488] font-sans"
+              />
             </div>
-            <div className="mt-1.5 h-0.5 w-14 rounded-full bg-gradient-to-r from-[#0D9488] to-transparent" />
-            <div className="mt-2 text-[11px] text-[#475569] truncate">
-              Себестоимость: <strong className="font-mono text-[#111827]">{formatMln(gt.annualSoldGoodsCostRub)}</strong>
+            <div className="mt-2 h-0.5 w-16 rounded-full bg-gradient-to-r from-[#10B981] via-[#0D9488] to-transparent" />
+            <div className="mt-2 text-[11.5px] text-[#334155] truncate">
+              Себестоимость: <strong className="font-mono font-extrabold text-[#0F172A]">{formatMln(gt.annualSoldGoodsCostRub)}</strong>
             </div>
           </div>
 
           {/* Анимированное круговое кольцо маржинальности (Profitability Ring) */}
-          <div className="relative z-10 shrink-0 h-[68px] w-[68px] rounded-full bg-white/90 border border-[#A7F3D0] p-1 shadow-2xs flex items-center justify-center">
+          <div className="relative z-10 shrink-0 h-[72px] w-[72px] rounded-full bg-white/95 border border-[#6EE7B7] p-1 shadow-[0_4px_12px_rgba(13,148,136,0.14)] flex items-center justify-center">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+              <defs>
+                <linearGradient id="profitRingGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#10B981" />
+                  <stop offset="100%" stopColor="#047857" />
+                </linearGradient>
+              </defs>
               <circle
                 cx="40"
                 cy="40"
                 r={ringRadius}
                 fill="none"
                 stroke="#E2E8F0"
-                strokeWidth="5.5"
+                strokeWidth="6"
               />
               <circle
                 cx="40"
                 cy="40"
                 r={ringRadius}
                 fill="none"
-                stroke="#0D9488"
-                strokeWidth="5.5"
+                stroke="url(#profitRingGrad)"
+                strokeWidth="6"
                 strokeLinecap="round"
                 strokeDasharray={ringCircumference}
                 strokeDashoffset={ringStrokeOffset}
@@ -789,10 +883,10 @@ export function PeaklyMasterCabinetsSummary({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="font-mono text-[12px] font-extrabold text-[#065F46] leading-none">
+              <span className="font-mono text-[13px] font-black text-[#064E3B] leading-none">
                 {groupMarginPct.toFixed(1).replace('.', ',')}%
               </span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider text-[#64748B] mt-0.5">
+              <span className="text-[7.5px] font-extrabold uppercase tracking-wider text-[#0D9488] mt-0.5">
                 маржа
               </span>
             </div>
@@ -966,11 +1060,11 @@ export function PeaklyMasterCabinetsSummary({
                       ? onNavigateSection('finance')
                       : onSelectBrandFilter(seg.key)
                   }
-                  className={`rounded-[12px] p-3 border transition-all cursor-pointer flex flex-col justify-between ${
+                  className={`rounded-[14px] p-3.5 border transition-all cursor-pointer flex flex-col justify-between ${
                     isHovered
-                      ? 'bg-white border-[#94A3B8] shadow-[0_6px_16px_-4px_rgba(15,23,42,0.08)] -translate-y-0.5'
+                      ? 'bg-white border-[#94A3B8] shadow-[0_8px_20px_-4px_rgba(15,23,42,0.10)] -translate-y-0.5'
                       : isProfitCard
-                      ? 'bg-[#F0FDFA]/55 border-[#CCFBF1] hover:bg-white'
+                      ? 'bg-gradient-to-br from-[#ECFDF5]/80 to-[#F0FDFA]/60 border-[#99F6E4] hover:bg-white'
                       : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white hover:border-[#CBD5E1]'
                   }`}
                 >
@@ -985,20 +1079,25 @@ export function PeaklyMasterCabinetsSummary({
                       </span>
                     </div>
                     <span
-                      className={`font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded-[6px] shrink-0 ${seg.badgeBg} ${seg.badgeText}`}
+                      className={`font-mono text-[10.5px] font-extrabold px-2 py-0.5 rounded-[6px] shrink-0 ${seg.badgeBg} ${seg.badgeText}`}
                     >
                       {seg.pct.toFixed(1).replace('.', ',')}%
                     </span>
                   </div>
 
-                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                  <div className="mt-2.5 flex items-baseline justify-between gap-2">
                     <span
-                      className={`font-mono text-[16px] font-extrabold tracking-[-0.02em] ${
-                        isProfitCard ? 'text-[#065F46]' : 'text-[#111827]'
+                      className={`font-mono text-[20px] xl:text-[21px] font-black tracking-[-0.03em] leading-none ${
+                        isProfitCard ? 'text-[#064E3B]' : 'text-[#0F172A]'
                       }`}
                     >
-                      {isProfitCard ? '+' : ''}
-                      {formatMln(seg.valueRub)}
+                      <AnimatedMlnValue
+                        valueRub={seg.valueRub}
+                        prefix={isProfitCard ? '+' : ''}
+                        unitClassName={`text-[11px] font-bold tracking-normal font-sans ${
+                          isProfitCard ? 'text-[#0D9488]' : 'text-[#64748B]'
+                        }`}
+                      />
                     </span>
                     <span className="text-[10.5px] text-[#64748B] truncate">
                       {seg.subtitle}

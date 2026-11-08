@@ -2163,16 +2163,16 @@ export function GrowthScenariosShowcase({
                         </div>
 
                         <div className="mt-2.5 flex items-baseline justify-between gap-2">
-                          <div className="font-mono text-[22px] font-extrabold tracking-[-0.025em] text-[#111827]">
-                            {liveDecMlnStr} млн ₽{' '}
-                            <span className="font-sans text-[11.5px] font-normal text-[#64748B]">
-                              в дек
+                          <div className="inline-flex items-baseline gap-1.5 font-mono text-[25px] xl:text-[27px] font-black tracking-[-0.035em] text-[#0F172A] leading-none">
+                            <span>{liveDecMlnStr}</span>
+                            <span className="font-sans text-[11.5px] font-bold tracking-normal text-[#64748B]">
+                              млн ₽ в дек
                             </span>
                           </div>
                           <span
-                            className={`font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded ${
+                            className={`font-mono text-[10.5px] font-extrabold px-2 py-0.5 rounded-md ${
                               pctNum >= 100
-                                ? 'bg-[#F0FDFA] text-[#0D9488]'
+                                ? 'bg-[#F0FDFA] border border-[#99F6E4] text-[#0D9488]'
                                 : 'bg-[#F1F5F9] text-[#64748B]'
                             }`}
                           >
@@ -2182,22 +2182,22 @@ export function GrowthScenariosShowcase({
                       </div>
 
                       {/* Анимированный прогресс-бар и одна строка итога за год */}
-                      <div className="mt-3 space-y-1.5">
-                        <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#E2E8F0]">
+                      <div className="mt-3.5 space-y-1.5">
+                        <div className="h-2 w-full rounded-full overflow-hidden bg-[#E2E8F0] p-0.5">
                           <div
                             style={{ width: `${progressWidth}%` }}
                             className={`h-full rounded-full transition-all duration-700 ease-out ${
                               isSelected
                                 ? pctNum >= 100
-                                  ? 'bg-[#0D9488]'
-                                  : 'bg-[#2C3444]'
+                                  ? 'bg-gradient-to-r from-[#0D9488] to-[#10B981]'
+                                  : 'bg-gradient-to-r from-[#1E293B] to-[#334155]'
                                 : 'bg-[#94A3B8]'
                             }`}
                           />
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-[#64748B]">
+                        <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#64748B]">
                           <span>Цель: {String(targetMlnNum).replace('.', ',')} млн</span>
-                          <span className="font-mono font-semibold text-[#334155]">
+                          <span className="font-mono font-extrabold text-[#1E293B]">
                             Год: {annualMln} млн ₽
                           </span>
                         </div>
