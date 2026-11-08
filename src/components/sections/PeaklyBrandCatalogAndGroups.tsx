@@ -65,7 +65,295 @@ function formatShortDateRu(iso: string | null | undefined): string {
 }
 
 // =============================================================================
-// 1. СВОДНАЯ ВСЕХ КАБИНЕТОВ И БРЕНДОВ В СТИЛЕ PEAKLY (ДЛЯ ГЛАВНОЙ СТРАНИЦЫ)
+// 1. ТАБЛИЦА-МАТРИЦА 5 КАБИНЕТОВ И СЦЕНАРИЕВ БРЕНДОВ (ИДЕАЛЬНОЕ ВЫРАВНИВАНИЕ КОЛОНОК)
+// =============================================================================
+export interface BrandCabinetsMatrixTableProps {
+  multiBrandSummary: MultiBrandPortfolioSummaryResult;
+  scenarios: GrowthScenarioDef[];
+  activeBrandFilter: string;
+  onSelectBrandFilter: (brandCode: string) => void;
+  onSelectScenarioForBrand: (brandCode: string, scenarioId: number | null) => void;
+  onSelectActiveScenarioId: (scenarioId: number) => void;
+  onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
+  onOpenCreateModelForBrand: (brandCode: string) => void;
+}
+
+export function BrandCabinetsMatrixTable({
+  multiBrandSummary,
+  scenarios,
+  activeBrandFilter,
+  onSelectBrandFilter,
+  onSelectScenarioForBrand,
+  onSelectActiveScenarioId,
+  onOpenCreateScenarioForBrand,
+  onOpenCreateModelForBrand,
+}: BrandCabinetsMatrixTableProps) {
+  const gt = multiBrandSummary.groupTotal;
+
+  return (
+    <div className="rounded-[12px] border border-[#E2E8F0] bg-white overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[940px] text-left border-collapse">
+          <thead>
+            <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+              <th className="py-2.5 px-4 w-[215px]">Кабинет / Бренд</th>
+              <th className="py-2.5 px-3 w-[315px]">Сценарий развития бренда</th>
+              <th className="py-2.5 px-3 text-right">Продажи (Год / Дек)</th>
+              <th className="py-2.5 px-3 text-right">Закупки (Объём)</th>
+              <th className="py-2.5 px-3 text-right">Старт Q1 (Аванс)</th>
+              <th className="py-2.5 px-3 text-right">Пик своих денег</th>
+              <th className="py-2.5 px-4 text-right w-[195px]">Опер. прибыль / Действие</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EEF2F6] text-[12px]">
+            {multiBrandSummary.brands.map((b) => {
+              const unitCfg = getBrandUnitConfig(b.brandCode);
+              const brandScenarios = getScenariosForBrand(scenarios, b.brandCode);
+              const accent = getModelBrandAccentStyles(b.brandCode);
+              const isSelectedBrand =
+                activeBrandFilter !== 'ALL' &&
+                normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
+              const isActive = b.hasScenario && b.hasModels;
+
+              return (
+                <tr
+                  key={b.brandCode}
+                  onClick={() => {
+                    onSelectBrandFilter(b.brandCode);
+                    if (b.selectedScenarioId !== null) {
+                      onSelectActiveScenarioId(b.selectedScenarioId);
+                    }
+                  }}
+                  className={`transition-colors cursor-pointer ${
+                    isSelectedBrand
+                      ? 'bg-[#EFF6FF]/65 hover:bg-[#EFF6FF]'
+                      : 'bg-white hover:bg-[#F8FAFC]'
+                  }`}
+                >
+                  {/* 1. Кабинет / Бренд (строго фиксированная колонка) */}
+                  <td className="py-2.5 px-4 align-middle">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`h-8 w-1.5 rounded-full shrink-0 ${accent.accentBar}`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13.5px] font-extrabold text-[#0F172A] tracking-tight">
+                            {b.displayCode}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold border ${
+                              b.modelsCount > 0
+                                ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'
+                                : 'bg-[#F8FAFC] text-[#64748B] border-[#E2E8F0]'
+                            }`}
+                          >
+                            {b.modelsCount} SKU
+                          </span>
+                        </div>
+                        <div className="text-[10.5px] text-[#64748B] truncate max-w-[165px]">
+                          {unitCfg.categoryDefault} · {b.primaryUnit}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 2. Сценарий развития бренда (единая вертикальная ось для всех 5 строк) */}
+                  <td
+                    className="py-2.5 px-3 align-middle"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-1.5 w-full max-w-[295px]">
+                      <select
+                        aria-label={`Сценарий развития бренда ${b.displayCode}`}
+                        value={b.selectedScenarioId ?? ''}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const nextId = raw === '' ? null : Number(raw);
+                          onSelectScenarioForBrand(b.brandCode, nextId);
+                          if (nextId !== null) {
+                            onSelectActiveScenarioId(nextId);
+                          }
+                        }}
+                        className={`h-8 flex-1 min-w-0 px-2.5 rounded-[8px] border text-[11.5px] font-semibold focus:outline-none focus:border-[#2563EB] cursor-pointer truncate ${
+                          b.hasScenario
+                            ? 'bg-[#F8FAFC] hover:bg-white border-[#E2E8F0] text-[#0F172A]'
+                            : 'bg-[#F8FAFC] border-dashed border-[#CBD5E1] text-[#64748B]'
+                        }`}
+                      >
+                        <option value="">Нет активного сценария</option>
+                        {brandScenarios.map((sc) => (
+                          <option key={sc.id} value={sc.id}>
+                            {sc.title} ({sc.year || 2027} · {sc.monthlyTargetMln} млн/мес)
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenCreateScenarioForBrand(
+                            b.brandCode,
+                            `${b.displayCode} — План развития 2027`
+                          )
+                        }
+                        title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
+                        className="h-8 w-8 shrink-0 rounded-[8px] bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#BFDBFE] text-[#475569] hover:text-[#1D4ED8] flex items-center justify-center transition cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* 3. Продажи (Год / Дек) */}
+                  <td className="py-2.5 px-3 align-middle text-right">
+                    {isActive ? (
+                      <div>
+                        <div className="font-mono text-[13px] font-extrabold text-[#0F172A]">
+                          {formatMln(b.annualRevenueRub)}
+                        </div>
+                        <div className="font-mono text-[10.5px] text-[#64748B]">
+                          дек: {formatMln(b.decemberRevenueRub)}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
+                    )}
+                  </td>
+
+                  {/* 4. Закупки (Объём и бюджет) */}
+                  <td className="py-2.5 px-3 align-middle text-right">
+                    {isActive ? (
+                      <div>
+                        <div className="font-mono text-[12.5px] font-bold text-[#0F172A]">
+                          {b.totalProcurementQuantity.toLocaleString('ru-RU')} {b.primaryUnit}
+                        </div>
+                        <div className="font-mono text-[10.5px] text-[#64748B]">
+                          {formatMln(b.totalProcurementBudgetRub)}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
+                    )}
+                  </td>
+
+                  {/* 5. Старт Q1 (Аванс) */}
+                  <td className="py-2.5 px-3 align-middle text-right">
+                    {isActive ? (
+                      <div>
+                        <div className="font-mono text-[12.5px] font-bold text-[#0F172A]">
+                          {formatMln(b.firstWaveStartBudgetRub)}
+                        </div>
+                        <div className="font-mono text-[10.5px] text-[#64748B]">
+                          аванс: {formatMln(b.firstWavePrepaymentRub)}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
+                    )}
+                  </td>
+
+                  {/* 6. Пик своих денег */}
+                  <td className="py-2.5 px-3 align-middle text-right">
+                    {isActive ? (
+                      <div>
+                        <div className="font-mono text-[12.5px] font-bold text-[#1D4ED8]">
+                          {b.verifiedOwnMoneyRequiredRub !== null
+                            ? formatMln(b.verifiedOwnMoneyRequiredRub)
+                            : '—'}
+                        </div>
+                        <div className="text-[10px] text-[#64748B]">с оборотом WB</div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
+                    )}
+                  </td>
+
+                  {/* 7. Опер. прибыль или Компактные кнопки быстрого старта */}
+                  <td
+                    className="py-2.5 px-4 align-middle text-right"
+                    onClick={(e) => {
+                      if (!isActive) e.stopPropagation();
+                    }}
+                  >
+                    {isActive ? (
+                      <div>
+                        <div className="font-mono text-[13px] font-extrabold text-[#059669]">
+                          +{formatMln(b.annualEstimatedOperatingProfitRub)}
+                        </div>
+                        <div className="font-mono text-[10.5px] text-[#64748B]">
+                          COGS: {formatMln(b.annualSoldGoodsCostRub)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center justify-end gap-1.5">
+                        {!b.hasScenario && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenCreateScenarioForBrand(
+                                b.brandCode,
+                                `${b.displayCode} — Базовый план 2027`
+                              )
+                            }
+                            className="h-7 px-2.5 rounded-[7px] bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-semibold transition cursor-pointer whitespace-nowrap"
+                          >
+                            + Сценарий
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onOpenCreateModelForBrand(b.brandCode)}
+                          className="h-7 px-2.5 rounded-[7px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8] text-[#334155] text-[11px] font-semibold transition cursor-pointer whitespace-nowrap"
+                        >
+                          + Товар
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr
+              onClick={() => onSelectBrandFilter('ALL')}
+              className="bg-[#F8FAFC] border-t border-[#E2E8F0] font-bold text-[#0F172A] text-[12px] cursor-pointer hover:bg-[#F1F5F9]/80 transition"
+            >
+              <td className="py-2.5 px-4" colSpan={2}>
+                <div className="flex items-center gap-2">
+                  <span className="uppercase tracking-wider text-[10.5px] text-[#475569]">
+                    Итого по холдингу (5 кабинетов)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-[5px] bg-white border border-[#E2E8F0] font-mono text-[10px] text-[#334155]">
+                    {gt.modelsCount} SKU
+                  </span>
+                </div>
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono font-extrabold text-[#0F172A]">
+                {formatMln(gt.annualRevenueRub)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-[#0F172A]">
+                {formatMln(gt.totalProcurementBudgetRub)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-[#0F172A]">
+                {formatMln(gt.firstWaveStartBudgetRub)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-[#1D4ED8]">
+                {gt.verifiedOwnMoneyRequiredRub !== null
+                  ? formatMln(gt.verifiedOwnMoneyRequiredRub)
+                  : '—'}
+              </td>
+              <td className="py-2.5 px-4 text-right font-mono font-extrabold text-[#059669]">
+                +{formatMln(gt.annualEstimatedOperatingProfitRub)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// 1-B. СВОДНАЯ ПОКАЗАТЕЛЕЙ ХОЛДИНГА + КОМПАКТНАЯ ПАНЕЛЬ КАБИНЕТОВ (ДЛЯ ТОП-БЛОКА)
 // =============================================================================
 export interface PeaklyMasterCabinetsSummaryProps {
   multiBrandSummary: MultiBrandPortfolioSummaryResult;
@@ -77,6 +365,7 @@ export interface PeaklyMasterCabinetsSummaryProps {
   onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenCreateModelForBrand: (brandCode: string) => void;
   onNavigateSection: (section: 'product-catalog' | 'launch-calendar' | 'roadmap-tasks' | 'finance') => void;
+  embeddedInHero?: boolean;
 }
 
 export function PeaklyMasterCabinetsSummary({
@@ -89,7 +378,9 @@ export function PeaklyMasterCabinetsSummary({
   onOpenCreateScenarioForBrand,
   onOpenCreateModelForBrand,
   onNavigateSection,
+  embeddedInHero = false,
 }: PeaklyMasterCabinetsSummaryProps) {
+  const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(false);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
 
   const gt = multiBrandSummary.groupTotal;
@@ -102,62 +393,32 @@ export function PeaklyMasterCabinetsSummary({
       : 0;
 
   return (
-    <section className="rounded-[16px] bg-white border border-[#E2E8F0] overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      {/* ШАПКА СВОДНОЙ ВСЕХ КАБИНЕТОВ */}
-      <div className="px-5 py-4 bg-white border-b border-[#EEF2F6] flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-mono text-[10.5px] font-bold uppercase tracking-wider">
-            <Layers className="h-3.5 w-3.5 text-[#2563EB]" />
-            <span>Сводная кабинетов · 5 брендов</span>
-          </span>
-          <div>
-            <h2 className="text-[16px] md:text-[17.5px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
-              Ключевые показатели по кабинетам и брендам BORNERS GROUP (2027–2028)
-            </h2>
-            <p className="text-[11.5px] text-[#64748B]">
-              У каждого бренда свой независимый сценарий развития · Продажи, закупки, авансы фабрикам, пик своих денег и прибыль без двойного счёта
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMonthlyCashflowOpen((v) => !v)}
-            className="h-8 px-3 rounded-[9px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
-          >
-            <Calendar className="h-3.5 w-3.5 text-[#64748B]" />
-            <span>{monthlyCashflowOpen ? 'Скрыть помесячный график ▴' : 'График денег 12 мес. ▾'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigateSection('roadmap-tasks')}
-            className="h-8 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11.5px] font-semibold transition cursor-pointer shadow-2xs"
-          >
-            Партии и закупки →
-          </button>
-        </div>
-      </div>
-
-      {/* 5 ГЛАВНЫХ ПОКАЗАТЕЛЕЙ ВСЕХ КАБИНЕТОВ НА ГЛАВНОЙ */}
+    <div
+      className={
+        embeddedInHero
+          ? 'border-t border-[#EEF2F6] bg-white'
+          : 'rounded-[16px] bg-white border border-[#E2E8F0] overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]'
+      }
+    >
+      {/* 5 ГЛАВНЫХ ПОКАЗАТЕЛЕЙ ВСЕХ КАБИНЕТОВ — СТРОГО В ОДНУ ГОРИЗОНТАЛЬНУЮ ЛИНИЮ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-[#EEF2F6] bg-white border-b border-[#EEF2F6]">
-        {/* 1. План продаж (Все кабинеты) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
+        {/* 1. Выручка холдинга */}
+        <div className="px-4 py-3.5 md:px-5 md:py-4 flex flex-col justify-between gap-2 bg-white">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
-                1. Продажи всех кабинетов
+            <div className="flex items-center justify-between gap-1.5 h-5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B] truncate whitespace-nowrap">
+                1. Выручка холдинга
               </span>
-              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-[#F1F5F9] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
                 {gt.modelsCount} SKU · {activeBrandsCount}/5 каб.
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
+            <div className="mt-1.5 font-mono text-[21px] xl:text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A] leading-tight">
               {formatMln(gt.annualRevenueRub)}
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11.5px] text-[#64748B]">
-            <span>
+          <div className="flex items-center justify-between gap-2 text-[11px] text-[#64748B] whitespace-nowrap">
+            <span className="truncate">
               Пик дек:{' '}
               <strong className="font-mono text-[#0F172A]">
                 {formatMln(gt.decemberRevenueRub)}
@@ -166,72 +427,87 @@ export function PeaklyMasterCabinetsSummary({
             <button
               type="button"
               onClick={() => onNavigateSection('launch-calendar')}
-              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer shrink-0"
             >
               02 · Продажи →
             </button>
           </div>
         </div>
 
-        {/* 2. Объём и бюджет закупок */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
+        {/* 2. План закупок (Год) */}
+        <div className="px-4 py-3.5 md:px-5 md:py-4 flex flex-col justify-between gap-2 bg-white">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
-                2. План закупок (Год)
+            <div className="flex items-center justify-between gap-1.5 h-5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B] truncate whitespace-nowrap">
+                2. План закупок (год)
               </span>
-              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#475569]">
-                4 кварт. волны
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-[#F1F5F9] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#475569]">
+                4 волны
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
+            <div className="mt-1.5 font-mono text-[21px] xl:text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A] leading-tight">
               {formatMln(gt.totalProcurementBudgetRub)}
             </div>
           </div>
-          <div className="text-[11px] text-[#64748B] font-medium truncate" title={multiBrandSummary.procurementBreakdownText}>
-            К заказу: <strong className="font-mono text-[#0F172A]">{multiBrandSummary.procurementBreakdownText}</strong>
+          <div
+            className="flex items-center justify-between gap-2 text-[11px] text-[#64748B] whitespace-nowrap"
+            title={multiBrandSummary.procurementBreakdownText}
+          >
+            <span className="truncate">
+              К заказу:{' '}
+              <strong className="font-mono text-[#0F172A]">
+                {multiBrandSummary.procurementBreakdownText}
+              </strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigateSection('roadmap-tasks')}
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer shrink-0"
+            >
+              Партии →
+            </button>
           </div>
         </div>
 
-        {/* 3. Вложить на старт (1-я волна Q1 + Аванс 30%) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
+        {/* 3. Старт 1-й партии (Q1) */}
+        <div className="px-4 py-3.5 md:px-5 md:py-4 flex flex-col justify-between gap-2 bg-white">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
-                3. Старт 1-й партии (Q1)
+            <div className="flex items-center justify-between gap-1.5 h-5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B] truncate whitespace-nowrap">
+                3. Старт 1-й партии
               </span>
-              <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-[#F1F5F9] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#334155]">
                 Аванс 30%
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
+            <div className="mt-1.5 font-mono text-[21px] xl:text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A] leading-tight">
               {formatMln(gt.firstWaveStartBudgetRub)}
             </div>
           </div>
-          <div className="text-[11.5px] text-[#64748B]">
+          <div className="text-[11px] text-[#64748B] truncate whitespace-nowrap">
             Предоплата сейчас:{' '}
             <strong className="font-mono text-[#0F172A]">{formatMln(gt.firstWavePrepaymentRub)}</strong>
           </div>
         </div>
 
-        {/* 4. Пик собственных денег (с учётом оборота WB) */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
+        {/* 4. Пик своих денег (с оборотом WB) */}
+        <div className="px-4 py-3.5 md:px-5 md:py-4 flex flex-col justify-between gap-2 bg-white">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
-                4. Пик своих денег (с WB)
+            <div className="flex items-center justify-between gap-1.5 h-5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B] truncate whitespace-nowrap">
+                4. Пик своих денег
               </span>
-              <span className="rounded-md bg-[#EFF6FF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#1D4ED8]">
-                Оборотный пик
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-[#EFF6FF] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#1D4ED8]">
+                С оборотом WB
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
+            <div className="mt-1.5 font-mono text-[21px] xl:text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A] leading-tight">
               {gt.verifiedOwnMoneyRequiredRub !== null
                 ? formatMln(gt.verifiedOwnMoneyRequiredRub)
                 : '—'}
             </div>
           </div>
-          <div className="text-[11px] text-[#64748B]">
+          <div className="text-[11px] text-[#64748B] truncate whitespace-nowrap">
             {gt.verifiedOwnMoneyRequiredRub !== null
               ? 'Дальнейшие партии — из выручки WB'
               : multiBrandSummary.ownMoneyStatusLabel}
@@ -239,23 +515,23 @@ export function PeaklyMasterCabinetsSummary({
         </div>
 
         {/* 5. Ожидаемая операционная прибыль */}
-        <div className="p-4 md:p-5 flex flex-col justify-between gap-2 bg-white">
+        <div className="px-4 py-3.5 md:px-5 md:py-4 flex flex-col justify-between gap-2 bg-white">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
+            <div className="flex items-center justify-between gap-1.5 h-5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B] truncate whitespace-nowrap">
                 5. Ожидаемая прибыль
               </span>
-              <span className="rounded-md bg-[#ECFDF5] px-2 py-0.5 font-mono text-[10px] font-bold text-[#059669]">
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-[#ECFDF5] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#059669]">
                 {groupMarginPct.toFixed(1).replace('.', ',')}% маржа
               </span>
             </div>
-            <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#059669]">
+            <div className="mt-1.5 font-mono text-[21px] xl:text-[22px] font-extrabold tracking-[-0.02em] text-[#059669] leading-tight">
               +{formatMln(gt.annualEstimatedOperatingProfitRub)}
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11.5px] text-[#64748B]">
-            <span>
-              Себест. продаж:{' '}
+          <div className="flex items-center justify-between gap-2 text-[11px] text-[#64748B] whitespace-nowrap">
+            <span className="truncate">
+              COGS:{' '}
               <strong className="font-mono text-[#0F172A]">
                 {formatMln(gt.annualSoldGoodsCostRub)}
               </strong>
@@ -263,7 +539,7 @@ export function PeaklyMasterCabinetsSummary({
             <button
               type="button"
               onClick={() => onNavigateSection('finance')}
-              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer shrink-0"
             >
               P&L →
             </button>
@@ -271,220 +547,123 @@ export function PeaklyMasterCabinetsSummary({
         </div>
       </div>
 
-      {/* КАРТОЧКИ-СТРОКИ 5 КАБИНЕТОВ / БРЕНДОВ С ИНДИВИДУАЛЬНЫМ СЦЕНАРИЕМ РАЗВИТИЯ КАЖДОГО БРЕНДА */}
-      <div className="p-4 md:p-5 bg-[#F8FAFC]/70 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="text-[12.5px] font-bold text-[#0F172A]">
-            Кабинеты и бренды группы (нажмите на кабинет для фильтрации или выберите сценарий развития бренда)
-          </div>
-          {activeBrandFilter !== 'ALL' && (
-            <button
-              type="button"
-              onClick={() => onSelectBrandFilter('ALL')}
-              className="text-[11.5px] font-bold text-[#1D4ED8] bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] px-2.5 py-1 rounded-[7px] cursor-pointer transition"
+      {/* КОМПАКТНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ 5 КАБИНЕТОВ + КНОПКА РАСКРЫТИЯ ТАБЛИЦЫ СЦЕНАРИЕВ БРЕНДОВ */}
+      <div className="px-4 py-2.5 md:px-5 bg-[#F8FAFC] border-b border-[#EEF2F6] flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] mr-1">
+            Кабинеты:
+          </span>
+          <button
+            type="button"
+            onClick={() => onSelectBrandFilter('ALL')}
+            className={`h-7 px-2.5 rounded-[7px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+              activeBrandFilter === 'ALL'
+                ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-2xs'
+                : 'bg-white text-[#334155] border-[#E2E8F0] hover:border-[#94A3B8]'
+            }`}
+          >
+            <span>Все (5)</span>
+            <span
+              className={`font-mono text-[10.5px] ${
+                activeBrandFilter === 'ALL' ? 'text-blue-100' : 'text-[#64748B]'
+              }`}
             >
-              Показать все кабинеты (сейчас: {activeBrandFilter}) ×
-            </button>
-          )}
-        </div>
+              {(gt.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+            </span>
+          </button>
 
-        <div className="grid grid-cols-1 gap-2">
           {multiBrandSummary.brands.map((b) => {
-            const unitCfg = getBrandUnitConfig(b.brandCode);
-            const brandScenarios = getScenariosForBrand(scenarios, b.brandCode);
-            const accent = getModelBrandAccentStyles(b.brandCode);
-            const isSelectedBrand =
+            const isSelected =
               activeBrandFilter !== 'ALL' &&
               normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
+            const accent = getModelBrandAccentStyles(b.brandCode);
+            const hasRev = b.hasScenario && b.hasModels && b.annualRevenueRub > 0;
 
             return (
-              <div
+              <button
                 key={b.brandCode}
+                type="button"
                 onClick={() => {
-                  onSelectBrandFilter(b.brandCode);
-                  if (b.selectedScenarioId !== null) {
+                  onSelectBrandFilter(isSelected ? 'ALL' : b.brandCode);
+                  if (!isSelected && b.selectedScenarioId !== null) {
                     onSelectActiveScenarioId(b.selectedScenarioId);
                   }
                 }}
-                className={`rounded-[13px] bg-white border transition-all px-4 py-3 cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${
-                  isSelectedBrand
-                    ? 'border-[#2563EB] ring-2 ring-[#2563EB]/12 bg-white shadow-[0_4px_14px_-4px_rgba(37,99,235,0.12)]'
-                    : 'border-[#E2E8F0] hover:border-[#94A3B8]'
+                className={`h-7 px-2.5 rounded-[7px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                  isSelected
+                    ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#2563EB] ring-1 ring-[#2563EB]/20'
+                    : 'bg-white text-[#334155] border-[#E2E8F0] hover:border-[#94A3B8]'
                 }`}
               >
-                {/* Левая часть: Бренд + Категория + Селектор сценария развития бренда */}
-                <div className="flex flex-wrap items-center gap-3 min-w-[300px]">
-                  <div className={`h-9 w-1.5 rounded-full ${accent.accentBar}`} />
-                  <div className="min-w-[135px]">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-extrabold text-[#0F172A]">
-                        {b.displayCode}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-[5px] font-mono text-[10px] font-bold border bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]">
-                        {b.modelsCount} SKU
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-[#64748B]">
-                      {unitCfg.categoryDefault} · ед.: <strong>{b.primaryUnit}</strong>
-                    </div>
-                  </div>
-
-                  {/* Индивидуальный сценарий развития бренда */}
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-[9px] p-1"
-                  >
-                    <span className="text-[10.5px] font-semibold text-[#64748B] pl-1.5">
-                      Сценарий:
-                    </span>
-                    <select
-                      aria-label={`Сценарий развития бренда ${b.displayCode}`}
-                      value={b.selectedScenarioId ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        const nextId = raw === '' ? null : Number(raw);
-                        onSelectScenarioForBrand(b.brandCode, nextId);
-                        if (nextId !== null) {
-                          onSelectActiveScenarioId(nextId);
-                        }
-                      }}
-                      className="h-7 px-2 rounded-[6px] bg-white border border-[#E2E8F0] text-[11.5px] font-bold text-[#0F172A] focus:outline-none cursor-pointer"
-                    >
-                      <option value="">Нет сценария</option>
-                      {brandScenarios.map((sc) => (
-                        <option key={sc.id} value={sc.id}>
-                          {sc.title} ({sc.year || 2027} · {sc.monthlyTargetMln} млн/мес)
-                        </option>
-                      ))}
-                    </select>
-                    {b.hasScenario && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpenCreateScenarioForBrand(
-                            b.brandCode,
-                            `${b.displayCode} — План развития 2027`
-                          )
-                        }
-                        title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
-                        className="h-7 px-2.5 rounded-[6px] bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#BFDBFE] text-[#334155] hover:text-[#1D4ED8] text-[11px] font-semibold transition cursor-pointer"
-                      >
-                        + Сценарий
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Правая часть: Ключевые метрики кабинета (Продажи, Закупки, Старт Q1, Пик своих денег, Прибыль) */}
-                {b.hasScenario && b.hasModels ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 flex-1 lg:max-w-[660px] text-right">
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
-                        Продажи (Год / Дек)
-                      </div>
-                      <div className="font-mono text-[13px] font-extrabold text-[#0F172A]">
-                        {formatMln(b.annualRevenueRub)}
-                      </div>
-                      <div className="font-mono text-[10.5px] text-[#64748B]">
-                        дек: {formatMln(b.decemberRevenueRub)}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
-                        Закупки (Объём)
-                      </div>
-                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
-                        {b.totalProcurementQuantity.toLocaleString('ru-RU')} {b.primaryUnit}
-                      </div>
-                      <div className="font-mono text-[10.5px] text-[#64748B]">
-                        {formatMln(b.totalProcurementBudgetRub)}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
-                        Старт Q1 (Аванс)
-                      </div>
-                      <div className="font-mono text-[13px] font-bold text-[#0F172A]">
-                        {formatMln(b.firstWaveStartBudgetRub)}
-                      </div>
-                      <div className="font-mono text-[10.5px] text-[#64748B]">
-                        аванс: {formatMln(b.firstWavePrepaymentRub)}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
-                        Пик своих денег
-                      </div>
-                      <div className="font-mono text-[13px] font-bold text-[#1E3A8A]">
-                        {b.verifiedOwnMoneyRequiredRub !== null
-                          ? formatMln(b.verifiedOwnMoneyRequiredRub)
-                          : '—'}
-                      </div>
-                      <div className="text-[10px] text-[#64748B]">с оборотом WB</div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
-                        Опер. прибыль
-                      </div>
-                      <div className="font-mono text-[13px] font-extrabold text-[#059669]">
-                        +{formatMln(b.annualEstimatedOperatingProfitRub)}
-                      </div>
-                      <div className="font-mono text-[10.5px] text-[#64748B]">
-                        COGS: {formatMln(b.annualSoldGoodsCostRub)}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex flex-wrap items-center justify-between gap-3 flex-1 lg:max-w-[660px] rounded-[9px] bg-[#F8FAFC] border border-dashed border-[#CBD5E1] px-3.5 py-2"
-                  >
-                    <span className="text-[11.5px] font-medium text-[#64748B]">
-                      {b.statusMessage || 'Нет данных по сценарию'}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {!b.hasScenario && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onOpenCreateScenarioForBrand(
-                              b.brandCode,
-                              `${b.displayCode} — Базовый план 2027`
-                            )
-                          }
-                          className="h-7 px-3 rounded-[7px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold transition cursor-pointer shadow-2xs"
-                        >
-                          + Создать сценарий
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onOpenCreateModelForBrand(b.brandCode)}
-                        className="h-7 px-2.5 rounded-[7px] border border-[#E2E8F0] bg-white text-[#334155] hover:border-[#94A3B8] hover:text-[#0F172A] text-[11px] font-semibold transition cursor-pointer"
-                      >
-                        + Добавить товар в {b.displayCode}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                <span className={`h-2 w-2 rounded-full ${accent.accentBar}`} />
+                <span className="font-bold">{b.displayCode}</span>
+                <span className="font-mono text-[10.5px] text-[#64748B]">
+                  {hasRev
+                    ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                    : `${b.modelsCount} SKU`}
+                </span>
+              </button>
             );
           })}
         </div>
 
-        {/* ПОМЕСЯЧНЫЙ ГРАФИК ГРУППЫ (12 МЕС.) ПО КНОПКЕ */}
-        {monthlyCashflowOpen && (
-          <div className="mt-3 overflow-x-auto rounded-[12px] border border-[#E4E3DC] bg-white p-3.5">
-            <div className="text-[12px] font-bold text-[#141413] mb-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCabinetsMatrixOpen((v) => !v)}
+            className={`h-7 px-2.5 rounded-[7px] border text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
+              cabinetsMatrixOpen
+                ? 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]'
+                : 'bg-white hover:bg-[#F1F5F9] border-[#E2E8F0] text-[#334155]'
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5 text-[#2563EB]" />
+            <span>
+              {cabinetsMatrixOpen ? 'Скрыть таблицу кабинетов ▴' : 'Сводная по кабинетам (5) ▾'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMonthlyCashflowOpen((v) => !v)}
+            className={`h-7 px-2.5 rounded-[7px] border text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
+              monthlyCashflowOpen
+                ? 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]'
+                : 'bg-white hover:bg-[#F1F5F9] border-[#E2E8F0] text-[#334155]'
+            }`}
+          >
+            <Calendar className="h-3.5 w-3.5 text-[#64748B]" />
+            <span>{monthlyCashflowOpen ? 'Скрыть Cashflow ▴' : 'График денег 12 мес. ▾'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* РАСКРЫВАЕМАЯ ИДЕАЛЬНО ВЫРОВНЕННАЯ ТАБЛИЦА 5 КАБИНЕТОВ И СЦЕНАРИЕВ */}
+      {cabinetsMatrixOpen && (
+        <div className="p-4 md:p-5 bg-[#F8FAFC] border-b border-[#EEF2F6]">
+          <BrandCabinetsMatrixTable
+            multiBrandSummary={multiBrandSummary}
+            scenarios={scenarios}
+            activeBrandFilter={activeBrandFilter}
+            onSelectBrandFilter={onSelectBrandFilter}
+            onSelectScenarioForBrand={onSelectScenarioForBrand}
+            onSelectActiveScenarioId={onSelectActiveScenarioId}
+            onOpenCreateScenarioForBrand={onOpenCreateScenarioForBrand}
+            onOpenCreateModelForBrand={onOpenCreateModelForBrand}
+          />
+        </div>
+      )}
+
+      {/* ПОМЕСЯЧНЫЙ ГРАФИК ДЕНЕГ ХОЛДИНГА (12 МЕС.) ПО КНОПКЕ */}
+      {monthlyCashflowOpen && (
+        <div className="p-4 md:p-5 bg-[#F8FAFC] border-b border-[#EEF2F6]">
+          <div className="overflow-x-auto rounded-[12px] border border-[#E2E8F0] bg-white p-3.5">
+            <div className="text-[12px] font-bold text-[#0F172A] mb-2">
               Помесячный денежный поток всех кабинетов BORNERS GROUP (12 месяцев, млн ₽)
             </div>
             <table className="w-full min-w-[780px] text-left border-collapse text-[11px]">
               <thead>
-                <tr className="border-b border-[#E4E3DC] text-[#5E5D58] bg-[#FAF9F6]">
+                <tr className="border-b border-[#E2E8F0] text-[#64748B] bg-[#F8FAFC]">
                   <th className="py-1.5 px-2.5 font-bold">Показатель холдинга</th>
                   {gt.monthlyRows.map((m) => (
                     <th key={m.monthIdx} className="py-1.5 px-1.5 text-right font-bold">
@@ -493,9 +672,9 @@ export function PeaklyMasterCabinetsSummary({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#ECEBE4] font-mono">
+              <tbody className="divide-y divide-[#EEF2F6] font-mono">
                 <tr>
-                  <td className="py-1.5 px-2.5 font-sans font-semibold text-[#141413]">
+                  <td className="py-1.5 px-2.5 font-sans font-semibold text-[#0F172A]">
                     Продажи (выкупы WB, млн ₽)
                   </td>
                   {gt.monthlyRows.map((m) => (
@@ -505,31 +684,31 @@ export function PeaklyMasterCabinetsSummary({
                   ))}
                 </tr>
                 <tr>
-                  <td className="py-1.5 px-2.5 font-sans font-semibold text-emerald-800">
+                  <td className="py-1.5 px-2.5 font-sans font-semibold text-emerald-700">
                     + Поступления от WB (млн ₽)
                   </td>
                   {gt.monthlyRows.map((m) => (
-                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-emerald-800">
+                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-emerald-700">
                       +{(m.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
                     </td>
                   ))}
                 </tr>
                 <tr>
-                  <td className="py-1.5 px-2.5 font-sans font-semibold text-rose-800">
+                  <td className="py-1.5 px-2.5 font-sans font-semibold text-rose-700">
                     − Оплаты фабрикам (авансы + доплаты, млн ₽)
                   </td>
                   {gt.monthlyRows.map((m) => (
-                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-rose-800">
+                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-rose-700">
                       −{(m.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
                     </td>
                   ))}
                 </tr>
-                <tr className="bg-[#FAF9F6] font-bold">
-                  <td className="py-1.5 px-2.5 font-sans text-[#1E3A8A]">
+                <tr className="bg-[#F8FAFC] font-bold">
+                  <td className="py-1.5 px-2.5 font-sans text-[#1D4ED8]">
                     Накопленный баланс денег (минус = свои вложения)
                   </td>
                   {gt.monthlyRows.map((m) => (
-                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#1E3A8A]">
+                    <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#1D4ED8]">
                       {(m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
                     </td>
                   ))}
@@ -537,9 +716,9 @@ export function PeaklyMasterCabinetsSummary({
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-    </section>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -554,6 +733,7 @@ export interface PeaklyCatalogGroupsAndBrandsProps {
   scenarios: GrowthScenarioDef[];
   brandFilter: string;
   onSelectBrandFilter: (brandCode: string) => void;
+  multiBrandSummary?: MultiBrandPortfolioSummaryResult;
   selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>>;
   onSelectScenarioForBrand?: (brandCode: string, scenarioId: number | null) => void;
   onSelectActiveScenarioId?: (scenarioId: number) => void;
@@ -578,6 +758,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
   scenarios,
   brandFilter,
   onSelectBrandFilter,
+  multiBrandSummary,
   selectedScenarioByBrand,
   onSelectScenarioForBrand,
   onSelectActiveScenarioId,
@@ -1264,6 +1445,43 @@ export function PeaklyCatalogGroupsAndBrandsView({
          ===================================================================== */}
       {displayMode === 'brands' && (
         <div className="space-y-6">
+          {multiBrandSummary &&
+            onSelectScenarioForBrand &&
+            onSelectActiveScenarioId &&
+            onOpenCreateScenarioForBrand && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div>
+                    <div className="text-[13px] font-extrabold text-[#0F172A]">
+                      Сводная матрица кабинетов и сценариев по 5 брендам BORNERS GROUP
+                    </div>
+                    <div className="text-[11px] text-[#64748B]">
+                      Выберите индивидуальный сценарий для каждого бренда или нажмите на строку для фильтрации каталога
+                    </div>
+                  </div>
+                  {brandFilter !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectBrandFilter('ALL')}
+                      className="h-7 px-2.5 rounded-[7px] bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-bold cursor-pointer transition"
+                    >
+                      Показать все 5 брендов ×
+                    </button>
+                  )}
+                </div>
+                <BrandCabinetsMatrixTable
+                  multiBrandSummary={multiBrandSummary}
+                  scenarios={scenarios}
+                  activeBrandFilter={brandFilter}
+                  onSelectBrandFilter={onSelectBrandFilter}
+                  onSelectScenarioForBrand={onSelectScenarioForBrand}
+                  onSelectActiveScenarioId={onSelectActiveScenarioId}
+                  onOpenCreateScenarioForBrand={onOpenCreateScenarioForBrand}
+                  onOpenCreateModelForBrand={(bCode) => onOpenCreateModel(bCode)}
+                />
+              </div>
+            )}
+
           {brandSections.map((sec) => {
             const accent = getModelBrandAccentStyles(sec.brandCode);
             return (

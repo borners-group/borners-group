@@ -2162,6 +2162,42 @@ export function GrowthScenariosShowcase({
               })()}
             </div>
 
+            {/* 5 ГЛАВНЫХ KPI ХОЛДИНГА В ОДНУ ЛИНИЮ + КОМПАКТНАЯ ПАНЕЛЬ 5 КАБИНЕТОВ И СВОДНОЙ ТАБЛИЦЫ */}
+            <PeaklyMasterCabinetsSummary
+              embeddedInHero
+              multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+              scenarios={scenarios}
+              activeBrandFilter={brandFilterLocal}
+              onSelectBrandFilter={(bCode) => {
+                if (
+                  bCode === 'FUKAI' &&
+                  currentScenario.id === 1 &&
+                  !includeGroupPortfolioInS1
+                ) {
+                  setIncludeGroupPortfolioInS1(true);
+                }
+                setBrandFilterLocal(bCode);
+                setBrandFilter(bCode);
+              }}
+              onSelectScenarioForBrand={(bCode, scenId) => {
+                setSelectedScenarioForBrand(bCode, scenId);
+              }}
+              onSelectActiveScenarioId={(scenId) => {
+                setSelectedScenarioId(scenId);
+              }}
+              onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+                setDraftScenBrand(bCode);
+                setDraftScenTitle(defaultTitle);
+                setDraftCopyFromScenarioId(0);
+                setNewScenarioModalOpen(true);
+              }}
+              onOpenCreateModelForBrand={(bCode) => {
+                setDraftBrand(bCode);
+                setNewModelModalOpen(true);
+              }}
+              onNavigateSection={(sec) => navigateTo(sec)}
+            />
+
             {/* ПОЛНОФОРМАТНАЯ ИНТЕРАКТИВНАЯ ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ И ВЫКУПОВ (12 МЕС.) */}
             {(brandFilterLocal === 'ALL' ||
               getScenariosForBrand(
@@ -3016,45 +3052,6 @@ export function GrowthScenariosShowcase({
           </section>
 
           {/* =====================================================================
-              БЛОК 01-B · СВОДНАЯ ВСЕХ КАБИНЕТОВ И БРЕНДОВ КАК В PEAKLY
-              Выносит все важные показатели по всем 5 кабинетам (Продажи, Закупки,
-              Старт Q1, Пик своих денег, Прибыль) на Главную + свой сценарий у каждого бренда
-          ===================================================================== */}
-          <PeaklyMasterCabinetsSummary
-            multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
-            scenarios={scenarios}
-            activeBrandFilter={brandFilterLocal}
-            onSelectBrandFilter={(bCode) => {
-              if (
-                bCode === 'FUKAI' &&
-                currentScenario.id === 1 &&
-                !includeGroupPortfolioInS1
-              ) {
-                setIncludeGroupPortfolioInS1(true);
-              }
-              setBrandFilterLocal(bCode);
-              setBrandFilter(bCode);
-            }}
-            onSelectScenarioForBrand={(bCode, scenId) => {
-              setSelectedScenarioForBrand(bCode, scenId);
-            }}
-            onSelectActiveScenarioId={(scenId) => {
-              setSelectedScenarioId(scenId);
-            }}
-            onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-              setDraftScenBrand(bCode);
-              setDraftScenTitle(defaultTitle);
-              setDraftCopyFromScenarioId(0);
-              setNewScenarioModalOpen(true);
-            }}
-            onOpenCreateModelForBrand={(bCode) => {
-              setDraftBrand(bCode);
-              setNewModelModalOpen(true);
-            }}
-            onNavigateSection={(sec) => navigateTo(sec)}
-          />
-
-          {/* =====================================================================
               БЛОК 02 · ТОВАРНАЯ МАТРИЦА СЦЕНАРИЯ (ГРУППЫ ТОВАРОВ · КАТАЛОГИ БРЕНДОВ · ТАБЛИЦА)
           ===================================================================== */}
           <section className="rounded-[16px] bg-white border border-[#E2E8F0] p-5 md:p-6 space-y-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
@@ -3260,13 +3257,14 @@ export function GrowthScenariosShowcase({
             )}
 
             {catalogViewMode === 'grid' ? (
-              /* Группы товаров (папки как на скрине 2, но красивее в стиле Peakly) + Раздельные каталоги по брендам + Прямое разбиение по партиям и датам */
+              /* Группы товаров + Раздельные каталоги по брендам + Прямое разбиение по партиям и датам */
               <PeaklyCatalogGroupsAndBrandsView
                 models={models}
                 filteredModels={filteredModels}
                 currentScenario={currentScenario}
                 scenarios={scenarios}
                 brandFilter={brandFilterLocal}
+                multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
                 onSelectBrandFilter={(bCode) => {
                   if (
                     bCode === 'FUKAI' &&
