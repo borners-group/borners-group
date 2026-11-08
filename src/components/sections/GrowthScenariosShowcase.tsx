@@ -1672,38 +1672,71 @@ export function GrowthScenariosShowcase({
         />
       )}
 
-      {/* ЭКРАН №1: ИСПОЛНИТЕЛЬНАЯ СВОДКА В СТИЛЕ PEAKLY (ЕДИНЫЙ КОМАНДНЫЙ ЦЕНТР + ВИТРИНА МОДЕЛЕЙ) */}
+      {/* ЭКРАН №1: ИСПОЛНИТЕЛЬНАЯ СВОДКА ХОЛДИНГА (ВЫСОКИЙ КОНТРАСТ СЕКЦИЙ И ЧИСТАЯ ИЕРАРХИЯ) */}
       {screen === 'scenarios' && (
-        <div className="space-y-5">
+        <div className="space-y-8 pb-6">
           {/* =====================================================================
-              БЛОК 01 · ИСПОЛНИТЕЛЬНАЯ СВОДКА БИЗНЕСА (PEAKLY EXECUTIVE COMMAND CENTER)
-              Объединяет выбор сценария, 4 ключевых бизнес-линзы и траекторию 12 мес. без дублей
+              РАЗДЕЛ 01 · 5 ОТДЕЛЬНЫХ KPI-КАРТОЧЕК ХОЛДИНГА + ПАНЕЛЬ 5 КАБИНЕТОВ
           ===================================================================== */}
-          <section className="rounded-[16px] bg-white border border-[#E2E8F0] overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            {/* ВЕРХНЯЯ ПАНЕЛЬ КОМАНДНОГО ЦЕНТРА */}
-            <div className="px-5 py-4 border-b border-[#EEF2F6] bg-white flex flex-wrap items-center justify-between gap-3">
+          <PeaklyMasterCabinetsSummary
+            multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+            scenarios={scenarios}
+            activeBrandFilter={brandFilterLocal}
+            onSelectBrandFilter={(bCode) => {
+              if (
+                bCode === 'FUKAI' &&
+                currentScenario.id === 1 &&
+                !includeGroupPortfolioInS1
+              ) {
+                setIncludeGroupPortfolioInS1(true);
+              }
+              setBrandFilterLocal(bCode);
+              setBrandFilter(bCode);
+            }}
+            onSelectScenarioForBrand={(bCode, scenId) => {
+              setSelectedScenarioForBrand(bCode, scenId);
+            }}
+            onSelectActiveScenarioId={(scenId) => {
+              setSelectedScenarioId(scenId);
+            }}
+            onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+              setDraftScenBrand(bCode);
+              setDraftScenTitle(defaultTitle);
+              setDraftCopyFromScenarioId(0);
+              setNewScenarioModalOpen(true);
+            }}
+            onOpenCreateModelForBrand={(bCode) => {
+              setDraftBrand(bCode);
+              setNewModelModalOpen(true);
+            }}
+            onNavigateSection={(sec) => navigateTo(sec)}
+          />
+
+          {/* =====================================================================
+              РАЗДЕЛ 02 · СЦЕНАРИИ РАЗВИТИЯ И ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ
+          ===================================================================== */}
+          <section className="rounded-[20px] bg-white border border-[#CFD6E0] overflow-hidden shadow-[0_6px_24px_-6px_rgba(15,23,42,0.07)]">
+            {/* ВЕРХНЯЯ ПАНЕЛЬ СЦЕНАРИЕВ */}
+            <div className="px-6 py-4 border-b border-[#DCE2EC] bg-white flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-[#2563EB]" />
-                    <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
-                      Сводка холдинга · План 2027–2028
-                    </span>
+                  <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
+                    Сценарии и траектория · 2027–2028
                   </div>
-                  <h2 className="text-[20px] md:text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A] mt-0.5">
+                  <h2 className="text-[19px] md:text-[21px] font-extrabold tracking-[-0.02em] text-[#111827] mt-0.5">
                     Стратегия роста BORNERS GROUP
                   </h2>
                 </div>
 
                 {currentScenario.id === 1 && (
-                  <div className="inline-flex items-center rounded-[10px] bg-[#F1F5F9] border border-[#E2E8F0] p-1 text-[11.5px]">
+                  <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#D8DEE8] p-1 text-[11.5px]">
                     <button
                       type="button"
                       onClick={() => setIncludeGroupPortfolioInS1(false)}
                       className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
                         !includeGroupPortfolioInS1
-                          ? 'bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#E2E8F0]'
-                          : 'text-[#64748B] hover:text-[#0F172A]'
+                          ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#CBD5E1]'
+                          : 'text-[#64748B] hover:text-[#111827]'
                       }`}
                     >
                       Цель BORNERS · 21 SKU
@@ -1713,8 +1746,8 @@ export function GrowthScenariosShowcase({
                       onClick={() => setIncludeGroupPortfolioInS1(true)}
                       className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
                         includeGroupPortfolioInS1
-                          ? 'bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#E2E8F0]'
-                          : 'text-[#64748B] hover:text-[#0F172A]'
+                          ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#CBD5E1]'
+                          : 'text-[#64748B] hover:text-[#111827]'
                       }`}
                     >
                       С FUKAI · 23 SKU
@@ -1733,7 +1766,7 @@ export function GrowthScenariosShowcase({
                 />
 
                 {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
-                  <div className="inline-flex items-center gap-1 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] p-0.5 pl-2.5">
+                  <div className="inline-flex items-center gap-1 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] p-0.5 pl-2.5">
                     <span className="text-[11.5px] font-medium text-[#64748B]">Цель дек:</span>
                     <input
                       type="number"
@@ -1744,13 +1777,13 @@ export function GrowthScenariosShowcase({
                       onChange={(e) =>
                         handleUpdateScenarioTargetMln(Number(e.target.value) || 100)
                       }
-                      className="w-12 text-right font-mono text-[12.5px] font-extrabold text-[#0F172A] bg-transparent focus:outline-none"
+                      className="w-12 text-right font-mono text-[12.5px] font-extrabold text-[#111827] bg-transparent focus:outline-none"
                     />
                     <span className="text-[11px] font-medium text-[#64748B] mr-1">млн</span>
                     <button
                       type="button"
                       onClick={() => handleAutoCalculateByPriority()}
-                      className="h-7 px-2.5 rounded-[7px] bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#BFDBFE] text-[#1D4ED8] text-[11.5px] font-semibold transition cursor-pointer"
+                      className="h-7 px-2.5 rounded-[7px] bg-white hover:bg-[#E2E8F0] border border-[#CBD5E1] text-[#111827] text-[11.5px] font-semibold transition cursor-pointer"
                     >
                       Под цель
                     </button>
@@ -1763,14 +1796,14 @@ export function GrowthScenariosShowcase({
                   aria-expanded={mathBreakdownOpen}
                   className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                     mathBreakdownOpen
-                      ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'
-                      : 'bg-white text-[#334155] border-[#E2E8F0] hover:bg-[#F8FAFC]'
+                      ? 'bg-[#2C3444] text-white border-[#2C3444]'
+                      : 'bg-white text-[#334155] border-[#DCE2EC] hover:bg-[#F8FAFC]'
                   }`}
                 >
-                  <span>По брендам и расчёт</span>
+                  <span>Детальный расчёт</span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 transition-transform ${
-                      mathBreakdownOpen ? 'rotate-180 text-[#2563EB]' : 'text-[#64748B]'
+                      mathBreakdownOpen ? 'rotate-180 text-white' : 'text-[#64748B]'
                     }`}
                   />
                 </button>
@@ -1780,9 +1813,9 @@ export function GrowthScenariosShowcase({
                     type="button"
                     onClick={() => setExportMenuOpen((v) => !v)}
                     aria-expanded={exportMenuOpen}
-                    className="h-8 px-3 rounded-[9px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[12px] font-semibold text-[#334155] inline-flex items-center gap-1.5 transition cursor-pointer"
+                    className="h-8 px-3 rounded-[9px] bg-white hover:bg-[#F8FAFC] border border-[#DCE2EC] text-[12px] font-semibold text-[#334155] inline-flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <span>Экспорт и эталоны</span>
+                    <span>Экспорт</span>
                     <ChevronDown
                       className={`h-3.5 w-3.5 text-[#64748B] transition-transform ${
                         exportMenuOpen ? 'rotate-180' : ''
@@ -1796,7 +1829,7 @@ export function GrowthScenariosShowcase({
                         onClick={() => setExportMenuOpen(false)}
                         className="fixed inset-0 z-40"
                       />
-                      <div className="absolute right-0 mt-1.5 w-76 rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_16px_40px_rgba(15,23,42,0.12)] p-2 z-50 text-[12px] space-y-1.5">
+                      <div className="absolute right-0 mt-1.5 w-76 rounded-[14px] bg-white border border-[#CFD6E0] shadow-[0_16px_40px_rgba(15,23,42,0.12)] p-2 z-50 text-[12px] space-y-1.5">
                         {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
                           <div className="pb-1.5 border-b border-[#EEF2F6] space-y-0.5">
                             <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
@@ -1808,10 +1841,10 @@ export function GrowthScenariosShowcase({
                                 setExportMenuOpen(false);
                                 handleRestoreClientSavedSales();
                               }}
-                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#0F172A] flex items-center justify-between cursor-pointer"
+                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
                             >
                               <span>Сохранённые продажи</span>
-                              <span className="font-mono text-[11px] text-[#2563EB] font-bold">
+                              <span className="font-mono text-[11px] text-[#111827] font-bold">
                                 109,94 млн ₽
                               </span>
                             </button>
@@ -1821,7 +1854,7 @@ export function GrowthScenariosShowcase({
                                 setExportMenuOpen(false);
                                 handleResetToPdfBaseline();
                               }}
-                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#0F172A] flex items-center justify-between cursor-pointer"
+                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
                             >
                               <span>Сбросить к эталону PDF</span>
                               <span className="font-mono text-[11px] text-[#64748B]">
@@ -1841,7 +1874,7 @@ export function GrowthScenariosShowcase({
                               setExportMenuOpen(false);
                               handleExportScenarioPlan('csv');
                             }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#0F172A] flex items-center justify-between cursor-pointer"
+                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
                           >
                             <span>Экспорт плана</span>
                             <span className="font-mono text-[10.5px] text-[#64748B]">CSV</span>
@@ -1852,7 +1885,7 @@ export function GrowthScenariosShowcase({
                               setExportMenuOpen(false);
                               handleExportScenarioPlan('json');
                             }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#0F172A] flex items-center justify-between cursor-pointer"
+                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
                           >
                             <span>Экспорт плана</span>
                             <span className="font-mono text-[10.5px] text-[#64748B]">JSON</span>
@@ -1863,7 +1896,7 @@ export function GrowthScenariosShowcase({
                               setExportMenuOpen(false);
                               scenarioPlanImportRef.current?.click();
                             }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#0F172A] flex items-center justify-between cursor-pointer"
+                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
                           >
                             <span>Импорт плана</span>
                             <span className="font-mono text-[10.5px] text-[#64748B]">CSV / JSON</span>
@@ -1879,7 +1912,7 @@ export function GrowthScenariosShowcase({
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setExportMenuOpen(false)}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#0F172A] flex items-center justify-between"
+                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between"
                           >
                             <span>Техническое задание v1.1</span>
                             <span className="font-mono text-[10.5px] text-[#64748B]">PDF</span>
@@ -1889,7 +1922,7 @@ export function GrowthScenariosShowcase({
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setExportMenuOpen(false)}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#0F172A] flex items-center justify-between"
+                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between"
                           >
                             <span>Презентация сценария (28 стр.)</span>
                             <span className="font-mono text-[10.5px] text-[#64748B]">PDF</span>
@@ -1905,7 +1938,7 @@ export function GrowthScenariosShowcase({
                     type="button"
                     data-tour="studio-canvas"
                     onClick={onOpenStudioCanvas}
-                    className="h-8 px-3 rounded-[9px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[12px] font-semibold text-[#334155] transition cursor-pointer"
+                    className="h-8 px-3 rounded-[9px] border border-[#DCE2EC] bg-white hover:bg-[#F8FAFC] text-[12px] font-semibold text-[#334155] transition cursor-pointer"
                   >
                     Студия идей
                   </button>
@@ -1914,17 +1947,17 @@ export function GrowthScenariosShowcase({
                 <button
                   type="button"
                   onClick={() => setNewScenarioModalOpen(true)}
-                  className="h-8 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
+                  className="h-8 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                 >
                   + Новый сценарий
                 </button>
               </div>
             </div>
 
-            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ В ЧИСТОМ СЛАНЦЕВО-СИНЕМ СТИЛЕ */}
+            {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ НА КОНТРАСТНОЙ ПОДЛОЖКЕ #EEF1F6 */}
             <div
               data-tour="growth-scenarios"
-              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-white border-b border-[#EEF2F6]"
+              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-[#EEF1F6] border-b border-[#DCE2EC]"
             >
               {(() => {
                 const visibleScenarios =
@@ -1936,9 +1969,9 @@ export function GrowthScenariosShowcase({
                       );
                 if (visibleScenarios.length === 0) {
                   return (
-                    <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] bg-white p-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-[13.5px] font-bold text-[#0F172A]">
+                        <div className="text-[13.5px] font-bold text-[#111827]">
                           Нет сценария для выбранного бренда ({brandFilterLocal})
                         </div>
                         <div className="text-[12px] text-[#64748B] mt-0.5">
@@ -1952,7 +1985,7 @@ export function GrowthScenariosShowcase({
                           setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
                           setNewScenarioModalOpen(true);
                         }}
-                        className="h-9 px-4 rounded-[10px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                        className="h-9 px-4 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
                       >
                         + Создать сценарий бренда
                       </button>
@@ -1983,10 +2016,7 @@ export function GrowthScenariosShowcase({
                           (ACTING_2027_CONTROL_TOTALS.decemberRevenueRub / 1_000_000) * 100
                         ) / 100
                       : sc.monthlyTargetMln;
-                  const diffMlnNum = Math.round((liveDecMlnNum - targetMlnNum) * 100) / 100;
-                  const diffSign = diffMlnNum > 0 ? '+' : '';
                   const pctNum = agg ? agg.goalCompletionPct : 100;
-                  const pctStr = pctNum.toFixed(1).replace('.', ',');
                   const progressWidth = Math.min(100, Math.max(10, Math.round(pctNum)));
 
                   return (
@@ -2001,32 +2031,32 @@ export function GrowthScenariosShowcase({
                           setSelectedScenarioId(sc.id);
                         }
                       }}
-                      className={`group rounded-[14px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                      className={`group rounded-[15px] p-4 text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-white text-[#0F172A] border border-[#2563EB] ring-2 ring-[#2563EB]/12 shadow-[0_6px_20px_-6px_rgba(37,99,235,0.14)]'
-                          : 'bg-[#F8FAFC]/80 border border-[#E2E8F0] hover:border-[#94A3B8] hover:bg-white hover:shadow-[0_4px_12px_-4px_rgba(15,23,42,0.05)]'
+                          ? 'bg-white text-[#111827] border-[1.5px] border-[#2C3444] shadow-[0_8px_24px_-6px_rgba(15,23,42,0.12)]'
+                          : 'bg-white/75 border border-[#DCE2EC] hover:border-[#94A3B8] hover:bg-white'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
                           <span
-                            className={`text-[12px] font-bold truncate ${
-                              isSelected ? 'text-[#0F172A]' : 'text-[#475569]'
+                            className={`text-[12.5px] font-bold truncate ${
+                              isSelected ? 'text-[#111827]' : 'text-[#475569]'
                             }`}
                           >
                             {sc.id === ACTING_2027_SCENARIO_ID
-                                ? 'Исходный план 2027 · ИП Нерсесянц'
+                                ? 'Исходный план 2027'
                                 : `${sc.title} · ${sc.year || 2027}`}
                           </span>
 
                           <div className="flex items-center gap-1 shrink-0">
                             {isSelected ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] text-[10px] font-bold">
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ECFDF5] border border-[#A7F3D0] text-[#047857] text-[10px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-[#059669]" />
                                 Активен
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded-[5px] bg-white border border-[#E2E8F0] text-[#64748B] text-[10px] font-mono font-semibold">
+                              <span className="text-[11px] font-mono text-[#64748B]">
                                 {agg?.modelsCount || 0} SKU
                               </span>
                             )}
@@ -2094,65 +2124,28 @@ export function GrowthScenariosShowcase({
                           </div>
                         </div>
 
-                        <div className="flex items-baseline justify-between gap-2 mt-2.5">
-                          <div className="font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#0F172A]">
-                            {liveDecMlnStr} млн ₽{' '}
-                            <span className="font-sans text-[11.5px] font-medium text-[#64748B]">
-                              / дек
-                            </span>
-                          </div>
-                          {sc.id !== ACTING_2027_SCENARIO_ID ? (
-                            <span
-                              className={`px-2 py-0.5 rounded-[6px] font-mono text-[10.5px] font-bold border ${
-                                diffMlnNum >= -0.05
-                                  ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'
-                                  : 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]'
-                              }`}
-                            >
-                              {diffSign}
-                              {diffMlnNum.toFixed(1).replace('.', ',')} млн ({pctStr}%)
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-bold border bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]">
-                              База WB
-                            </span>
-                          )}
+                        <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#111827]">
+                          {liveDecMlnStr} млн ₽{' '}
+                          <span className="font-sans text-[11.5px] font-normal text-[#64748B]">
+                            в дек
+                          </span>
                         </div>
                       </div>
 
-                      {/* Визуальный прогресс-бар выполнения цели декабря */}
+                      {/* Спокойный прогресс-бар и одна строка итога за год */}
                       <div className="mt-3 space-y-1.5">
                         <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#E2E8F0]">
                           <div
                             style={{ width: `${progressWidth}%` }}
                             className={`h-full rounded-full transition-all ${
-                              isSelected
-                                ? 'bg-[#2563EB]'
-                                : 'bg-[#94A3B8]'
+                              isSelected ? 'bg-[#2C3444]' : 'bg-[#94A3B8]'
                             }`}
                           />
                         </div>
                         <div className="flex items-center justify-between gap-2 text-[11px] text-[#64748B]">
-                          <span>
-                            Цель:{' '}
-                            <strong className="font-mono text-[#0F172A]">
-                              {String(targetMlnNum).replace('.', ',')} млн
-                            </strong>
-                          </span>
-                          <span>
-                            {agg && agg.modelsCount === 0 ? (
-                              <span className="text-amber-700 font-semibold">
-                                Добавьте первую модель
-                              </span>
-                            ) : (
-                              <>
-                                За год:{' '}
-                                <strong className="font-mono text-[#0F172A]">
-                                  {annualMln} млн ₽
-                                </strong>{' '}
-                                · {agg?.modelsCount || 0} мод.
-                              </>
-                            )}
+                          <span>Цель: {String(targetMlnNum).replace('.', ',')} млн</span>
+                          <span className="font-mono font-semibold text-[#334155]">
+                            Год: {annualMln} млн ₽
                           </span>
                         </div>
                       </div>
@@ -2162,43 +2155,7 @@ export function GrowthScenariosShowcase({
               })()}
             </div>
 
-            {/* 5 ГЛАВНЫХ KPI ХОЛДИНГА В ОДНУ ЛИНИЮ + КОМПАКТНАЯ ПАНЕЛЬ 5 КАБИНЕТОВ И СВОДНОЙ ТАБЛИЦЫ */}
-            <PeaklyMasterCabinetsSummary
-              embeddedInHero
-              multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
-              scenarios={scenarios}
-              activeBrandFilter={brandFilterLocal}
-              onSelectBrandFilter={(bCode) => {
-                if (
-                  bCode === 'FUKAI' &&
-                  currentScenario.id === 1 &&
-                  !includeGroupPortfolioInS1
-                ) {
-                  setIncludeGroupPortfolioInS1(true);
-                }
-                setBrandFilterLocal(bCode);
-                setBrandFilter(bCode);
-              }}
-              onSelectScenarioForBrand={(bCode, scenId) => {
-                setSelectedScenarioForBrand(bCode, scenId);
-              }}
-              onSelectActiveScenarioId={(scenId) => {
-                setSelectedScenarioId(scenId);
-              }}
-              onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-                setDraftScenBrand(bCode);
-                setDraftScenTitle(defaultTitle);
-                setDraftCopyFromScenarioId(0);
-                setNewScenarioModalOpen(true);
-              }}
-              onOpenCreateModelForBrand={(bCode) => {
-                setDraftBrand(bCode);
-                setNewModelModalOpen(true);
-              }}
-              onNavigateSection={(sec) => navigateTo(sec)}
-            />
-
-            {/* ПОЛНОФОРМАТНАЯ ИНТЕРАКТИВНАЯ ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ И ВЫКУПОВ (12 МЕС.) */}
+            {/* ЧИСТАЯ ВОЗДУШНАЯ ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ (БЕЗ ТЯЖЁЛЫХ РАМОК ВОКРУГ КАЖДОГО МЕСЯЦА) */}
             {(brandFilterLocal === 'ALL' ||
               getScenariosForBrand(
                 scenarios,
@@ -2212,7 +2169,6 @@ export function GrowthScenariosShowcase({
                     ? mbSummary.brands.find((r) => r.brandCode === activeBrandNorm)
                     : null;
 
-                // Если выбран конкретный бренд — берём его помесячный вектор, иначе суммарный вектор всех активных кабинетов холдинга (776,84 млн ₽ / 117,63 млн ₽ в дек)
                 const monthlySeries = MONTHS_SHORT_RU.map((mName, idx) => {
                   if (selectedBrandRow && selectedBrandRow.monthlyRows[idx]) {
                     const mm = selectedBrandRow.monthlyRows[idx];
@@ -2253,12 +2209,7 @@ export function GrowthScenariosShowcase({
                 const totalYearMln = monthlySeries.reduce((s, pt) => s + pt.revenueMln, 0);
                 const selPt =
                   monthlySeries[selectedChartMonthIdx] || monthlySeries[11];
-                const selSharePct =
-                  totalYearMln > 0
-                    ? ((selPt.revenueMln / totalYearMln) * 100).toFixed(1).replace('.', ',')
-                    : '0,0';
 
-                // Разбивка выбранного месяца по активным кабинетам
                 const brandMonthBreakdown = mbSummary.brands
                   .map((r) => ({
                     code: r.displayCode,
@@ -2267,37 +2218,31 @@ export function GrowthScenariosShowcase({
                   .filter((b) => b.revMln > 0.01);
 
                 return (
-                  <div className="px-5 py-4 bg-white border-t border-[#EEF2F6]">
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="text-[13px] font-bold text-[#0F172A]">
-                          Помесячная траектория выручки {currentScenario.year || 2027}
+                  <div className="px-6 py-5 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-[14px] font-bold text-[#111827]">
+                          Помесячная динамика выручки {currentScenario.year || 2027}
                         </span>
-                        <span className="px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] border border-[#E2E8F0] font-mono text-[11px] font-semibold text-[#334155]">
-                          Год: {totalYearMln.toFixed(2).replace('.', ',')} млн ₽
-                        </span>
-                        <span className="text-[11.5px] text-[#64748B]">
-                          нажмите на месяц для разбивки по кабинетам
+                        <span className="text-[12px] text-[#64748B]">
+                          (млн ₽ · всего за год {totalYearMln.toFixed(2).replace('.', ',')} млн ₽)
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
-                        <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1">
-                          <span className="font-bold text-[#0F172A]">
-                            {MONTHS_SHORT_RU[selectedChartMonthIdx]} {currentScenario.year || 2027}:
+                      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                        <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] px-3 py-1">
+                          <span className="font-semibold text-[#475569]">
+                            {MONTHS_SHORT_RU[selectedChartMonthIdx]}:
                           </span>
-                          <span className="font-mono font-extrabold text-[#2563EB]">
+                          <span className="font-mono font-extrabold text-[#111827]">
                             {selPt.revenueMln.toFixed(2).replace('.', ',')} млн ₽
                           </span>
-                          <span className="text-[#64748B] font-mono text-[10.5px]">
-                            ({selSharePct}% годового оборота)
-                          </span>
                           {brandMonthBreakdown.length > 1 && (
-                            <span className="hidden sm:inline text-[10.5px] text-[#475569] border-l border-[#E2E8F0] pl-2">
+                            <span className="hidden sm:inline text-[11px] text-[#64748B] border-l border-[#CBD5E1] pl-2">
                               {brandMonthBreakdown
                                 .map(
                                   (b) =>
-                                    `${b.code}: ${b.revMln.toFixed(2).replace('.', ',')} млн`
+                                    `${b.code}: ${b.revMln.toFixed(1).replace('.', ',')} млн`
                                 )
                                 .join(' · ')}
                             </span>
@@ -2306,14 +2251,15 @@ export function GrowthScenariosShowcase({
                         <button
                           type="button"
                           onClick={() => navigateTo('launch-calendar')}
-                          className="h-7.5 px-2.5 rounded-[8px] border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] font-semibold text-[#334155] cursor-pointer transition"
+                          className="h-7.5 px-3 rounded-[8px] border border-[#DCE2EC] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#334155] cursor-pointer transition"
                         >
                           Таблица 12 мес. →
                         </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2">
+                    {/* Чистый график из 12 столбцов без рамок-коробок */}
+                    <div className="grid grid-cols-6 sm:grid-cols-12 gap-2.5 pt-2">
                       {monthlySeries.map((pt, idx) => {
                         const isSel = selectedChartMonthIdx === idx;
                         const isDec = idx === 11;
@@ -2321,98 +2267,48 @@ export function GrowthScenariosShowcase({
                           100,
                           Math.max(12, Math.round((pt.revenueMln / maxMonthMln) * 100))
                         );
-                        const otherShareInBarPct =
-                          pt.revenueMln > 0
-                            ? Math.round((pt.otherBrandsMln / pt.revenueMln) * 100)
-                            : 0;
-                        const quarterLabel =
-                          idx === 0
-                            ? 'Q1'
-                            : idx === 3
-                            ? 'Q2'
-                            : idx === 6
-                            ? 'Q3'
-                            : idx === 9
-                            ? 'Q4'
-                            : null;
-                        const shareOfYear =
-                          totalYearMln > 0
-                            ? ((pt.revenueMln / totalYearMln) * 100).toFixed(1).replace('.', ',')
-                            : '0,0';
 
                         return (
                           <button
                             type="button"
                             key={pt.monthLabel}
                             onClick={() => setSelectedChartMonthIdx(idx)}
-                            className={`flex flex-col justify-between rounded-[11px] p-2 text-left transition-all cursor-pointer group border ${
-                              isSel
-                                ? 'bg-[#EFF6FF]/60 border-[#2563EB] shadow-[0_2px_10px_-2px_rgba(37,99,235,0.14)]'
-                                : 'bg-[#F8FAFC]/80 border-[#EEF2F6] hover:border-[#CBD5E1] hover:bg-white'
+                            className={`flex flex-col items-center rounded-[10px] py-2 px-1 transition cursor-pointer group ${
+                              isSel ? 'bg-[#F4F6F9]' : 'hover:bg-[#F8FAFC]'
                             }`}
                           >
-                            <div className="flex items-center justify-between w-full mb-1.5">
-                              <span
-                                className={`text-[11px] leading-none ${
-                                  isSel
-                                    ? 'font-extrabold text-[#1D4ED8]'
-                                    : isDec
-                                    ? 'font-bold text-[#0F172A]'
-                                    : 'font-semibold text-[#64748B] group-hover:text-[#0F172A]'
-                                }`}
-                              >
-                                {pt.monthLabel}
-                              </span>
-                              {quarterLabel && (
-                                <span className="font-mono text-[9px] font-bold px-1 py-0.2 rounded bg-white border border-[#E2E8F0] text-[#64748B]">
-                                  {quarterLabel}
-                                </span>
-                              )}
-                            </div>
+                            <span
+                              className={`font-mono text-[11.5px] mb-1.5 ${
+                                isSel || isDec
+                                  ? 'font-extrabold text-[#111827]'
+                                  : 'font-semibold text-[#475569] group-hover:text-[#111827]'
+                              }`}
+                            >
+                              {pt.revenueMln.toFixed(1).replace('.', ',')}
+                            </span>
 
-                            {/* Широкий наглядный столбец прогресса месяца */}
-                            <div className="w-full h-[64px] rounded-[7px] bg-[#EEF2F6]/80 p-1 flex flex-col justify-end overflow-hidden">
+                            <div className="w-full max-w-[44px] h-[68px] rounded-[6px] bg-[#EEF1F6] flex items-end overflow-hidden p-0.5">
                               <div
                                 style={{ height: `${fillPct}%` }}
-                                className={`w-full rounded-[5px] transition-all flex flex-col overflow-hidden ${
+                                className={`w-full rounded-[4px] transition-all ${
                                   isSel
-                                    ? 'bg-gradient-to-t from-[#1D4ED8] to-[#3B82F6]'
+                                    ? 'bg-[#2C3444]'
                                     : isDec
-                                    ? 'bg-gradient-to-t from-[#2563EB] to-[#60A5FA]'
-                                    : 'bg-gradient-to-t from-[#64748B]/75 to-[#94A3B8]/85 group-hover:from-[#3B82F6] group-hover:to-[#60A5FA]'
+                                    ? 'bg-[#0D9488]'
+                                    : 'bg-[#94A3B8]/75 group-hover:bg-[#64748B]'
                                 }`}
-                              >
-                                {otherShareInBarPct > 2 && (
-                                  <div
-                                    style={{ height: `${otherShareInBarPct}%` }}
-                                    className="w-full bg-[#38BDF8]/65 border-b border-white/30"
-                                    title={`Вклад других брендов (FUKAI и др.): ${pt.otherBrandsMln
-                                      .toFixed(2)
-                                      .replace('.', ',')} млн ₽`}
-                                  />
-                                )}
-                              </div>
+                              />
                             </div>
 
-                            <div className="mt-1.5 w-full">
-                              <div
-                                className={`font-mono text-[12px] leading-tight tracking-tight ${
-                                  isSel
-                                    ? 'font-extrabold text-[#1D4ED8]'
-                                    : isDec
-                                    ? 'font-extrabold text-[#0F172A]'
-                                    : 'font-bold text-[#1E293B]'
-                                }`}
-                              >
-                                {pt.revenueMln.toFixed(1).replace('.', ',')}{' '}
-                                <span className="text-[9.5px] font-normal text-[#64748B]">
-                                  млн
-                                </span>
-                              </div>
-                              <div className="font-mono text-[9.5px] text-[#64748B] truncate mt-0.5">
-                                {shareOfYear}% года
-                              </div>
-                            </div>
+                            <span
+                              className={`text-[11px] mt-1.5 ${
+                                isSel || isDec
+                                  ? 'font-bold text-[#111827]'
+                                  : 'font-medium text-[#64748B]'
+                              }`}
+                            >
+                              {pt.monthLabel}
+                            </span>
                           </button>
                         );
                       })}
@@ -3054,36 +2950,48 @@ export function GrowthScenariosShowcase({
           {/* =====================================================================
               БЛОК 02 · ТОВАРНАЯ МАТРИЦА СЦЕНАРИЯ (ГРУППЫ ТОВАРОВ · КАТАЛОГИ БРЕНДОВ · ТАБЛИЦА)
           ===================================================================== */}
-          <section className="rounded-[16px] bg-white border border-[#E2E8F0] p-5 md:p-6 space-y-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-[#EEF2F6]">
+          <section className="rounded-[20px] bg-white border border-[#CFD6E0] p-5 md:p-6 space-y-5 shadow-[0_6px_24px_-6px_rgba(15,23,42,0.07)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E2E8F0]">
               <div className="flex flex-wrap items-center gap-3">
                 <div>
                   <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
                     Товарная матрица сценария
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <h3 className="text-[19px] font-extrabold text-[#0F172A]">
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    <h3 className="text-[19px] font-extrabold text-[#111827]">
                       {currentScenario.id === ACTING_2027_SCENARIO_ID
                         ? 'Модели исходного плана 2027 (ИП Нерсесянц)'
                         : `Модели · ${currentScenario.title}`}
                     </h3>
-                    <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] border border-[#E2E8F0] text-[#334155]">
+                    <span className="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-[7px] bg-[#F1F5F9] border border-[#CBD5E1] text-[#334155]">
                       {filteredModels.length} SKU
                     </span>
+                    {brandFilterLocal !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBrandFilterLocal('ALL');
+                          setBrandFilter('ALL');
+                        }}
+                        className="h-6 px-2.5 rounded-[7px] bg-[#2C3444] text-white text-[11px] font-semibold cursor-pointer transition hover:bg-[#1E2430]"
+                      >
+                        {brandFilterLocal === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilterLocal} · Сбросить ×
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 {/* Переключатель Витрина | Таблица */}
-                <div className="inline-flex items-center rounded-[10px] bg-[#F1F5F9] border border-[#E2E8F0] p-1 text-[12px]">
+                <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#CBD5E1] p-1 text-[12px]">
                   <button
                     type="button"
                     onClick={() => setCatalogViewMode('grid')}
                     className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                       catalogViewMode === 'grid'
-                        ? 'bg-white text-[#0F172A] font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#E2E8F0]'
-                        : 'text-[#64748B] hover:text-[#0F172A] font-semibold'
+                        ? 'bg-white text-[#111827] font-semibold shadow-2xs border border-[#CBD5E1]'
+                        : 'text-[#64748B] hover:text-[#111827] font-semibold'
                     }`}
                   >
                     Витрина
@@ -3093,8 +3001,8 @@ export function GrowthScenariosShowcase({
                     onClick={() => setCatalogViewMode('table')}
                     className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
                       catalogViewMode === 'table'
-                        ? 'bg-white text-[#0F172A] font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#E2E8F0]'
-                        : 'text-[#64748B] hover:text-[#0F172A] font-semibold'
+                        ? 'bg-white text-[#111827] font-semibold shadow-2xs border border-[#CBD5E1]'
+                        : 'text-[#64748B] hover:text-[#111827] font-semibold'
                     }`}
                   >
                     Таблица ({filteredModels.length})
@@ -3106,7 +3014,7 @@ export function GrowthScenariosShowcase({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Поиск модели или WB..."
-                  className="h-8.5 px-3 rounded-[9px] bg-[#F8FAFC] focus:bg-white border border-[#E2E8F0] focus:border-[#2563EB] text-[12px] font-medium text-[#0F172A] placeholder:text-[#94A3B8] w-44 focus:outline-none"
+                  className="h-9 px-3 rounded-[10px] bg-[#F8FAFC] focus:bg-white border border-[#CBD5E1] focus:border-[#2C3444] text-[12px] font-medium text-[#111827] placeholder:text-[#94A3B8] w-44 focus:outline-none"
                 />
 
                 <select
@@ -3120,7 +3028,7 @@ export function GrowthScenariosShowcase({
                         | 'priority'
                     )
                   }
-                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#E2E8F0] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] cursor-pointer"
+                  className="h-9 px-2.5 rounded-[10px] bg-white border border-[#CBD5E1] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] cursor-pointer"
                 >
                   <option value="default">По порядку</option>
                   <option value="dec_desc">Выручка дек. ↓</option>
@@ -3131,7 +3039,7 @@ export function GrowthScenariosShowcase({
                 <select
                   value={statusFilterLocal}
                   onChange={(e) => setStatusFilterLocal(e.target.value)}
-                  className="h-8.5 px-2.5 rounded-[9px] bg-white border border-[#E2E8F0] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] cursor-pointer"
+                  className="h-9 px-2.5 rounded-[10px] bg-white border border-[#CBD5E1] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] cursor-pointer"
                 >
                   <option value="ALL">Все статусы</option>
                   <option value="В плане">В плане</option>
@@ -3143,54 +3051,11 @@ export function GrowthScenariosShowcase({
                 <button
                   type="button"
                   onClick={() => setNewModelModalOpen(true)}
-                  className="h-8.5 px-3.5 rounded-[9px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
+                  className="h-9 px-3.5 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                 >
                   + Добавить модель
                 </button>
               </div>
-            </div>
-
-            {/* Быстрый переключатель брендов в 1 клик (все 5 брендов холдинга) */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="inline-flex flex-wrap items-center gap-1.5">
-                {[
-                  { id: 'ALL', label: 'Все бренды' },
-                  { id: 'BORNERS', label: 'BORNERS' },
-                  { id: 'NA_TELE', label: 'НА ТЕЛЕ' },
-                  { id: 'FUKAI', label: 'FUKAI' },
-                  { id: 'AKUSHA', label: 'AKUSHA' },
-                  { id: 'LISKANI', label: 'LISKANI' },
-                ].map((bItem) => {
-                  const active = brandFilterLocal === bItem.id;
-                  return (
-                    <button
-                      key={bItem.id}
-                      type="button"
-                      onClick={() => {
-                        if (
-                          bItem.id === 'FUKAI' &&
-                          currentScenario.id === 1 &&
-                          !includeGroupPortfolioInS1
-                        ) {
-                          setIncludeGroupPortfolioInS1(true);
-                        }
-                        setBrandFilterLocal(bItem.id);
-                        setBrandFilter(bItem.id);
-                      }}
-                      className={`h-7.5 px-3 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer border ${
-                        active
-                          ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE] shadow-2xs'
-                          : 'bg-[#F8FAFC] text-[#475569] border-[#E2E8F0] hover:border-[#94A3B8] hover:text-[#0F172A]'
-                      }`}
-                    >
-                      {bItem.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="text-[11.5px] text-[#64748B]">
-                Нажмите на карточку модели, чтобы открыть паспорт, финансы и план закупок
-              </span>
             </div>
 
             {filteredModels.length === 0 && (

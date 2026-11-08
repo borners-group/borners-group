@@ -2,21 +2,21 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Чистая современная SaaS дизайн-система:
-   свежий светлый сланцевый холст (#F6F8FB) + чисто-белые карточки (#FFFFFF) + тонкие 1px границы (#E4E8F0) */
+/* Высококонтрастная спокойная дизайн-система:
+   плотный архитектурный холст (#E4E8EE) + чисто-белые секции (#FFFFFF) с глубоким разделением + благородный графит (#2C3444) без кричащего синего */
 :root {
-  --bg-page: #F6F8FB;
+  --bg-page: #E4E8EE;
   --bg-card: #FFFFFF;
-  --bg-subtle: #EEF2F6;
-  --bg-warm-tint: #F8FAFC;
-  --text-primary: #0F172A;
+  --bg-subtle: #EDF0F5;
+  --bg-warm-tint: #F4F6F9;
+  --text-primary: #111827;
   --text-secondary: #64748B;
-  --border-color: #E2E8F0;
-  --border-strong: #2563EB;
-  --bg-dark-block: #0F172A;
-  --brand-borners: #1E3A8A;
+  --border-color: #CFD6E0;
+  --border-strong: #2C3444;
+  --bg-dark-block: #1E2430;
+  --brand-borners: #2C3444;
   --brand-natele: #475569;
-  --status-success: #059669;
+  --status-success: #0D9488;
   --status-warning: #D97706;
   --status-error: #DC2626;
 }

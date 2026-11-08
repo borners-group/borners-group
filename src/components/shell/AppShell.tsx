@@ -995,10 +995,10 @@ export function AppShell() {
 
   return (
     <div>
-      <div className="min-h-screen bg-[#F6F8FB] text-[#0F172A] flex flex-col overflow-x-hidden">
+      <div className="min-h-screen bg-[#E4E8EE] text-[#111827] flex flex-col overflow-x-hidden">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-50 h-[58px] bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+          <header className="sticky top-0 z-50 h-[58px] bg-white/95 backdrop-blur-md border-b border-[#CFD6E0] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -1114,14 +1114,14 @@ export function AppShell() {
                         }}
                         className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
                           brandFilter === 'ALL'
-                            ? 'bg-[#EFF6FF] text-[#1D4ED8] font-bold border border-[#BFDBFE]'
+                            ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
                             : 'text-[#1E293B] hover:bg-[#F8FAFC]'
                         }`}
                       >
                         <span>Все бренды</span>
                         <span
                           className={`font-mono text-[10px] ${
-                            brandFilter === 'ALL' ? 'text-[#2563EB]' : 'text-[#64748B]'
+                            brandFilter === 'ALL' ? 'text-[#334155]' : 'text-[#64748B]'
                           }`}
                         >
                           Сводка группы
@@ -1160,14 +1160,14 @@ export function AppShell() {
                             }}
                             className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
                               isSelected
-                                ? 'bg-[#EFF6FF] text-[#1D4ED8] font-bold border border-[#BFDBFE]'
+                                ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
                                 : 'text-[#1E293B] hover:bg-[#F8FAFC]'
                             }`}
                           >
                             <span>{bItem.label}</span>
                             <span
                               className={`font-mono text-[10px] ${
-                                isSelected ? 'text-[#2563EB]' : 'text-[#64748B]'
+                                isSelected ? 'text-[#334155]' : 'text-[#64748B]'
                               }`}
                             >
                               {bItem.sub}
@@ -1185,12 +1185,12 @@ export function AppShell() {
             <nav
               aria-label="Цепочка контуров BORNERS"
               data-tour="sidebar-nav"
-              className="hidden xl:flex items-center rounded-[11px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 gap-0.5"
+              className="hidden xl:flex items-center rounded-[11px] bg-[#EEF1F6] border border-[#D8DEE8] p-0.5 gap-0.5"
             >
               {pipelineSteps.map((item, idx) => (
                 <React.Fragment key={item.key}>
                   {idx > 0 && (
-                    <div className="h-3.5 w-[1px] bg-[#E2E8F0] mx-0.5 shrink-0" />
+                    <div className="h-3.5 w-[1px] bg-[#D8DEE8] mx-0.5 shrink-0" />
                   )}
                   <button
                     type="button"
@@ -1205,14 +1205,14 @@ export function AppShell() {
                     }}
                     className={`h-7.5 px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1.5 transition cursor-pointer ${
                       item.isActive
-                        ? 'bg-white text-[#0F172A] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.08)] border border-[#E2E8F0]'
-                        : 'text-[#475569] hover:text-[#0F172A] hover:bg-white/60 font-semibold'
+                        ? 'bg-white text-[#111827] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.1)] border border-[#CBD5E1]'
+                        : 'text-[#475569] hover:text-[#111827] hover:bg-white/60 font-semibold'
                     }`}
                   >
                     {item.step && (
                       <span
                         className={`font-mono text-[10.5px] ${
-                          item.isActive ? 'text-[#2563EB]' : 'text-[#64748B]'
+                          item.isActive ? 'text-[#111827]' : 'text-[#64748B]'
                         }`}
                       >
                         {item.step}
@@ -1223,7 +1223,7 @@ export function AppShell() {
                       <span
                         className={`font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
                           item.isActive
-                            ? 'bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]'
+                            ? 'bg-[#F1F5F9] text-[#111827] border border-[#CBD5E1]'
                             : 'bg-white text-[#475569] border border-[#E2E8F0]'
                         }`}
                       >
@@ -1243,14 +1243,14 @@ export function AppShell() {
                 aria-expanded={atlasOpen}
                 className={`inline-flex items-center gap-1.5 h-8.5 px-3.5 rounded-[9px] border text-[12.5px] font-bold transition cursor-pointer ${
                   atlasOpen
-                    ? 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'
+                    ? 'bg-[#F1F5F9] text-[#111827] border-[#94A3B8]'
                     : 'bg-white hover:border-[#94A3B8] text-[#1E293B] border-[#E2E8F0]'
                 }`}
               >
                 <span>Все разделы</span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 transition-transform ${
-                    atlasOpen ? 'rotate-180 text-[#1D4ED8]' : 'text-[#64748B]'
+                    atlasOpen ? 'rotate-180 text-[#111827]' : 'text-[#64748B]'
                   }`}
                 />
               </button>
@@ -1278,7 +1278,7 @@ export function AppShell() {
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
                   className="inline-flex items-center gap-2 h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] pl-2 pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
                 >
-                  <span className="h-5 w-5 rounded-[5px] bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] flex items-center justify-center font-mono text-[10px] font-bold">
+                  <span className="h-5 w-5 rounded-[5px] bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] flex items-center justify-center font-mono text-[10px] font-bold">
                     {currentUser.avatarInitials}
                   </span>
                   <span className="hidden sm:inline text-[#1E293B]">
