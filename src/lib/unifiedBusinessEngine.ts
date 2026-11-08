@@ -58,6 +58,7 @@ export interface CustomBatchPeriodDef {
   customPacksQty?: number | null; // ручная корректировка количества комплектов до утверждения
   customOrderDateIso?: string | null; // ручная корректировка даты заказа до утверждения
   customSizeSharesPct?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> | null; // ручная корректировка долей % для конкретной партии
+  customSizeBreakdownPacks?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> | null; // прямая ручная правка комплектов по размерам S–XXL
 }
 
 export const DEFAULT_QUARTERLY_BATCH_PERIODS: CustomBatchPeriodDef[] = [
@@ -829,10 +830,26 @@ export function computeProcurementPlan(
           ? { ...fp.sizeSharesPct, ...pDef.customSizeSharesPct }
           : { ...fp.sizeSharesPct };
 
-      const sizeBreakdownPacks = allocatePacksBySizeLargestRemainder(
-        recommendedPacks,
-        effectiveSizeShares
-      );
+      const customSizesSum = pDef.customSizeBreakdownPacks
+        ? (['S', 'M', 'L', 'XL', 'XXL'] as const).reduce(
+            (s, sz) => s + Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks?.[sz]) || 0)),
+            0
+          )
+        : 0;
+
+      const sizeBreakdownPacks =
+        pDef.customSizeBreakdownPacks && customSizesSum === recommendedPacks
+          ? {
+              S: Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks.S) || 0)),
+              M: Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks.M) || 0)),
+              L: Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks.L) || 0)),
+              XL: Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks.XL) || 0)),
+              XXL: Math.max(0, Math.round(Number(pDef.customSizeBreakdownPacks.XXL) || 0)),
+            }
+          : allocatePacksBySizeLargestRemainder(
+              recommendedPacks,
+              effectiveSizeShares
+            );
 
       const colorCount = Math.max(1, colorsList.length || unitsInPack);
       const colorBreakdownUnits = (
@@ -1242,6 +1259,8 @@ export function updateApprovedPurchaseOrder(
       | 'lockedUnitCostRub'
       | 'factoryName'
       | 'arrivalMonthIdx'
+      | 'coveredEndMonthIdx'
+      | 'coverageMonthsLabel'
       | 'orderPlacementDateIso'
       | 'requiredArrivalDateIso'
       | 'status'
@@ -1271,6 +1290,20 @@ export function updateApprovedPurchaseOrder(
     patch.arrivalMonthIdx !== undefined
       ? Math.min(11, Math.max(0, Math.round(patch.arrivalMonthIdx)))
       : target.arrivalMonthIdx;
+  const nextCoveredEndMonthIdx =
+    patch.coveredEndMonthIdx !== undefined
+      ? Math.min(11, Math.max(nextArrivalMonthIdx, Math.round(patch.coveredEndMonthIdx)))
+      : patch.arrivalMonthIdx !== undefined
+      ? Math.max(nextArrivalMonthIdx, target.coveredEndMonthIdx ?? nextArrivalMonthIdx)
+      : target.coveredEndMonthIdx ?? nextArrivalMonthIdx;
+  const nextCoverageMonthsLabel =
+    patch.coverageMonthsLabel !== undefined
+      ? patch.coverageMonthsLabel
+      : patch.arrivalMonthIdx !== undefined || patch.coveredEndMonthIdx !== undefined
+      ? nextArrivalMonthIdx === nextCoveredEndMonthIdx
+        ? `${MONTHS_SHORT[nextArrivalMonthIdx]} ${year}`
+        : `${MONTHS_SHORT[nextArrivalMonthIdx]}–${MONTHS_SHORT[nextCoveredEndMonthIdx]} ${year}`
+      : target.coverageMonthsLabel;
   const nextRequiredArrivalIso =
     patch.requiredArrivalDateIso !== undefined
       ? patch.requiredArrivalDateIso
@@ -1297,6 +1330,8 @@ export function updateApprovedPurchaseOrder(
         ? patch.factoryName.trim() || target.factoryName
         : target.factoryName,
     arrivalMonthIdx: nextArrivalMonthIdx,
+    coveredEndMonthIdx: nextCoveredEndMonthIdx,
+    coverageMonthsLabel: nextCoverageMonthsLabel,
     requiredArrivalDateIso: nextRequiredArrivalIso,
     orderPlacementDateIso: patch.orderPlacementDateIso ?? target.orderPlacementDateIso,
     packsQty: nextPacks,

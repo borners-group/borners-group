@@ -1319,6 +1319,74 @@ test('28. Чистый экран «Закупки» (без дублей и а�
   assert.equal(matchesBrandFilter(liskaniModel, 'ALL'), true);
 });
 
+test('29. Прямое инлайн-редактирование партий, дат и размеров S–XXL (в черновиках и утверждённых PO) + сброс PO в черновик', () => {
+  const s1Scenario = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  let sorbet = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!
+  );
+
+  // 1. Прямая правка комплектов конкретного размера S в черновой партии автоматически пересчитывает общий объём партии
+  const initialPlan = computeProcurementPlan(sorbet, s1Scenario);
+  const q1 = initialPlan.recommendedBatches[0];
+  assert.ok(q1);
+
+  const customQ1Sizes = {
+    ...q1.sizeBreakdownPacks,
+    S: 1000,
+    M: 2000,
+    L: 2500,
+    XL: 1500,
+    XXL: 1000,
+  };
+  const customQ1Total = 8000;
+  sorbet = {
+    ...sorbet,
+    sharedSupplyAndFact: {
+      ...sorbet.sharedSupplyAndFact!,
+      factoryParams: {
+        ...sorbet.sharedSupplyAndFact!.factoryParams,
+        customBatchPeriods: [
+          {
+            id: q1.periodId,
+            startMonthIdx: q1.firstCoveredMonthIdx,
+            endMonthIdx: q1.endCoveredMonthIdx,
+            customPacksQty: customQ1Total,
+            customSizeBreakdownPacks: customQ1Sizes,
+          },
+          ...initialPlan.recommendedBatches.slice(1).map((b) => ({
+            id: b.periodId,
+            startMonthIdx: b.firstCoveredMonthIdx,
+            endMonthIdx: b.endCoveredMonthIdx,
+          })),
+        ],
+      },
+    },
+  };
+
+  const afterCustomSizePlan = computeProcurementPlan(sorbet, s1Scenario);
+  assert.equal(afterCustomSizePlan.recommendedBatches[0].recommendedPacks, 8000);
+  assert.deepEqual(afterCustomSizePlan.recommendedBatches[0].sizeBreakdownPacks, customQ1Sizes);
+
+  // 2. Утверждаем партию в PO и проверяем прямое редактирование размеров S–XXL и месяца прихода внутри PO
+  sorbet = approveRecommendedBatch(sorbet, afterCustomSizePlan.recommendedBatches[0], 'Владелец');
+  const po = sorbet.sharedSupplyAndFact!.approvedOrders[0];
+  assert.equal(po.packsQty, 8000);
+  assert.deepEqual(po.sizeBreakdownPacks, customQ1Sizes);
+
+  const updatedPoSizes = { ...customQ1Sizes, S: 1200 };
+  sorbet = updateApprovedPurchaseOrder(sorbet, po.id, {
+    packsQty: 8200,
+    sizeBreakdownPacks: updatedPoSizes,
+    arrivalMonthIdx: 1,
+    coveredEndMonthIdx: 2,
+  });
+  const updatedPo = sorbet.sharedSupplyAndFact!.approvedOrders[0];
+  assert.equal(updatedPo.packsQty, 8200);
+  assert.equal(updatedPo.sizeBreakdownPacks?.S, 1200);
+  assert.equal(updatedPo.coverageMonthsLabel, 'Фев–Мар 2027');
+});
+
+
 
 
 

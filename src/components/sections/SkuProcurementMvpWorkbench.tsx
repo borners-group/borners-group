@@ -180,7 +180,6 @@ export function SkuProcurementMvpWorkbench({
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [showMonthlyTable, setShowMonthlyTable] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [editingBatchKey, setEditingBatchKey] = useState<string | null>(null);
   const [showAddCustomModal, setShowAddCustomModal] = useState(false);
   const [savedStamp, setSavedStamp] = useState<string>('Сохранено');
 
@@ -401,6 +400,39 @@ export function SkuProcurementMvpWorkbench({
     triggerSavedIndicator('Сброшено к 4 кварталам');
   };
 
+  const handleResetAllApprovedOrders = () => {
+    if (shared.approvedOrders.length === 0) return;
+    onUpdateModel({
+      ...model,
+      sharedSupplyAndFact: {
+        ...shared,
+        factoryParams: {
+          ...fp,
+          customBatchPeriods: undefined,
+        },
+        approvedOrders: [],
+      },
+    });
+    setExpandedKey(null);
+    triggerSavedIndicator('Все PO возвращены в план');
+    onNotify?.(
+      'Утверждённые PO возвращены в черновик',
+      'Все партии снова доступны в черновом плане по 4 кварталам для свободного редактирования.',
+      'success'
+    );
+  };
+
+  const sortedApprovedOrders = useMemo(
+    () =>
+      [...proc.approvedOrders].sort((a, b) => {
+        if (a.arrivalMonthIdx !== b.arrivalMonthIdx) {
+          return a.arrivalMonthIdx - b.arrivalMonthIdx;
+        }
+        return (a.orderPlacementDateIso || '').localeCompare(b.orderPlacementDateIso || '');
+      }),
+    [proc.approvedOrders]
+  );
+
   // Редактирование параметров конкретной черновой партии (Зона В)
   const updateDraftPeriodDef = (
     periodId: string,
@@ -417,6 +449,66 @@ export function SkuProcurementMvpWorkbench({
         },
       },
     });
+    triggerSavedIndicator('Сохранено');
+  };
+
+  const handleUpdateDraftBatchSizePacks = (
+    batch: RecommendedProcurementBatch,
+    sz: 'S' | 'M' | 'L' | 'XL' | 'XXL',
+    nextSizePacks: number
+  ) => {
+    const cleanVal = Math.max(0, Math.round(nextSizePacks));
+    const nextBreakdown: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> = {
+      ...batch.sizeBreakdownPacks,
+      [sz]: cleanVal,
+    };
+    const nextTotalPacks = Math.max(
+      1,
+      SIZES_LIST.reduce((sum, key) => sum + (nextBreakdown[key] || 0), 0)
+    );
+    updateDraftPeriodDef(batch.periodId, (prev) => ({
+      ...prev,
+      customPacksQty: nextTotalPacks,
+      customSizeBreakdownPacks: nextBreakdown,
+    }));
+  };
+
+  const handleUpdateDraftBatchSizeShare = (
+    batch: RecommendedProcurementBatch,
+    sz: 'S' | 'M' | 'L' | 'XL' | 'XXL',
+    nextPct: number
+  ) => {
+    const cleanPct = Math.max(0, Math.min(100, Math.round(nextPct)));
+    updateDraftPeriodDef(batch.periodId, (prev) => ({
+      ...prev,
+      customSizeSharesPct: {
+        ...(prev.customSizeSharesPct || batch.sizeSharesPct || fp.sizeSharesPct),
+        [sz]: cleanPct,
+      },
+      customSizeBreakdownPacks: null,
+    }));
+  };
+
+  const handleUpdatePoSizePacks = (
+    po: ApprovedPurchaseOrder,
+    currentSizes: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>,
+    sz: 'S' | 'M' | 'L' | 'XL' | 'XXL',
+    nextSizePacks: number
+  ) => {
+    const cleanVal = Math.max(0, Math.round(nextSizePacks));
+    const nextBreakdown: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number> = {
+      ...currentSizes,
+      [sz]: cleanVal,
+    };
+    const nextTotalPacks = Math.max(
+      1,
+      SIZES_LIST.reduce((sum, key) => sum + (nextBreakdown[key] || 0), 0)
+    );
+    const updated = updateApprovedPurchaseOrder(model, po.id, {
+      packsQty: nextTotalPacks,
+      sizeBreakdownPacks: nextBreakdown,
+    });
+    onUpdateModel(updated);
     triggerSavedIndicator('Сохранено');
   };
 
@@ -663,9 +755,20 @@ export function SkuProcurementMvpWorkbench({
           </div>
 
           <div className="rounded-[12px] border border-[#E4E3DC] bg-[#F9F9F6] px-4 py-3">
-            <span className="text-[11px] font-semibold text-[#686762] uppercase tracking-wide">
-              Доступный товар
-            </span>
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-semibold text-[#686762] uppercase tracking-wide">
+                Доступный товар
+              </span>
+              {proc.approvedOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetAllApprovedOrders}
+                  className="text-[11px] font-semibold text-rose-700 hover:underline cursor-pointer"
+                >
+                  Сбросить PO ({proc.approvedOrders.length}) ↺
+                </button>
+              )}
+            </div>
             <div className="mt-1 font-mono text-[20px] font-bold text-[#141413]">
               {(proc.netOpeningAvailablePacks + proc.totalApprovedReceiptsPacks).toLocaleString('ru-RU')} компл.
             </div>
@@ -942,7 +1045,7 @@ export function SkuProcurementMvpWorkbench({
       </div>
 
       {/* =====================================================================
-          БЛОК 2 · ГРАФИК ПАРТИЙ К ЗАКАЗУ (Выровненная таблица без визуального шума)
+          БЛОК 2 · ГРАФИК ПАРТИЙ К ЗАКАЗУ (Прямое редактирование в каждой строке и размерах S–XXL)
          ===================================================================== */}
       <div className="rounded-[16px] border border-[#D8D7CE] bg-white p-5 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5">
@@ -951,7 +1054,7 @@ export function SkuProcurementMvpWorkbench({
               Партии к заказу по кварталам ({proc.recommendedBatches.length} план · {proc.approvedOrders.length} утв. PO)
             </h4>
             <p className="mt-0.5 text-[12px] text-[#686762]">
-              Нажмите на любую строку или «Размеры и расчёт ▾», чтобы открыть размерную сетку S–XXL и изменить даты или объём.
+              Меняйте объём, даты и период прямо в строке партии или откройте «Размеры S–XXL ▾» для точной правки по каждому размеру.
             </p>
           </div>
 
@@ -963,6 +1066,15 @@ export function SkuProcurementMvpWorkbench({
             >
               Пересчитать по плану
             </button>
+            {proc.approvedOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={handleResetAllApprovedOrders}
+                className="h-8.5 rounded-[8px] border border-rose-200 bg-rose-50 px-3 text-[12px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
+              >
+                ↺ Вернуть все PO в черновик ({proc.approvedOrders.length})
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowAddCustomModal((v) => !v)}
@@ -1084,10 +1196,19 @@ export function SkuProcurementMvpWorkbench({
           </div>
         )}
 
-        {/* Утверждённые заказы PO (если есть) */}
-        {proc.approvedOrders.length > 0 && (
-          <div className="mb-3 space-y-2">
-            {proc.approvedOrders.map((po, poIdx) => {
+        {/* Утверждённые заказы PO (хронологически отсортированные, с прямым инлайн-редактированием объёма, дат, цены и размеров S–XXL!) */}
+        {sortedApprovedOrders.length > 0 && (
+          <div className="mb-4 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[#157347]">
+                Утверждённые заказы PO ({sortedApprovedOrders.length} шт. · {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.)
+              </span>
+              <span className="text-[11.5px] text-[#52514C]">
+                Все поля в строке и внутри размеров S–XXL можно редактировать напрямую
+              </span>
+            </div>
+
+            {sortedApprovedOrders.map((po, poIdx) => {
               const rowKey = `po-${po.id}`;
               const isExpanded = activeExpandedKey === rowKey;
               const confirmed = po.confirmedByFactory !== false;
@@ -1100,40 +1221,158 @@ export function SkuProcurementMvpWorkbench({
               return (
                 <div
                   key={po.id}
-                  className="rounded-[12px] border border-[#BBE5CE] bg-[#F4FBF7]"
+                  className="rounded-[12px] border border-[#BBE5CE] bg-[#F4FBF7] transition-shadow hover:shadow-xs"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  {/* КЛИКАБЕЛЬНАЯ СТРОКА PO С ПРЯМЫМИ ИНЛАЙН-ПОЛЯМИ */}
+                  <div
+                    onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 cursor-pointer"
+                  >
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="rounded-md bg-[#157347] px-2.5 py-0.5 font-mono text-[11px] font-bold text-white">
-                        УТВЕРЖДЁН PO #{poIdx + 1}
+                      <span className="rounded-md bg-[#157347] px-2.5 py-1 font-mono text-[11px] font-bold text-white">
+                        PO #{poIdx + 1}
                       </span>
-                      <span className="text-[14px] font-bold text-[#141413]">
-                        {po.coverageMonthsLabel || `${MONTHS_SHORT[po.arrivalMonthIdx]} 2027`}
-                      </span>
+
+                      {/* Прямой выбор месяца прихода */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <select
+                          aria-label={`Месяц прихода заказа ${po.orderNumber}`}
+                          value={po.arrivalMonthIdx}
+                          onChange={(e) => {
+                            const nextArrival = Number(e.target.value);
+                            const updated = updateApprovedPurchaseOrder(model, po.id, {
+                              arrivalMonthIdx: nextArrival,
+                              coveredEndMonthIdx: Math.max(
+                                nextArrival,
+                                po.coveredEndMonthIdx ?? nextArrival
+                              ),
+                            });
+                            onUpdateModel(updated);
+                            triggerSavedIndicator('Сохранено');
+                          }}
+                          className="h-8 rounded-[7px] border border-[#BBE5CE] bg-white px-2 text-[13px] font-bold text-[#141413] hover:border-[#157347] focus:border-[#141413] focus:outline-none cursor-pointer"
+                        >
+                          {MONTHS_SHORT.map((m, idx) => (
+                            <option key={m} value={idx}>
+                              Приход: {m} 2027
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <span className="rounded border border-[#CBEAD9] bg-white px-2 py-0.5 font-mono text-[11px] font-semibold text-[#157347]">
                         {po.orderNumber}
                       </span>
-                      <span className="text-[12px] text-[#52514C]">
-                        Заказ от <strong className="font-mono text-[#141413]">{formatHumanDateRu(po.orderPlacementDateIso)}</strong>
-                      </span>
+
+                      {/* Прямое редактирование даты заказа */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1.5 text-[12px] text-[#52514C]"
+                      >
+                        <span>Заказ до:</span>
+                        <input
+                          type="date"
+                          aria-label={`Дата размещения заказа ${po.orderNumber}`}
+                          value={po.orderPlacementDateIso}
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            const updated = updateApprovedPurchaseOrder(model, po.id, {
+                              orderPlacementDateIso: e.target.value,
+                            });
+                            onUpdateModel(updated);
+                            triggerSavedIndicator('Сохранено');
+                          }}
+                          className="h-8 rounded-[7px] border border-[#BBE5CE] bg-white px-2 font-mono text-[12px] font-semibold text-[#141413] hover:border-[#157347] focus:border-[#141413] focus:outline-none"
+                        />
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="text-right">
-                        <div className="font-mono text-[14.5px] font-bold text-[#141413]">
-                          {po.packsQty.toLocaleString('ru-RU')} компл. · {formatRubMillions(po.totalOrderRub)}
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex flex-wrap items-center gap-2.5"
+                    >
+                      {/* Прямое редактирование объёма PO прямо в строке */}
+                      <div className="inline-flex items-center rounded-[8px] border border-[#BBE5CE] bg-white p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVal = Math.max(50, po.packsQty - (fp.packMultiple || 50));
+                            const updated = updateApprovedPurchaseOrder(model, po.id, {
+                              packsQty: nextVal,
+                            });
+                            onUpdateModel(updated);
+                            triggerSavedIndicator('Сохранено');
+                          }}
+                          className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                          title="Уменьшить объём партии"
+                        >
+                          −
+                        </button>
+                        <NumericInput
+                          ariaLabel={`Количество комплектов в ${po.orderNumber}`}
+                          value={po.packsQty}
+                          min={1}
+                          step={fp.packMultiple || 50}
+                          onChangeValue={(val) => {
+                            const updated = updateApprovedPurchaseOrder(model, po.id, {
+                              packsQty: val,
+                            });
+                            onUpdateModel(updated);
+                            triggerSavedIndicator('Сохранено');
+                          }}
+                          className="h-7 w-20 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:outline-none"
+                        />
+                        <span className="pr-1.5 text-[11px] font-medium text-[#686762]">
+                          компл.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVal = po.packsQty + (fp.packMultiple || 50);
+                            const updated = updateApprovedPurchaseOrder(model, po.id, {
+                              packsQty: nextVal,
+                            });
+                            onUpdateModel(updated);
+                            triggerSavedIndicator('Сохранено');
+                          }}
+                          className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                          title="Увеличить объём партии"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="text-right min-w-[105px]">
+                        <div className="font-mono text-[14px] font-bold text-[#141413]">
+                          {formatRubMillions(po.totalOrderRub)}
                         </div>
-                        <div className="text-[11px] text-[#52514C]">
-                          {(po.packsQty * po.unitsInPack).toLocaleString('ru-RU')} изд. · {confirmed ? 'Подтверждён фабрикой' : 'Ожидает подтв. фабрики'}
+                        <div className="font-mono text-[10.5px] text-[#52514C]">
+                          {(po.packsQty * po.unitsInPack).toLocaleString('ru-RU')} изд.
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
-                        className="rounded-[8px] border border-[#CBEAD9] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#141413] hover:bg-[#EAF6F0] cursor-pointer"
+                        className="h-8 rounded-[8px] border border-[#CBEAD9] bg-white px-2.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EAF6F0] cursor-pointer"
                       >
-                        {isExpanded ? 'Скрыть ▴' : 'Размеры и статус ▾'}
+                        {isExpanded ? 'Скрыть ▴' : 'Размеры S–XXL ▾'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = removeApprovedPurchaseOrder(model, po.id);
+                          onUpdateModel(updated);
+                          triggerSavedIndicator('Возвращён в план');
+                        }}
+                        title="Вернуть этот заказ обратно в черновой план"
+                        className="h-8 rounded-[8px] border border-rose-200 bg-white px-2.5 text-[11.5px] font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
+                      >
+                        ↺ В план
                       </button>
                     </div>
                   </div>
@@ -1141,8 +1380,8 @@ export function SkuProcurementMvpWorkbench({
                   {isExpanded && (
                     <div className="border-t border-[#CBEAD9] bg-white px-4 py-3.5 rounded-b-[11px]">
                       <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
-                        <span className="text-[12px] font-bold text-[#141413]">
-                          Детализация утверждённого заказа {po.orderNumber}
+                        <span className="text-[12.5px] font-bold text-[#141413]">
+                          Размерная сетка S–XXL и параметры заказа {po.orderNumber} (нажмите на любой размер для ввода количества)
                         </span>
                         <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-[#141413]">
                           <input
@@ -1157,7 +1396,7 @@ export function SkuProcurementMvpWorkbench({
                             }}
                             className="rounded border-[#C8C7BE]"
                           />
-                          <span>Подтверждён фабрикой (учитывать в гарантированных поставках)</span>
+                          <span>Подтверждён фабрикой (учитывать в поставках)</span>
                         </label>
                       </div>
 
@@ -1168,28 +1407,71 @@ export function SkuProcurementMvpWorkbench({
                         </div>
                       )}
 
+                      {/* ИНТЕРАКТИВНЫЕ РАЗМЕРЫ S–XXL УТВЕРЖДЁННОГО PO */}
                       <div className="rounded-lg border border-[#E4E3DC] bg-[#F8F8F5] p-3">
-                        <div className="text-[11.5px] font-semibold text-[#52514C]">
-                          Размеры партии (S–XXL): комплекты и физические изделия ({po.unitsInPack} шт./компл.)
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11.5px] font-semibold text-[#52514C]">
+                            Количество комплектов по размерам S–XXL ({po.unitsInPack} изд. в 1 компл.) — меняйте любое поле, итог пересчитается сразу:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const redistributed = allocatePacksBySizeLargestRemainder(
+                                po.packsQty,
+                                fp.sizeSharesPct
+                              );
+                              const updated = updateApprovedPurchaseOrder(model, po.id, {
+                                sizeBreakdownPacks: redistributed,
+                              });
+                              onUpdateModel(updated);
+                              triggerSavedIndicator('Размеры выровнены по %');
+                            }}
+                            className="rounded border border-[#CFCEC6] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
+                          >
+                            Пересчитать по пропорции % ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL})
+                          </button>
                         </div>
-                        <div className="mt-2 grid grid-cols-6 gap-2 text-center text-[11px]">
-                          {SIZES_LIST.map((sz) => (
-                            <div
-                              key={sz}
-                              className="rounded-md border border-[#DFDED6] bg-white px-2 py-1.5"
-                            >
-                              <div className="font-bold text-[#686762]">{sz}</div>
-                              <div className="font-mono text-[13px] font-bold text-[#141413]">
-                                {(poSizes[sz] || 0).toLocaleString('ru-RU')} компл.
-                              </div>
-                              <div className="font-mono text-[10px] text-[#686762]">
-                                {((poSizes[sz] || 0) * po.unitsInPack).toLocaleString('ru-RU')} изд.
-                              </div>
+
+                        <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
+                          {SIZES_LIST.map((sz) => {
+                            const szPacks = poSizes[sz] || 0;
+                            const sharePct =
+                              poSizeTotal > 0 ? Math.round((szPacks / poSizeTotal) * 100) : 0;
+                            return (
+                              <label
+                                key={sz}
+                                className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 py-2 hover:border-[#141413] focus-within:border-[#141413] focus-within:ring-1 focus-within:ring-[#141413]"
+                              >
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-bold text-[#141413]">{sz}</span>
+                                  <span className="font-mono text-[10px] text-[#686762]">
+                                    {sharePct}%
+                                  </span>
+                                </div>
+                                <div className="my-1 flex items-center justify-center gap-1">
+                                  <NumericInput
+                                    ariaLabel={`Размер ${sz} в комплектах для ${po.orderNumber}`}
+                                    value={szPacks}
+                                    min={0}
+                                    step={10}
+                                    onChangeValue={(val) =>
+                                      handleUpdatePoSizePacks(po, poSizes, sz, val)
+                                    }
+                                    className="w-full rounded border border-[#E4E3DC] bg-[#FAF9F6] py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:bg-white focus:border-[#141413] focus:outline-none"
+                                  />
+                                </div>
+                                <div className="font-mono text-[10px] text-[#686762]">
+                                  компл. · {(szPacks * po.unitsInPack).toLocaleString('ru-RU')} изд.
+                                </div>
+                              </label>
+                            );
+                          })}
+                          <div className="flex flex-col justify-between rounded-[8px] border border-[#141413] bg-[#141413] px-2.5 py-2 text-white">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-gray-300">ИТОГО</span>
+                              <span className="font-mono text-[10px] text-gray-300">100%</span>
                             </div>
-                          ))}
-                          <div className="rounded-md border border-[#141413] bg-[#141413] px-2 py-1.5 text-white">
-                            <div className="font-bold text-gray-300">ИТОГО</div>
-                            <div className="font-mono text-[13px] font-bold">
+                            <div className="my-1 font-mono text-[15px] font-extrabold">
                               {poSizeTotal.toLocaleString('ru-RU')} компл.
                             </div>
                             <div className="font-mono text-[10px] text-gray-300">
@@ -1199,29 +1481,47 @@ export function SkuProcurementMvpWorkbench({
                         </div>
                       </div>
 
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#52514C]">
-                          <span className="font-medium">Статус поставки:</span>
-                          <select
-                            value={po.status}
-                            onChange={(e) => {
-                              const updated = updateApprovedPurchaseOrder(model, po.id, {
-                                status: e.target.value as ApprovedPurchaseOrder['status'],
-                              });
-                              onUpdateModel(updated);
-                              triggerSavedIndicator('Сохранено');
-                            }}
-                            className="rounded-md border border-[#CFCEC6] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#141413]"
-                          >
-                            {Object.entries(PO_STATUS_LABELS_RU).map(([k, lbl]) => (
-                              <option key={k} value={k}>
-                                {lbl}
-                              </option>
-                            ))}
-                          </select>
-                          <span>
-                            · Цена в заказе: <strong>{po.lockedUnitCostRub} ₽/компл.</strong>
-                          </span>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-3 text-[12px] text-[#52514C]">
+                          <label className="inline-flex items-center gap-1.5">
+                            <span className="font-medium">Статус поставки:</span>
+                            <select
+                              value={po.status}
+                              onChange={(e) => {
+                                const updated = updateApprovedPurchaseOrder(model, po.id, {
+                                  status: e.target.value as ApprovedPurchaseOrder['status'],
+                                });
+                                onUpdateModel(updated);
+                                triggerSavedIndicator('Сохранено');
+                              }}
+                              className="h-8 rounded-md border border-[#CFCEC6] bg-white px-2.5 text-[12px] font-semibold text-[#141413]"
+                            >
+                              {Object.entries(PO_STATUS_LABELS_RU).map(([k, lbl]) => (
+                                <option key={k} value={k}>
+                                  {lbl}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="inline-flex items-center gap-1.5">
+                            <span className="font-medium">Цена в заказе:</span>
+                            <NumericInput
+                              ariaLabel={`Цена комплекта в заказе ${po.orderNumber}`}
+                              value={po.lockedUnitCostRub}
+                              min={0}
+                              step={10}
+                              onChangeValue={(val) => {
+                                const updated = updateApprovedPurchaseOrder(model, po.id, {
+                                  lockedUnitCostRub: val,
+                                });
+                                onUpdateModel(updated);
+                                triggerSavedIndicator('Сохранено');
+                              }}
+                              className="h-8 w-20 rounded-md border border-[#CFCEC6] bg-white px-2 text-center font-mono text-[12.5px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                            />
+                            <span>₽/компл.</span>
+                          </label>
                         </div>
 
                         <button
@@ -1231,7 +1531,7 @@ export function SkuProcurementMvpWorkbench({
                             onUpdateModel(updated);
                             triggerSavedIndicator('Заказ удалён');
                           }}
-                          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
+                          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
                         >
                           Вернуть в черновик / Удалить PO
                         </button>
@@ -1244,17 +1544,17 @@ export function SkuProcurementMvpWorkbench({
           </div>
         )}
 
-        {/* ЧИСТАЯ ВЫРОВНЕННАЯ ТАБЛИЦА КВАРТАЛЬНЫХ ПАРТИЙ (Без дублирования слов в каждой строке!) */}
+        {/* ЧИСТАЯ ИНТЕРАКТИВНАЯ ТАБЛИЦА КВАРТАЛЬНЫХ ПАРТИЙ (С прямым редактированием периода, даты, объёма и размеров S–XXL!) */}
         {proc.recommendedBatches.length > 0 && (
           <div className="overflow-x-auto rounded-[12px] border border-[#E2E1D8]">
-            <table className="w-full min-w-[780px] border-collapse text-left">
+            <table className="w-full min-w-[820px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#E2E1D8] bg-[#F8F8F5] text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                  <th className="py-2.5 pl-4 pr-3">Партия и период</th>
+                  <th className="py-2.5 pl-4 pr-3">Партия и период покрытия</th>
                   <th className="px-3 py-2.5 text-right">План продаж</th>
-                  <th className="px-3 py-2.5">Заказать до</th>
+                  <th className="px-3 py-2.5">Заказать до (дата)</th>
                   <th className="px-3 py-2.5">Приход на склад</th>
-                  <th className="px-3 py-2.5 text-right">К заказу</th>
+                  <th className="px-3 py-2.5 text-right">К заказу (компл.)</th>
                   <th className="px-3 py-2.5 text-right">Сумма партии</th>
                   <th className="py-2.5 pr-4 pl-3 text-right">Действия</th>
                 </tr>
@@ -1263,7 +1563,6 @@ export function SkuProcurementMvpWorkbench({
                 {proc.recommendedBatches.map((batch, bIdx) => {
                   const rowKey = `draft-${batch.periodId}`;
                   const isExpanded = activeExpandedKey === rowKey;
-                  const isEditing = editingBatchKey === rowKey;
                   const sizeTotalPacks = SIZES_LIST.reduce(
                     (s, sz) => s + (batch.sizeBreakdownPacks[sz] || 0),
                     0
@@ -1283,18 +1582,63 @@ export function SkuProcurementMvpWorkbench({
                           isExpanded ? 'bg-[#F8F8F4]' : 'bg-white hover:bg-[#FAF9F6]'
                         }`}
                       >
-                        <td className="py-3.5 pl-4 pr-3">
+                        {/* 1. Партия и прямой выбор месяцев покрытия */}
+                        <td className="py-3 pl-4 pr-3">
                           <div className="flex items-center gap-2.5">
                             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#D4D3C9] bg-[#F4F3EE] font-mono text-[11.5px] font-bold text-[#141413]">
                               {bIdx + 1}
                             </span>
                             <div>
-                              <div className="text-[14px] font-bold text-[#141413]">
-                                {batch.coverageMonthsLabel}
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1"
+                              >
+                                <select
+                                  aria-label={`Начало периода партии №${bIdx + 1}`}
+                                  value={batch.firstCoveredMonthIdx}
+                                  onChange={(e) => {
+                                    const nextStart = Number(e.target.value);
+                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                      ...prev,
+                                      startMonthIdx: nextStart,
+                                      endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
+                                    }));
+                                  }}
+                                  className="h-7 rounded-[6px] border border-[#D8D7CE] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none cursor-pointer"
+                                >
+                                  {MONTHS_SHORT.map((m, idx) => (
+                                    <option key={m} value={idx}>
+                                      {m}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-[12px] text-[#686762]">–</span>
+                                <select
+                                  aria-label={`Конец периода партии №${bIdx + 1}`}
+                                  value={batch.endCoveredMonthIdx}
+                                  onChange={(e) => {
+                                    const nextEnd = Number(e.target.value);
+                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                      ...prev,
+                                      endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
+                                    }));
+                                  }}
+                                  className="h-7 rounded-[6px] border border-[#D8D7CE] bg-white px-1.5 text-[12.5px] font-bold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none cursor-pointer"
+                                >
+                                  {MONTHS_SHORT.map((m, idx) => (
+                                    <option
+                                      key={m}
+                                      value={idx}
+                                      disabled={idx < batch.firstCoveredMonthIdx}
+                                    >
+                                      {m} 2027
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
-                              <div className="text-[11px] text-[#686762]">
+                              <div className="mt-0.5 text-[11px] text-[#686762]">
                                 Партия №{bIdx + 1}
-                                {batch.isAdditionalOrder ? ' · Дополнительно к заказу' : ''}
+                                {batch.isAdditionalOrder ? ' · Дополнительно к PO' : ''}
                                 {batch.isTestBatch
                                   ? ` · Тестовая (${MODEL_SCALING_STAGE_LABELS_RU[proc.scalingStage]})`
                                   : ''}
@@ -1303,32 +1647,134 @@ export function SkuProcurementMvpWorkbench({
                           </div>
                         </td>
 
-                        <td className="px-3 py-3.5 text-right font-mono text-[13.5px] font-semibold text-[#52514C]">
+                        {/* 2. План продаж */}
+                        <td className="px-3 py-3 text-right font-mono text-[13.5px] font-semibold text-[#52514C]">
                           {batch.periodDemandPacks.toLocaleString('ru-RU')} компл.
                         </td>
 
-                        <td className="px-3 py-3.5">
-                          <span className="font-mono text-[13px] font-semibold text-[#141413]">
-                            {formatHumanDateRu(batch.recommendedOrderDateIso)}
-                          </span>
+                        {/* 3. Заказать до — прямое поле ввода даты */}
+                        <td
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3 py-3"
+                        >
+                          <div className="flex flex-col items-start gap-0.5">
+                            <input
+                              type="date"
+                              aria-label={`Дата заказа партии №${bIdx + 1}`}
+                              value={batch.recommendedOrderDateIso}
+                              onChange={(e) => {
+                                if (!e.target.value) return;
+                                updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                  ...prev,
+                                  customOrderDateIso: e.target.value,
+                                }));
+                              }}
+                              className="h-8 rounded-[7px] border border-[#CFCEC6] bg-white px-2 font-mono text-[12px] font-semibold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:outline-none"
+                            />
+                            {batch.hasCustomDateOverride && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                    ...prev,
+                                    customOrderDateIso: null,
+                                  }))
+                                }
+                                className="text-[10.5px] font-semibold text-[#686762] hover:text-[#141413] underline cursor-pointer"
+                              >
+                                ↺ авто-дата
+                              </button>
+                            )}
+                          </div>
                         </td>
 
-                        <td className="px-3 py-3.5">
-                          <span className="font-mono text-[13px] text-[#52514C]">
+                        {/* 4. Приход на склад */}
+                        <td className="px-3 py-3">
+                          <div className="font-mono text-[13px] font-medium text-[#141413]">
                             {formatHumanDateRu(batch.requiredArrivalDateIso)}
-                          </span>
-                        </td>
-
-                        <td className="px-3 py-3.5 text-right">
-                          <div className="font-mono text-[15px] font-bold text-[#141413]">
-                            {batch.recommendedPacks.toLocaleString('ru-RU')} компл.
                           </div>
-                          <div className="font-mono text-[11px] text-[#686762]">
-                            {batch.physicalUnitsQty.toLocaleString('ru-RU')} изд.
+                          <div className="text-[10.5px] text-[#686762]">
+                            цикл {proc.totalLeadDays} дн.
                           </div>
                         </td>
 
-                        <td className="px-3 py-3.5 text-right">
+                        {/* 5. К заказу — прямое поле ввода комплектов со степпером - / + */}
+                        <td
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3 py-3 text-right"
+                        >
+                          <div className="inline-flex flex-col items-end">
+                            <div className="inline-flex items-center rounded-[8px] border border-[#CFCEC6] bg-white p-0.5 hover:border-[#141413] focus-within:border-[#141413]">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const step = fp.packMultiple || 50;
+                                  const nextVal = Math.max(step, batch.recommendedPacks - step);
+                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                    ...prev,
+                                    customPacksQty: nextVal,
+                                    customSizeBreakdownPacks: null,
+                                  }));
+                                }}
+                                className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                                title="Уменьшить количество"
+                              >
+                                −
+                              </button>
+                              <NumericInput
+                                ariaLabel={`Количество комплектов к заказу в партии №${bIdx + 1}`}
+                                value={batch.recommendedPacks}
+                                min={1}
+                                step={fp.packMultiple || 50}
+                                onChangeValue={(val) =>
+                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                    ...prev,
+                                    customPacksQty: val,
+                                    customSizeBreakdownPacks: null,
+                                  }))
+                                }
+                                className="h-7 w-20 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const step = fp.packMultiple || 50;
+                                  const nextVal = batch.recommendedPacks + step;
+                                  updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                    ...prev,
+                                    customPacksQty: nextVal,
+                                    customSizeBreakdownPacks: null,
+                                  }));
+                                }}
+                                className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#52514C] hover:bg-[#F0F0EC] hover:text-[#141413] cursor-pointer"
+                                title="Увеличить количество"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-[#686762]">
+                              <span>{batch.physicalUnitsQty.toLocaleString('ru-RU')} изд.</span>
+                              {batch.hasCustomPacksOverride && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                      ...prev,
+                                      customPacksQty: null,
+                                      customSizeBreakdownPacks: null,
+                                    }))
+                                  }
+                                  className="font-sans font-semibold text-amber-800 hover:underline cursor-pointer"
+                                >
+                                  ↺ по формуле
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 6. Сумма партии */}
+                        <td className="px-3 py-3 text-right">
                           <div className="font-mono text-[15px] font-bold text-[#141413]">
                             {formatRubMillions(batch.estimatedTotalRub)}
                           </div>
@@ -1337,15 +1783,20 @@ export function SkuProcurementMvpWorkbench({
                           </div>
                         </td>
 
+                        {/* 7. Действия */}
                         <td
                           onClick={(e) => e.stopPropagation()}
-                          className="py-3.5 pr-4 pl-3 text-right"
+                          className="py-3 pr-4 pl-3 text-right"
                         >
                           <div className="inline-flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
-                              className="h-8 rounded-[7px] border border-[#D8D7CE] bg-[#F8F8F5] px-2.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                              className={`h-8 rounded-[7px] border px-2.5 text-[11.5px] font-semibold transition cursor-pointer ${
+                                isExpanded
+                                  ? 'border-[#141413] bg-[#141413] text-white'
+                                  : 'border-[#D8D7CE] bg-[#F8F8F5] text-[#141413] hover:bg-[#EFEFE9]'
+                              }`}
                             >
                               {isExpanded ? 'Скрыть ▴' : 'Размеры и расчёт ▾'}
                             </button>
@@ -1361,22 +1812,61 @@ export function SkuProcurementMvpWorkbench({
                         </td>
                       </tr>
 
-                      {/* Раскрываемая детализация партии прямо под строкой */}
+                      {/* Раскрываемая детализация партии: интерактивная размерная сетка S–XXL и управление партией без лишних кликов! */}
                       {isExpanded && (
                         <tr>
                           <td colSpan={7} className="bg-[#FAF9F5] px-4 py-4">
                             <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
                               <div className="text-[12.5px] font-bold text-[#141413]">
-                                Расчёт и размерная сетка · Партия №{bIdx + 1} ({batch.coverageMonthsLabel})
+                                Размерная сетка S–XXL и расчёт · Партия №{bIdx + 1} ({batch.coverageMonthsLabel})
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={() => setEditingBatchKey(isEditing ? null : rowKey)}
-                                className="rounded-[7px] border border-[#CFCEC6] bg-white px-3 py-1 text-[11.5px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
-                              >
-                                {isEditing ? 'Готово' : 'Изменить количество или даты'}
-                              </button>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {canMergeNext && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMergeWithNextPeriod(batch.periodId)}
+                                    className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
+                                  >
+                                    Объединить со следующей партией
+                                  </button>
+                                )}
+                                {canSplit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSplitPeriod(batch.periodId)}
+                                    className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
+                                  >
+                                    Разделить партию на две
+                                  </button>
+                                )}
+                                {(batch.hasCustomPacksOverride || batch.hasCustomDateOverride) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                        ...prev,
+                                        customPacksQty: null,
+                                        customOrderDateIso: null,
+                                        customSizeSharesPct: null,
+                                        customSizeBreakdownPacks: null,
+                                      }))
+                                    }
+                                    className="rounded-[7px] border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer"
+                                  >
+                                    ↺ Сбросить ручные правки партии
+                                  </button>
+                                )}
+                                {activePeriods.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDraftPeriod(batch.periodId)}
+                                    className="rounded-[7px] border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
+                                  >
+                                    Удалить партию
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             <div className="rounded-[9px] border border-[#E4E3DC] bg-white px-3.5 py-2.5 text-[12px] text-[#52514C]">
@@ -1388,170 +1878,84 @@ export function SkuProcurementMvpWorkbench({
                               <strong className="text-[#141413]">
                                 чистая потребность {batch.rawNetNeedPacks.toLocaleString('ru-RU')} компл.
                               </strong>{' '}
-                              → с округлением до MOQ ({fp.moqPacks.toLocaleString('ru-RU')}) и шага ({fp.packMultiple}):{' '}
+                              → к заказу:{' '}
                               <strong className="font-mono text-[#141413]">
                                 {batch.recommendedPacks.toLocaleString('ru-RU')} компл. ({batch.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
                               </strong>
                             </div>
 
-                            {isEditing && (
-                              <div className="mt-3 rounded-[9px] border border-[#D8D7CE] bg-white p-3.5">
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                                  <label className="flex flex-col text-[11px] font-semibold text-[#52514C]">
-                                    Начало покрытия
-                                    <select
-                                      value={batch.firstCoveredMonthIdx}
-                                      onChange={(e) => {
-                                        const nextStart = Number(e.target.value);
-                                        updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                          ...prev,
-                                          startMonthIdx: nextStart,
-                                          endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
-                                        }));
-                                      }}
-                                      className="mt-1 rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[#141413]"
-                                    >
-                                      {MONTHS_SHORT.map((m, idx) => (
-                                        <option key={m} value={idx}>
-                                          {m} 2027
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-
-                                  <label className="flex flex-col text-[11px] font-semibold text-[#52514C]">
-                                    Конец покрытия
-                                    <select
-                                      value={batch.endCoveredMonthIdx}
-                                      onChange={(e) => {
-                                        const nextEnd = Number(e.target.value);
-                                        updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                          ...prev,
-                                          endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
-                                        }));
-                                      }}
-                                      className="mt-1 rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[#141413]"
-                                    >
-                                      {MONTHS_SHORT.map((m, idx) => (
-                                        <option
-                                          key={m}
-                                          value={idx}
-                                          disabled={idx < batch.firstCoveredMonthIdx}
-                                        >
-                                          {m} 2027
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-
-                                  <label className="flex flex-col text-[11px] font-semibold text-[#52514C]">
-                                    Своё количество, компл.
-                                    <NumericInput
-                                      value={batch.recommendedPacks}
-                                      min={1}
-                                      step={50}
-                                      onChangeValue={(val) =>
-                                        updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                          ...prev,
-                                          customPacksQty: val,
-                                        }))
-                                      }
-                                      className="mt-1 rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1.5 font-mono text-[13px] font-bold text-[#141413]"
-                                    />
-                                  </label>
-
-                                  <label className="flex flex-col text-[11px] font-semibold text-[#52514C]">
-                                    Дата заказа (вручную)
-                                    <input
-                                      type="date"
-                                      value={batch.recommendedOrderDateIso}
-                                      onChange={(e) =>
-                                        updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                          ...prev,
-                                          customOrderDateIso: e.target.value,
-                                        }))
-                                      }
-                                      className="mt-1 rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1.5 font-mono text-[12px] font-semibold text-[#141413]"
-                                    />
-                                  </label>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#EAE9E2] pt-2.5">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {canMergeNext && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleMergeWithNextPeriod(batch.periodId)}
-                                        className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#F5F5F1] cursor-pointer"
-                                      >
-                                        Объединить со следующей партией
-                                      </button>
-                                    )}
-                                    {canSplit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSplitPeriod(batch.periodId)}
-                                        className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#F5F5F1] cursor-pointer"
-                                      >
-                                        Разделить партию на две
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {activePeriods.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteDraftPeriod(batch.periodId)}
-                                      className="rounded-[7px] border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11.5px] font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
-                                    >
-                                      Удалить черновую партию
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Размеры S–XXL */}
+                            {/* ИНТЕРАКТИВНЫЕ РАЗМЕРЫ S–XXL ЧЕРНОВОЙ ПАРТИИ (редактируются и комплекты, и %!) */}
                             <div className="mt-3 rounded-[9px] border border-[#E4E3DC] bg-white p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-[11.5px] font-semibold text-[#141413]">
-                                  Распределение по размерам S–XXL: S [{batch.sizeSharesPct.S}%] · M [{batch.sizeSharesPct.M}%] · L [
-                                  {batch.sizeSharesPct.L}%] · XL [{batch.sizeSharesPct.XL}%] · XXL [
-                                  {batch.sizeSharesPct.XXL}%]
+                                  Размеры партии S–XXL (нажмите на любое число комплектов или %, чтобы изменить напрямую):
                                 </span>
-                                <span className="text-[11px] text-[#686762]">
-                                  Без потери единиц при округлении
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                      ...prev,
+                                      customSizeSharesPct: null,
+                                      customSizeBreakdownPacks: null,
+                                    }))
+                                  }
+                                  className="rounded border border-[#CFCEC6] bg-[#F8F8F5] px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                                >
+                                  Выровнять по базовой матрице ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%)
+                                </button>
                               </div>
 
-                              <div className="mt-2 grid grid-cols-6 gap-2 text-center text-[11px]">
+                              <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
                                 {SIZES_LIST.map((sz) => {
                                   const packsForSize = batch.sizeBreakdownPacks[sz] || 0;
                                   const unitsForSize = packsForSize * model.unitsInPack;
                                   return (
                                     <div
                                       key={sz}
-                                      className="rounded-[7px] border border-[#E4E3DC] bg-[#F9F9F6] px-2 py-1.5"
+                                      className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-2 hover:border-[#141413] focus-within:border-[#141413] focus-within:bg-white"
                                     >
-                                      <div className="flex items-center justify-between text-[10px] font-semibold text-[#686762]">
-                                        <span>{sz}</span>
-                                        <span>{batch.sizeSharesPct[sz]}%</span>
+                                      <div className="flex items-center justify-between gap-1 text-[11px]">
+                                        <span className="font-bold text-[#141413]">{sz}</span>
+                                        <div className="inline-flex items-center gap-0.5">
+                                          <NumericInput
+                                            ariaLabel={`Доля размера ${sz} в % для партии №${bIdx + 1}`}
+                                            value={batch.sizeSharesPct[sz]}
+                                            min={0}
+                                            max={100}
+                                            onChangeValue={(pct) =>
+                                              handleUpdateDraftBatchSizeShare(batch, sz, pct)
+                                            }
+                                            className="w-9 rounded border border-[#DFDED6] bg-white px-1 py-0.5 text-right font-mono text-[10.5px] font-semibold text-[#52514C] focus:border-[#141413] focus:outline-none"
+                                          />
+                                          <span className="text-[10px] text-[#686762]">%</span>
+                                        </div>
                                       </div>
-                                      <div className="mt-0.5 font-mono text-[13px] font-bold text-[#141413]">
-                                        {packsForSize.toLocaleString('ru-RU')} компл.
+
+                                      <div className="my-1.5">
+                                        <NumericInput
+                                          ariaLabel={`Количество комплектов размера ${sz} в партии №${bIdx + 1}`}
+                                          value={packsForSize}
+                                          min={0}
+                                          step={10}
+                                          onChangeValue={(val) =>
+                                            handleUpdateDraftBatchSizePacks(batch, sz, val)
+                                          }
+                                          className="w-full rounded border border-[#D8D7CE] bg-white py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none"
+                                        />
                                       </div>
+
                                       <div className="font-mono text-[10px] text-[#686762]">
-                                        {unitsForSize.toLocaleString('ru-RU')} изд.
+                                        компл. · {unitsForSize.toLocaleString('ru-RU')} изд.
                                       </div>
                                     </div>
                                   );
                                 })}
-                                <div className="rounded-[7px] border border-[#141413] bg-[#141413] px-2 py-1.5 text-white">
-                                  <div className="flex items-center justify-between text-[10px] font-semibold text-gray-300">
-                                    <span>ИТОГ</span>
+                                <div className="flex flex-col justify-between rounded-[8px] border border-[#141413] bg-[#141413] px-2.5 py-2 text-white">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-gray-300">
+                                    <span>ИТОГО</span>
                                     <span>100%</span>
                                   </div>
-                                  <div className="mt-0.5 font-mono text-[13px] font-bold">
+                                  <div className="my-1.5 font-mono text-[15px] font-extrabold">
                                     {sizeTotalPacks.toLocaleString('ru-RU')} компл.
                                   </div>
                                   <div className="font-mono text-[10px] text-gray-300">
