@@ -265,25 +265,34 @@ export function useLiveScenarioPortfolio() {
       setModels(overlayBackupOntoModels(DEFAULT_MODELS_LIST));
     }
 
-    const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
-    if (typeof savedScenId === 'number') {
-      setSelectedScenarioIdState(savedScenId);
-    }
-
-    const savedGroupFlag = safeGetStorageJson<boolean>(STORAGE_KEY_S1_GROUP_PORTFOLIO);
-    if (typeof savedGroupFlag === 'boolean') {
-      setIncludeGroupState(savedGroupFlag);
-    }
-
     const savedByBrand = safeGetStorageJson<
       Partial<Record<CanonicalBrandCode, number | null>>
     >(STORAGE_KEY_SCENARIO_BY_BRAND);
+    const effectiveBornersScen =
+      savedByBrand && typeof savedByBrand.BORNERS === 'number'
+        ? savedByBrand.BORNERS
+        : 1;
     if (savedByBrand && typeof savedByBrand === 'object') {
       const normalizedByBrand = { ...savedByBrand };
       if (normalizedByBrand.FUKAI === 1) {
         normalizedByBrand.FUKAI = ACTING_2027_SCENARIO_ID;
       }
       setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedByBrand }));
+    }
+
+    const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
+    if (typeof savedScenId === 'number') {
+      const syncedScenId =
+        savedScenId === ACTING_2027_SCENARIO_ID &&
+        effectiveBornersScen !== ACTING_2027_SCENARIO_ID
+          ? effectiveBornersScen
+          : savedScenId;
+      setSelectedScenarioIdState(syncedScenId);
+    }
+
+    const savedGroupFlag = safeGetStorageJson<boolean>(STORAGE_KEY_S1_GROUP_PORTFOLIO);
+    if (typeof savedGroupFlag === 'boolean') {
+      setIncludeGroupState(savedGroupFlag);
     }
   }, []);
 

@@ -682,8 +682,20 @@ export function GrowthScenariosShowcase({
       }
 
       const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
+      const effectiveBornersScen =
+        parsedBrandScen && typeof parsedBrandScen.BORNERS === 'number'
+          ? parsedBrandScen.BORNERS
+          : 1;
       if (typeof savedScenId === 'number') {
-        setSelectedScenarioIdState((prev) => (prev === savedScenId ? prev : savedScenId));
+        const syncedScenId =
+          savedScenId === ACTING_2027_SCENARIO_ID &&
+          effectiveBornersScen !== ACTING_2027_SCENARIO_ID
+            ? effectiveBornersScen
+            : savedScenId;
+        if (syncedScenId !== savedScenId) {
+          safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, syncedScenId);
+        }
+        setSelectedScenarioIdState((prev) => (prev === syncedScenId ? prev : syncedScenId));
       }
 
       const savedGroupFlag = safeGetStorageJson<boolean>(STORAGE_KEY_S1_GROUP_PORTFOLIO);
@@ -2020,6 +2032,14 @@ export function GrowthScenariosShowcase({
                     </div>
                   );
                 }
+                const fukaiBrandRow = v11ScenarioSummary.multiBrandSummary.brands.find(
+                  (b) => b.brandCode === 'FUKAI'
+                );
+                const fukaiAnnualRub =
+                  fukaiBrandRow && fukaiBrandRow.hasScenario && fukaiBrandRow.hasModels
+                    ? fukaiBrandRow.annualRevenueRub
+                    : 0;
+
                 return [...visibleScenarios]
                   .sort((a, b) =>
                     a.id === ACTING_2027_SCENARIO_ID
@@ -2034,6 +2054,14 @@ export function GrowthScenariosShowcase({
                   const annualMln = agg
                     ? (agg.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                     : '0';
+                  const holdingCombinedRub =
+                    brandFilterLocal === 'ALL' && sc.id !== ACTING_2027_SCENARIO_ID && agg
+                      ? agg.annualRevenueRub + (includeGroupPortfolioInS1 && sc.id === 1 ? 0 : fukaiAnnualRub)
+                      : null;
+                  const holdingCombinedMln =
+                    holdingCombinedRub !== null
+                      ? (holdingCombinedRub / 1_000_000).toFixed(2).replace('.', ',')
+                      : null;
                   const liveDecMlnNum = agg
                     ? Math.round((agg.targetMonthRevenueRub / 1_000_000) * 100) / 100
                     : sc.monthlyTargetMln;
@@ -2058,6 +2086,8 @@ export function GrowthScenariosShowcase({
                         setSelectedScenarioId(sc.id);
                         if (brandFilterLocal !== 'ALL') {
                           setSelectedScenarioForBrand(brandFilterLocal, sc.id);
+                        } else {
+                          setSelectedScenarioForBrand('BORNERS', sc.id);
                         }
                       }}
                       onKeyDown={(e) => {
@@ -2066,6 +2096,8 @@ export function GrowthScenariosShowcase({
                           setSelectedScenarioId(sc.id);
                           if (brandFilterLocal !== 'ALL') {
                             setSelectedScenarioForBrand(brandFilterLocal, sc.id);
+                          } else {
+                            setSelectedScenarioForBrand('BORNERS', sc.id);
                           }
                         }
                       }}
@@ -2181,7 +2213,7 @@ export function GrowthScenariosShowcase({
                         </div>
                       </div>
 
-                      {/* Анимированный прогресс-бар и одна строка итога за год */}
+                      {/* Анимированный прогресс-бар и сходящиеся итоги BORNERS / Холдинг */}
                       <div className="mt-3.5 space-y-1.5">
                         <div className="h-2 w-full rounded-full overflow-hidden bg-[#E2E8F0] p-0.5">
                           <div
@@ -2198,9 +2230,17 @@ export function GrowthScenariosShowcase({
                         <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#64748B]">
                           <span>Цель: {String(targetMlnNum).replace('.', ',')} млн</span>
                           <span className="font-mono font-extrabold text-[#1E293B]">
-                            Год: {annualMln} млн ₽
+                            {holdingCombinedMln ? `BORNERS: ${annualMln} млн` : `Год: ${annualMln} млн ₽`}
                           </span>
                         </div>
+                        {holdingCombinedMln && (
+                          <div className="pt-1 border-t border-[#EEF2F6] flex items-center justify-between gap-1 text-[10.5px]">
+                            <span className="text-[#64748B] truncate">+ FUKAI 90,55 млн</span>
+                            <span className="font-mono font-extrabold text-[#0D9488] shrink-0">
+                              Холдинг: {holdingCombinedMln} млн ₽
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

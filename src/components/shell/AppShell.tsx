@@ -52,7 +52,10 @@ import { DRAFT_MODULES_META, useDraftModules } from '@/lib/draftModules';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { computeModelScenarioMetrics } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
-import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+import {
+  computeMultiBrandPortfolioSummary,
+  detectModelBrandPortfolioLabel,
+} from '@/lib/unifiedBusinessEngine';
 
 interface NavGroup {
   groupTitle: string;
@@ -914,13 +917,32 @@ export function AppShell() {
     [documents]
   );
 
+  const holdingSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(
+        livePortfolio.models,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand
+      ),
+    [
+      livePortfolio.models,
+      livePortfolio.scenarios,
+      livePortfolio.selectedScenarioByBrand,
+    ]
+  );
+
   const pipelineSteps = useMemo(() => {
     const finSection: NavSectionId = canUserAccessSection(currentUser, 'finance')
       ? 'finance'
       : 'documents';
-    const annualMlnRounded = Math.round(
-      livePortfolio.totals.annualRevenueRub / 1_000_000
-    );
+    const isAllBrands = !brandFilter || brandFilter === 'ALL';
+    const effectiveAnnualRub = isAllBrands
+      ? holdingSummary.groupTotal.annualRevenueRub
+      : livePortfolio.totals.annualRevenueRub;
+    const effectiveModelsCount = isAllBrands
+      ? holdingSummary.groupTotal.modelsCount
+      : livePortfolio.eligibleModels.length;
+    const annualMlnRounded = Math.round(effectiveAnnualRub / 1_000_000);
 
     return [
       {
@@ -943,7 +965,7 @@ export function AppShell() {
         isActive:
           platformMode === 'management' &&
           (activeSection === 'product-catalog' || activeSection === 'product-lab'),
-        badge: String(livePortfolio.eligibleModels.length),
+        badge: String(effectiveModelsCount),
       },
       {
         key: 'sales',
@@ -985,7 +1007,10 @@ export function AppShell() {
     ].filter((s) => canUserAccessSection(currentUser, s.target));
   }, [
     activeSection,
+    brandFilter,
     currentUser,
+    holdingSummary.groupTotal.annualRevenueRub,
+    holdingSummary.groupTotal.modelsCount,
     livePortfolio.eligibleModels.length,
     livePortfolio.factoryGroupsCount,
     livePortfolio.totals.annualRevenueRub,
