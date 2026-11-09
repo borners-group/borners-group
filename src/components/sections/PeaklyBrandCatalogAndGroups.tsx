@@ -485,13 +485,14 @@ export function PeaklyMasterCabinetsSummary({
   const clampedMargin = Math.min(Math.max(groupMarginPct, 0), 100);
   const ringStrokeOffset = ringCircumference * (1 - clampedMargin / 100);
 
-  // Режим 1: Структурированные карточки распределения выручки (P&L)
-  const pnlSegments = useMemo(() => {
+  // Режим 1: 4 статьи расходов холдинга (без дублирования чистой прибыли, которая вынесена в главный Hero)
+  const expenseCards = useMemo(() => {
     const rev = Math.max(gt.annualRevenueRub, 1);
     const cogsRub = Math.max(0, gt.annualSoldGoodsCostRub);
     const profitRub = Math.max(0, gt.annualEstimatedOperatingProfitRub);
     const mpAndOpsTotalRub = Math.max(0, rev - cogsRub - profitRub);
-    const commissionLogisticsRub = mpAndOpsTotalRub * 0.72;
+    const wbCommissionRub = mpAndOpsTotalRub * 0.504;
+    const wbLogisticsStorageRub = mpAndOpsTotalRub * 0.216;
     const adsAndTaxRub = mpAndOpsTotalRub * 0.28;
 
     return [
@@ -501,84 +502,95 @@ export function PeaklyMasterCabinetsSummary({
         subtitle: 'Производство проданных партий',
         valueRub: cogsRub,
         pct: gt.annualRevenueRub > 0 ? (cogsRub / rev) * 100 : 0,
-        color: '#334155',
-        badgeBg: 'bg-[#F1F5F9]',
-        badgeText: 'text-[#334155]',
+        color: '#475569',
       },
       {
-        key: 'mp',
-        label: 'Удержания маркетплейса',
-        subtitle: 'Комиссия WB, логистика и хранение',
-        valueRub: commissionLogisticsRub,
-        pct: gt.annualRevenueRub > 0 ? (commissionLogisticsRub / rev) * 100 : 0,
-        color: '#D97706',
-        badgeBg: 'bg-[#FFFBEB]',
-        badgeText: 'text-[#B45309]',
+        key: 'wb-comm',
+        label: 'Комиссия маркетплейса WB',
+        subtitle: 'Комиссия площадки с выкупов',
+        valueRub: wbCommissionRub,
+        pct: gt.annualRevenueRub > 0 ? (wbCommissionRub / rev) * 100 : 0,
+        color: '#F59E0B',
+      },
+      {
+        key: 'wb-log',
+        label: 'Логистика и хранение WB',
+        subtitle: 'Доставка до клиента и склады',
+        valueRub: wbLogisticsStorageRub,
+        pct: gt.annualRevenueRub > 0 ? (wbLogisticsStorageRub / rev) * 100 : 0,
+        color: '#06B6D4',
       },
       {
         key: 'ads',
         label: 'Продвижение и налоги',
-        subtitle: 'Реклама карточек (ДРР) и налог',
+        subtitle: 'Реклама карточек (ДРР) и налог УСН',
         valueRub: adsAndTaxRub,
         pct: gt.annualRevenueRub > 0 ? (adsAndTaxRub / rev) * 100 : 0,
         color: '#6366F1',
-        badgeBg: 'bg-[#EEF2FF]',
-        badgeText: 'text-[#4338CA]',
-      },
-      {
-        key: 'profit',
-        label: 'Чистая операционная прибыль',
-        subtitle: selectedBrandRow
-          ? `Денежный поток · ${selectedBrandRow.displayCode}`
-          : 'Свободный денежный поток холдинга',
-        valueRub: profitRub,
-        pct: gt.annualRevenueRub > 0 ? (profitRub / rev) * 100 : 0,
-        color: '#0D9488',
-        badgeBg: 'bg-[#F0FDFA]',
-        badgeText: 'text-[#0D9488]',
       },
     ];
   }, [
     gt.annualRevenueRub,
     gt.annualSoldGoodsCostRub,
     gt.annualEstimatedOperatingProfitRub,
-    selectedBrandRow,
   ]);
+
+  // Полная шкала «Куда уходит выручка (100%)» = 4 статьи расходов + чистая прибыль
+  const pnlWaterfallSegments = useMemo(() => {
+    const rev = Math.max(gt.annualRevenueRub, 1);
+    const profitRub = Math.max(0, gt.annualEstimatedOperatingProfitRub);
+    return [
+      ...expenseCards,
+      {
+        key: 'profit',
+        label: 'Чистая прибыль',
+        subtitle: 'Остаётся чистыми',
+        valueRub: profitRub,
+        pct: gt.annualRevenueRub > 0 ? (profitRub / rev) * 100 : 0,
+        color: '#10B981',
+      },
+    ];
+  }, [expenseCards, gt.annualRevenueRub, gt.annualEstimatedOperatingProfitRub]);
+
+  const totalExpensesRub = useMemo(
+    () => expenseCards.reduce((acc, item) => acc + item.valueRub, 0),
+    [expenseCards]
+  );
+  const totalExpensesPct = useMemo(
+    () => Math.max(0, Math.min(100, 100 - groupMarginPct)),
+    [groupMarginPct]
+  );
 
   // Режим 2: Доли брендов в годовой выручке холдинга
   const brandSegments = useMemo(() => {
     const rev = Math.max(holdingTotal.annualRevenueRub, 1);
-    const palette: Record<string, { color: string; badgeBg: string; badgeText: string }> = {
-      BORNERS: { color: '#2C3444', badgeBg: 'bg-[#F1F5F9]', badgeText: 'text-[#1E293B]' },
-      FUKAI: { color: '#0D9488', badgeBg: 'bg-[#F0FDFA]', badgeText: 'text-[#0D9488]' },
-      NA_TELE: { color: '#6366F1', badgeBg: 'bg-[#EEF2FF]', badgeText: 'text-[#4338CA]' },
-      AKUSHA: { color: '#D97706', badgeBg: 'bg-[#FFFBEB]', badgeText: 'text-[#B45309]' },
-      LISKANI: { color: '#059669', badgeBg: 'bg-[#ECFDF5]', badgeText: 'text-[#047857]' },
+    const palette: Record<string, string> = {
+      BORNERS: '#334155',
+      FUKAI: '#0D9488',
+      NA_TELE: '#6366F1',
+      AKUSHA: '#F59E0B',
+      LISKANI: '#10B981',
     };
-    return multiBrandSummary.brands.map((b) => {
-      const style = palette[b.brandCode] || palette.BORNERS;
-      return {
-        key: b.brandCode,
-        label: b.displayCode,
-        subtitle:
-          b.annualRevenueRub > 0
-            ? `${b.modelsCount} SKU · прибыль +${formatMln(b.annualEstimatedOperatingProfitRub)}`
-            : `${b.modelsCount} SKU · план не запущен`,
-        valueRub: b.annualRevenueRub,
-        pct: holdingTotal.annualRevenueRub > 0 ? (b.annualRevenueRub / rev) * 100 : 0,
-        color: style.color,
-        badgeBg: style.badgeBg,
-        badgeText: style.badgeText,
-      };
-    });
+    return multiBrandSummary.brands.map((b) => ({
+      key: b.brandCode,
+      label: b.displayCode,
+      subtitle:
+        b.annualRevenueRub > 0
+          ? `${b.modelsCount} SKU · прибыль +${formatMln(b.annualEstimatedOperatingProfitRub)}`
+          : `${b.modelsCount} SKU · план не запущен`,
+      valueRub: b.annualRevenueRub,
+      pct: holdingTotal.annualRevenueRub > 0 ? (b.annualRevenueRub / rev) * 100 : 0,
+      color: palette[b.brandCode] || '#334155',
+    }));
   }, [multiBrandSummary.brands, holdingTotal.annualRevenueRub]);
 
-  const [trendChartMode, setTrendChartMode] = useState<'profit' | 'revenue'>('profit');
+  const [trendChartMode, setTrendChartMode] = useState<'payout' | 'monthlyProfit'>('payout');
   const [selectedTrendMonthIdx, setSelectedTrendMonthIdx] = useState<number>(11);
 
-  const activeSegments = waterfallViewMode === 'pnl' ? pnlSegments : brandSegments;
+  const activeCards = waterfallViewMode === 'pnl' ? expenseCards : brandSegments;
+  const activeBarSegments = waterfallViewMode === 'pnl' ? pnlWaterfallSegments : brandSegments;
 
-  // Плавный кубический график (ProfitTrendChart 7+5) по 12 месяцам
+  // Плавный кубический график (ProfitTrendChart 7+5) по 12 месяцам — без дублирования 312,80 млн ₽
   const trendChartData = useMemo(() => {
     const rows = gt.monthlyRows || [];
     const marginRatio =
@@ -588,18 +600,22 @@ export function PeaklyMasterCabinetsSummary({
     const series = Array.from({ length: 12 }, (_, idx) => {
       const mRow = rows[idx];
       const revRub = mRow ? mRow.grossSalesRub : 0;
+      const payoutRub =
+        mRow && mRow.wbNetInflowRub > 0 ? mRow.wbNetInflowRub : revRub * 0.724;
       const profRub = revRub * marginRatio;
-      const valRub = trendChartMode === 'profit' ? profRub : revRub;
+      const valRub = trendChartMode === 'payout' ? payoutRub : profRub;
       return {
         idx,
         monthLabel: MONTHS_SHORT_RU[idx]?.toLowerCase() || String(idx + 1),
         revRub,
+        payoutRub,
         profRub,
         valRub,
         valMln: valRub / 1_000_000,
       };
     });
 
+    const totalPayoutYearRub = series.reduce((acc, s) => acc + s.payoutRub, 0);
     const values = series.map((s) => s.valRub);
     const maxV = Math.max(...values, 1);
     const minV = Math.min(...values, 0);
@@ -647,6 +663,7 @@ export function PeaklyMasterCabinetsSummary({
       usableH,
       janRevRub,
       decRevRub,
+      totalPayoutYearRub,
       growthMult,
     };
   }, [gt.monthlyRows, gt.annualRevenueRub, gt.annualEstimatedOperatingProfitRub, gt.decemberRevenueRub, trendChartMode]);
@@ -922,22 +939,22 @@ export function PeaklyMasterCabinetsSummary({
         </div>
       </div>
 
-      {/* 2. СРЕДНИЙ РЯД 7 + 5: ПЛАВНЫЙ ГРАФИК ПОСЛЕ СЕБЕСТОИМОСТИ (7 КОЛ.) + 2×2 KPIRING (5 КОЛ.) */}
+      {/* 2. СРЕДНИЙ РЯД 7 + 5: ПЛАВНЫЙ ГРАФИК ПОСТУПЛЕНИЙ WB (7 КОЛ.) + 2×2 KPIRING (5 КОЛ.) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Левая колонка (7/12): Плавная изумрудная кривая Безье без шумных серых столбиков */}
+        {/* Левая колонка (7/12): Плавная изумрудная кривая Безье без дублирования 312,80 млн ₽ */}
         <div className="lg:col-span-7 rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-                {trendChartMode === 'profit'
-                  ? 'Выплаты и прибыль после себестоимости · 2027'
-                  : 'Динамика годовой выручки по месяцам · 2027'}
+                {trendChartMode === 'payout'
+                  ? 'Поступления от WB на счёт (после комиссии и логистики) · 2027'
+                  : `Помесячная чистая прибыль (${selectedMonthPoint?.monthLabel || 'дек'}) · 2027`}
               </div>
               <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
                 <span className="font-mono text-2xl font-bold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                  {trendChartMode === 'profit'
-                    ? `+${formatMln(gt.annualEstimatedOperatingProfitRub)}`
-                    : formatMln(gt.annualRevenueRub)}
+                  {trendChartMode === 'payout'
+                    ? formatMln(trendChartData.totalPayoutYearRub)
+                    : `+${formatMln(selectedMonthPoint?.profRub || 0)} в ${selectedMonthPoint?.monthLabel || 'дек'}`}
                 </span>
                 {trendChartData.growthMult && trendChartData.growthMult > 1 && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
@@ -948,37 +965,38 @@ export function PeaklyMasterCabinetsSummary({
                   <span className="text-xs text-[#64748B]">
                     · {selectedMonthPoint.monthLabel}:{' '}
                     <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
-                      {trendChartMode === 'profit' ? '+' : ''}
-                      {selectedMonthPoint.valMln.toFixed(1).replace('.', ',')} млн ₽
+                      {trendChartMode === 'payout'
+                        ? `${(selectedMonthPoint.payoutRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽ на счёт`
+                        : `выручка ${(selectedMonthPoint.revRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`}
                     </strong>
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Спокойный переключатель Прибыль / Выручка */}
+            {/* Спокойный переключатель К выплате WB / Прибыль мес. */}
             <div className="inline-flex items-center rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-0.5 text-xs">
               <button
                 type="button"
-                onClick={() => setTrendChartMode('profit')}
+                onClick={() => setTrendChartMode('payout')}
                 className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                  trendChartMode === 'profit'
+                  trendChartMode === 'payout'
                     ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                Прибыль
+                К выплате WB
               </button>
               <button
                 type="button"
-                onClick={() => setTrendChartMode('revenue')}
+                onClick={() => setTrendChartMode('monthlyProfit')}
                 className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                  trendChartMode === 'revenue'
+                  trendChartMode === 'monthlyProfit'
                     ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                Выручка
+                Прибыль по мес.
               </button>
             </div>
           </div>
@@ -1324,7 +1342,7 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         </div>
 
-        {/* Сетка 8 + 4: слева карточки расходов и бар «Куда уходит выручка», справа карточка «ЭФФЕКТИВНОСТЬ» с кольцом 120×120 */}
+        {/* Сетка 8 + 4: слева 4 статьи расходов (без повтора 312,80 млн ₽) и бар «Куда уходит выручка», справа сводное кольцо расходов и маржи */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Левая часть (8 колонок) */}
           <div className="lg:col-span-8 flex flex-col justify-between gap-3.5">
@@ -1333,8 +1351,7 @@ export function PeaklyMasterCabinetsSummary({
                 waterfallViewMode === 'pnl' ? 'xl:grid-cols-2' : 'xl:grid-cols-3'
               } gap-3.5`}
             >
-              {activeSegments.map((seg) => {
-                const isProfitCard = seg.key === 'profit';
+              {activeCards.map((seg) => {
                 const kopeksPerRuble = Math.round(seg.pct);
                 return (
                   <div
@@ -1353,27 +1370,14 @@ export function PeaklyMasterCabinetsSummary({
                         <span className="text-sm font-medium text-[#64748B] truncate">
                           {seg.label}
                         </span>
-                        <span
-                          className={`font-mono text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0 ${
-                            isProfitCard
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]'
-                          }`}
-                        >
+                        <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0 bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]">
                           {seg.pct.toFixed(1).replace('.', ',')}%
                         </span>
                       </div>
 
-                      <div
-                        className={`mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums ${
-                          isProfitCard
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-[#0F172A] dark:text-[#EDF0F7]'
-                        }`}
-                      >
+                      <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                         <AnimatedMlnValue
                           valueRub={seg.valueRub}
-                          prefix={isProfitCard ? '+' : ''}
                           unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
                         />
                       </div>
@@ -1397,7 +1401,7 @@ export function PeaklyMasterCabinetsSummary({
               })}
             </div>
 
-            {/* Спокойная полоса «Куда уходит выручка» (RevenueWaterfall) */}
+            {/* Спокойная полоса «Куда уходит выручка» (RevenueWaterfall: 4 статьи расходов + Чистая прибыль) */}
             <div className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-[#64748B]">
@@ -1415,7 +1419,7 @@ export function PeaklyMasterCabinetsSummary({
               </div>
 
               <div className="h-3 w-full rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] overflow-hidden flex gap-0.5">
-                {activeSegments
+                {activeBarSegments
                   .filter((s) => s.pct > 0.2)
                   .map((seg) => {
                     const isHovered = hoveredWaterfallKey === seg.key;
@@ -1437,7 +1441,7 @@ export function PeaklyMasterCabinetsSummary({
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#64748B]">
-                {activeSegments.map((seg) => (
+                {activeBarSegments.map((seg) => (
                   <div key={seg.key} className="inline-flex items-center gap-1.5">
                     <span
                       className="h-2 w-2 rounded-full"
@@ -1453,16 +1457,21 @@ export function PeaklyMasterCabinetsSummary({
             </div>
           </div>
 
-          {/* Правая часть (4 колонки): Карточка «ЭФФЕКТИВНОСТЬ» с крупным кольцом 124×124 */}
+          {/* Правая часть (4 колонки): Карточка «БАЛАНС ЗАТРАТ И ПРИБЫЛИ» (без повтора 40% МАРЖА сверху) */}
           <div
             onClick={() => onNavigateSection('finance')}
             className="lg:col-span-4 rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between cursor-pointer hover-lift"
           >
-            <div className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-              Эффективность
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
+                Всего расходов и удержаний
+              </span>
+              <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]">
+                4 статьи
+              </span>
             </div>
 
-            <div className="my-4 flex flex-col items-center justify-center">
+            <div className="my-3 flex flex-col items-center justify-center">
               <div className="relative w-32 h-32 flex items-center justify-center">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 112 112">
                   <circle
@@ -1470,8 +1479,8 @@ export function PeaklyMasterCabinetsSummary({
                     cy="56"
                     r="46"
                     fill="none"
-                    stroke="currentColor"
-                    className="text-[#E2E8F0] dark:text-[#222938]"
+                    stroke="#10B981"
+                    strokeOpacity="0.28"
                     strokeWidth="8"
                   />
                   <circle
@@ -1479,44 +1488,45 @@ export function PeaklyMasterCabinetsSummary({
                     cy="56"
                     r="46"
                     fill="none"
-                    stroke="#10B981"
+                    stroke="#6366F1"
                     strokeWidth="8"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 46}
                     strokeDashoffset={
-                      2 * Math.PI * 46 * (1 - Math.min(100, Math.max(5, groupMarginPct)) / 100)
+                      2 * Math.PI * 46 * (1 - Math.min(100, Math.max(5, totalExpensesPct)) / 100)
                     }
                     className="transition-all duration-1000 ease-out"
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                   <span className="font-mono text-2xl font-bold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                    {groupMarginPct.toFixed(1).replace('.', ',')}%
+                    {totalExpensesPct.toFixed(1).replace('.', ',')}%
                   </span>
                   <span className="text-[10px] font-medium uppercase tracking-wider text-[#64748B] mt-0.5">
-                    маржа
+                    все затраты
                   </span>
                 </div>
+              </div>
+              <div className="mt-2 font-mono text-base font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                {formatMln(totalExpensesRub)} за год
               </div>
             </div>
 
-            <div className="pt-3.5 border-t border-[#E2E6EE] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
+            <div className="pt-3 border-t border-[#E2E6EE] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
               <div>
-                <div className="font-mono text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                  +{Math.round(groupMarginPct)} ₽
+                <div className="font-mono text-sm font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                  {totalExpensesPct.toFixed(1).replace('.', ',')} ₽
                 </div>
                 <div className="text-[11px] text-[#64748B] mt-0.5">
-                  со 100 ₽ выручки
+                  расходы со 100 ₽
                 </div>
               </div>
               <div className="border-l border-[#E2E6EE] dark:border-[#222938] pl-3">
-                <div className="font-mono text-sm font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
-                  {ownCapitalRoiMult
-                    ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
-                    : '82%'}
+                <div className="font-mono text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
                 </div>
                 <div className="text-[11px] text-[#64748B] mt-0.5">
-                  {ownCapitalRoiMult ? 'отдача на капитал' : 'оборот WB'}
+                  чистыми со 100 ₽
                 </div>
               </div>
             </div>
