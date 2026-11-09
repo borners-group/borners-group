@@ -2875,11 +2875,11 @@ export function computeScenarioInvestmentSummary(
         (pr, idx) => pr === actingSku.monthly[idx]?.realization_price_rub
       );
 
-    // Ставки удержаний WB и рекламы для реалистичного расчёта возврата выручки на счёт
-    const mpPct = m.marketplaceFeePct > 0 ? m.marketplaceFeePct : 22;
-    const adsPct = m.adsPct > 0 ? m.adsPct : 10;
-    const logRub = m.logisticsRub > 0 ? m.logisticsRub : 95;
-    const otherVarRub = shared.otherVariableRubPerPack || 0;
+    // Ставки удержаний WB и рекламы: Комиссия WB = 30%, Логистика и хранение = 0 ₽, ДРР = 10% (итого 40% от выручки)
+    const mpPct = 30;
+    const adsPct = 10;
+    const logRub = 0;
+    const otherVarRub = 0;
 
     for (let idx = 0; idx < 12; idx++) {
       const act = shared.actualSalesByMonth[idx];

@@ -549,15 +549,13 @@ export function PeaklyMasterCabinetsSummary({
   const clampedMargin = Math.min(Math.max(groupMarginPct, 0), 100);
   const ringStrokeOffset = ringCircumference * (1 - clampedMargin / 100);
 
-  // Режим 1: 4 статьи расходов холдинга (без дублирования чистой прибыли, которая вынесена в главный Hero)
+  // Режим 1: 4 статьи расходов холдинга (Комиссия WB = 30%, Логистика и хранение WB = 0%, ДРР = 10%)
   const expenseCards = useMemo(() => {
     const rev = Math.max(gt.annualRevenueRub, 1);
     const cogsRub = Math.max(0, gt.annualSoldGoodsCostRub);
-    const profitRub = Math.max(0, gt.annualEstimatedOperatingProfitRub);
-    const mpAndOpsTotalRub = Math.max(0, rev - cogsRub - profitRub);
-    const wbCommissionRub = mpAndOpsTotalRub * 0.504;
-    const wbLogisticsStorageRub = mpAndOpsTotalRub * 0.216;
-    const adsAndTaxRub = mpAndOpsTotalRub * 0.28;
+    const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);
+    const wbLogisticsStorageRub = 0;
+    const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);
 
     return [
       {
@@ -571,32 +569,31 @@ export function PeaklyMasterCabinetsSummary({
       {
         key: 'wb-comm',
         label: 'Комиссия маркетплейса WB',
-        subtitle: 'Комиссия площадки с выкупов',
+        subtitle: 'Комиссия площадки с выкупов (30%)',
         valueRub: wbCommissionRub,
-        pct: gt.annualRevenueRub > 0 ? (wbCommissionRub / rev) * 100 : 0,
+        pct: gt.annualRevenueRub > 0 ? 30 : 0,
         color: '#F59E0B',
       },
       {
         key: 'wb-log',
         label: 'Логистика и хранение WB',
-        subtitle: 'Доставка до клиента и склады',
+        subtitle: 'Доставка до клиента и склады (0%)',
         valueRub: wbLogisticsStorageRub,
-        pct: gt.annualRevenueRub > 0 ? (wbLogisticsStorageRub / rev) * 100 : 0,
+        pct: 0,
         color: '#D97706',
       },
       {
         key: 'ads',
         label: 'Продвижение и налоги',
-        subtitle: 'Реклама карточек (ДРР) и налог УСН',
+        subtitle: 'Реклама карточек (ДРР 10%)',
         valueRub: adsAndTaxRub,
-        pct: gt.annualRevenueRub > 0 ? (adsAndTaxRub / rev) * 100 : 0,
+        pct: gt.annualRevenueRub > 0 ? 10 : 0,
         color: '#64748B',
       },
     ];
   }, [
     gt.annualRevenueRub,
     gt.annualSoldGoodsCostRub,
-    gt.annualEstimatedOperatingProfitRub,
   ]);
 
   // Полная шкала «Куда уходит выручка (100%)» = 4 статьи расходов + чистая прибыль
@@ -665,7 +662,7 @@ export function PeaklyMasterCabinetsSummary({
       const mRow = rows[idx];
       const revRub = mRow ? mRow.grossSalesRub : 0;
       const payoutRub =
-        mRow && mRow.wbNetInflowRub > 0 ? mRow.wbNetInflowRub : revRub * 0.724;
+        mRow && mRow.wbNetInflowRub > 0 ? mRow.wbNetInflowRub : revRub * 0.6;
       const profRub = revRub * marginRatio;
       const valRub = trendChartMode === 'payout' ? payoutRub : profRub;
       return {
@@ -1735,7 +1732,7 @@ export function PeaklyMasterCabinetsSummary({
             >
               {activeCards.map((seg) => {
                 const kopeksPerRuble = Math.round(seg.pct);
-                const barWidthPct = Math.min(100, Math.max(8, seg.pct * 2.4));
+                const barWidthPct = seg.pct <= 0 ? 0 : Math.min(100, Math.max(8, seg.pct * 2.4));
                 return (
                   <div
                     key={seg.key}

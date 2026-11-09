@@ -3487,6 +3487,72 @@ test('46. Синхронизация сценариев бренда в «01 · 
   );
 });
 
+test('47. Сводка (02 · Расходы, удержания WB и рентабельность): Комиссия WB = 30%, Логистика и хранение = 0%, ДРР = 10% (итого 40% удержаний)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const summarySrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+
+  // 1. Проверяем формулы 3 карточек расходов WB и ДРР в Сводке
+  assert.ok(
+    summarySrc.includes('const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);') &&
+      summarySrc.includes('pct: gt.annualRevenueRub > 0 ? 30 : 0'),
+    'Комиссия маркетплейса WB в Сводке должна составлять ровно 30% от выручки'
+  );
+  assert.ok(
+    summarySrc.includes('const wbLogisticsStorageRub = 0;') &&
+      summarySrc.includes('pct: 0'),
+    'Логистика и хранение WB в Сводке должны быть установлены в 0% (0 ₽)'
+  );
+  assert.ok(
+    summarySrc.includes('const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);') &&
+      summarySrc.includes('pct: gt.annualRevenueRub > 0 ? 10 : 0'),
+    'Продвижение (ДРР) в Сводке должно составлять ровно 10% от выручки'
+  );
+
+  // 2. Проверяем расчёт computeScenarioInvestmentSummary на реальном портфеле LISKANI 2027 (500 млн ₽)
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const liskaniSummary = computeScenarioInvestmentSummary(
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    { initialCashRub: 0, settlementLagMonths: 0, wbPayoutScheduleSpecified: true }
+  );
+
+  const totalDeductionsYear = liskaniSummary.monthlyRows.reduce(
+    (acc, r) => acc + r.wbDeductionsAndAdsRub,
+    0
+  );
+  const totalNetInflowYear = liskaniSummary.monthlyRows.reduce(
+    (acc, r) => acc + r.wbNetInflowRub,
+    0
+  );
+
+  // Суммарные удержания WB (30% комиссия + 0% логистика + 10% ДРР) составляют 40% от годовой выручки (с погрешностью округления по месяцам < 500 ₽)
+  const expectedDeductions40Pct = Math.round(liskaniSummary.annualRevenueRub * 0.40);
+  assert.ok(
+    Math.abs(totalDeductionsYear - expectedDeductions40Pct) <= 500,
+    `Суммарные удержания WB + ДРР (${totalDeductionsYear}) должны быть равны 40% от выручки (${expectedDeductions40Pct})`
+  );
+  assert.equal(
+    totalNetInflowYear,
+    liskaniSummary.annualRevenueRub - totalDeductionsYear,
+    'Поступление на счёт с WB должно равняться 60% от выручки (Выручка − 30% Комиссия − 10% ДРР)'
+  );
+  assert.equal(
+    liskaniSummary.annualEstimatedOperatingProfitRub,
+    liskaniSummary.annualRevenueRub - liskaniSummary.annualSoldGoodsCostRub - totalDeductionsYear,
+    'Операционная прибыль должна равняться Выручка − Закупочная себестоимость − 40% (Комиссия 30% + Логистика 0% + ДРР 10%)'
+  );
+});
+
+
 
 
 
