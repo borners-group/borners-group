@@ -1060,10 +1060,10 @@ export function AppShell() {
 
   return (
     <div>
-      <div className="min-h-screen bg-[#F6F7F9] dark:bg-[#0B0E14] text-[#0F172A] dark:text-[#EDF0F7] flex flex-col overflow-x-hidden transition-colors duration-200">
+      <div className="min-h-screen bg-[#EEF2F6] dark:bg-[#0B0E14] text-[#0F172A] dark:text-[#EDF0F7] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-50 h-[56px] bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#E2E6EE] dark:border-[#222938] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+          <header className="sticky top-0 z-50 h-[56px] bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#D5DCE6] dark:border-[#222938] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-2.5 min-w-0">
               <button

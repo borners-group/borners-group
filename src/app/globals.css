@@ -6,15 +6,15 @@
    Светлая тема — чистый светлый холст (#F6F7F9) + белоснежные карточки (#FFFFFF) с деликатной 1px рамкой (#E2E6EE) и мягкой тенью.
    Тёмная тема (.dark) — глубокий обсидиан (#0B0E14) + графитовые карточки (#121620) с тонкими границами (#222938) и изумрудным свечением. */
 :root {
-  --bg-page: #F6F7F9;
+  --bg-page: #EEF2F6;
   --bg-card: #FFFFFF;
-  --bg-subtle: #F1F3F7;
+  --bg-subtle: #E6ECF2;
   --bg-warm-tint: #F8FAFC;
   --text-primary: #0F172A;
-  --text-secondary: #64748B;
-  --border-color: #E2E6EE;
+  --text-secondary: #475569;
+  --border-color: #D5DCE6;
   --border-strong: #CBD5E1;
-  --bg-dark-block: #1E2430;
+  --bg-dark-block: #0F172A;
   --brand-borners: #1E293B;
   --brand-natele: #475569;
   --status-success: #10B981;
@@ -423,16 +423,21 @@ html.dark ::-webkit-scrollbar-thumb {
 }
 
 .hover-lift {
+  box-shadow: 0 2px 10px -3px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04);
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
 }
 
+html.dark .hover-lift {
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.45);
+}
+
 .hover-lift:hover {
-  transform: translateY(-1.5px);
-  box-shadow: 0 8px 24px -6px rgba(15, 23, 42, 0.07), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.11), 0 4px 10px -2px rgba(15, 23, 42, 0.05);
 }
 
 html.dark .hover-lift:hover {
-  box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.45), 0 2px 8px -1px rgba(16, 185, 129, 0.08);
+  box-shadow: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 2px 10px -1px rgba(16, 185, 129, 0.12);
 }
 
 .btn-shine-effect {

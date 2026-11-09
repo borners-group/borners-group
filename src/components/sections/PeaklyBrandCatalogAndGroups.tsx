@@ -764,14 +764,14 @@ export function PeaklyMasterCabinetsSummary({
 
   // 4 круговых индикатора KPIRing (2×2 сетка справа от графика)
   const kpiRings = useMemo(() => {
-    const r = 34;
+    const r = 37;
     const circ = 2 * Math.PI * r;
     return [
       {
         id: 'margin',
         label: 'МАРЖА ВЫРУЧКИ',
         valueText: `${Math.round(groupMarginPct)}%`,
-        subText: `↑ +${groupMarginPct.toFixed(1).replace('.', ',')}% чистыми`,
+        subText: `↑ +${groupMarginPct.toFixed(1).replace('.', ',')} ₽ со 100 ₽`,
         pctFill: Math.min(100, Math.max(8, groupMarginPct * 1.6)),
         color: '#10B981',
         circ,
@@ -780,7 +780,7 @@ export function PeaklyMasterCabinetsSummary({
       },
       {
         id: 'roi',
-        label: 'ROI КАПИТАЛА',
+        label: 'ОТДАЧА КАПИТАЛА',
         valueText: ownCapitalRoiMult ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : '×3,2',
         subText: ownCapitalRoiMult ? `↑ ${Math.round(ownCapitalRoiMult * 100)}% годовых` : '↑ с оборота',
         pctFill: 86,
@@ -791,9 +791,9 @@ export function PeaklyMasterCabinetsSummary({
       },
       {
         id: 'reinvest',
-        label: 'ОБОРОТ WB',
+        label: 'ПАРТИЙ С ОБОРОТА WB',
         valueText: `${selfFundedProcurementPct}%`,
-        subText: '↑ оплата партий',
+        subText: '↑ без своих денег',
         pctFill: selfFundedProcurementPct,
         color: '#10B981',
         circ,
@@ -804,7 +804,7 @@ export function PeaklyMasterCabinetsSummary({
         id: 'cogs',
         label: 'СЕБЕСТОИМОСТЬ',
         valueText: `${Math.round(cogsPct)}%`,
-        subText: '↓ норма ≤ 25%',
+        subText: '↓ норма ≤ 25% цены',
         pctFill: Math.min(100, Math.max(12, cogsPct * 2.2)),
         color: '#0D9488',
         circ,
@@ -1100,23 +1100,29 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         )}
 
-      {/* 1. ГЛАВНЫЙ HERO-БАННЕР: ЧИСТАЯ ПРИБЫЛЬ + КЛЮЧЕВЫЕ ОПОРЫ + «✨ КОРОТКО О ПЕРИОДЕ» */}
+      {/* 1. ФЛАГМАНСКИЙ HERO-БЛОК №1 (КРУПНЫЙ, КОНТРАСТНЫЙ И МАКСИМАЛЬНО ПОНЯТНЫЙ): ЧИСТАЯ ПРИБЫЛЬ + 3 ОПОРЫ + БЛОК «НА 100 ₽ ВЫРУЧКИ» */}
       <div
         onClick={() => onNavigateSection('finance')}
-        className="relative rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 sm:p-6 overflow-hidden cursor-pointer hover-lift"
+        className="relative rounded-3xl border-2 border-emerald-500/35 dark:border-emerald-500/30 bg-gradient-to-br from-[#ECFDF5]/65 via-white to-[#F8FAFC] dark:from-[#0D1E1A] dark:via-[#121620] dark:to-[#151B28] p-6 sm:p-7 lg:p-8 overflow-hidden cursor-pointer hover-lift shadow-[0_14px_38px_-14px_rgba(16,185,129,0.18)]"
       >
+        {/* Левая контрастная изумрудная полоса-маяк */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-emerald-500 via-teal-500 to-emerald-600"
+        />
+
         {/* Деликатное радиальное изумрудное свечение и орбиты */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl"
+          className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-emerald-500/12 blur-3xl"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-24 right-10 h-64 w-64 rounded-full bg-emerald-500/8 blur-3xl"
+          className="pointer-events-none absolute -bottom-24 right-10 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl"
         />
         <svg
           aria-hidden="true"
-          className="pointer-events-none absolute -right-8 -top-8 h-56 w-56 text-emerald-500 opacity-[0.08] animate-orbit-slow"
+          className="pointer-events-none absolute -right-8 -top-8 h-64 w-64 text-emerald-500 opacity-[0.09] animate-orbit-slow"
           viewBox="0 0 220 220"
           fill="none"
         >
@@ -1124,98 +1130,138 @@ export function PeaklyMasterCabinetsSummary({
           <circle cx="110" cy="110" r="102" stroke="currentColor" strokeWidth="1" />
         </svg>
 
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          {/* Левая часть: Чистая прибыль */}
-          <div className="shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-                <TrendingUp className="w-3.5 h-3.5" />
+        <div className="relative z-10 grid grid-cols-1 xl:grid-cols-12 gap-6 items-center">
+          {/* Левая и центральная часть (8 колонок из 12): Главная цифра прибыли + 3 контрастные плашки опор */}
+          <div className="xl:col-span-8 space-y-5">
+            <div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-wider shadow-2xs">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Главный итог 2027</span>
+                </span>
+                <span className="text-xs sm:text-[13px] font-semibold uppercase tracking-wider text-[#334155] dark:text-[#94A3B8]">
+                  {selectedBrandRow
+                    ? `Чистая операционная прибыль кабинета ${selectedBrandRow.displayCode}`
+                    : 'Чистая операционная прибыль холдинга на руках'}
+                </span>
               </div>
-              <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-                {selectedBrandRow
-                  ? `ЧИСТАЯ ПРИБЫЛЬ КАБИНЕТА ${selectedBrandRow.displayCode} · 2027`
-                  : 'ЧИСТАЯ ПРИБЫЛЬ ХОЛДИНГА ЗА 2027 ГОД'}
-              </span>
+
+              <div className="mt-3 flex flex-wrap items-baseline gap-3">
+                <div className="font-mono text-4xl sm:text-5xl lg:text-[54px] font-extrabold tracking-[-0.03em] tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
+                  <AnimatedMlnValue
+                    valueRub={gt.annualEstimatedOperatingProfitRub}
+                    prefix="+"
+                    unitClassName="text-xl sm:text-2xl font-bold tracking-normal text-emerald-700 dark:text-emerald-400/90 font-sans ml-1.5"
+                  />
+                </div>
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-[13px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                  ↑ рентабельность {groupMarginPct.toFixed(1).replace('.', ',')}%
+                </span>
+              </div>
+
+              <p className="mt-2 text-xs sm:text-[13.5px] font-medium text-[#334155] dark:text-[#94A3B8]">
+                Свободный денежный поток после оплаты производства фабрикам, комиссий WB, логистики, продвижения (ДРР) и налогов.
+              </p>
             </div>
 
-            <div className="mt-3 font-mono text-3xl sm:text-4xl lg:text-[42px] font-bold tracking-tight tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
-              <AnimatedMlnValue
-                valueRub={gt.annualEstimatedOperatingProfitRub}
-                prefix="+"
-                unitClassName="text-lg sm:text-xl font-semibold tracking-normal text-emerald-600/80 dark:text-emerald-400/80 font-sans ml-1"
-              />
-            </div>
+            {/* 3 контрастные плашки ключевых опор прямо внутри первого блока */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-2xl bg-white/95 dark:bg-[#181D2A]/90 border border-[#CBD5E1] dark:border-[#283246] p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8]">
+                    1. Выручка за 2027 год
+                  </span>
+                  <span className="font-mono text-[10.5px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                    {gt.modelsCount} SKU
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+                  {formatMln(gt.annualRevenueRub)}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#475569] dark:text-[#94A3B8]">
+                  Пик декабря: <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(gt.decemberRevenueRub)}</strong>
+                </div>
+              </div>
 
-            {/* Изумрудная линия-акцент 88px */}
-            <div className="mt-2.5 h-0.5 w-22 rounded-full bg-gradient-to-r from-emerald-500 to-transparent" />
+              <div className="rounded-2xl bg-white/95 dark:bg-[#181D2A]/90 border border-[#CBD5E1] dark:border-[#283246] p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8]">
+                    2. Приходит со счёта WB
+                  </span>
+                  <span className="font-mono text-[10.5px] font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] dark:bg-[#121620] text-[#334155] dark:text-[#CBD5E1]">
+                    за вычетом WB
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+                  {formatMln(trendChartData.totalPayoutYearRub)}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-[#475569] dark:text-[#94A3B8]">
+                  После комиссии и логистики WB
+                </div>
+              </div>
 
-            {/* Спокойные бейджи-контекст */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#64748B]">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                ↑ маржа {groupMarginPct.toFixed(1).replace('.', ',')}%
-              </span>
-              <span>·</span>
-              <span>
-                выручка <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(gt.annualRevenueRub)}</strong>
-              </span>
-              <span>·</span>
-              <span>{gt.modelsCount} SKU в плане</span>
+              <div className="rounded-2xl bg-white/95 dark:bg-[#181D2A]/90 border border-[#CBD5E1] dark:border-[#283246] p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8]">
+                    3. Пик своих денег
+                  </span>
+                  <span className="font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                    {ownCapitalRoiMult ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : 'Реинвест'}
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+                  {gt.verifiedOwnMoneyRequiredRub ? formatMln(gt.verifiedOwnMoneyRequiredRub) : 'Из оборота'}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-emerald-700 dark:text-emerald-400 font-medium">
+                  {selfFundedProcurementPct}% партий оплачиваются с WB
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Центральный блок (заполняет пустоту на широких экранах): 3 ключевые опоры 2027 года */}
-          <div className="hidden xl:grid xl:grid-cols-3 gap-6 px-6 py-2 border-x border-[#EEF2F6] dark:border-[#222938] flex-1 max-w-xl">
-            <div className="space-y-1">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                Выручка 2027
+          {/* Правая контрастная карточка (4 колонки из 12): Тёмно-графитовый блок «Анатомия каждых 100 ₽ выручки» */}
+          <div className="xl:col-span-4 rounded-2xl bg-[#0F172A] dark:bg-[#181D2A] text-white border border-[#1E293B] dark:border-emerald-500/30 p-5 space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Коротко о периоде · На 100 ₽</span>
               </div>
-              <div className="font-mono text-lg font-bold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                {formatMln(gt.annualRevenueRub)}
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-white/90">
+                2027 год
+              </span>
+            </div>
+
+            <div className="text-[16px] sm:text-[17px] font-bold text-white leading-snug">
+              Из каждых 100 ₽ выручки{' '}
+              <span className="text-emerald-400 underline decoration-emerald-400/50 underline-offset-4">
+                +{groupMarginPct.toFixed(1).replace('.', ',')} ₽ остаются чистой прибылью
+              </span>
+            </div>
+
+            {/* Наглядная двухцветная полоса 100 ₽ прямо внутри карточки */}
+            <div className="space-y-1.5">
+              <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
+                <div
+                  style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
+                  className="h-full rounded-l-full bg-[#64748B]"
+                />
+                <div
+                  style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
+                  className="h-full rounded-r-full bg-emerald-400"
+                />
               </div>
-              <div className="text-[11px] text-[#64748B]">
-                Пик дек: <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(gt.decemberRevenueRub)}</span>
+              <div className="flex items-center justify-between text-[11.5px] font-mono">
+                <span className="text-[#CBD5E1]">
+                  Затраты и WB: <strong>{totalExpensesPct.toFixed(1).replace('.', ',')} ₽</strong>
+                </span>
+                <span className="text-emerald-400 font-bold">
+                  Чистыми: +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
+                </span>
               </div>
             </div>
 
-            <div className="space-y-1 border-l border-[#EEF2F6] dark:border-[#222938] pl-5">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                На счёт с WB
-              </div>
-              <div className="font-mono text-lg font-bold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                {formatMln(trendChartData.totalPayoutYearRub)}
-              </div>
-              <div className="text-[11px] text-[#64748B]">
-                после комиссии и лог.
-              </div>
-            </div>
-
-            <div className="space-y-1 border-l border-[#EEF2F6] dark:border-[#222938] pl-5">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                Отдача капитала
-              </div>
-              <div className="font-mono text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {ownCapitalRoiMult ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')} ROI` : 'Реинвест WB'}
-              </div>
-              <div className="text-[11px] text-[#64748B]">
-                {gt.verifiedOwnMoneyRequiredRub
-                  ? `на ${formatMln(gt.verifiedOwnMoneyRequiredRub)} пика`
-                  : `${selfFundedProcurementPct}% партий с WB`}
-              </div>
-            </div>
-          </div>
-
-          {/* Правая карточка: «✨ КОРОТКО О ПЕРИОДЕ» */}
-          <div className="lg:w-[390px] xl:w-[410px] shrink-0 rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A]/75 backdrop-blur-sm p-4 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Коротко о периоде</span>
-            </div>
-            <p className="text-[14px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] leading-snug">
-              {groupMarginPct.toFixed(1).replace('.', ',')} ₽ чистой прибыли на каждые 100 ₽ выручки.
-            </p>
-            <p className="text-xs text-[#64748B] leading-relaxed">
-              Стабильность начинается с решений, которые хочется повторять.{' '}
-              {selfFundedProcurementPct}% годовых партий оплачиваются напрямую из оборотной выручки WB.
+            <p className="text-xs text-[#CBD5E1] leading-relaxed pt-1 border-t border-white/10">
+              Собственный капитал запускает только 1-ю волну — дальше <strong className="text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
             </p>
           </div>
         </div>
@@ -1224,29 +1270,34 @@ export function PeaklyMasterCabinetsSummary({
       {/* 2. СРЕДНИЙ РЯД 7 + 5: ПЛАВНЫЙ ГРАФИК ПОСТУПЛЕНИЙ WB (7 КОЛ.) + 2×2 KPIRING (5 КОЛ.) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Левая колонка (7/12): Плавная изумрудная кривая Безье с опорными подписями */}
-        <div className="lg:col-span-7 rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between">
+        <div className="lg:col-span-7 rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between hover-lift">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-                {trendChartMode === 'payout'
-                  ? 'Поступления от WB на счёт (после комиссии и логистики) · 2027'
-                  : `Помесячная чистая прибыль (${selectedMonthPoint?.monthLabel || 'дек'}) · 2027`}
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[10.5px] font-bold">
+                  ДИНАМИКА 12 МЕС.
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#334155] dark:text-[#94A3B8]">
+                  {trendChartMode === 'payout'
+                    ? 'Поступления от WB на расчётный счёт · 2027'
+                    : `Помесячная чистая прибыль (${selectedMonthPoint?.monthLabel || 'дек'}) · 2027`}
+                </span>
               </div>
-              <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
-                <span className="font-mono text-2xl font-bold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-2.5">
+                <span className="font-mono text-2xl sm:text-[28px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                   {trendChartMode === 'payout'
                     ? formatMln(trendChartData.totalPayoutYearRub)
                     : `+${formatMln(selectedMonthPoint?.profRub || 0)} в ${selectedMonthPoint?.monthLabel || 'дек'}`}
                 </span>
                 {trendChartData.growthMult && trendChartData.growthMult > 1 && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    ↑ ×{trendChartData.growthMult.toFixed(1).replace('.', ',')} к янв
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                    ↑ ×{trendChartData.growthMult.toFixed(1).replace('.', ',')} к январю
                   </span>
                 )}
                 {selectedMonthPoint && (
-                  <span className="text-xs text-[#64748B]">
+                  <span className="text-xs text-[#475569] dark:text-[#94A3B8]">
                     · {selectedMonthPoint.monthLabel}:{' '}
-                    <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                    <strong className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                       {trendChartMode === 'payout'
                         ? `${(selectedMonthPoint.payoutRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽ на счёт`
                         : `выручка ${(selectedMonthPoint.revRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`}
@@ -1256,15 +1307,15 @@ export function PeaklyMasterCabinetsSummary({
               </div>
             </div>
 
-            {/* Спокойный переключатель К выплате WB / Прибыль мес. */}
-            <div className="inline-flex items-center rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-0.5 text-xs">
+            {/* Контрастный переключатель К выплате WB / Прибыль мес. */}
+            <div className="inline-flex items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs">
               <button
                 type="button"
                 onClick={() => setTrendChartMode('payout')}
-                className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'payout'
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
+                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
                 К выплате WB
@@ -1272,10 +1323,10 @@ export function PeaklyMasterCabinetsSummary({
               <button
                 type="button"
                 onClick={() => setTrendChartMode('monthlyProfit')}
-                className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'monthlyProfit'
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
+                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
                 Прибыль по мес.
@@ -1285,7 +1336,7 @@ export function PeaklyMasterCabinetsSummary({
 
           {/* Изумрудная Area-кривая с подписями опорных точек */}
           <div className="mt-4">
-            <div className="relative h-[154px] w-full">
+            <div className="relative h-[156px] w-full">
               <svg
                 viewBox={`0 0 ${trendChartData.svgW} ${trendChartData.svgH}`}
                 preserveAspectRatio="none"
@@ -1293,8 +1344,8 @@ export function PeaklyMasterCabinetsSummary({
               >
                 <defs>
                   <linearGradient id="peaklyEmeraldAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.24" />
-                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.28" />
+                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.02" />
                   </linearGradient>
                 </defs>
                 <line
@@ -1303,7 +1354,7 @@ export function PeaklyMasterCabinetsSummary({
                   x2={trendChartData.svgW}
                   y2={trendChartData.padTop + trendChartData.usableH * 0.25}
                   stroke="currentColor"
-                  className="text-[#E2E8F0] dark:text-[#222938]"
+                  className="text-[#CBD5E1] dark:text-[#222938]"
                   strokeDasharray="3 5"
                   strokeWidth="1"
                 />
@@ -1313,7 +1364,7 @@ export function PeaklyMasterCabinetsSummary({
                   x2={trendChartData.svgW}
                   y2={trendChartData.padTop + trendChartData.usableH * 0.65}
                   stroke="currentColor"
-                  className="text-[#E2E8F0] dark:text-[#222938]"
+                  className="text-[#CBD5E1] dark:text-[#222938]"
                   strokeDasharray="3 5"
                   strokeWidth="1"
                 />
@@ -1329,7 +1380,7 @@ export function PeaklyMasterCabinetsSummary({
                     d={trendChartData.smoothPath}
                     fill="none"
                     stroke="#10B981"
-                    strokeWidth="2.5"
+                    strokeWidth="3"
                     strokeLinecap="round"
                     className="transition-all duration-700 ease-out"
                   />
@@ -1350,28 +1401,28 @@ export function PeaklyMasterCabinetsSummary({
                         <circle
                           cx={pt.x}
                           cy={pt.y}
-                          r="7.5"
+                          r="8"
                           fill="#10B981"
-                          fillOpacity="0.22"
+                          fillOpacity="0.25"
                         />
                       )}
                       <circle
                         cx={pt.x}
                         cy={pt.y}
-                        r={isSel ? 4.4 : 2.8}
+                        r={isSel ? 4.6 : 3}
                         fill={isSel ? '#10B981' : '#FFFFFF'}
                         stroke="#10B981"
-                        strokeWidth="2"
+                        strokeWidth="2.2"
                       />
                       {showMilestoneLabel && (
                         <text
                           x={pt.x}
                           y={Math.max(11, pt.y - 10)}
                           textAnchor="middle"
-                          className={`font-mono text-[10px] select-none ${
+                          className={`font-mono text-[10.5px] select-none ${
                             isSel
-                              ? 'fill-emerald-600 dark:fill-emerald-400 font-bold'
-                              : 'fill-[#64748B] font-medium'
+                              ? 'fill-emerald-700 dark:fill-emerald-300 font-extrabold'
+                              : 'fill-[#334155] dark:fill-[#94A3B8] font-semibold'
                           }`}
                         >
                           {labelMln}
@@ -1383,8 +1434,8 @@ export function PeaklyMasterCabinetsSummary({
               </svg>
             </div>
 
-            {/* Спокойная шкала месяцев снизу */}
-            <div className="grid grid-cols-12 gap-1 pt-1.5 border-t border-[#EEF2F6] dark:border-[#222938]">
+            {/* Контрастная шкала месяцев снизу */}
+            <div className="grid grid-cols-12 gap-1 pt-2 border-t border-[#E2E8F0] dark:border-[#222938]">
               {trendChartData.coords.map((pt) => {
                 const isSel = pt.idx === selectedTrendMonthIdx;
                 return (
@@ -1392,10 +1443,10 @@ export function PeaklyMasterCabinetsSummary({
                     key={pt.idx}
                     type="button"
                     onClick={() => setSelectedTrendMonthIdx(pt.idx)}
-                    className={`text-center py-0.5 rounded text-[11px] transition cursor-pointer ${
+                    className={`text-center py-1 rounded-md text-[11px] transition cursor-pointer ${
                       isSel
-                        ? 'font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
-                        : 'text-[#64748B] hover:text-[#0F172A]'
+                        ? 'font-bold text-white dark:text-emerald-300 bg-[#0F172A] dark:bg-emerald-500/20'
+                        : 'font-medium text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                     }`}
                   >
                     {pt.monthLabel}
@@ -1406,7 +1457,7 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         </div>
 
-        {/* Правая колонка (5/12): Сетка 2×2 круговых датчиков KPIRing (84×84px с идеально отцентрированным числом) */}
+        {/* Правая колонка (5/12): Сетка 2×2 крупных контрастных датчиков KPIRing (90×90px) */}
         <div className="lg:col-span-5 grid grid-cols-2 gap-3.5">
           {kpiRings.map((ring) => {
             const dashOffset = ring.circ * (1 - ring.pctFill / 100);
@@ -1414,26 +1465,26 @@ export function PeaklyMasterCabinetsSummary({
               <div
                 key={ring.id}
                 onClick={ring.onClick}
-                className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover-lift"
+                className="rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover-lift"
               >
-                <div className="relative h-[84px] w-[84px] flex items-center justify-center">
-                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 84 84">
+                <div className="relative h-[90px] w-[90px] flex items-center justify-center">
+                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 90 90">
                     <circle
-                      cx="42"
-                      cy="42"
+                      cx="45"
+                      cy="45"
                       r={ring.r}
                       fill="none"
                       stroke="currentColor"
                       className="text-[#E2E8F0] dark:text-[#222938]"
-                      strokeWidth="6"
+                      strokeWidth="7"
                     />
                     <circle
-                      cx="42"
-                      cy="42"
+                      cx="45"
+                      cy="45"
                       r={ring.r}
                       fill="none"
                       stroke={ring.color}
-                      strokeWidth="6"
+                      strokeWidth="7"
                       strokeLinecap="round"
                       strokeDasharray={ring.circ}
                       strokeDashoffset={dashOffset}
@@ -1441,15 +1492,15 @@ export function PeaklyMasterCabinetsSummary({
                     />
                   </svg>
                   {/* Засечка 12 часов */}
-                  <span className="pointer-events-none absolute top-0.5 left-1/2 -translate-x-1/2 h-1.5 w-0.5 rounded-full bg-[#94A3B8]/60" />
-                  <span className="relative z-10 font-mono text-[16px] font-bold tabular-nums leading-none text-[#0F172A] dark:text-[#EDF0F7]">
+                  <span className="pointer-events-none absolute top-0.5 left-1/2 -translate-x-1/2 h-1.5 w-0.5 rounded-full bg-[#64748B]/70" />
+                  <span className="relative z-10 font-mono text-[18px] font-extrabold tabular-nums leading-none text-[#0F172A] dark:text-[#EDF0F7]">
                     {ring.valueText}
                   </span>
                 </div>
-                <div className="mt-2 text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                <div className="mt-2.5 text-[11.5px] font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#EDF0F7]">
                   {ring.label}
                 </div>
-                <div className="mt-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                <div className="mt-0.5 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-400">
                   {ring.subText}
                 </div>
               </div>
@@ -1458,17 +1509,22 @@ export function PeaklyMasterCabinetsSummary({
         </div>
       </div>
 
-      {/* 3. СЕКЦИЯ «| ВЫРУЧКА И КАПИТАЛ»: 4 КАРТОЧКИ ПЕРВИЧНЫХ KPI С ИКОНКАМИ-БЕЙДЖАМИ */}
+      {/* 3. СЕКЦИЯ «01 · ВЫРУЧКА И КАПИТАЛ ДЛЯ ЗАПУСКА»: 4 КОНТРАСТНЫЕ КАРТОЧКИ ПЕРВИЧНЫХ KPI */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-1 h-4 rounded-full bg-emerald-500" />
-            <h3 className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-              Выручка и капитал
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[11px] font-bold">
+              01
+            </span>
+            <h3 className="text-[14px] sm:text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#EDF0F7]">
+              Выручка и капитал для запуска
             </h3>
+            <span className="hidden sm:inline text-xs text-[#475569] dark:text-[#94A3B8]">
+              · Сколько продаём за год и сколько денег нужно на старт
+            </span>
           </div>
-          <span className="text-xs text-[#64748B]">
-            Нажмите на карточку для перехода в профильный раздел
+          <span className="text-xs font-medium text-[#475569] dark:text-[#94A3B8]">
+            Нажмите на карточку для перехода в раздел →
           </span>
         </div>
 
@@ -1476,172 +1532,177 @@ export function PeaklyMasterCabinetsSummary({
           {/* Карточка 1: Выручка холдинга */}
           <div
             onClick={() => onNavigateSection('launch-calendar')}
-            className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 cursor-pointer hover-lift flex flex-col justify-between"
+            className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 inline-flex items-center justify-center shrink-0">
-                    <TrendingUp className="w-3.5 h-3.5" />
+                  <span className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center shrink-0">
+                    <TrendingUp className="w-4 h-4" />
                   </span>
-                  <span className="text-sm font-medium text-[#64748B] truncate">
+                  <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
                     {selectedBrandRow ? `Выручка · ${selectedBrandRow.displayCode}` : 'Выручка холдинга'}
                   </span>
                 </div>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shrink-0">
                   {selectedBrandRow && brandShareOfHoldingPct !== null
                     ? `${brandShareOfHoldingPct.toFixed(0)}% группы`
                     : `${gt.modelsCount} SKU`}
                 </span>
               </div>
-              <div className="mt-2.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+              <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                 <AnimatedMlnValue
                   valueRub={gt.annualRevenueRub}
-                  unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
+                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
                 />
               </div>
             </div>
-            <div className="mt-2.5 text-xs text-[#64748B] flex items-center justify-between">
+            <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Пик декабря</span>
-              <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
+              <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                 {formatMln(gt.decemberRevenueRub)}
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/80" />
+            <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-emerald-500" />
           </div>
 
           {/* Карточка 2: План закупок на год */}
           <div
             onClick={() => onNavigateSection('roadmap-tasks')}
-            className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 cursor-pointer hover-lift flex flex-col justify-between"
+            className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-md bg-[#F1F5F9] dark:bg-[#181D2A] text-[#475569] dark:text-[#94A3B8] inline-flex items-center justify-center shrink-0">
-                    <Layers className="w-3.5 h-3.5" />
+                  <span className="w-7 h-7 rounded-lg bg-[#EEF2F6] dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7] inline-flex items-center justify-center shrink-0">
+                    <Layers className="w-4 h-4" />
                   </span>
-                  <span className="text-sm font-medium text-[#64748B] truncate">
-                    План закупок на год
+                  <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
+                    Закупки на год
                   </span>
                 </div>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#F1F5F9] dark:bg-[#181D2A] text-[#475569] dark:text-[#94A3B8] shrink-0">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#EEF2F6] dark:bg-[#181D2A] text-[#334155] dark:text-[#CBD5E1] shrink-0">
                   4 волны
                 </span>
               </div>
-              <div className="mt-2.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+              <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                 <AnimatedMlnValue
                   valueRub={gt.totalProcurementBudgetRub}
-                  unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
+                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
                 />
               </div>
             </div>
-            <div className="mt-2.5 text-xs text-[#64748B] flex items-center justify-between">
-              <span>Оплата из оборота WB</span>
-              <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">
+            <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
+              <span>Оплата с выручки WB</span>
+              <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
                 {selfFundedProcurementPct}% партий
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
+            <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-emerald-500/85" />
           </div>
 
           {/* Карточка 3: Старт 1-й партии (Q1) */}
           <div
             onClick={() => onNavigateSection('roadmap-tasks')}
-            className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 cursor-pointer hover-lift flex flex-col justify-between"
+            className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 inline-flex items-center justify-center shrink-0">
-                    <Calendar className="w-3.5 h-3.5" />
+                  <span className="w-7 h-7 rounded-lg bg-teal-500/15 text-teal-700 dark:text-teal-300 inline-flex items-center justify-center shrink-0">
+                    <Calendar className="w-4 h-4" />
                   </span>
-                  <span className="text-sm font-medium text-[#64748B] truncate">
+                  <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
                     Старт 1-й партии (Q1)
                   </span>
                 </div>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 shrink-0">
                   аванс 30%
                 </span>
               </div>
-              <div className="mt-2.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+              <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                 <AnimatedMlnValue
                   valueRub={gt.firstWaveStartBudgetRub}
-                  unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
+                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
                 />
               </div>
             </div>
-            <div className="mt-2.5 text-xs text-[#64748B] flex items-center justify-between">
+            <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Предоплата фабрикам</span>
-              <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
+              <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                 {formatMln(gt.firstWavePrepaymentRub)}
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
+            <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-teal-500" />
           </div>
 
           {/* Карточка 4: Пик своих денег */}
           <div
             onClick={() => onNavigateSection('finance')}
-            className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 cursor-pointer hover-lift flex flex-col justify-between"
+            className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 inline-flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5" />
+                  <span className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 inline-flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4" />
                   </span>
-                  <span className="text-sm font-medium text-[#64748B] truncate">
+                  <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
                     Пик своих денег
                   </span>
                 </div>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shrink-0">
                   {ownCapitalRoiMult ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : 'с WB'}
                 </span>
               </div>
-              <div className="mt-2.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+              <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                 {gt.verifiedOwnMoneyRequiredRub !== null ? (
                   <AnimatedMlnValue
                     valueRub={gt.verifiedOwnMoneyRequiredRub}
-                    unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
+                    unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
                   />
                 ) : (
                   '—'
                 )}
               </div>
             </div>
-            <div className="mt-2.5 text-xs text-[#64748B] flex items-center justify-between">
+            <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Доля от закупок года</span>
-              <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
+              <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                 {gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
                   ? `всего ${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}%`
                   : 'реинвест'}
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/75" />
+            <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-amber-500" />
           </div>
         </div>
       </div>
 
-      {/* 4. СЕКЦИЯ «| РАСХОДЫ И РЕНТАБЕЛЬНОСТЬ» (8 КОЛ. КАРТОЧКИ С ПРОГРЕСС-ШКАЛОЙ + ВОДОПАД / 4 КОЛ. КОЛЬЦО ЭФФЕКТИВНОСТИ) */}
+      {/* 4. СЕКЦИЯ «02 · РАСХОДЫ, УДЕРЖАНИЯ WB И РЕНТАБЕЛЬНОСТЬ» (8 КОЛ. КАРТОЧКИ + ВОДОПАД / 4 КОЛ. КОЛЬЦО ЭФФЕКТИВНОСТИ) */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-1 h-4 rounded-full bg-emerald-500" />
-            <h3 className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-              Расходы и рентабельность
+          <div className="flex items-center gap-2.5">
+            <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[11px] font-bold">
+              02
+            </span>
+            <h3 className="text-[14px] sm:text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#EDF0F7]">
+              Расходы, удержания WB и рентабельность
             </h3>
+            <span className="hidden sm:inline text-xs text-[#475569] dark:text-[#94A3B8]">
+              · Из чего складываются затраты и сколько остаётся чистыми
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-0.5 text-xs">
+            <div className="inline-flex items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs">
               <button
                 type="button"
                 onClick={() => setWaterfallViewMode('pnl')}
-                className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   waterfallViewMode === 'pnl'
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
+                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
                 Структура P&L
@@ -1649,10 +1710,10 @@ export function PeaklyMasterCabinetsSummary({
               <button
                 type="button"
                 onClick={() => setWaterfallViewMode('brands')}
-                className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   waterfallViewMode === 'brands'
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
+                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
                 Доли кабинетов
@@ -1672,7 +1733,7 @@ export function PeaklyMasterCabinetsSummary({
             >
               {activeCards.map((seg) => {
                 const kopeksPerRuble = Math.round(seg.pct);
-                const barWidthPct = Math.min(100, Math.max(6, seg.pct * 2.4));
+                const barWidthPct = Math.min(100, Math.max(8, seg.pct * 2.4));
                 return (
                   <div
                     key={seg.key}
@@ -1683,35 +1744,35 @@ export function PeaklyMasterCabinetsSummary({
                         ? onNavigateSection('finance')
                         : onSelectBrandFilter(seg.key)
                     }
-                    className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 cursor-pointer hover-lift flex flex-col justify-between"
+                    className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            className="h-3 w-3 rounded-full shrink-0"
                             style={{ backgroundColor: seg.color }}
                           />
-                          <span className="text-sm font-medium text-[#64748B] truncate">
+                          <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
                             {seg.label}
                           </span>
                         </div>
-                        <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0 bg-[#F1F5F9] dark:bg-[#181D2A] text-[#475569] dark:text-[#94A3B8]">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md shrink-0 bg-[#EEF2F6] dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7]">
                           {seg.pct.toFixed(1).replace('.', ',')}%
                         </span>
                       </div>
 
-                      <div className="mt-2 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
+                      <div className="mt-2.5 font-mono text-[25px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                         <AnimatedMlnValue
                           valueRub={seg.valueRub}
-                          unitClassName="text-xs font-medium text-[#64748B] font-sans ml-1"
+                          unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
                         />
                       </div>
                     </div>
 
                     {/* Пропорциональная шкала доли внутри карточки */}
                     <div className="mt-3 space-y-1.5">
-                      <div className="h-1.5 w-full rounded-full bg-[#F1F5F9] dark:bg-[#181D2A] overflow-hidden">
+                      <div className="h-2 w-full rounded-full bg-[#EEF2F6] dark:bg-[#181D2A] overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
@@ -1720,10 +1781,10 @@ export function PeaklyMasterCabinetsSummary({
                           }}
                         />
                       </div>
-                      <div className="text-xs text-[#64748B] flex items-center justify-between gap-2">
-                        <span className="truncate">{seg.subtitle}</span>
+                      <div className="text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{seg.subtitle}</span>
                         {waterfallViewMode === 'pnl' && (
-                          <span className="font-mono shrink-0">
+                          <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] shrink-0">
                             {kopeksPerRuble} ₽ из 100 ₽
                           </span>
                         )}
@@ -1734,15 +1795,16 @@ export function PeaklyMasterCabinetsSummary({
               })}
             </div>
 
-            {/* Спокойная полоса «Куда уходит выручка» (RevenueWaterfall: 4 статьи расходов + Чистая прибыль) */}
-            <div className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 space-y-2.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-[#64748B]">
+            {/* Контрастная полоса «Куда уходит выручка (100%)» с подписями прямо внутри сегментов */}
+            <div className="rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-3 hover-lift">
+              <div className="flex items-center justify-between text-xs sm:text-[13px]">
+                <span className="font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                   {waterfallViewMode === 'pnl'
-                    ? 'Куда уходит выручка (100%)'
+                    ? 'Анатомия 100% годовой выручки (расходы + чистая прибыль)'
                     : 'Доли кабинетов в выручке холдинга'}
                 </span>
-                <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
+                <span className="font-mono font-extrabold text-[#0F172A] dark:text-[#EDF0F7]">
+                  100% ={' '}
                   {formatMln(
                     waterfallViewMode === 'pnl'
                       ? gt.annualRevenueRub
@@ -1751,37 +1813,44 @@ export function PeaklyMasterCabinetsSummary({
                 </span>
               </div>
 
-              <div className="h-3 w-full rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] overflow-hidden flex gap-0.5">
+              <div className="h-7 w-full rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] overflow-hidden flex gap-0.5 p-0.5">
                 {activeBarSegments
                   .filter((s) => s.pct > 0.2)
                   .map((seg) => {
                     const isHovered = hoveredWaterfallKey === seg.key;
+                    const showInnerText = seg.pct >= 7.5;
                     return (
                       <div
                         key={seg.key}
                         onMouseEnter={() => setHoveredWaterfallKey(seg.key)}
                         onMouseLeave={() => setHoveredWaterfallKey(null)}
                         style={{
-                          width: `${Math.max(seg.pct, 2.5)}%`,
+                          width: `${Math.max(seg.pct, 3)}%`,
                           backgroundColor: seg.color,
                         }}
-                        className={`h-full first:rounded-l-lg last:rounded-r-lg transition-opacity duration-200 ${
-                          hoveredWaterfallKey && !isHovered ? 'opacity-40' : 'opacity-90'
+                        className={`h-full first:rounded-l-lg last:rounded-r-lg flex items-center justify-center px-1.5 transition-opacity duration-200 ${
+                          hoveredWaterfallKey && !isHovered ? 'opacity-40' : 'opacity-95'
                         }`}
-                      />
+                      >
+                        {showInnerText && (
+                          <span className="font-mono text-[11px] font-bold text-white truncate drop-shadow-2xs">
+                            {seg.pct.toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
                     );
                   })}
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#64748B]">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[#334155] dark:text-[#94A3B8]">
                 {activeBarSegments.map((seg) => (
                   <div key={seg.key} className="inline-flex items-center gap-1.5">
                     <span
-                      className="h-2 w-2 rounded-full"
+                      className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: seg.color }}
                     />
-                    <span>{seg.label}:</span>
-                    <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
+                    <span className="font-medium">{seg.label}:</span>
+                    <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                       {seg.pct.toFixed(1).replace('.', ',')}%
                     </span>
                   </div>
@@ -1790,16 +1859,16 @@ export function PeaklyMasterCabinetsSummary({
             </div>
           </div>
 
-          {/* Правая часть (4 колонки): Карточка «БАЛАНС ЗАТРАТ И ПРИБЫЛИ» с просторным кольцом 144×144px */}
+          {/* Правая часть (4 колонки): Карточка «БАЛАНС ЗАТРАТ И ПРИБЫЛИ» с просторным кольцом 148×148px */}
           <div
             onClick={() => onNavigateSection('finance')}
-            className="lg:col-span-4 rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between cursor-pointer hover-lift"
+            className="lg:col-span-4 rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between cursor-pointer hover-lift"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-                Всего расходов и удержаний
+              <span className="text-xs font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#EDF0F7]">
+                Баланс затрат и прибыли
               </span>
-              <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]">
+              <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#EEF2F6] dark:bg-[#181D2A] text-[#334155] dark:text-[#CBD5E1]">
                 4 статьи
               </span>
             </div>
@@ -1813,8 +1882,8 @@ export function PeaklyMasterCabinetsSummary({
                     r="56"
                     fill="none"
                     stroke="currentColor"
-                    className="text-[#E2E8F0] dark:text-[#222938]"
-                    strokeWidth="9"
+                    className="text-[#CBD5E1] dark:text-[#222938]"
+                    strokeWidth="10"
                   />
                   <circle
                     cx="72"
@@ -1822,7 +1891,7 @@ export function PeaklyMasterCabinetsSummary({
                     r="56"
                     fill="none"
                     stroke="#10B981"
-                    strokeWidth="9"
+                    strokeWidth="10"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 56}
                     strokeDashoffset={
@@ -1832,33 +1901,33 @@ export function PeaklyMasterCabinetsSummary({
                   />
                 </svg>
                 <div className="relative z-10 flex flex-col items-center justify-center text-center px-2">
-                  <span className="font-mono text-[22px] font-bold tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
+                  <span className="font-mono text-[23px] font-extrabold tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
                     +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
                   </span>
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-[#64748B] mt-1">
+                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8] mt-1">
                     из 100 ₽ выр.
                   </span>
                 </div>
               </div>
-              <div className="mt-2 font-mono text-sm font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
-                Затраты: {formatMln(totalExpensesRub)} ({totalExpensesPct.toFixed(1).replace('.', ',')}%)
+              <div className="mt-2.5 font-mono text-sm font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                Все затраты: {formatMln(totalExpensesRub)} ({totalExpensesPct.toFixed(1).replace('.', ',')}%)
               </div>
             </div>
 
-            <div className="pt-3 border-t border-[#E2E6EE] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
-              <div>
-                <div className="font-mono text-sm font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+            <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
+              <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] p-2.5">
+                <div className="font-mono text-base font-extrabold text-[#0F172A] dark:text-[#EDF0F7]">
                   {totalExpensesPct.toFixed(1).replace('.', ',')} ₽
                 </div>
-                <div className="text-[11px] text-[#64748B] mt-0.5">
+                <div className="text-[11px] font-medium text-[#475569] dark:text-[#94A3B8] mt-0.5">
                   расходы со 100 ₽
                 </div>
               </div>
-              <div className="border-l border-[#E2E6EE] dark:border-[#222938] pl-3">
-                <div className="font-mono text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+              <div className="rounded-xl bg-emerald-500/10 p-2.5">
+                <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
                   +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
                 </div>
-                <div className="text-[11px] text-[#64748B] mt-0.5">
+                <div className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300/80 mt-0.5">
                   чистыми со 100 ₽
                 </div>
               </div>
