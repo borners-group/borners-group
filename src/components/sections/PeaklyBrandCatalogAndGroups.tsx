@@ -52,8 +52,10 @@ import {
   buildBrandCatalogSections,
   buildDefaultProductGroups,
   computeProductGroupMetrics,
+  deleteProductGroup,
   getModelBrandAccentStyles,
   loadProductGroups,
+  resetDefaultProductGroups,
   saveProductGroups,
 } from '@/lib/productGroups';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
@@ -2734,6 +2736,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               cabinetLabel,
               modelIds: selectedModels.map((m) => m.id),
               modelCodes: selectedModels.map((m) => m.code),
+              isSystemDefault: false,
             }
           : g
       );
@@ -2768,13 +2771,14 @@ export function PeaklyCatalogGroupsAndBrandsView({
     ) {
       return;
     }
-    commitGroups(groups.filter((g) => g.id !== grp.id));
+    const next = deleteProductGroup(groups, grp.id);
+    setGroups(next);
     notify?.('warning', `Группа «${grp.title}» удалена`);
   };
 
   const handleResetDefaultGroups = () => {
-    const defaults = buildDefaultProductGroups(models);
-    commitGroups(defaults);
+    const defaults = resetDefaultProductGroups(models);
+    setGroups(defaults);
     notify?.('success', 'Восстановлены стандартные группы по брендам и линейкам');
   };
 

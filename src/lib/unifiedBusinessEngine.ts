@@ -729,16 +729,16 @@ export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioMode
 
   // Автоматическая очистка чужих дефолтов Borners2 (WB 244995893 / мужские боксеры / borners-core-modal.svg)
   // у всех новых карточек и карточек брендов LISKANI / AKUSHA / НА ТЕЛЕ / FUKAI
-  const rawPalettes = Array.isArray(rawModel.palettes) ? rawModel.palettes : [];
+  const hasExplicitPalettesArray = Array.isArray(rawModel.palettes);
+  const rawPalettes = hasExplicitPalettesArray ? rawModel.palettes : [];
   const hasForeignBorners2Palette =
     !isBorners2Original &&
-    (rawPalettes.length === 0 ||
-      rawPalettes.some(
-        (p) =>
-          (p.title || '').includes('244995893') ||
-          (p.title || '').includes('Borners2') ||
-          (p.imageUrl || '').includes('244995893_main.webp')
-      ));
+    rawPalettes.some(
+      (p) =>
+        (p.title || '').includes('244995893') ||
+        (p.title || '').includes('Borners2') ||
+        (p.imageUrl || '').includes('244995893_main.webp')
+    );
 
   let cleanedWbArticle = rawModel.wbArticle;
   if (
@@ -767,13 +767,14 @@ export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioMode
         return true;
       });
 
-  const sanitizedPalettes = hasForeignBorners2Palette
-    ? [brandSpecs.palette]
-    : rawPalettes.map((p) =>
-        !isBorners2Original && (p.imageUrl || '').includes('244995893_main.webp')
-          ? { ...p, imageUrl: undefined }
-          : p
-      );
+  const sanitizedPalettes =
+    !hasExplicitPalettesArray || hasForeignBorners2Palette
+      ? [brandSpecs.palette]
+      : rawPalettes.map((p) =>
+          !isBorners2Original && (p.imageUrl || '').includes('244995893_main.webp')
+            ? { ...p, imageUrl: undefined }
+            : p
+        );
 
   const isNonUnderwearOrForeignSpec =
     !isBorners2Original &&
@@ -846,7 +847,7 @@ export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioMode
     : baseShared;
 
   const enrichedGallery =
-    isSorbetReference && model.gallery.length <= 1
+    isSorbetReference && model.gallery.length === 1
       ? [
           {
             id: model.gallery[0]?.id || 'g-sc-pack',

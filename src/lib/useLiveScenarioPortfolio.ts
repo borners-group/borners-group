@@ -34,130 +34,41 @@ import {
   resetStarterCabinetsFromHolding,
 } from '@/lib/unifiedBusinessEngine';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import {
+  STORAGE_KEY_ACTIVE_SCENARIO_ID,
+  STORAGE_KEY_DELETED_MODELS,
+  STORAGE_KEY_MODELS,
+  STORAGE_KEY_S1_GROUP_PORTFOLIO,
+  STORAGE_KEY_SCENARIO_BY_BRAND,
+  STORAGE_KEY_SCENARIOS,
+  STORAGE_KEY_USER_PLANS_BACKUP,
+  clearDeletedModelsRegistry,
+  deleteModelFromPortfolio,
+  hydratePortfolioModelsFromStorage,
+  isModelMarkedDeleted,
+  markModelAsDeletedInStorage,
+  overlayBackupOntoModels,
+  syncUserPlansBackup,
+  unmarkModelAsDeletedInStorage,
+} from '@/lib/portfolioPersistence';
 
-export const STORAGE_KEY_SCENARIOS = 'borners_tz_scenarios_v1';
-export const STORAGE_KEY_MODELS = 'borners_tz_models_v1';
-export const STORAGE_KEY_USER_PLANS_BACKUP = 'borners_user_saved_plans_v1';
-export const STORAGE_KEY_ACTIVE_SCENARIO_ID = 'borners_active_scenario_id_v1';
-export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
-export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
-
-interface UserSavedModelPlanBackup {
-  id: string;
-  code: string;
-  title?: string;
-  subtitle?: string;
-  brandId?: ScenarioModelSpec['brandId'];
-  customBrandLabel?: string;
-  categoryLabel?: string;
-  primaryUnitLabel?: string;
-  secondaryUnitLabel?: string;
-  wbArticle?: string;
-  modelStageStatus?: ScenarioModelSpec['modelStageStatus'];
-  description?: string;
-  unitsInPack?: number;
-  retailPriceRub: number;
-  unitCostRub: number;
-  marketplaceFeePct?: number;
-  logisticsRub?: number;
-  adsPct?: number;
-  priority?: ModelPriorityLevel;
-  launchStatus: ScenarioModelSpec['launchStatus'];
-  gallery?: ScenarioModelSpec['gallery'];
-  palettes?: ScenarioModelSpec['palettes'];
-  fabric?: ScenarioModelSpec['fabric'];
-  construction?: ScenarioModelSpec['construction'];
-  waistband?: ScenarioModelSpec['waistband'];
-  attachedPdfs?: ScenarioModelSpec['attachedPdfs'];
-  plansByScenario: ScenarioModelSpec['plansByScenario'];
-  sharedSupplyAndFact?: ScenarioModelSpec['sharedSupplyAndFact'];
-}
-
-function syncUserPlansBackup(modelsList: ScenarioModelSpec[]) {
-  const backup: Record<string, UserSavedModelPlanBackup> = {};
-  for (const raw of modelsList) {
-    const m = ensureModelUnifiedV11(raw);
-    backup[m.id] = {
-      id: m.id,
-      code: m.code,
-      title: m.title,
-      subtitle: m.subtitle,
-      brandId: m.brandId,
-      customBrandLabel: m.customBrandLabel,
-      categoryLabel: m.categoryLabel,
-      primaryUnitLabel: m.primaryUnitLabel,
-      secondaryUnitLabel: m.secondaryUnitLabel,
-      wbArticle: m.wbArticle,
-      modelStageStatus: m.modelStageStatus,
-      description: m.description,
-      unitsInPack: m.unitsInPack,
-      retailPriceRub: m.retailPriceRub,
-      unitCostRub: m.unitCostRub,
-      marketplaceFeePct: m.marketplaceFeePct,
-      logisticsRub: m.logisticsRub,
-      adsPct: m.adsPct,
-      priority: m.priority,
-      launchStatus: m.launchStatus,
-      gallery: m.gallery,
-      palettes: m.palettes,
-      fabric: m.fabric,
-      construction: m.construction,
-      waistband: m.waistband,
-      attachedPdfs: m.attachedPdfs,
-      plansByScenario: m.plansByScenario,
-      sharedSupplyAndFact: m.sharedSupplyAndFact,
-    };
-  }
-  safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup);
-}
-
-function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModelSpec[] {
-  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
-    STORAGE_KEY_USER_PLANS_BACKUP
-  );
-  return modelsList.map((rawM) => {
-    const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
-
-    if (!backup || typeof backup !== 'object') return m;
-    const saved =
-      backup[m.id] ||
-      Object.values(backup).find(
-        (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
-      );
-    if (!saved) return m;
-    const mergedRaw: ScenarioModelSpec = {
-      ...m,
-      code: saved.code ?? m.code,
-      title: saved.title ?? m.title,
-      subtitle: saved.subtitle ?? m.subtitle,
-      brandId: saved.brandId ?? m.brandId,
-      customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
-      categoryLabel: saved.categoryLabel ?? m.categoryLabel,
-      primaryUnitLabel: saved.primaryUnitLabel ?? m.primaryUnitLabel,
-      secondaryUnitLabel: saved.secondaryUnitLabel ?? m.secondaryUnitLabel,
-      wbArticle: saved.wbArticle ?? m.wbArticle,
-      modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
-      description: saved.description ?? m.description,
-      unitsInPack: saved.unitsInPack ?? m.unitsInPack,
-      retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
-      unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
-      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
-      adsPct: saved.adsPct ?? m.adsPct,
-      priority: saved.priority ?? m.priority,
-      launchStatus: saved.launchStatus ?? m.launchStatus,
-      gallery: saved.gallery || m.gallery,
-      palettes: saved.palettes || m.palettes,
-      fabric: saved.fabric || m.fabric,
-      construction: saved.construction || m.construction,
-      waistband: saved.waistband || m.waistband,
-      attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
-      plansByScenario: saved.plansByScenario || m.plansByScenario,
-      sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
-    };
-    return ensureModelUnifiedV11(applyCategoryWbUnitEconomics(mergedRaw));
-  });
-}
+export {
+  STORAGE_KEY_ACTIVE_SCENARIO_ID,
+  STORAGE_KEY_DELETED_MODELS,
+  STORAGE_KEY_MODELS,
+  STORAGE_KEY_S1_GROUP_PORTFOLIO,
+  STORAGE_KEY_SCENARIO_BY_BRAND,
+  STORAGE_KEY_SCENARIOS,
+  STORAGE_KEY_USER_PLANS_BACKUP,
+  clearDeletedModelsRegistry,
+  deleteModelFromPortfolio,
+  hydratePortfolioModelsFromStorage,
+  isModelMarkedDeleted,
+  markModelAsDeletedInStorage,
+  overlayBackupOntoModels,
+  syncUserPlansBackup,
+  unmarkModelAsDeletedInStorage,
+};
 
 const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
   ...ACTING_2027_SCENARIO_MODELS,
@@ -260,20 +171,8 @@ export function useLiveScenarioPortfolio() {
       setScenarios(hasActing ? parsedScen : [ACTING_2027_SCENARIO_DEF, ...parsedScen]);
     }
 
-    const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-    if (Array.isArray(parsedModels) && parsedModels.length > 0) {
-      const clean = parsedModels.filter(
-        (m) =>
-          !['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-            m.id
-          )
-      );
-      if (clean.length > 0) {
-        setModels(overlayBackupOntoModels(clean));
-      }
-    } else {
-      setModels(overlayBackupOntoModels(DEFAULT_MODELS_LIST));
-    }
+    const hydratedModels = hydratePortfolioModelsFromStorage();
+    setModels(hydratedModels);
 
     const savedByBrand = safeGetStorageJson<
       Partial<Record<CanonicalBrandCode, number | null>>

@@ -15,6 +15,8 @@ import {
 import { safeGetStorageJson, safeSetStorageJson } from './safeStorage.ts';
 
 export const STORAGE_KEY_PRODUCT_GROUPS = 'borners_product_groups_v1';
+export const STORAGE_KEY_DELETED_PRODUCT_GROUP_IDS =
+  'borners_deleted_product_group_ids_v1';
 
 export interface ProductGroupDef {
   id: string;
@@ -177,9 +179,12 @@ export function buildDefaultProductGroups(
 
 export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[] {
   const defaults = buildDefaultProductGroups(models);
+  const deletedGroupIds = new Set(
+    safeGetStorageJson<string[]>(STORAGE_KEY_DELETED_PRODUCT_GROUP_IDS) || []
+  );
   const stored = safeGetStorageJson<ProductGroupDef[]>(STORAGE_KEY_PRODUCT_GROUPS);
   if (!Array.isArray(stored) || stored.length === 0) {
-    return defaults;
+    return defaults.filter((g) => !deletedGroupIds.has(g.id));
   }
 
   // Находим все модели, которые уже распределены хотя бы в одну сохранённую группу
@@ -191,32 +196,35 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
   }
 
   // Синхронизируем новые созданные карточки товаров в системные дефолтные группы соответствующего бренда
-  const merged = stored.map((g) => {
-    if (!g.isSystemDefault) return g;
-    const defMatch = defaults.find((d) => d.id === g.id);
-    if (!defMatch) return g;
+  const merged = stored
+    .filter((g) => !deletedGroupIds.has(g.id))
+    .map((g) => {
+      if (!g.isSystemDefault) return g;
+      const defMatch = defaults.find((d) => d.id === g.id);
+      if (!defMatch) return g;
 
-    const nextIds = [...(g.modelIds || [])];
-    const nextCodes = [...(g.modelCodes || [])];
-    for (let i = 0; i < defMatch.modelIds.length; i++) {
-      const mId = defMatch.modelIds[i];
-      const mCode = defMatch.modelCodes[i];
-      if (!assignedIds.has(mId) && (!mCode || !assignedCodes.has(mCode.toUpperCase()))) {
-        nextIds.push(mId);
-        if (mCode) nextCodes.push(mCode);
-        assignedIds.add(mId);
-        if (mCode) assignedCodes.add(mCode.toUpperCase());
+      const nextIds = [...(g.modelIds || [])];
+      const nextCodes = [...(g.modelCodes || [])];
+      for (let i = 0; i < defMatch.modelIds.length; i++) {
+        const mId = defMatch.modelIds[i];
+        const mCode = defMatch.modelCodes[i];
+        if (!assignedIds.has(mId) && (!mCode || !assignedCodes.has(mCode.toUpperCase()))) {
+          nextIds.push(mId);
+          if (mCode) nextCodes.push(mCode);
+          assignedIds.add(mId);
+          if (mCode) assignedCodes.add(mCode.toUpperCase());
+        }
       }
-    }
-    return {
-      ...g,
-      modelIds: nextIds,
-      modelCodes: nextCodes,
-    };
-  });
+      return {
+        ...g,
+        modelIds: nextIds,
+        modelCodes: nextCodes,
+      };
+    });
 
-  // Если для какого-то бренда появились карточки, а его дефолтной группы ещё не было в stored — добавляем её
+  // Если для какого-то бренда появились карточки, а его дефолтной группы ещё не было в stored (и пользователь не удалял её вручную) — добавляем её
   for (const defGrp of defaults) {
+    if (deletedGroupIds.has(defGrp.id)) continue;
     const exists = merged.some((g) => g.id === defGrp.id);
     if (!exists && defGrp.modelIds.length > 0) {
       merged.push(defGrp);
@@ -224,6 +232,32 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
   }
 
   return merged;
+}
+
+export function deleteProductGroup(
+  currentGroups: ProductGroupDef[],
+  groupIdToDelete: string
+): ProductGroupDef[] {
+  const prevDeleted =
+    safeGetStorageJson<string[]>(STORAGE_KEY_DELETED_PRODUCT_GROUP_IDS) || [];
+  if (!prevDeleted.includes(groupIdToDelete)) {
+    safeSetStorageJson(STORAGE_KEY_DELETED_PRODUCT_GROUP_IDS, [
+      ...prevDeleted,
+      groupIdToDelete,
+    ]);
+  }
+  const next = currentGroups.filter((g) => g.id !== groupIdToDelete);
+  saveProductGroups(next);
+  return next;
+}
+
+export function resetDefaultProductGroups(
+  models: ScenarioModelSpec[]
+): ProductGroupDef[] {
+  safeSetStorageJson(STORAGE_KEY_DELETED_PRODUCT_GROUP_IDS, []);
+  const defaults = buildDefaultProductGroups(models);
+  saveProductGroups(defaults);
+  return defaults;
 }
 
 export function saveProductGroups(groups: ProductGroupDef[]): void {

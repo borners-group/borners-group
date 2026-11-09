@@ -25,7 +25,11 @@ import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
-import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import {
+  markModelAsDeletedInStorage,
+  unmarkModelAsDeletedInStorage,
+  useLiveScenarioPortfolio,
+} from '@/lib/useLiveScenarioPortfolio';
 import {
   CanonicalBrandCode,
   createBrandProductModel,
@@ -268,7 +272,14 @@ export function ProductCatalogView() {
     e?: React.MouseEvent
   ) => {
     e?.stopPropagation();
-    updateModelsBatch((prev) => prev.filter((x) => x.id !== modelToDelete.id));
+    markModelAsDeletedInStorage(modelToDelete);
+    updateModelsBatch((prev) =>
+      prev.filter(
+        (x) =>
+          x.id !== modelToDelete.id &&
+          x.code.trim().toUpperCase() !== modelToDelete.code.trim().toUpperCase()
+      )
+    );
 
     const cleanCode = modelToDelete.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
     const targetSku = `${modelToDelete.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`.toUpperCase();
@@ -400,6 +411,7 @@ export function ProductCatalogView() {
       }
     );
 
+    unmarkModelAsDeletedInStorage(createdScenarioModel);
     updateModelsBatch(() => [...workingModels, createdScenarioModel]);
     setCreateModalOpen(false);
     notify(

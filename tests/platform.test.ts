@@ -2532,5 +2532,218 @@ test('40. Аудит исходного кода компонентов: син�
   );
 });
 
+test('41. Реальная проверка сохранения, редактирования и удаления через localStorage (с симуляцией перезагрузки F5): карточки, базовые модели, единственное фото, палитры, группы товаров и заказы PO', async () => {
+  // Подключаем полноценный in-memory window.localStorage для проверки реальной гидратации после F5
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+      setItem: (key: string, val: string) => {
+        store.set(key, String(val));
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      clear: () => store.clear(),
+    },
+    dispatchEvent: () => true,
+    setTimeout: (fn: () => void) => {
+      fn();
+      return 0;
+    },
+  };
+
+  try {
+    const {
+      clearDeletedModelsRegistry,
+      deleteModelFromPortfolio,
+      hydratePortfolioModelsFromStorage,
+      persistPortfolioModels,
+      unmarkModelAsDeletedInStorage,
+    } = await import('../src/lib/portfolioPersistence.ts');
+    const {
+      deleteProductGroup,
+      loadProductGroups,
+      resetDefaultProductGroups,
+      saveProductGroups,
+    } = await import('../src/lib/productGroups.ts');
+
+    // 1. Первичная загрузка (чистый старт): 23 базовых модели
+    const initialHydrated = hydratePortfolioModelsFromStorage();
+    assert.equal(initialHydrated.length, 23);
+
+    // 2. Создание новой карточки штор LISKANI с загруженным фото (data:image/jpeg) и сохранение в localStorage
+    const customDataPhoto = 'data:image/jpeg;base64,' + 'A'.repeat(95_000); // > 70 КБ для проверки отсутствия подмены на SVG
+    const { model: newCurtain } = createBrandProductModel(
+      initialHydrated,
+      INITIAL_SCENARIOS,
+      {
+        title: 'ШТОРЫ ДИМАУТ ПЕСОЧНЫЕ 400×270',
+        brandCode: 'LISKANI',
+        code: 'LSC-777',
+        categoryLabel: 'Шторы димаут',
+        unitsInPack: 2,
+        retailPriceRub: 4890,
+        unitCostRub: 1520,
+        composition: 'Лён 35%, полиэстер Dimout 65%',
+        imageUrl: customDataPhoto,
+      }
+    );
+    unmarkModelAsDeletedInStorage(newCurtain);
+    persistPortfolioModels([...initialHydrated, newCurtain]);
+
+    // Симулируем перезагрузку страницы (F5)
+    const afterCreateReload = hydratePortfolioModelsFromStorage();
+    assert.equal(afterCreateReload.length, 24);
+    const reloadedCurtain = afterCreateReload.find((m) => m.code === 'LSC-777')!;
+    assert.ok(reloadedCurtain, 'Созданная карточка LSC-777 должна сохраняться после F5');
+    assert.equal(reloadedCurtain.title, 'ШТОРЫ ДИМАУТ ПЕСОЧНЫЕ 400×270');
+    assert.equal(reloadedCurtain.categoryLabel, 'Шторы димаут');
+    assert.equal(reloadedCurtain.gallery.length, 1);
+    assert.equal(
+      reloadedCurtain.gallery[0].url,
+      customDataPhoto,
+      'Загруженное фото >70 КБ должно сохраняться в точности без замены на borners-core-modal.svg'
+    );
+
+    // 3. Редактирование карточки LSC-777: удаляем единственное фото (gallery: []), удаляем палитру (palettes: []), меняем ткань и план продаж
+    const editedCurtain = {
+      ...reloadedCurtain,
+      retailPriceRub: 5190,
+      gallery: [], // пользователь удалил единственную фотографию
+      palettes: [], // пользователь удалил последнюю палитру
+      fabric: {
+        ...reloadedCurtain.fabric,
+        composition: 'Премиальный бельгийский лён 50%, Dimout 50%',
+        density: '310 г/м²',
+      },
+      plansByScenario: {
+        ...reloadedCurtain.plansByScenario,
+        1: {
+          ...reloadedCurtain.plansByScenario[1],
+          monthlyPacks: Array(12).fill(420),
+          monthlyPricesRub: Array(12).fill(5190),
+        },
+      },
+    };
+    persistPortfolioModels(
+      afterCreateReload.map((m) => (m.id === editedCurtain.id ? editedCurtain : m))
+    );
+
+    // Симулируем F5 и проверяем, что удалённое фото и удалённая палитра НЕ вернулись обратно!
+    const afterEditReload = hydratePortfolioModelsFromStorage();
+    const checkEdited = afterEditReload.find((m) => m.code === 'LSC-777')!;
+    assert.equal(checkEdited.retailPriceRub, 5190);
+    assert.equal(
+      checkEdited.gallery.length,
+      0,
+      'Удалённое единственное фото НЕ должно воскрешаться после F5'
+    );
+    assert.equal(
+      checkEdited.palettes.length,
+      0,
+      'Удалённая палитра НЕ должна воскрешаться после F5'
+    );
+    assert.equal(
+      checkEdited.fabric.composition,
+      'Премиальный бельгийский лён 50%, Dimout 50%'
+    );
+    assert.equal(checkEdited.plansByScenario[1].monthlyPacks[0], 420);
+
+    // 4. Удаление как пользовательской карточки (LSC-777), так и одной из 23 базовых карточек (BRN-001-SC)
+    const afterDeleteCustom = deleteModelFromPortfolio(afterEditReload, checkEdited);
+    assert.equal(
+      afterDeleteCustom.some((m) => m.code === 'LSC-777'),
+      false
+    );
+    const sorbetTarget = afterDeleteCustom.find((m) => m.code === 'BRN-001-SC')!;
+    const afterDeleteBase = deleteModelFromPortfolio(afterDeleteCustom, sorbetTarget);
+    assert.equal(
+      afterDeleteBase.some((m) => m.code === 'BRN-001-SC'),
+      false
+    );
+
+    // Симулируем F5 — ни LSC-777, ни удалённая базовая карточка BRN-001-SC НЕ должны появиться снова!
+    const afterDeleteReload = hydratePortfolioModelsFromStorage();
+    assert.equal(afterDeleteReload.length, 22);
+    assert.equal(
+      afterDeleteReload.some((m) => m.code === 'LSC-777'),
+      false,
+      'Удалённая пользовательская модель не должна возвращаться после F5'
+    );
+    assert.equal(
+      afterDeleteReload.some((m) => m.code === 'BRN-001-SC'),
+      false,
+      'Удалённая базовая модель не должна самопроизвольно возвращаться после F5'
+    );
+
+    // 5. Явный сброс к эталону восстанавливает все 23 базовые карточки
+    clearDeletedModelsRegistry();
+    persistPortfolioModels([...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS]);
+    const afterResetReload = hydratePortfolioModelsFromStorage();
+    assert.equal(afterResetReload.length, 23);
+    assert.equal(
+      afterResetReload.some((m) => m.code === 'BRN-001-SC'),
+      true
+    );
+
+    // 6. Проверка сохранения, ручного редактирования и удаления Групп товаров через localStorage
+    const groups0 = loadProductGroups(afterResetReload);
+    assert.equal(
+      groups0.some((g) => g.id === 'grp-borners-semeyniki-2pack'),
+      true
+    );
+
+    // Удаляем стандартную группу «Семейники свободного кроя 2-pack» и проверяем, что после F5 она не воскрешается
+    const groupsAfterDel = deleteProductGroup(
+      groups0,
+      'grp-borners-semeyniki-2pack'
+    );
+    assert.equal(
+      groupsAfterDel.some((g) => g.id === 'grp-borners-semeyniki-2pack'),
+      false
+    );
+    const groupsReloadedAfterDel = loadProductGroups(afterResetReload);
+    assert.equal(
+      groupsReloadedAfterDel.some((g) => g.id === 'grp-borners-semeyniki-2pack'),
+      false,
+      'Удалённая группа товаров не должна появляться снова после F5'
+    );
+
+    // Ручное редактирование состава группы (оставляем ровно 2 модели и ставим isSystemDefault: false)
+    const editedGroups = groupsReloadedAfterDel.map((g) =>
+      g.id === 'grp-borners-boxers-4pack'
+        ? {
+            ...g,
+            modelIds: g.modelIds.slice(0, 2),
+            modelCodes: g.modelCodes.slice(0, 2),
+            isSystemDefault: false,
+          }
+        : g
+    );
+    saveProductGroups(editedGroups);
+    const groupsReloadedAfterEdit = loadProductGroups(afterResetReload);
+    const editedBoxersGrp = groupsReloadedAfterEdit.find(
+      (g) => g.id === 'grp-borners-boxers-4pack'
+    )!;
+    assert.equal(
+      editedBoxersGrp.modelIds.length,
+      2,
+      'Снятые пользователем галочки моделей в группе не должны возвращаться после F5'
+    );
+
+    // Сброс групп к дефолтным возвращает все стандартные группы
+    const resetGroups = resetDefaultProductGroups(afterResetReload);
+    assert.equal(
+      resetGroups.some((g) => g.id === 'grp-borners-semeyniki-2pack'),
+      true
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+
 
 

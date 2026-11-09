@@ -64,9 +64,19 @@ import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
+  STORAGE_KEY_MODELS,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
+  STORAGE_KEY_SCENARIOS,
+  STORAGE_KEY_USER_PLANS_BACKUP,
+  clearDeletedModelsRegistry,
   filterModelsForScenario,
+  hydratePortfolioModelsFromStorage,
+  isModelMarkedDeleted,
+  markModelAsDeletedInStorage,
+  overlayBackupOntoModels as overlayUserPlansBackup,
+  syncUserPlansBackup as saveUserPlansBackup,
+  unmarkModelAsDeletedInStorage,
 } from '@/lib/useLiveScenarioPortfolio';
 import {
   CanonicalBrandCode,
@@ -96,120 +106,11 @@ import {
   serializeStructuredPlanToCsv,
 } from '@/lib/unifiedBusinessEngine';
 
-export const STORAGE_KEY_SCENARIOS = 'borners_tz_scenarios_v1';
-export const STORAGE_KEY_MODELS = 'borners_tz_models_v1';
-export const STORAGE_KEY_USER_PLANS_BACKUP = 'borners_user_saved_plans_v1';
-
-interface UserSavedModelPlanBackup {
-  id: string;
-  code: string;
-  title?: string;
-  subtitle?: string;
-  brandId?: ScenarioModelSpec['brandId'];
-  customBrandLabel?: string;
-  wbArticle?: string;
-  modelStageStatus?: ScenarioModelSpec['modelStageStatus'];
-  description?: string;
-  unitsInPack?: number;
-  retailPriceRub: number;
-  unitCostRub: number;
-  marketplaceFeePct?: number;
-  logisticsRub?: number;
-  adsPct?: number;
-  priority?: ModelPriorityLevel;
-  launchStatus: ScenarioModelSpec['launchStatus'];
-  gallery?: ScenarioModelSpec['gallery'];
-  palettes?: ScenarioModelSpec['palettes'];
-  fabric?: ScenarioModelSpec['fabric'];
-  construction?: ScenarioModelSpec['construction'];
-  waistband?: ScenarioModelSpec['waistband'];
-  attachedPdfs?: ScenarioModelSpec['attachedPdfs'];
-  plansByScenario: ScenarioModelSpec['plansByScenario'];
-  sharedSupplyAndFact?: ScenarioModelSpec['sharedSupplyAndFact'];
-}
-
-function saveUserPlansBackup(modelsList: ScenarioModelSpec[]) {
-  const backup: Record<string, UserSavedModelPlanBackup> = {};
-  for (const raw of modelsList) {
-    const m = ensureModelUnifiedV11(raw);
-    backup[m.id] = {
-      id: m.id,
-      code: m.code,
-      title: m.title,
-      subtitle: m.subtitle,
-      brandId: m.brandId,
-      customBrandLabel: m.customBrandLabel,
-      wbArticle: m.wbArticle,
-      modelStageStatus: m.modelStageStatus,
-      description: m.description,
-      unitsInPack: m.unitsInPack,
-      retailPriceRub: m.retailPriceRub,
-      unitCostRub: m.unitCostRub,
-      marketplaceFeePct: m.marketplaceFeePct,
-      logisticsRub: m.logisticsRub,
-      adsPct: m.adsPct,
-      priority: m.priority,
-      launchStatus: m.launchStatus,
-      gallery: m.gallery,
-      palettes: m.palettes,
-      fabric: m.fabric,
-      construction: m.construction,
-      waistband: m.waistband,
-      attachedPdfs: m.attachedPdfs,
-      plansByScenario: m.plansByScenario,
-      sharedSupplyAndFact: m.sharedSupplyAndFact,
-    };
-  }
-  safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup);
-}
-
-function overlayUserPlansBackup(
-  modelsList: ScenarioModelSpec[]
-): ScenarioModelSpec[] {
-  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
-    STORAGE_KEY_USER_PLANS_BACKUP
-  );
-  return modelsList.map((rawM) => {
-    const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
-
-    if (!backup || typeof backup !== 'object') return m;
-    const saved =
-      backup[m.id] ||
-      Object.values(backup).find(
-        (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
-      );
-    if (!saved) return m;
-    return ensureModelUnifiedV11(
-      applyCategoryWbUnitEconomics({
-        ...m,
-        code: saved.code ?? m.code,
-        title: saved.title ?? m.title,
-        subtitle: saved.subtitle ?? m.subtitle,
-        brandId: saved.brandId ?? m.brandId,
-        customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
-        wbArticle: saved.wbArticle ?? m.wbArticle,
-        modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
-        description: saved.description ?? m.description,
-        unitsInPack: saved.unitsInPack ?? m.unitsInPack,
-        retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
-        unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-        marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
-        logisticsRub: saved.logisticsRub ?? m.logisticsRub,
-        adsPct: saved.adsPct ?? m.adsPct,
-        priority: saved.priority ?? m.priority,
-        launchStatus: saved.launchStatus ?? m.launchStatus,
-        gallery: saved.gallery || m.gallery,
-        palettes: saved.palettes || m.palettes,
-        fabric: saved.fabric || m.fabric,
-        construction: saved.construction || m.construction,
-        waistband: saved.waistband || m.waistband,
-        attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
-        plansByScenario: saved.plansByScenario || m.plansByScenario,
-        sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
-      })
-    );
-  });
-}
+export {
+  STORAGE_KEY_SCENARIOS,
+  STORAGE_KEY_MODELS,
+  STORAGE_KEY_USER_PLANS_BACKUP,
+};
 
 const DEFAULT_RESTORED_MODELS: ScenarioModelSpec[] = applyCategoryWbUnitEconomicsToPortfolio(
   applyClientSavedS1SalesPlan([
@@ -812,20 +713,25 @@ export function GrowthScenariosShowcase({
           : '1';
 
       if (Array.isArray(parsedModels) && parsedModels.length > 0) {
-        // Убираем только 4 старые демо-карточки (scen-model-001..004)
+        // Убираем 4 старые демо-карточки (scen-model-001..004) и любые явно удалённые пользователем карточки
         const filteredLegacy = parsedModels.filter(
           (m) =>
             !['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
               m.id
-            ) && !['№001', '№002', '№003', '№004'].includes(m.code)
+            ) &&
+            !['№001', '№002', '№003', '№004'].includes(m.code) &&
+            !isModelMarkedDeleted(m)
         );
 
-        // Бережно добавляем недостающие эталонные карточки, НИКОГДА не перезаписывая существующие!
+        // Бережно добавляем недостающие эталонные карточки (если пользователь не удалял их), НИКОГДА не перезаписывая существующие!
         const merged = [...filteredLegacy];
         for (const itemMod of [
           ...ACTING_2027_SCENARIO_MODELS,
           ...S1_100M_SCENARIO_MODELS,
         ]) {
+          if (isModelMarkedDeleted(itemMod)) {
+            continue;
+          }
           const idx = merged.findIndex(
             (m) =>
               m.id === itemMod.id ||
@@ -1456,6 +1362,7 @@ export function GrowthScenariosShowcase({
 
   // Восстановление сохранённых клиентом продаж (109,94 млн ₽ в дек · 686,28 млн ₽ за 2027 г.)
   const handleRestoreClientSavedSales = () => {
+    clearDeletedModelsRegistry();
     commitModels((prev) => applyClientSavedS1SalesPlan(prev));
     notify(
       'success',
@@ -1466,6 +1373,7 @@ export function GrowthScenariosShowcase({
 
   // Сброс к эталону 28-страничного PDF (15,04 млн WB + 85,11 млн 16 новых = 100,15 млн ₽ в дек)
   const handleResetToPdfBaseline = () => {
+    clearDeletedModelsRegistry();
     const baseline = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
     commitModels(baseline);
     commitScenarios(INITIAL_SCENARIOS);
@@ -1508,8 +1416,13 @@ export function GrowthScenariosShowcase({
 
   // Полное удаление модели с немедленным сохранением в localStorage
   const handleDeleteOrArchiveModel = (target: ScenarioModelSpec) => {
+    markModelAsDeletedInStorage(target);
     commitModels((prev) => {
-      const remaining = prev.filter((m) => m.id !== target.id);
+      const remaining = prev.filter(
+        (m) =>
+          m.id !== target.id &&
+          m.code.trim().toUpperCase() !== target.code.trim().toUpperCase()
+      );
       if (selectedModelId === target.id && remaining[0]) {
         setSelectedModelId(remaining[0].id);
       }
@@ -1597,6 +1510,7 @@ export function GrowthScenariosShowcase({
       }
     );
 
+    unmarkModelAsDeletedInStorage(created);
     commitModels([...workingModels, created]);
     setSelectedModelId(created.id);
     setNewModelModalOpen(false);
@@ -1669,6 +1583,36 @@ export function GrowthScenariosShowcase({
     if (selectedScenarioId === scToDelete.id && remaining[0]) {
       setSelectedScenarioId(remaining[0].id);
     }
+    // Если удалённый сценарий был выбран у какого-то бренда — переключаем бренд на оставшийся сценарий этого бренда или null
+    setSelectedScenarioByBrandState((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const codes: CanonicalBrandCode[] = ['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'];
+      for (const bCode of codes) {
+        if (next[bCode] === scToDelete.id) {
+          const fallback = remaining.find(
+            (s) =>
+              !s.isArchived &&
+              s.ownerBrandCode &&
+              normalizePortfolioBrandCode(s.ownerBrandCode) === bCode
+          );
+          next[bCode] = fallback
+            ? fallback.id
+            : bCode === 'BORNERS'
+            ? 1
+            : bCode === 'FUKAI'
+            ? ACTING_2027_SCENARIO_ID
+            : bCode === 'NA_TELE'
+            ? 2
+            : null;
+          changed = true;
+        }
+      }
+      if (changed) {
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+      }
+      return next;
+    });
     notify(
       'warning',
       `Сценарий «${scToDelete.title} (${scToDelete.monthlyTargetMln} млн ₽/мес)» удалён`
