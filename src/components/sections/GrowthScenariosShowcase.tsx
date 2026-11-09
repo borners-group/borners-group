@@ -1680,7 +1680,7 @@ export function GrowthScenariosShowcase({
               onClick={() => navigateScreen('model')}
               className={`h-7.5 px-3 rounded-[7px] transition cursor-pointer ${
                 screen === 'model'
-                  ? 'bg-[#141413] text-white font-semibold shadow-2xs'
+                  ? 'bg-white text-[#141413] border border-[#CECDC4] font-semibold shadow-2xs'
                   : 'text-[#3F3E3A] hover:text-[#141413] hover:bg-white font-semibold'
               }`}
             >
@@ -1692,7 +1692,7 @@ export function GrowthScenariosShowcase({
               onClick={() => navigateScreen('sales-plan')}
               className={`h-7.5 px-3 rounded-[7px] transition cursor-pointer ${
                 screen === 'sales-plan'
-                  ? 'bg-[#141413] text-white font-semibold shadow-2xs'
+                  ? 'bg-white text-[#141413] border border-[#CECDC4] font-semibold shadow-2xs'
                   : 'text-[#3F3E3A] hover:text-[#141413] hover:bg-white font-semibold'
               }`}
             >
@@ -3760,7 +3760,7 @@ export function GrowthScenariosShowcase({
                                 onClick={(e) => handleCycleCardPriority(mod, e)}
                                 className={`px-2.5 py-0.5 rounded-[6px] text-[10.5px] font-bold border transition cursor-pointer whitespace-nowrap ${
                                   priorityLabel === 'Высший'
-                                    ? 'bg-[#141413] text-white border-[#141413]'
+                                    ? 'bg-[#EAE9E2] text-[#141413] border-[#9E9D94]'
                                     : 'bg-[#F5F5F1] hover:border-[#141413] text-[#262624] border-[#CECDC4]'
                                 }`}
                               >
@@ -3889,7 +3889,7 @@ export function GrowthScenariosShowcase({
                     href="docs/acting-2027/BORNERS_2027_acting_assortment.pdf"
                     target="_blank"
                     rel="noreferrer"
-                    className="h-8 px-3.5 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[11.5px] font-semibold inline-flex items-center transition"
+                    className="h-8 px-3.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[11.5px] font-semibold inline-flex items-center transition"
                   >
                     Исходный PDF (10 стр.)
                   </a>

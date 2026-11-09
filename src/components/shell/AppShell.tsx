@@ -1506,7 +1506,7 @@ export function AppShell() {
                             }}
                             className={`w-full text-left px-3 py-1.5 rounded-[8px] flex items-center justify-between cursor-pointer text-[12.5px] ${
                               u.id === currentUser.id
-                                ? 'bg-[#141413] text-white font-semibold'
+                                ? 'bg-[#EAE9E2] text-[#141413] font-semibold border border-[#CECDC4]'
                                 : 'text-[#141413] hover:bg-[#F6F6F4]'
                             }`}
                           >
@@ -1514,7 +1514,7 @@ export function AppShell() {
                             <span
                               className={`text-[11.5px] shrink-0 ${
                                 u.id === currentUser.id
-                                  ? 'text-white/75'
+                                  ? 'text-[#5E5D58]'
                                   : 'text-[#8A8983]'
                               }`}
                             >
@@ -1603,7 +1603,7 @@ export function AppShell() {
                             onClick={() => setSalesPlanSubTab('sales-plan')}
                             className={`h-8 px-3.5 rounded-[8px] text-[12.5px] font-semibold transition cursor-pointer ${
                               salesPlanSubTab === 'sales-plan'
-                                ? 'bg-[#1D1D1F] text-white'
+                                ? 'bg-white text-[#1D1D1F] border border-[#DED8CC] shadow-2xs'
                                 : 'text-[#5A564F] hover:text-[#1D1D1F]'
                             }`}
                           >
@@ -1614,7 +1614,7 @@ export function AppShell() {
                             onClick={() => setSalesPlanSubTab('legacy-calendar')}
                             className={`h-8 px-3.5 rounded-[8px] text-[12.5px] font-semibold transition cursor-pointer ${
                               salesPlanSubTab === 'legacy-calendar'
-                                ? 'bg-[#1D1D1F] text-white'
+                                ? 'bg-white text-[#1D1D1F] border border-[#DED8CC] shadow-2xs'
                                 : 'text-[#5A564F] hover:text-[#1D1D1F]'
                             }`}
                           >
@@ -1695,7 +1695,7 @@ export function AppShell() {
                         <span
                           className={`text-[10.5px] font-mono font-bold uppercase px-2 py-0.5 rounded-[5px] border shrink-0 ${
                             res.category === 'SKU 2027'
-                              ? 'bg-[#141413] text-white border-[#141413]'
+                              ? 'bg-[#EAE9E2] text-[#141413] border-[#CECDC4]'
                               : 'bg-[#F4F4F0] text-[#141413] border-[#CECDC4]'
                           }`}
                         >
@@ -1709,7 +1709,7 @@ export function AppShell() {
                         {res.subtitle}
                       </div>
                     </div>
-                    <span className="text-[12px] font-semibold text-[#141413] shrink-0 px-3 py-1 rounded-[7px] bg-white group-hover:bg-[#141413] group-hover:text-white border-[1.5px] border-[#CECDC4] group-hover:border-[#141413] transition">
+                    <span className="text-[12px] font-semibold text-[#141413] shrink-0 px-3 py-1 rounded-[7px] bg-white group-hover:bg-[#EAE9E2] border-[1.5px] border-[#CECDC4] transition">
                       Открыть →
                     </span>
                   </button>

@@ -535,9 +535,9 @@ export function ProductCatalogView() {
           <button
             type="button"
             onClick={() => setActivePassportModelId(null)}
-            className="h-9 px-3.5 rounded-[9px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[12.5px] font-bold inline-flex items-center gap-2 cursor-pointer transition"
+            className="h-9 px-3.5 rounded-[9px] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[12.5px] font-bold inline-flex items-center gap-2 cursor-pointer transition"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 text-[#475569]" />
             <span>Назад в каталог (01 · Продукт)</span>
           </button>
 
@@ -625,7 +625,7 @@ export function ProductCatalogView() {
                 onClick={() => setViewMode('grid')}
                 className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                   viewMode === 'grid'
-                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
                     : 'text-[#475569] hover:text-[#0F172A]'
                 }`}
               >
@@ -637,7 +637,7 @@ export function ProductCatalogView() {
                 onClick={() => setViewMode('groups')}
                 className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                   viewMode === 'groups'
-                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
                     : 'text-[#475569] hover:text-[#0F172A]'
                 }`}
               >
@@ -649,7 +649,7 @@ export function ProductCatalogView() {
                 onClick={() => setViewMode('table')}
                 className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
                     : 'text-[#475569] hover:text-[#0F172A]'
                 }`}
               >
@@ -664,7 +664,7 @@ export function ProductCatalogView() {
                   onClick={() => setViewMode('liskani_269')}
                   className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
                     viewMode === 'liskani_269'
-                      ? 'bg-[#0F172A] text-white shadow-2xs'
+                      ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
                       : 'text-[#475569] hover:text-[#0F172A]'
                   }`}
                 >
@@ -709,14 +709,14 @@ export function ProductCatalogView() {
                   onClick={() => setBrandFilter(b.code)}
                   className={`h-8 px-3 rounded-[8px] text-[12px] font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
                     isAct
-                      ? 'bg-[#0F172A] text-white border-[#0F172A]'
+                      ? 'bg-[#E2E8F0] text-[#0F172A] border-[#94A3B8] shadow-2xs'
                       : 'bg-[#F8FAFC] hover:bg-white text-[#334155] border-[#CBD5E1]'
                   }`}
                 >
                   <span>{b.label}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded font-mono text-[10.5px] ${
-                      isAct ? 'bg-white/20 text-white' : 'bg-[#E2E8F0] text-[#334155]'
+                      isAct ? 'bg-white text-[#0F172A]' : 'bg-[#E2E8F0] text-[#334155]'
                     }`}
                   >
                     {b.count}
@@ -791,7 +791,7 @@ export function ProductCatalogView() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#0F172A] text-white font-mono text-[10.5px] font-bold">
+                  <span className="px-2 py-0.5 rounded-[6px] bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] font-mono text-[10.5px] font-bold">
                     LISKANI · ПЛАН 2027 (ВЫКУП 57%)
                   </span>
                   <span className="text-[13.5px] font-extrabold text-[#0F172A]">
@@ -807,7 +807,7 @@ export function ProductCatalogView() {
                 <a
                   href={resolveCatalogAssetUrl('/docs/liskani_assortment_2027_269_sku.xlsx')}
                   download="Ассортимент_LISKANI_2027_269_SKU.xlsx"
-                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
                 >
                   <span>↓ Ассортимент 269 SKU (.xlsx)</span>
                 </a>
@@ -815,7 +815,7 @@ export function ProductCatalogView() {
                   href={resolveCatalogAssetUrl('/docs/liskani_plan_2027_269_sku.pdf')}
                   target="_blank"
                   rel="noreferrer"
-                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
                 >
                   <span>↗ План 2027 помесячно (.pdf)</span>
                 </a>
@@ -938,7 +938,7 @@ export function ProductCatalogView() {
                         <label
                           onClick={(e) => e.stopPropagation()}
                           title="Загрузить или заменить фото карточки"
-                          className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
+                          className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
                         >
                           <ImagePlus className="h-3.5 w-3.5" />
                           <span>{mainPhotoUrl ? 'Заменить фото' : '+ Фото'}</span>
@@ -1108,7 +1108,7 @@ export function ProductCatalogView() {
                             e.stopPropagation();
                             setActivePassportModelId(mod.id);
                           }}
-                          className="h-7.5 px-2.5 rounded-[7px] bg-[#EEF2F6] hover:bg-[#0F172A] text-[#0F172A] hover:text-white text-[11.5px] font-semibold transition cursor-pointer"
+                          className="h-7.5 px-2.5 rounded-[7px] bg-[#EEF2F6] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-semibold transition cursor-pointer"
                         >
                           Редактировать
                         </button>

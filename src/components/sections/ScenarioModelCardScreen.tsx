@@ -1080,7 +1080,7 @@ export function ScenarioModelCardScreen({
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2 py-0.5 rounded-[6px] bg-[#141413] text-white font-mono text-[11px] font-semibold">
+                <span className="px-2 py-0.5 rounded-[6px] bg-[#EFEFE9] text-[#141413] border border-[#CECDC4] font-mono text-[11px] font-bold">
                   {model.code}
                 </span>
 
@@ -1178,8 +1178,8 @@ export function ScenarioModelCardScreen({
               onClick={() => setIsEditing((v) => !v)}
               className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer ${
                 isEditing
-                  ? 'bg-[#141413] text-white border-[#141413]'
-                  : 'bg-white hover:border-[#141413] text-[#141413] border-[#CECDC4]'
+                  ? 'bg-[#E6E5DE] text-[#141413] border-[#9E9D94]'
+                  : 'bg-white hover:bg-[#F5F5F1] text-[#141413] border-[#CECDC4]'
               }`}
             >
               Редактировать
@@ -1196,7 +1196,7 @@ export function ScenarioModelCardScreen({
             <button
               type="button"
               onClick={onOpenPdfModal}
-              className="h-9 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12.5px] font-semibold transition cursor-pointer"
+              className="h-9 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border-[1.5px] border-[#CECDC4] text-[12.5px] font-semibold transition cursor-pointer"
             >
               Экспорт ТЗ PDF
             </button>
@@ -1262,7 +1262,7 @@ export function ScenarioModelCardScreen({
             <button
               type="button"
               onClick={handleCreateCustomBrand}
-              className="h-8 px-3 rounded-[8px] bg-[#141413] text-white font-semibold cursor-pointer"
+              className="h-8 px-3 rounded-[8px] bg-[#EAE9E2] hover:bg-[#DFDED6] text-[#141413] border border-[#CECDC4] font-semibold cursor-pointer"
             >
               Создать и выбрать
             </button>
@@ -1698,7 +1698,7 @@ export function ScenarioModelCardScreen({
                   </button>
                 </>
               )}
-              <label className="h-8.5 px-3 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold inline-flex items-center shrink-0 cursor-pointer transition">
+              <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold inline-flex items-center shrink-0 cursor-pointer transition">
                 <span>+ Загрузить фото</span>
                 <input
                   type="file"
@@ -1929,8 +1929,8 @@ export function ScenarioModelCardScreen({
                   onClick={() => setActiveTab(tab.id)}
                   className={`h-8.5 px-4 rounded-[8px] text-[12.5px] font-semibold inline-flex items-center transition cursor-pointer ${
                     isAct
-                      ? 'bg-[#141413] text-white shadow-2xs'
-                      : 'text-[#3F3E3A] hover:text-[#141413] hover:bg-white'
+                      ? 'bg-white text-[#141413] border border-[#CECDC4] shadow-2xs'
+                      : 'text-[#3F3E3A] hover:text-[#141413] hover:bg-white/60'
                   }`}
                 >
                   <span>{tab.label}</span>
@@ -2243,7 +2243,7 @@ export function ScenarioModelCardScreen({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-[6px] bg-[#141413] text-white text-[10.5px] font-mono font-bold">
+                      <span className="px-2 py-0.5 rounded-[6px] bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[10.5px] font-mono font-bold">
                         УТВЕРЖДЁННЫЙ АССОРТИМЕНТ 2027 · {model.liskaniSizeVariants.length} РАЗМЕРОВ SKU
                       </span>
                       {effectiveWbArticle ? (
@@ -2532,7 +2532,7 @@ export function ScenarioModelCardScreen({
                       true
                     );
                   }}
-                  className="h-8 px-3 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-8 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Добавить палитру / вариант</span>
@@ -2958,13 +2958,13 @@ export function ScenarioModelCardScreen({
             {showSalesExtraTools && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] bg-[#FAF8F4] border border-[#E6E0D4] p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="inline-flex rounded-[9px] bg-white border border-[#DED8CC] p-0.5">
+                  <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border border-[#CECDC4] p-0.5">
                     <button
                       type="button"
                       onClick={() => setSalesViewMode('table')}
                       className={`h-7.5 px-3 rounded-[7px] text-[11.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
                         salesViewMode === 'table'
-                          ? 'bg-[#1D1D1F] text-white'
+                          ? 'bg-white text-[#1D1D1F] border border-[#CECDC4] shadow-2xs'
                           : 'text-[#5A564F]'
                       }`}
                     >
@@ -2976,7 +2976,7 @@ export function ScenarioModelCardScreen({
                       onClick={() => setSalesViewMode('chart')}
                       className={`h-7.5 px-3 rounded-[7px] text-[11.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
                         salesViewMode === 'chart'
-                          ? 'bg-[#1D1D1F] text-white'
+                          ? 'bg-white text-[#1D1D1F] border border-[#CECDC4] shadow-2xs'
                           : 'text-[#5A564F]'
                       }`}
                     >
@@ -3012,7 +3012,7 @@ export function ScenarioModelCardScreen({
                   <button
                     type="button"
                     onClick={() => importPlanInputRef.current?.click()}
-                    className="h-7.5 px-2.5 rounded-[8px] bg-[#1D1D1F] text-white text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                    className="h-7.5 px-2.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#DED8CC] text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Upload className="h-3.5 w-3.5" />
                     <span>Импорт плана</span>
@@ -3051,7 +3051,7 @@ export function ScenarioModelCardScreen({
                         </span>
                         <div
                           style={{ height: `${hPct}%` }}
-                          className="w-full max-w-[34px] rounded-t-[8px] bg-[#141413] transition-all"
+                          className="w-full max-w-[34px] rounded-t-[8px] bg-emerald-600/85 transition-all"
                           title={`${mLabel}: ${packs.toLocaleString('ru-RU')} компл. = ${formatRub(rev)}`}
                         />
                         <span className="text-[11px] font-semibold text-[#1D1D1F]">
@@ -3450,7 +3450,7 @@ export function ScenarioModelCardScreen({
                         onClick={() => setFinancePeriodMode('month')}
                         className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold cursor-pointer ${
                           financePeriodMode === 'month'
-                            ? 'bg-[#141413] text-white'
+                            ? 'bg-white text-[#141413] border border-[#CECDC4] shadow-2xs'
                             : 'text-[#3F3E3A]'
                         }`}
                       >
@@ -3461,7 +3461,7 @@ export function ScenarioModelCardScreen({
                         onClick={() => setFinancePeriodMode('year')}
                         className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold cursor-pointer ${
                           financePeriodMode === 'year'
-                            ? 'bg-[#141413] text-white'
+                            ? 'bg-white text-[#141413] border border-[#CECDC4] shadow-2xs'
                             : 'text-[#3F3E3A]'
                         }`}
                       >
@@ -3562,7 +3562,7 @@ export function ScenarioModelCardScreen({
                   <button
                     type="button"
                     onClick={() => setShowDetailedFinanceCalc((v) => !v)}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer shrink-0"
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer shrink-0"
                   >
                     {showDetailedFinanceCalc
                       ? 'Скрыть подробный расчёт ▴'

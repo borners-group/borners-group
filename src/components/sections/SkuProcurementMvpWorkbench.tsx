@@ -1300,7 +1300,7 @@ export function SkuProcurementMvpWorkbench({
                     <button
                       type="button"
                       onClick={handleNormalizeSizeSharesTo100}
-                      className="rounded bg-[#141413] px-2.5 py-0.5 text-[10.5px] font-semibold text-white hover:bg-black cursor-pointer"
+                      className="rounded bg-[#EAE9E2] border border-[#CECDC4] px-2.5 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#DFDED6] cursor-pointer"
                     >
                       Выровнять до 100%
                     </button>
@@ -1470,7 +1470,7 @@ export function SkuProcurementMvpWorkbench({
                 <button
                   type="button"
                   onClick={handleAddBatchSubmit}
-                  className="rounded-[8px] bg-[#141413] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-black cursor-pointer"
+                  className="rounded-[8px] bg-[#EAE9E2] border border-[#CECDC4] px-3 py-1.5 text-[12px] font-semibold text-[#141413] hover:bg-[#DFDED6] cursor-pointer"
                 >
                   Сохранить партию
                 </button>
@@ -2305,7 +2305,7 @@ export function SkuProcurementMvpWorkbench({
               <button
                 type="button"
                 onClick={() => handleUpdateScalingStage('scaling')}
-                className="rounded-[8px] border border-[#141413] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#141413] hover:bg-[#141413] hover:text-white cursor-pointer"
+                className="rounded-[8px] border border-[#CECDC4] bg-[#F5F5F1] px-3 py-1.5 text-[12px] font-semibold text-[#141413] hover:bg-[#EAE9E2] cursor-pointer"
               >
                 Включить «Масштабирование»
               </button>

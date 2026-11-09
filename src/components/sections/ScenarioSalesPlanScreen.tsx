@@ -198,7 +198,7 @@ export function ScenarioSalesPlanScreen({
                 onClick={() => setPeriodMode(tab.id)}
                 className={`h-8 px-3 rounded-[8px] text-[12px] font-semibold transition cursor-pointer ${
                   periodMode === tab.id
-                    ? 'bg-[#1D1D1F] text-white shadow-2xs'
+                    ? 'bg-white text-[#1D1D1F] border border-[#DED8CC] shadow-2xs'
                     : 'text-[#6E6E73] hover:text-[#1D1D1F]'
                 }`}
               >
@@ -229,7 +229,7 @@ export function ScenarioSalesPlanScreen({
             className={`h-9 px-4 rounded-[10px] text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
               displayMode === 'table'
                 ? 'bg-[#FAF4EC] text-[#8B6F47] border border-[#C8A97E]'
-                : 'bg-[#1D1D1F] hover:bg-[#323236] text-white shadow-xs'
+                : 'bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#CECDC4] shadow-2xs'
             }`}
           >
             <Edit3 className="h-3.5 w-3.5" />
@@ -402,7 +402,7 @@ export function ScenarioSalesPlanScreen({
                   });
                   notify('success', 'Базовый помесячный план продаж создан');
                 }}
-                className="h-9 px-4 rounded-[10px] bg-[#1D1D1F] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                className="h-9 px-4 rounded-[10px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#CECDC4] text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="h-4 w-4" />
                 <span>Добавить план</span>
@@ -448,14 +448,14 @@ export function ScenarioSalesPlanScreen({
               ) : (
                 <div className="relative pt-8 pb-2">
                   {/* Плашка пикового месяца (Декабрь) как на макете Стр. 15 */}
-                  <div className="absolute right-0 top-0 rounded-[10px] bg-[#1D1D1F] text-white px-3 py-1.5 text-[11px] shadow-md">
+                  <div className="absolute right-0 top-0 rounded-[10px] bg-[#F5F5F1] text-[#1D1D1F] border border-[#CECDC4] px-3 py-1.5 text-[11px] shadow-2xs">
                     <div className="font-bold">
                       {(metrics.targetMonthRevenueRub / 1_000_000)
                         .toFixed(1)
                         .replace('.', ',')}{' '}
                       млн ₽
                     </div>
-                    <div className="text-white/75 text-[10px]">
+                    <div className="text-[#5A564F] text-[10px]">
                       {(metrics.targetMonthPacks / 1000).toFixed(1).replace('.', ',')}{' '}
                       тыс. компл.
                     </div>
@@ -734,7 +734,7 @@ export function ScenarioSalesPlanScreen({
                             }}
                             className={`flex-1 h-6 rounded-[6px] text-[10px] font-semibold cursor-pointer ${
                               step.status === st.id
-                                ? 'bg-[#1D1D1F] text-white'
+                                ? 'bg-[#EAE9E2] text-[#1D1D1F] border border-[#9E9D94]'
                                 : 'bg-white border border-[#DED8CC] text-[#6E6E73]'
                             }`}
                           >

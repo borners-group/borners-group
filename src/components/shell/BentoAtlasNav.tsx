@@ -366,7 +366,7 @@ export function BentoAtlasNav({
                     }}
                     className={`h-7.5 px-2.5 rounded-[7px] border-[1.5px] text-[11.5px] font-semibold transition cursor-pointer ${
                       platformMode === 'management' && activeSection === secId
-                        ? 'bg-[#141413] text-white border-[#141413]'
+                        ? 'bg-[#EAE9E2] text-[#141413] border-[#9E9D94]'
                         : 'bg-white hover:border-[#141413] text-[#262624] border-[#CECDC4]'
                     }`}
                   >
@@ -476,7 +476,7 @@ export function BentoAtlasNav({
                           <span
                             className={`shrink-0 font-mono text-[10px] font-semibold px-2 py-0.5 rounded-[6px] border ${
                               isActive
-                                ? 'bg-[#141413] text-white border-[#141413]'
+                                ? 'bg-[#EAE9E2] text-[#141413] border-[#9E9D94]'
                                 : 'bg-[#F4F4F0] text-[#3F3E3A] border-[#D8D7CF]'
                             }`}
                           >

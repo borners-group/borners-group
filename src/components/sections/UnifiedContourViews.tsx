@@ -95,7 +95,7 @@ function ScenarioContourHeader({
                 onClick={() => onSelectScenario(sc.id)}
                 className={`h-8.5 px-3 rounded-xl text-[12px] font-semibold border transition cursor-pointer ${
                   isSel
-                    ? 'bg-[#0F172A] dark:bg-emerald-500/15 text-white dark:text-emerald-300 border-[#0F172A] dark:border-emerald-500/30'
+                    ? 'bg-[#E2E8F0] dark:bg-emerald-500/15 text-[#0F172A] dark:text-emerald-300 border-[#94A3B8] dark:border-emerald-500/30 shadow-2xs'
                     : 'bg-[#F8FAFC] dark:bg-[#181D2A] hover:bg-white text-[#334155] dark:text-[#CBD5E1] border-[#E2E6EE] dark:border-[#222938]'
                 }`}
               >
@@ -164,7 +164,7 @@ function ScenarioContourHeader({
             <button
               type="button"
               onClick={() => onSelectScenario(2)}
-              className="h-8 px-3 rounded-[8px] bg-[#141413] text-white text-[11.5px] font-semibold cursor-pointer"
+              className="h-8 px-3 rounded-[8px] bg-[#EAE9E2] hover:bg-[#DFDED6] text-[#141413] border border-[#CECDC4] text-[11.5px] font-semibold cursor-pointer"
             >
               Переключить на Сценарий №2 (150 млн)
             </button>
@@ -314,7 +314,7 @@ export function SalesMatrixContourView() {
           <button
             type="button"
             onClick={() => setEditingModelId(null)}
-            className="h-8.5 px-3.5 rounded-[8px] bg-[#141413] text-white text-[12.5px] font-semibold cursor-pointer"
+            className="h-8.5 px-3.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12.5px] font-semibold cursor-pointer"
           >
             ← Ко всей матрице ({eligibleModels.length} SKU)
           </button>
@@ -466,7 +466,7 @@ export function SalesMatrixContourView() {
                   setSelectedScenarioId(2);
                   setBrandFilter('ALL');
                 }}
-                className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
               >
                 Переключить на Сценарий №2 · 150 млн
               </button>
@@ -475,7 +475,7 @@ export function SalesMatrixContourView() {
               <button
                 type="button"
                 onClick={() => setIncludeGroupPortfolioInS1(true)}
-                className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
               >
                 Подключить портфель группы (с FUKAI)
               </button>
@@ -1095,7 +1095,7 @@ export function ProcurementContourView() {
               <button
                 type="button"
                 onClick={() => setBrandFilter('ALL')}
-                className="h-9.5 rounded-[9px] bg-[#141413] px-4 text-[12.5px] font-semibold text-white hover:bg-[#2B2B29] transition cursor-pointer"
+                className="h-9.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] border border-[#CECDC4] px-4 text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
               >
                 Показать все бренды ({currentScenario.title.split('·')[0].trim()})
               </button>
@@ -1724,7 +1724,7 @@ export function ProcurementContourView() {
                                   setWavesCalendarOpen(false);
                                   setScenarioDrawerTab('none');
                                 }}
-                                className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#141413] hover:text-white cursor-pointer"
+                                className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#F5F5F1] cursor-pointer"
                               >
                                 Открыть партии →
                               </button>
@@ -2023,7 +2023,7 @@ export function FinanceContourView() {
                       setSelectedScenarioId(2);
                       setBrandFilter('ALL');
                     }}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
                   >
                     Переключить на Сценарий №2 · 150 млн
                   </button>
@@ -2032,7 +2032,7 @@ export function FinanceContourView() {
                   <button
                     type="button"
                     onClick={() => setIncludeGroupPortfolioInS1(true)}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold cursor-pointer transition"
+                    className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
                   >
                     Подключить портфель группы (с FUKAI)
                   </button>

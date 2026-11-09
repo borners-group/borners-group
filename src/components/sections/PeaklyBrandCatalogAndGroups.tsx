@@ -963,7 +963,7 @@ export function PeaklyMasterCabinetsSummary({
               }}
               className={`h-7 px-2.5 rounded-lg text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5 ${
                 activeBrandFilter === 'ALL'
-                  ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                  ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                   : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] hover:bg-white/70 dark:hover:bg-[#121620]/60'
               }`}
             >
@@ -1001,7 +1001,7 @@ export function PeaklyMasterCabinetsSummary({
                   }}
                   className={`h-7 px-2.5 rounded-lg text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5 ${
                     isSelected
-                      ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                      ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                       : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] hover:bg-white/70 dark:hover:bg-[#121620]/60'
                   }`}
                 >
@@ -1221,49 +1221,49 @@ export function PeaklyMasterCabinetsSummary({
             </div>
           </div>
 
-          {/* Правая контрастная карточка (4 колонки из 12): Тёмно-графитовый блок «Анатомия каждых 100 ₽ выручки» */}
-          <div className="xl:col-span-4 rounded-2xl bg-[#0F172A] dark:bg-[#181D2A] text-white border border-[#1E293B] dark:border-emerald-500/30 p-5 space-y-3.5 shadow-lg">
+          {/* Правая контрастная карточка (4 колонки из 12): Светлый серо-изумрудный блок «Анатомия каждых 100 ₽ выручки» */}
+          <div className="xl:col-span-4 rounded-2xl bg-[#F8FAFC] dark:bg-[#181D2A] text-[#0F172A] dark:text-white border border-[#CBD5E1] dark:border-emerald-500/30 p-5 space-y-3.5 shadow-2xs">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Коротко о периоде · На 100 ₽</span>
               </div>
-              <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-white/90">
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-[#E2E8F0] dark:bg-white/10 text-[#334155] dark:text-white/90">
                 2027 год
               </span>
             </div>
 
-            <div className="text-[16px] sm:text-[17px] font-bold text-white leading-snug">
+            <div className="text-[16px] sm:text-[17px] font-bold text-[#0F172A] dark:text-white leading-snug">
               Из каждых 100 ₽ выручки{' '}
-              <span className="text-emerald-400 underline decoration-emerald-400/50 underline-offset-4">
+              <span className="text-emerald-700 dark:text-emerald-400 underline decoration-emerald-500/50 underline-offset-4">
                 +{groupMarginPct.toFixed(1).replace('.', ',')} ₽ остаются чистой прибылью
               </span>
             </div>
 
             {/* Наглядная двухцветная полоса 100 ₽ прямо внутри карточки */}
             <div className="space-y-1.5">
-              <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
+              <div className="h-3 w-full rounded-full bg-[#E2E8F0] dark:bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
                 <div
                   style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
-                  className="h-full rounded-l-full bg-[#64748B]"
+                  className="h-full rounded-l-full bg-[#94A3B8]"
                 />
                 <div
                   style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
-                  className="h-full rounded-r-full bg-emerald-400"
+                  className="h-full rounded-r-full bg-emerald-500"
                 />
               </div>
               <div className="flex items-center justify-between text-[11.5px] font-mono">
-                <span className="text-[#CBD5E1]">
+                <span className="text-[#475569] dark:text-[#CBD5E1]">
                   Затраты и WB: <strong>{totalExpensesPct.toFixed(1).replace('.', ',')} ₽</strong>
                 </span>
-                <span className="text-emerald-400 font-bold">
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                   Чистыми: +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
                 </span>
               </div>
             </div>
 
-            <p className="text-xs text-[#CBD5E1] leading-relaxed pt-1 border-t border-white/10">
-              Собственный капитал запускает только 1-ю волну — дальше <strong className="text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
+            <p className="text-xs text-[#475569] dark:text-[#CBD5E1] leading-relaxed pt-1 border-t border-[#E2E8F0] dark:border-white/10">
+              Собственный капитал запускает только 1-ю волну — дальше <strong className="text-[#0F172A] dark:text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
             </p>
           </div>
         </div>
@@ -1276,7 +1276,7 @@ export function PeaklyMasterCabinetsSummary({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[10.5px] font-bold">
+                <span className="px-2 py-0.5 rounded-md bg-[#E2E8F0] dark:bg-emerald-500/20 text-[#1E293B] dark:text-emerald-300 font-mono text-[10.5px] font-bold">
                   ДИНАМИКА 12 МЕС.
                 </span>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#334155] dark:text-[#94A3B8]">
@@ -1316,7 +1316,7 @@ export function PeaklyMasterCabinetsSummary({
                 onClick={() => setTrendChartMode('payout')}
                 className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'payout'
-                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
@@ -1327,7 +1327,7 @@ export function PeaklyMasterCabinetsSummary({
                 onClick={() => setTrendChartMode('monthlyProfit')}
                 className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'monthlyProfit'
-                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
@@ -1447,7 +1447,7 @@ export function PeaklyMasterCabinetsSummary({
                     onClick={() => setSelectedTrendMonthIdx(pt.idx)}
                     className={`text-center py-1 rounded-md text-[11px] transition cursor-pointer ${
                       isSel
-                        ? 'font-bold text-white dark:text-emerald-300 bg-[#0F172A] dark:bg-emerald-500/20'
+                        ? 'font-bold text-[#0F172A] dark:text-emerald-300 bg-[#E2E8F0] dark:bg-emerald-500/20'
                         : 'font-medium text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                     }`}
                   >
@@ -1515,7 +1515,7 @@ export function PeaklyMasterCabinetsSummary({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[11px] font-bold">
+            <span className="px-2 py-0.5 rounded-md bg-[#E2E8F0] dark:bg-emerald-500/20 text-[#1E293B] dark:text-emerald-300 font-mono text-[11px] font-bold">
               01
             </span>
             <h3 className="text-[14px] sm:text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#EDF0F7]">
@@ -1685,7 +1685,7 @@ export function PeaklyMasterCabinetsSummary({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <span className="px-2 py-0.5 rounded-md bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 font-mono text-[11px] font-bold">
+            <span className="px-2 py-0.5 rounded-md bg-[#E2E8F0] dark:bg-emerald-500/20 text-[#1E293B] dark:text-emerald-300 font-mono text-[11px] font-bold">
               02
             </span>
             <h3 className="text-[14px] sm:text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#EDF0F7]">
@@ -1703,7 +1703,7 @@ export function PeaklyMasterCabinetsSummary({
                 onClick={() => setWaterfallViewMode('pnl')}
                 className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   waterfallViewMode === 'pnl'
-                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
@@ -1714,7 +1714,7 @@ export function PeaklyMasterCabinetsSummary({
                 onClick={() => setWaterfallViewMode('brands')}
                 className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   waterfallViewMode === 'brands'
-                    ? 'bg-[#0F172A] dark:bg-emerald-500/20 text-white dark:text-emerald-300 shadow-2xs'
+                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
@@ -3056,7 +3056,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <button
                 type="button"
                 onClick={openCreateGroupModal}
-                className="h-8 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                className="h-8 px-3.5 rounded-[9px] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Добавить группу</span>
