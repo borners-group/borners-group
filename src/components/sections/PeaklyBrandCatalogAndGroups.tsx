@@ -797,7 +797,17 @@ export function PeaklyMasterCabinetsSummary({
         color: '#10B981',
         circ,
         r,
-        onClick: () => onNavigateSection('roadmap-tasks'),
+        onClick: () => {
+          if (typeof window !== 'undefined') {
+            try {
+              window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+              window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+            } catch {
+              // ignore
+            }
+          }
+          onNavigateSection('roadmap-tasks');
+        },
       },
       {
         id: 'cogs',
@@ -808,7 +818,17 @@ export function PeaklyMasterCabinetsSummary({
         color: '#0D9488',
         circ,
         r,
-        onClick: () => onNavigateSection('product-catalog'),
+        onClick: () => {
+          if (typeof window !== 'undefined') {
+            try {
+              window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+              window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+            } catch {
+              // ignore
+            }
+          }
+          onNavigateSection('roadmap-tasks');
+        },
       },
     ];
   }, [groupMarginPct, ownCapitalRoiMult, selfFundedProcurementPct, cogsPct, onNavigateSection]);
@@ -1567,7 +1587,17 @@ export function PeaklyMasterCabinetsSummary({
 
           {/* Карточка 2: План закупок на год */}
           <div
-            onClick={() => onNavigateSection('roadmap-tasks')}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                try {
+                  window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+                  window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+                } catch {
+                  // ignore
+                }
+              }
+              onNavigateSection('roadmap-tasks');
+            }}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
@@ -1602,7 +1632,17 @@ export function PeaklyMasterCabinetsSummary({
 
           {/* Карточка 3: Старт 1-й партии (Q1) */}
           <div
-            onClick={() => onNavigateSection('roadmap-tasks')}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                try {
+                  window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+                  window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+                } catch {
+                  // ignore
+                }
+              }
+              onNavigateSection('roadmap-tasks');
+            }}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
@@ -1738,11 +1778,30 @@ export function PeaklyMasterCabinetsSummary({
                     key={seg.key}
                     onMouseEnter={() => setHoveredWaterfallKey(seg.key)}
                     onMouseLeave={() => setHoveredWaterfallKey(null)}
-                    onClick={() =>
-                      waterfallViewMode === 'pnl'
-                        ? onNavigateSection('finance')
-                        : onSelectBrandFilter(seg.key)
-                    }
+                    onClick={() => {
+                      if (waterfallViewMode === 'pnl') {
+                        if (seg.key === 'cogs') {
+                          if (typeof window !== 'undefined') {
+                            try {
+                              window.sessionStorage.setItem(
+                                'borners_open_procurement_view_mode',
+                                'summary'
+                              );
+                              window.dispatchEvent(
+                                new CustomEvent('borners-open-procurement-summary')
+                              );
+                            } catch {
+                              // ignore
+                            }
+                          }
+                          onNavigateSection('roadmap-tasks');
+                        } else {
+                          onNavigateSection('finance');
+                        }
+                      } else {
+                        onSelectBrandFilter(seg.key);
+                      }
+                    }}
                     className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
                   >
                     <div>

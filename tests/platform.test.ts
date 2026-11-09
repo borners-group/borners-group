@@ -3552,6 +3552,56 @@ test('47. Сводка (02 · Расходы, удержания WB и рент�
   );
 });
 
+test('48. Сводная ведомость и детализация закупок (03 · Закупки): переход из Сводки в полную детализацию по категориям, карточкам, 4 волнам Q1–Q4 и всем размерам полотен (269 SKU)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const summarySrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  const contourSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const workbenchSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/SkuProcurementMvpWorkbench.tsx'),
+    'utf8'
+  );
+
+  // 1. Из Сводки клик по карточкам закупок и закупочной себестоимости переводит в полную детализацию всех SKU
+  assert.ok(
+    summarySrc.includes('borners_open_procurement_view_mode') &&
+      summarySrc.includes('borners-open-procurement-summary'),
+    'Клик по карточкам закупок и себестоимости в Сводке должен открывать полную сводную детализацию закупок'
+  );
+
+  // 2. В 03 · Закупки по умолчанию открыта вкладка сводной детализации всех SKU ('skus'), а не один артикул
+  assert.ok(
+    contourSrc.includes("useState<\n    'none' | 'investment' | 'brands' | 'skus'\n  >('skus')") &&
+      contourSrc.includes('Все SKU · Детализация закупок'),
+    'Раздел 03 · Закупки по умолчанию должен показывать сводную детализацию всех SKU'
+  );
+
+  // 3. В сводной ведомости закупок есть группировка по категориям, 4 показателя формулы и поразмерное раскрытие
+  assert.ok(
+    contourSrc.includes('1. Себестоимость выкупов (Сводка)') &&
+      contourSrc.includes('2. Бюджет закупок у фабрик (Год)') &&
+      contourSrc.includes('Детализация бюджета закупок по категориям') &&
+      contourSrc.includes('Развернуть все размеры ▾'),
+    'Сводная ведомость закупок должна отображать формулу себестоимости, категории и раскрытие размеров'
+  );
+
+  // 4. Внутри карточки товара (SkuProcurementMvpWorkbench) для LISKANI отображается поразмерная таблица полотен и распределение партий по размерам
+  assert.ok(
+    workbenchSrc.includes('Поразмерная детализация закупки') &&
+      workbenchSrc.includes('Распределение партии №'),
+    'В карточке закупок LISKANI должна отображаться поразмерная ведомость полотен и распределение каждой партии по размерам'
+  );
+});
+
+
 
 
 

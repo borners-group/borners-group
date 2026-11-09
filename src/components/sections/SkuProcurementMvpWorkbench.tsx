@@ -1349,6 +1349,158 @@ export function SkuProcurementMvpWorkbench({
         )}
       </div>
 
+      {/* ПОРАЗМЕРНАЯ ВЕДОМОСТЬ ЗАКУПКИ ДЛЯ КАРТОЧЕК LISKANI (269 SKU ПО РАЗМЕРАМ ПОЛОТЕН) */}
+      {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 && (() => {
+        const totalModelOrderPacks =
+          proc.totalApprovedReceiptsPacks + proc.totalRecommendedPacks;
+        const scaleRatio =
+          proc.annualDemandPacks > 0 ? totalModelOrderPacks / proc.annualDemandPacks : 1;
+        const totalVariantsSoldCogsRub = model.liskaniSizeVariants.reduce(
+          (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
+          0
+        );
+        const totalVariantsOrderRub = model.liskaniSizeVariants.reduce((acc, sv) => {
+          const szOrder = Math.round(sv.annualBuyoutsUnits * scaleRatio);
+          return acc + szOrder * sv.unitCostRub;
+        }, 0);
+
+        return (
+          <div className="rounded-[16px] border border-[#D8D7CE] bg-white p-5 shadow-[0_1px_3px_rgba(20,20,19,0.03)] space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-[15px] font-bold text-[#141413]">
+                  Поразмерная детализация закупки «{model.title}» ({model.liskaniSizeVariants.length} разм. SKU)
+                </h4>
+                <p className="mt-0.5 text-[12px] text-[#686762]">
+                  Каждый размер имеет собственную закупочную себестоимость и объём комплектов по 4 квартальным волнам (Q1–Q4)
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-mono">
+                <span className="rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] px-2.5 py-1 text-[#334155]">
+                  Себест. выкупов: <strong className="text-[#0F172A]">{formatRubMillions(totalVariantsSoldCogsRub)}</strong>
+                </span>
+                <span className="rounded-lg bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 text-emerald-800 font-bold">
+                  Бюджет партий по размерам: {formatRubMillions(totalVariantsOrderRub)}
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-[11px] border border-[#E2E1D8]">
+              <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
+                <thead>
+                  <tr className="border-b border-[#E2E1D8] bg-[#FAF9F6] text-[10.5px] font-bold uppercase tracking-wider text-[#686762]">
+                    <th className="py-2.5 px-3">Размер полотна / SKU</th>
+                    <th className="py-2.5 px-2.5 text-right">Себест. 1 компл.</th>
+                    <th className="py-2.5 px-2.5 text-right">План выкупов</th>
+                    <th className="py-2.5 px-2.5 text-right">Себест. выкупов</th>
+                    <th className="py-2.5 px-2.5 text-right bg-[#EAF6F0]/60 text-[#146C43]">
+                      Партия №1 (Q1)
+                    </th>
+                    <th className="py-2.5 px-2.5 text-right">Партия №2 (Q2)</th>
+                    <th className="py-2.5 px-2.5 text-right">Партия №3 (Q3)</th>
+                    <th className="py-2.5 px-2.5 text-right">Партия №4 (Q4)</th>
+                    <th className="py-2.5 px-2.5 text-right">К заказу (год)</th>
+                    <th className="py-2.5 px-3 text-right">Сумма закупки</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EAE9E2]">
+                  {model.liskaniSizeVariants.map((sv) => {
+                    const q1Dem =
+                      (sv.monthlyBuyoutsUnits[0] || 0) +
+                      (sv.monthlyBuyoutsUnits[1] || 0) +
+                      (sv.monthlyBuyoutsUnits[2] || 0);
+                    const q2Dem =
+                      (sv.monthlyBuyoutsUnits[3] || 0) +
+                      (sv.monthlyBuyoutsUnits[4] || 0) +
+                      (sv.monthlyBuyoutsUnits[5] || 0);
+                    const q3Dem =
+                      (sv.monthlyBuyoutsUnits[6] || 0) +
+                      (sv.monthlyBuyoutsUnits[7] || 0) +
+                      (sv.monthlyBuyoutsUnits[8] || 0);
+                    const q1Ord = Math.round(q1Dem * scaleRatio);
+                    const q2Ord = Math.round(q2Dem * scaleRatio);
+                    const q3Ord = Math.round(q3Dem * scaleRatio);
+                    const totalOrd = Math.round(sv.annualBuyoutsUnits * scaleRatio);
+                    const q4Ord = Math.max(0, totalOrd - q1Ord - q2Ord - q3Ord);
+                    const soldCogs = sv.annualBuyoutsUnits * sv.unitCostRub;
+                    const orderSumRub = totalOrd * sv.unitCostRub;
+
+                    return (
+                      <tr key={sv.sellerSku} className="hover:bg-[#FAF9F6]">
+                        <td className="py-2 px-3">
+                          <span className="font-bold text-[#141413]">{sv.sizeCm}</span>{' '}
+                          <span className="font-mono text-[10.5px] text-[#686762]">
+                            ({sv.sellerSku})
+                          </span>
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono font-bold text-[#141413]">
+                          {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                          {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} компл.
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                          {soldCogs.toLocaleString('ru-RU')} ₽
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono font-semibold text-[#146C43] bg-[#EAF6F0]/35">
+                          <div>{q1Ord.toLocaleString('ru-RU')} компл.</div>
+                          <div className="text-[10px] text-[#52514C]">
+                            {(q1Ord * sv.unitCostRub).toLocaleString('ru-RU')} ₽
+                          </div>
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                          {q2Ord.toLocaleString('ru-RU')} компл.
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                          {q3Ord.toLocaleString('ru-RU')} компл.
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
+                          {q4Ord.toLocaleString('ru-RU')} компл.
+                        </td>
+                        <td className="py-2 px-2.5 text-right font-mono font-bold text-[#141413]">
+                          {totalOrd.toLocaleString('ru-RU')} компл.
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-extrabold text-[#141413]">
+                          {orderSumRub.toLocaleString('ru-RU')} ₽
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-[#E2E1D8] bg-[#FAF9F6] font-extrabold text-[#141413]">
+                    <td className="py-2.5 px-3">
+                      ИТОГО ПО {model.liskaniSizeVariants.length} РАЗМЕРАМ
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono">
+                      ~{model.unitCostRub.toLocaleString('ru-RU')} ₽
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono">
+                      {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono">
+                      {formatRubMillions(totalVariantsSoldCogsRub)}
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono text-[#146C43] bg-[#EAF6F0]/45">
+                      {formatRubMillions(firstStartWave.totalRub)}
+                    </td>
+                    <td colSpan={3} className="py-2.5 px-2.5 text-right font-mono text-[#52514C]">
+                      Q2–Q4 из оборота WB
+                    </td>
+                    <td className="py-2.5 px-2.5 text-right font-mono">
+                      {totalModelOrderPacks.toLocaleString('ru-RU')} компл.
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono">
+                      {formatRubMillions(totalVariantsOrderRub)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* =====================================================================
           БЛОК 2 · ГРАФИК ПАРТИЙ К ЗАКАЗУ (Чистые строки в стиле Peakly, детали внутри «Размеры и расчёт ▾»)
          ===================================================================== */}
@@ -2179,11 +2331,13 @@ export function SkuProcurementMvpWorkbench({
                               </strong>
                             </div>
 
-                            {/* ИНТЕРАКТИВНЫЕ РАЗМЕРЫ S–XXL ЧЕРНОВОЙ ПАРТИИ (редактируются и комплекты, и %!) */}
+                            {/* ПОРАЗМЕРНАЯ СЕТКА ЧЕРНОВОЙ ПАРТИИ (для LISKANI — реальные размеры полотен 300×240..600×270, для одежды — S–XXL!) */}
                             <div className="mt-3 rounded-[9px] border border-[#E4E3DC] bg-white p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-[11.5px] font-semibold text-[#141413]">
-                                  Размеры партии S–XXL (нажмите на любое число комплектов или %, чтобы изменить напрямую):
+                                  {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
+                                    ? `Распределение партии №${bIdx + 1} (${batch.coverageMonthsLabel}) по размерам полотен (${model.liskaniSizeVariants.length} SKU):`
+                                    : 'Размеры партии S–XXL (нажмите на любое число комплектов или %, чтобы изменить напрямую):'}
                                 </span>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
@@ -2195,80 +2349,145 @@ export function SkuProcurementMvpWorkbench({
                                   >
                                     Экспорт заказа фабрике (CSV)
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                        ...prev,
-                                        customSizeSharesPct: null,
-                                        customSizeBreakdownPacks: null,
-                                      }))
-                                    }
-                                    className="rounded border border-[#CFCEC6] bg-[#F8F8F5] px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-                                  >
-                                    Выровнять по базовой матрице ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%)
-                                  </button>
+                                  {(!model.liskaniSizeVariants || model.liskaniSizeVariants.length === 0) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateDraftPeriodDef(batch.periodId, (prev) => ({
+                                          ...prev,
+                                          customSizeSharesPct: null,
+                                          customSizeBreakdownPacks: null,
+                                        }))
+                                      }
+                                      className="rounded border border-[#CFCEC6] bg-[#F8F8F5] px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                                    >
+                                      Выровнять по базовой матрице ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL}%)
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
-                              <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
-                                {SIZES_LIST.map((sz) => {
-                                  const packsForSize = batch.sizeBreakdownPacks[sz] || 0;
-                                  const unitsForSize = packsForSize * model.unitsInPack;
+                              {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 ? (
+                                (() => {
+                                  const periodTotalVariantDemand = model.liskaniSizeVariants.reduce(
+                                    (sum, sv) => {
+                                      let d = 0;
+                                      for (
+                                        let mIdx = batch.firstCoveredMonthIdx;
+                                        mIdx <= batch.endCoveredMonthIdx;
+                                        mIdx++
+                                      ) {
+                                        d += sv.monthlyBuyoutsUnits[mIdx] || 0;
+                                      }
+                                      return sum + d;
+                                    },
+                                    0
+                                  );
                                   return (
-                                    <div
-                                      key={sz}
-                                      className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-2 hover:border-[#B8B7AE] focus-within:border-[#9E9D95] focus-within:bg-white"
-                                    >
-                                      <div className="flex items-center justify-between gap-1 text-[11px]">
-                                        <span className="font-bold text-[#141413]">{sz}</span>
-                                        <div className="inline-flex items-center gap-0.5">
-                                          <NumericInput
-                                            ariaLabel={`Доля размера ${sz} в % для партии №${bIdx + 1}`}
-                                            value={batch.sizeSharesPct[sz]}
-                                            min={0}
-                                            max={100}
-                                            onChangeValue={(pct) =>
-                                              handleUpdateDraftBatchSizeShare(batch, sz, pct)
-                                            }
-                                            className="w-9 rounded border border-[#DFDED6] bg-white px-1 py-0.5 text-right font-mono text-[10.5px] font-semibold text-[#52514C] focus:border-[#9E9D95] focus:outline-none"
-                                          />
-                                          <span className="text-[10px] text-[#686762]">%</span>
-                                        </div>
-                                      </div>
-
-                                      <div className="my-1.5">
-                                        <NumericInput
-                                          ariaLabel={`Количество комплектов размера ${sz} в партии №${bIdx + 1}`}
-                                          value={packsForSize}
-                                          min={0}
-                                          step={10}
-                                          onChangeValue={(val) =>
-                                            handleUpdateDraftBatchSizePacks(batch, sz, val)
-                                          }
-                                          className="w-full rounded border border-[#D8D7CE] bg-white py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:border-[#9E9D95] focus:outline-none"
-                                        />
-                                      </div>
-
-                                      <div className="font-mono text-[10px] text-[#686762]">
-                                        компл. · {unitsForSize.toLocaleString('ru-RU')} изд.
-                                      </div>
+                                    <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2 text-left text-[11px]">
+                                      {model.liskaniSizeVariants.map((sv) => {
+                                        let periodDem = 0;
+                                        for (
+                                          let mIdx = batch.firstCoveredMonthIdx;
+                                          mIdx <= batch.endCoveredMonthIdx;
+                                          mIdx++
+                                        ) {
+                                          periodDem += sv.monthlyBuyoutsUnits[mIdx] || 0;
+                                        }
+                                        const share =
+                                          periodTotalVariantDemand > 0
+                                            ? periodDem / periodTotalVariantDemand
+                                            : 1 / model.liskaniSizeVariants!.length;
+                                        const szBatchPacks = Math.round(batch.recommendedPacks * share);
+                                        const szBatchRub = szBatchPacks * sv.unitCostRub;
+                                        return (
+                                          <div
+                                            key={sv.sellerSku}
+                                            className="rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-2 space-y-1"
+                                          >
+                                            <div className="flex items-center justify-between gap-1">
+                                              <span className="font-bold text-[#141413] truncate">
+                                                {sv.sizeCm}
+                                              </span>
+                                              <span className="font-mono text-[10px] text-[#686762]">
+                                                {Math.round(share * 100)}%
+                                              </span>
+                                            </div>
+                                            <div className="font-mono text-[13.5px] font-extrabold text-[#141413]">
+                                              {szBatchPacks.toLocaleString('ru-RU')} компл.
+                                            </div>
+                                            <div className="flex items-center justify-between font-mono text-[10px] text-[#52514C]">
+                                              <span>по {sv.unitCostRub} ₽</span>
+                                              <strong className="text-[#146C43]">
+                                                {szBatchRub.toLocaleString('ru-RU')} ₽
+                                              </strong>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   );
-                                })}
-                                <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
-                                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#146C43]">
-                                    <span>ИТОГО</span>
-                                    <span>100%</span>
-                                  </div>
-                                  <div className="my-1.5 font-mono text-[15px] font-extrabold text-[#141413]">
-                                    {sizeTotalPacks.toLocaleString('ru-RU')} компл.
-                                  </div>
-                                  <div className="font-mono text-[10px] text-[#52514C]">
-                                    {(sizeTotalPacks * model.unitsInPack).toLocaleString('ru-RU')} изд.
+                                })()
+                              ) : (
+                                <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
+                                  {SIZES_LIST.map((sz) => {
+                                    const packsForSize = batch.sizeBreakdownPacks[sz] || 0;
+                                    const unitsForSize = packsForSize * model.unitsInPack;
+                                    return (
+                                      <div
+                                        key={sz}
+                                        className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-2 hover:border-[#B8B7AE] focus-within:border-[#9E9D95] focus-within:bg-white"
+                                      >
+                                        <div className="flex items-center justify-between gap-1 text-[11px]">
+                                          <span className="font-bold text-[#141413]">{sz}</span>
+                                          <div className="inline-flex items-center gap-0.5">
+                                            <NumericInput
+                                              ariaLabel={`Доля размера ${sz} в % для партии №${bIdx + 1}`}
+                                              value={batch.sizeSharesPct[sz]}
+                                              min={0}
+                                              max={100}
+                                              onChangeValue={(pct) =>
+                                                handleUpdateDraftBatchSizeShare(batch, sz, pct)
+                                              }
+                                              className="w-9 rounded border border-[#DFDED6] bg-white px-1 py-0.5 text-right font-mono text-[10.5px] font-semibold text-[#52514C] focus:border-[#9E9D95] focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-[#686762]">%</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="my-1.5">
+                                          <NumericInput
+                                            ariaLabel={`Количество комплектов размера ${sz} в партии №${bIdx + 1}`}
+                                            value={packsForSize}
+                                            min={0}
+                                            step={10}
+                                            onChangeValue={(val) =>
+                                              handleUpdateDraftBatchSizePacks(batch, sz, val)
+                                            }
+                                            className="w-full rounded border border-[#D8D7CE] bg-white py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:border-[#9E9D95] focus:outline-none"
+                                          />
+                                        </div>
+
+                                        <div className="font-mono text-[10px] text-[#686762]">
+                                          компл. · {unitsForSize.toLocaleString('ru-RU')} изд.
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
+                                    <div className="flex items-center justify-between text-[11px] font-semibold text-[#146C43]">
+                                      <span>ИТОГО</span>
+                                      <span>100%</span>
+                                    </div>
+                                    <div className="my-1.5 font-mono text-[15px] font-extrabold text-[#141413]">
+                                      {sizeTotalPacks.toLocaleString('ru-RU')} компл.
+                                    </div>
+                                    <div className="font-mono text-[10px] text-[#52514C]">
+                                      {(sizeTotalPacks * model.unitsInPack).toLocaleString('ru-RU')} изд.
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                           </td>
                         </tr>

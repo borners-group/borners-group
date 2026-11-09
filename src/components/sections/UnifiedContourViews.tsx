@@ -739,11 +739,35 @@ export function ProcurementContourView() {
     return 'scen-brn-001-sc';
   });
   const [skuSearch, setSkuSearch] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
+  const [expandedSummaryModelIds, setExpandedSummaryModelIds] = useState<string[]>([]);
   const [scenarioDrawerTab, setScenarioDrawerTab] = useState<
     'none' | 'investment' | 'brands' | 'skus'
-  >('none');
+  >('skus');
   const [initialCashMln, setInitialCashMln] = useState<number>(0);
   const [wbLagMonths, setWbLagMonths] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const requested = window.sessionStorage.getItem('borners_open_procurement_view_mode');
+      if (requested === 'summary') {
+        setSubTab('batches');
+        setWavesCalendarOpen(false);
+        setScenarioDrawerTab('skus');
+        window.sessionStorage.removeItem('borners_open_procurement_view_mode');
+      }
+    } catch {
+      // ignore
+    }
+    const onOpenSummary = () => {
+      setSubTab('batches');
+      setWavesCalendarOpen(false);
+      setScenarioDrawerTab('skus');
+    };
+    window.addEventListener('borners-open-procurement-summary', onOpenSummary);
+    return () => window.removeEventListener('borners-open-procurement-summary', onOpenSummary);
+  }, []);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -894,6 +918,100 @@ export function ProcurementContourView() {
     });
   }, [procData.perSku, skuSearch]);
 
+  const categoryGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        categoryLabel: string;
+        modelsCount: number;
+        sizesCount: number;
+        annualDemandPacks: number;
+        soldCogsRub: number;
+        totalOrderPacks: number;
+        totalOrderUnits: number;
+        totalBudgetRub: number;
+        firstWavePacks: number;
+        firstWaveBudgetRub: number;
+        firstWavePrepayRub: number;
+      }
+    >();
+
+    for (const { model: m, plan } of procData.perSku) {
+      const cat = m.categoryLabel || detectModelBrandPortfolioLabel(m) || 'Основная линейка';
+      const cur = map.get(cat) || {
+        categoryLabel: cat,
+        modelsCount: 0,
+        sizesCount: 0,
+        annualDemandPacks: 0,
+        soldCogsRub: 0,
+        totalOrderPacks: 0,
+        totalOrderUnits: 0,
+        totalBudgetRub: 0,
+        firstWavePacks: 0,
+        firstWaveBudgetRub: 0,
+        firstWavePrepayRub: 0,
+      };
+      const sizeCount =
+        m.liskaniSizeVariants && m.liskaniSizeVariants.length > 0
+          ? m.liskaniSizeVariants.length
+          : 5;
+      const confirmedPos = plan.approvedOrders.filter((o) => o.confirmedByFactory !== false);
+      const poPacks = plan.totalApprovedReceiptsPacks;
+      const poUnits = plan.totalApprovedReceiptsUnits;
+      const poRub = confirmedPos.reduce((s, o) => s + o.totalOrderRub, 0);
+      const modelOrderPacks = poPacks + plan.totalRecommendedPacks;
+      const modelOrderUnits = poUnits + plan.totalRecommendedUnits;
+      const modelBudgetRub = poRub + (plan.totalRecommendedBudgetRub || 0);
+      const modelSoldCogsRub =
+        m.liskaniSizeVariants && m.liskaniSizeVariants.length > 0
+          ? m.liskaniSizeVariants.reduce(
+              (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
+              0
+            )
+          : plan.annualDemandPacks * (m.unitCostRub || 0);
+
+      const firstDraft = plan.recommendedBatches[0];
+      const earliestPo = [...confirmedPos].sort(
+        (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+      )[0];
+      let w1Packs = 0;
+      let w1Rub = 0;
+      let w1Prepay = 0;
+      if (earliestPo && (!firstDraft || earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)) {
+        const prepayPct = m.sharedSupplyAndFact?.factoryParams.prepaymentPct ?? 30;
+        w1Packs = earliestPo.packsQty;
+        w1Rub = earliestPo.totalOrderRub;
+        w1Prepay = Math.round((earliestPo.totalOrderRub * prepayPct) / 100);
+      } else if (firstDraft) {
+        w1Packs = firstDraft.recommendedPacks;
+        w1Rub = firstDraft.estimatedTotalRub;
+        w1Prepay = firstDraft.prepaymentRub;
+      }
+
+      cur.modelsCount += 1;
+      cur.sizesCount += sizeCount;
+      cur.annualDemandPacks += plan.annualDemandPacks;
+      cur.soldCogsRub += modelSoldCogsRub;
+      cur.totalOrderPacks += modelOrderPacks;
+      cur.totalOrderUnits += modelOrderUnits;
+      cur.totalBudgetRub += modelBudgetRub;
+      cur.firstWavePacks += w1Packs;
+      cur.firstWaveBudgetRub += w1Rub;
+      cur.firstWavePrepayRub += w1Prepay;
+      map.set(cat, cur);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.totalBudgetRub - a.totalBudgetRub);
+  }, [procData.perSku]);
+
+  const filteredSummarySkus = useMemo(() => {
+    if (selectedCategoryFilter === 'ALL') return filteredSkus;
+    return filteredSkus.filter(({ model: m }) => {
+      const cat = m.categoryLabel || detectModelBrandPortfolioLabel(m) || 'Основная линейка';
+      return cat === selectedCategoryFilter;
+    });
+  }, [filteredSkus, selectedCategoryFilter]);
+
   const handleExportFactoryOrderCsv = (mode: 'all' | 'first_wave' = 'all') => {
     const csv = serializeScenarioFactoryOrdersToCsv(
       eligibleModels,
@@ -934,25 +1052,9 @@ export function ProcurementContourView() {
     <div className="space-y-4 pb-16">
       {/* ЕДИНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ НАВИГАЦИИ РАЗДЕЛА 03 · ЗАКУПКИ (В стиле Peakly — строго один фокус внимания на экране) */}
       <div className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-        {/* Левая часть: 4 взаимоисключающих режима (По товару / Все SKU / 4 волны и сводка / Задачи CRM) */}
+        {/* Левая часть: 4 взаимоисключающих режима (Сводная детализация всех SKU / 4 волны и кэшфлоу / По товару / Задачи CRM) */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex flex-wrap rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] p-1 text-xs font-medium gap-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                setSubTab('batches');
-                setWavesCalendarOpen(false);
-                setScenarioDrawerTab('none');
-              }}
-              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
-                subTab === 'batches' && !wavesCalendarOpen && scenarioDrawerTab === 'none'
-                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
-                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
-              }`}
-            >
-              По товару ({filteredSkus.length > 0 ? `${activeSkuIndex + 1}/${filteredSkus.length}` : eligibleModels.length})
-            </button>
-
             <button
               type="button"
               onClick={() => {
@@ -966,7 +1068,7 @@ export function ProcurementContourView() {
                   : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
               }`}
             >
-              Все SKU ({procData.perSku.length})
+              Все SKU · Детализация закупок ({procData.perSku.length})
             </button>
 
             <button
@@ -983,6 +1085,22 @@ export function ProcurementContourView() {
               }`}
             >
               4 волны и сводка ({formatMln(investmentSummary.totalProcurementBudgetRub)})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSubTab('batches');
+                setWavesCalendarOpen(false);
+                setScenarioDrawerTab('none');
+              }}
+              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                subTab === 'batches' && !wavesCalendarOpen && scenarioDrawerTab === 'none'
+                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+              }`}
+            >
+              По товару ({filteredSkus.length > 0 ? `${activeSkuIndex + 1}/${filteredSkus.length}` : eligibleModels.length})
             </button>
 
             <button
@@ -1669,70 +1787,616 @@ export function ProcurementContourView() {
                 </div>
               )}
 
-              {/* ВКЛАДКА 3: СВОДНАЯ ТАБЛИЦА ВСЕХ МОДЕЛЕЙ СЦЕНАРИЯ */}
+              {/* ВКЛАДКА 3: СВОДНАЯ ВЕДОМОСТЬ И ДЕТАЛИЗАЦИЯ ЗАКУПОК (ПО КАТЕГОРИЯМ, КАРТОЧКАМ, 4 ВОЛНАМ Q1–Q4 И РАЗМЕРАМ) */}
               {scenarioDrawerTab === 'skus' && (
-                <div className="p-4">
-                  <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC]">
-                    <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
-                      <thead>
-                        <tr className="border-b border-[#E4E3DC] bg-[#FAF9F6] text-[11px] font-semibold text-[#6E6D66] uppercase tracking-wide">
-                          <th className="py-2.5 pr-3 pl-3.5">Модель / SKU</th>
-                          <th className="px-3 py-2.5 text-right">План продаж</th>
-                          <th className="px-3 py-2.5 text-right">Остаток</th>
-                          <th className="px-3 py-2.5 text-right">Подтв. PO</th>
-                          <th className="px-3 py-2.5 text-right">К заказу</th>
-                          <th className="px-3 py-2.5 text-right">Бюджет</th>
-                          <th className="py-2.5 pr-3.5 pl-3 text-right">Действие</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#ECEBE4]">
-                        {procData.perSku.map(({ model: m, plan }) => (
-                          <tr
-                            key={m.id}
-                            className={`hover:bg-[#FAF9F6] ${
-                              activeSkuModel?.id === m.id ? 'bg-[#F4F3EE]/80' : ''
-                            }`}
+                <div className="p-4 sm:p-5 space-y-5 bg-[#FAF9F6]/50">
+                  {/* 1. ФОРМУЛА СВОДНОЙ ЗАКУПКИ: ОТКУДА БЕРЁТСЯ ОБЩАЯ СУММА В СВОДКЕ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                          1. Себестоимость выкупов (Сводка)
+                        </span>
+                        <span className="rounded-md bg-[#EEF2F6] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#334155]">
+                          {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                        </span>
+                      </div>
+                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                        {formatMln(investmentSummary.annualSoldGoodsCostRub)}
+                      </div>
+                      <div className="text-[11.5px] text-[#64748B]">
+                        Средняя себест.:{' '}
+                        <strong className="font-mono text-[#0F172A]">
+                          {procData.annualDemandPacks > 0
+                            ? Math.round(
+                                investmentSummary.annualSoldGoodsCostRub / procData.annualDemandPacks
+                              ).toLocaleString('ru-RU')
+                            : 0}{' '}
+                          ₽/компл.
+                        </strong>{' '}
+                        · {investmentSummary.annualSoldGoodsCostRub.toLocaleString('ru-RU')} ₽
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                          2. Бюджет закупок у фабрик (Год)
+                        </span>
+                        <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[10.5px] font-bold text-emerald-700">
+                          {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                        </span>
+                      </div>
+                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                        {formatMln(procData.totalScenarioBudgetRub)}
+                      </div>
+                      <div className="text-[11.5px] text-[#64748B]">
+                        {procData.totalScenarioUnits.toLocaleString('ru-RU')} изд. · включает 4 квартальные волны и переходящий запас
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                          3. Старт · Волна №1 (Q1 · Янв–Мар)
+                        </span>
+                        <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 text-[10.5px] font-bold text-[#146C43]">
+                          аванс 30%
+                        </span>
+                      </div>
+                      <div className="font-mono text-[22px] font-extrabold text-[#157347]">
+                        {formatMln(procData.firstWaveBudgetRub)}
+                      </div>
+                      <div className="text-[11.5px] text-[#64748B]">
+                        Аванс сейчас:{' '}
+                        <strong className="font-mono text-[#0F172A]">
+                          {formatMln(procData.firstWavePrepaymentRub)}
+                        </strong>{' '}
+                        · {procData.firstWavePacks.toLocaleString('ru-RU')} компл.
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                          4. Волны №2–№4 (Q2–Q4 с оборота WB)
+                        </span>
+                        <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#475569]">
+                          реинвест WB
+                        </span>
+                      </div>
+                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                        {formatMln(
+                          Math.max(0, procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub)
+                        )}
+                      </div>
+                      <div className="text-[11.5px] text-[#64748B]">
+                        {Math.max(0, procData.totalScenarioPacks - procData.firstWavePacks).toLocaleString(
+                          'ru-RU'
+                        )}{' '}
+                        компл. · оплата из поступлений с WB
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. ГРУППИРОВКА ЗАКУПОК ПО КАТЕГОРИЯМ / ЛИНЕЙКАМ (БЛЭКАУТ, МРАМОР, РОГОЖКА, ТЮЛЬ И ДР.) */}
+                  {categoryGroups.length > 1 && (
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[12.5px] font-bold text-[#0F172A]">
+                          Детализация бюджета закупок по категориям ({categoryGroups.length} кат. · нажмите для фильтрации)
+                        </span>
+                        {selectedCategoryFilter !== 'ALL' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCategoryFilter('ALL')}
+                            className="text-[11.5px] font-semibold text-emerald-700 hover:underline cursor-pointer"
                           >
-                            <td className="py-2.5 pr-3 pl-3.5">
-                              <div className="font-bold text-[#141413]">{m.title}</div>
-                              <div className="font-mono text-[10.5px] text-[#6E6D66]">
-                                {m.code} · {m.unitsInPack} изд./компл.
+                            Показать все категории ({procData.perSku.length} SKU)
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {categoryGroups.map((cg) => {
+                          const isSel = selectedCategoryFilter === cg.categoryLabel;
+                          const avgCost =
+                            cg.annualDemandPacks > 0
+                              ? Math.round(cg.soldCogsRub / cg.annualDemandPacks)
+                              : 0;
+                          return (
+                            <button
+                              key={cg.categoryLabel}
+                              type="button"
+                              onClick={() =>
+                                setSelectedCategoryFilter(isSel ? 'ALL' : cg.categoryLabel)
+                              }
+                              className={`text-left rounded-xl border p-3.5 transition cursor-pointer ${
+                                isSel
+                                  ? 'border-emerald-500 bg-emerald-500/8 shadow-xs'
+                                  : 'border-[#E2E6EE] bg-white hover:border-[#CBD5E1]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[13px] font-bold text-[#0F172A] truncate">
+                                  {cg.categoryLabel}
+                                </span>
+                                <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#334155] shrink-0">
+                                  {cg.modelsCount} мод. · {cg.sizesCount} разм.
+                                </span>
+                              </div>
+                              <div className="mt-2 flex items-baseline justify-between gap-2">
+                                <div>
+                                  <div className="text-[10.5px] text-[#64748B]">Бюджет закупок (год)</div>
+                                  <div className="font-mono text-[17px] font-extrabold text-[#0F172A]">
+                                    {formatMln(cg.totalBudgetRub)}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10.5px] text-[#64748B]">Себест. выкупов</div>
+                                  <div className="font-mono text-[13.5px] font-bold text-[#334155]">
+                                    {formatMln(cg.soldCogsRub)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-2 pt-2 border-t border-[#EEF2F6] flex items-center justify-between text-[11px] text-[#475569]">
+                                <span>
+                                  К заказу: <strong className="font-mono text-[#0F172A]">{cg.totalOrderPacks.toLocaleString('ru-RU')}</strong> компл. (~{avgCost} ₽)
+                                </span>
+                                <span className="font-mono font-semibold text-emerald-700">
+                                  Q1: {formatMln(cg.firstWaveBudgetRub)}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. ПОАРТИКУЛЬНАЯ И ПОРАЗМЕРНАЯ ВЕДОМОСТЬ ЗАКУПОК (С РАСКРЫТИЕМ РАЗМЕРОВ И 4 КВАРТАЛЬНЫХ ВОЛН Q1–Q4) */}
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[14.5px] font-bold text-[#0F172A]">
+                          Поартикульная и поразмерная детализация закупок ({filteredSummarySkus.length} карточек)
+                        </div>
+                        <p className="text-[11.5px] text-[#64748B]">
+                          Нажмите на любую строку или кнопку «Размеры ▾», чтобы раскрыть все размеры полотен / сетку S–XXL, их себестоимость и партии Q1–Q4 прямо в таблице
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={skuSearch}
+                          onChange={(e) => setSkuSearch(e.target.value)}
+                          placeholder="Поиск по коду, цвету или WB..."
+                          className="h-8.5 w-52 rounded-lg border border-[#CBD5E1] bg-white px-3 text-[12px] text-[#0F172A] placeholder:text-[#64748B] focus:border-[#0F172A] focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (expandedSummaryModelIds.length >= filteredSummarySkus.length) {
+                              setExpandedSummaryModelIds([]);
+                            } else {
+                              setExpandedSummaryModelIds(
+                                filteredSummarySkus.map(({ model: m }) => m.id)
+                              );
+                            }
+                          }}
+                          className="h-8.5 rounded-lg border border-[#CBD5E1] bg-white px-3 text-[12px] font-semibold text-[#0F172A] hover:bg-[#F1F5F9] cursor-pointer"
+                        >
+                          {expandedSummaryModelIds.length >= filteredSummarySkus.length &&
+                          filteredSummarySkus.length > 0
+                            ? 'Свернуть все размеры ▴'
+                            : 'Развернуть все размеры ▾'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-[#CBD5E1] bg-white">
+                      <table className="w-full min-w-[980px] border-collapse text-left text-[12px]">
+                        <thead>
+                          <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10.5px] font-bold text-[#475569] uppercase tracking-wide">
+                            <th className="py-2.5 pr-3 pl-3.5">Модель / SKU и категория</th>
+                            <th className="px-2.5 py-2.5 text-right">Себест. 1 компл.</th>
+                            <th className="px-2.5 py-2.5 text-right">План продаж</th>
+                            <th className="px-2.5 py-2.5 text-right">Себест. выкупов</th>
+                            <th className="px-2.5 py-2.5 text-right">К заказу (год)</th>
+                            <th className="px-2.5 py-2.5 text-right bg-emerald-500/6 text-emerald-800">
+                              Старт Q1 (Аванс 30%)
+                            </th>
+                            <th className="px-2.5 py-2.5 text-right">Волны Q2–Q4</th>
+                            <th className="px-2.5 py-2.5 text-right">Бюджет закупок</th>
+                            <th className="py-2.5 pr-3.5 pl-2.5 text-right">Детализация</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EEF2F6]">
+                          {filteredSummarySkus.map(({ model: m, plan }) => {
+                            const isExp = expandedSummaryModelIds.includes(m.id);
+                            const toggleExpand = () => {
+                              setExpandedSummaryModelIds((prev) =>
+                                prev.includes(m.id)
+                                  ? prev.filter((id) => id !== m.id)
+                                  : [...prev, m.id]
+                              );
+                            };
+                            const hasLiskaniSizes =
+                              Array.isArray(m.liskaniSizeVariants) &&
+                              m.liskaniSizeVariants.length > 0;
+                            const sizesCount = hasLiskaniSizes
+                              ? m.liskaniSizeVariants!.length
+                              : 5;
+                            const minSizeCost = hasLiskaniSizes
+                              ? Math.min(...m.liskaniSizeVariants!.map((v) => v.unitCostRub))
+                              : m.unitCostRub;
+                            const maxSizeCost = hasLiskaniSizes
+                              ? Math.max(...m.liskaniSizeVariants!.map((v) => v.unitCostRub))
+                              : m.unitCostRub;
+
+                            const confirmedPos = plan.approvedOrders.filter(
+                              (o) => o.confirmedByFactory !== false
+                            );
+                            const poRub = confirmedPos.reduce((s, o) => s + o.totalOrderRub, 0);
+                            const totalModelPacks =
+                              plan.totalApprovedReceiptsPacks + plan.totalRecommendedPacks;
+                            const totalModelUnits =
+                              plan.totalApprovedReceiptsUnits + plan.totalRecommendedUnits;
+                            const totalModelBudgetRub =
+                              poRub + (plan.totalRecommendedBudgetRub || 0);
+
+                            const soldCogsRub = hasLiskaniSizes
+                              ? m.liskaniSizeVariants!.reduce(
+                                  (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
+                                  0
+                                )
+                              : plan.annualDemandPacks * (m.unitCostRub || 0);
+
+                            const firstDraft = plan.recommendedBatches[0];
+                            const earliestPo = [...confirmedPos].sort(
+                              (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+                            )[0];
+                            let w1Packs = 0;
+                            let w1Rub = 0;
+                            let w1Prepay = 0;
+                            if (
+                              earliestPo &&
+                              (!firstDraft ||
+                                earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)
+                            ) {
+                              const prepayPct =
+                                m.sharedSupplyAndFact?.factoryParams.prepaymentPct ?? 30;
+                              w1Packs = earliestPo.packsQty;
+                              w1Rub = earliestPo.totalOrderRub;
+                              w1Prepay = Math.round((earliestPo.totalOrderRub * prepayPct) / 100);
+                            } else if (firstDraft) {
+                              w1Packs = firstDraft.recommendedPacks;
+                              w1Rub = firstDraft.estimatedTotalRub;
+                              w1Prepay = firstDraft.prepaymentRub;
+                            }
+
+                            const restPacks = Math.max(0, totalModelPacks - w1Packs);
+                            const restRub = Math.max(0, totalModelBudgetRub - w1Rub);
+                            const supplyScaleRatio =
+                              plan.annualDemandPacks > 0
+                                ? totalModelPacks / plan.annualDemandPacks
+                                : 1;
+
+                            return (
+                              <React.Fragment key={m.id}>
+                                <tr
+                                  onClick={toggleExpand}
+                                  className={`cursor-pointer transition ${
+                                    isExp
+                                      ? 'bg-[#F8FAFC]'
+                                      : 'hover:bg-[#F8FAFC]/80'
+                                  }`}
+                                >
+                                  <td className="py-2.5 pr-3 pl-3.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-[#0F172A]">{m.title}</span>
+                                      <span className="rounded bg-[#EEF2F6] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#334155]">
+                                        {hasLiskaniSizes ? `${sizesCount} разм.` : 'S–XXL'}
+                                      </span>
+                                    </div>
+                                    <div className="font-mono text-[10.5px] text-[#64748B]">
+                                      {m.code} · {m.categoryLabel || detectModelBrandPortfolioLabel(m)} ·{' '}
+                                      {m.unitsInPack} изд./компл.
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono">
+                                    <div className="font-bold text-[#0F172A]">
+                                      {(m.unitCostRub || 0).toLocaleString('ru-RU')} ₽
+                                    </div>
+                                    {hasLiskaniSizes && minSizeCost !== maxSizeCost && (
+                                      <div className="text-[10px] text-[#64748B]">
+                                        {minSizeCost}–{maxSizeCost} ₽
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
+                                    <div>{plan.annualDemandPacks.toLocaleString('ru-RU')} компл.</div>
+                                    <div className="text-[10px] text-[#64748B]">
+                                      {plan.annualDemandUnits.toLocaleString('ru-RU')} изд.
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono font-semibold text-[#334155]">
+                                    <div>{formatMln(soldCogsRub)}</div>
+                                    <div className="text-[10px] text-[#64748B]">
+                                      {soldCogsRub.toLocaleString('ru-RU')} ₽
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono font-bold text-[#0F172A]">
+                                    <div>{totalModelPacks.toLocaleString('ru-RU')} компл.</div>
+                                    <div className="text-[10px] font-normal text-[#64748B]">
+                                      {totalModelUnits.toLocaleString('ru-RU')} изд.
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono bg-emerald-500/4">
+                                    <div className="font-bold text-emerald-700">
+                                      {formatMln(w1Rub)}
+                                    </div>
+                                    <div className="text-[10px] text-[#475569]">
+                                      {w1Packs.toLocaleString('ru-RU')} компл. · ав.{' '}
+                                      {formatMln(w1Prepay)}
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
+                                    <div className="font-semibold">{formatMln(restRub)}</div>
+                                    <div className="text-[10px] text-[#64748B]">
+                                      {restPacks.toLocaleString('ru-RU')} компл. (с WB)
+                                    </div>
+                                  </td>
+
+                                  <td className="px-2.5 py-2.5 text-right font-mono font-extrabold text-[#0F172A]">
+                                    <div>{formatMln(totalModelBudgetRub)}</div>
+                                    <div className="text-[10px] font-normal text-[#64748B]">
+                                      {totalModelBudgetRub.toLocaleString('ru-RU')} ₽
+                                    </div>
+                                  </td>
+
+                                  <td
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="py-2.5 pr-3.5 pl-2.5 text-right"
+                                  >
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={toggleExpand}
+                                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                                          isExp
+                                            ? 'border-[#94A3B8] bg-[#E2E8F0] text-[#0F172A]'
+                                            : 'border-[#CBD5E1] bg-[#F8FAFC] text-[#1E293B] hover:bg-[#E2E8F0]'
+                                        }`}
+                                      >
+                                        {isExp
+                                          ? 'Скрыть ▴'
+                                          : `Размеры (${sizesCount}) ▾`}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedSkuId(m.id);
+                                          setWavesCalendarOpen(false);
+                                          setScenarioDrawerTab('none');
+                                        }}
+                                        className="rounded-lg border border-[#CBD5E1] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0F172A] hover:bg-[#F1F5F9] cursor-pointer"
+                                      >
+                                        Открыть партии →
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* РАСКРЫТАЯ ДЕТАЛИЗАЦИЯ ПО РАЗМЕРАМ И КВАРТАЛЬНЫМ ПАРТИЯМ ПРЯМО В СВОДНОЙ ТАБЛИЦЕ */}
+                                {isExp && (
+                                  <tr>
+                                    <td colSpan={9} className="bg-[#F8FAFC] px-4 py-3.5 border-b border-[#CBD5E1]">
+                                      <div className="space-y-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <div className="text-[12.5px] font-bold text-[#0F172A]">
+                                            Детализация закупки карточки «{m.title}» ({m.code}) по размерам и 4 квартальным волнам
+                                          </div>
+                                          <div className="flex items-center gap-2 text-[11.5px]">
+                                            <span className="text-[#475569]">
+                                              Партий в плане: <strong>{plan.recommendedBatches.length}</strong> · Утв. PO: <strong>{plan.approvedOrders.length}</strong>
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedSkuId(m.id);
+                                                setWavesCalendarOpen(false);
+                                                setScenarioDrawerTab('none');
+                                              }}
+                                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-[11px] font-semibold cursor-pointer"
+                                            >
+                                              Редактировать партии и даты ({m.code}) →
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {hasLiskaniSizes ? (
+                                          <div className="overflow-x-auto rounded-lg border border-[#CBD5E1] bg-white">
+                                            <table className="w-full min-w-[820px] border-collapse text-left text-[11.5px]">
+                                              <thead>
+                                                <tr className="border-b border-[#E2E8F0] bg-[#F1F5F9] text-[10px] font-bold uppercase tracking-wider text-[#475569]">
+                                                  <th className="py-2 px-3">Размер полотна / SKU</th>
+                                                  <th className="py-2 px-2.5 text-right">Себестоимость</th>
+                                                  <th className="py-2 px-2.5 text-right">Выкупы (год)</th>
+                                                  <th className="py-2 px-2.5 text-right">Себест. выкупов</th>
+                                                  <th className="py-2 px-2.5 text-right bg-emerald-500/8 text-emerald-800">
+                                                    Q1 (Янв–Мар)
+                                                  </th>
+                                                  <th className="py-2 px-2.5 text-right">Q2 (Апр–Июн)</th>
+                                                  <th className="py-2 px-2.5 text-right">Q3 (Июл–Сен)</th>
+                                                  <th className="py-2 px-2.5 text-right">Q4 (Окт–Дек)</th>
+                                                  <th className="py-2 px-2.5 text-right">К заказу (год)</th>
+                                                  <th className="py-2 px-3 text-right">Бюджет закупки</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-[#EEF2F6]">
+                                                {m.liskaniSizeVariants!.map((sv) => {
+                                                  const q1Demand =
+                                                    (sv.monthlyBuyoutsUnits[0] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[1] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[2] || 0);
+                                                  const q2Demand =
+                                                    (sv.monthlyBuyoutsUnits[3] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[4] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[5] || 0);
+                                                  const q3Demand =
+                                                    (sv.monthlyBuyoutsUnits[6] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[7] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[8] || 0);
+                                                  const q4Demand =
+                                                    (sv.monthlyBuyoutsUnits[9] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[10] || 0) +
+                                                    (sv.monthlyBuyoutsUnits[11] || 0);
+
+                                                  const q1Order = Math.round(q1Demand * supplyScaleRatio);
+                                                  const q2Order = Math.round(q2Demand * supplyScaleRatio);
+                                                  const q3Order = Math.round(q3Demand * supplyScaleRatio);
+                                                  const totalSzOrder = Math.round(
+                                                    sv.annualBuyoutsUnits * supplyScaleRatio
+                                                  );
+                                                  const q4Order = Math.max(
+                                                    0,
+                                                    totalSzOrder - q1Order - q2Order - q3Order
+                                                  );
+                                                  const szSoldCogsRub =
+                                                    sv.annualBuyoutsUnits * sv.unitCostRub;
+                                                  const szBudgetRub = totalSzOrder * sv.unitCostRub;
+
+                                                  return (
+                                                    <tr key={sv.sellerSku} className="hover:bg-[#F8FAFC]">
+                                                      <td className="py-2 px-3">
+                                                        <span className="font-bold text-[#0F172A]">
+                                                          {sv.sizeCm}
+                                                        </span>{' '}
+                                                        <span className="font-mono text-[10px] text-[#64748B]">
+                                                          ({sv.sellerSku})
+                                                        </span>
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
+                                                        {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
+                                                        {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
+                                                        {szSoldCogsRub.toLocaleString('ru-RU')} ₽
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono font-semibold text-emerald-700 bg-emerald-500/4">
+                                                        {q1Order.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                        {q2Order.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                        {q3Order.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                        {q4Order.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
+                                                        {totalSzOrder.toLocaleString('ru-RU')} компл.
+                                                      </td>
+                                                      <td className="py-2 px-3 text-right font-mono font-bold text-[#0F172A]">
+                                                        {szBudgetRub.toLocaleString('ru-RU')} ₽
+                                                      </td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        ) : (
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                                            {plan.recommendedBatches.map((rb, bIdx) => (
+                                              <div
+                                                key={rb.periodId}
+                                                className="rounded-lg border border-[#CBD5E1] bg-white p-3 space-y-1"
+                                              >
+                                                <div className="flex items-center justify-between text-[11px]">
+                                                  <span className="font-bold text-[#0F172A]">
+                                                    Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
+                                                  </span>
+                                                  <span className="font-mono font-semibold text-emerald-700">
+                                                    {formatMln(rb.estimatedTotalRub)}
+                                                  </span>
+                                                </div>
+                                                <div className="font-mono text-[12px] font-bold text-[#0F172A]">
+                                                  {rb.recommendedPacks.toLocaleString('ru-RU')} компл. ({rb.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
+                                                </div>
+                                                <div className="text-[10.5px] text-[#64748B]">
+                                                  Аванс: {formatMln(rb.prepaymentRub)} · S:{rb.sizeBreakdownPacks.S} M:{rb.sizeBreakdownPacks.M} L:{rb.sizeBreakdownPacks.L} XL:{rb.sizeBreakdownPacks.XL} XXL:{rb.sizeBreakdownPacks.XXL}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-[#CBD5E1] bg-[#F1F5F9] font-extrabold text-[#0F172A]">
+                            <td className="py-3 pr-3 pl-3.5">
+                              ИТОГО ПО СЦЕНАРИЮ ({procData.perSku.length} мод.)
+                            </td>
+                            <td className="px-2.5 py-3 text-right font-mono">
+                              ~
+                              {procData.annualDemandPacks > 0
+                                ? Math.round(
+                                    investmentSummary.annualSoldGoodsCostRub /
+                                      procData.annualDemandPacks
+                                  ).toLocaleString('ru-RU')
+                                : 0}{' '}
+                              ₽
+                            </td>
+                            <td className="px-2.5 py-3 text-right font-mono">
+                              {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                            </td>
+                            <td className="px-2.5 py-3 text-right font-mono">
+                              {formatMln(investmentSummary.annualSoldGoodsCostRub)}
+                            </td>
+                            <td className="px-2.5 py-3 text-right font-mono">
+                              {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                            </td>
+                            <td className="px-2.5 py-3 text-right font-mono text-emerald-700 bg-emerald-500/8">
+                              <div>{formatMln(procData.firstWaveBudgetRub)}</div>
+                              <div className="text-[10px] font-semibold text-[#475569]">
+                                ав. {formatMln(procData.firstWavePrepaymentRub)}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-[#3D3C38]">
-                              {plan.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                            <td className="px-2.5 py-3 text-right font-mono">
+                              {formatMln(
+                                Math.max(
+                                  0,
+                                  procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub
+                                )
+                              )}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-[#3D3C38]">
-                              {plan.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл.
+                            <td className="px-2.5 py-3 text-right font-mono text-[13px]">
+                              {formatMln(procData.totalScenarioBudgetRub)}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
-                              {plan.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-bold text-[#141413]">
-                              {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
-                            </td>
-                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-[#141413]">
-                              {plan.totalRecommendedBudgetRub !== null
-                                ? formatMln(plan.totalRecommendedBudgetRub)
-                                : '—'}
-                            </td>
-                            <td className="py-2.5 pr-3.5 pl-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedSkuId(m.id);
-                                  setWavesCalendarOpen(false);
-                                  setScenarioDrawerTab('none');
-                                }}
-                                className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#F5F5F1] cursor-pointer"
-                              >
-                                Открыть партии →
-                              </button>
+                            <td className="py-3 pr-3.5 pl-2.5 text-right font-mono text-[11px] text-[#475569]">
+                              100% сводки
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1749,6 +2413,17 @@ export function ProcurementContourView() {
               onOpenSalesMatrix={() => navigateTo('launch-calendar')}
               headerLeftSlot={
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWavesCalendarOpen(false);
+                      setScenarioDrawerTab('skus');
+                    }}
+                    className="h-9 px-3 rounded-[8px] border border-[#CBD5E1] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[12px] font-semibold text-[#1E293B] cursor-pointer flex items-center gap-1.5"
+                    title="Вернуться к сводной ведомости и детализации закупок всех SKU"
+                  >
+                    <span>← Сводка всех закупок ({procData.perSku.length} SKU)</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleStepSku(-1)}
