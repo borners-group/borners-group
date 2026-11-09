@@ -2080,18 +2080,111 @@ test('35. Раздельные каталоги по брендам, Групп�
   assert.equal(procPlan.recommendedBatches[1].hasCustomDateOverride, true);
 });
 
+test('36. Пакет из 5 улучшений платформы: авто-нормативы WB в карточках SKU, запуск стартовых матриц 5 кабинетов (AKUSHA, LISKANI, НА ТЕЛЕ), интерактивный симулятор «Что если?» и платёжный календарь 4 волн', async () => {
+  const {
+    ensureModelUnifiedV11,
+    computeFinancialPnL,
+    applyCategoryWbUnitEconomics,
+    launchBrandStarterMatrix,
+    launchAllEmptyCabinetsInHolding,
+    resetStarterCabinetsFromHolding,
+    computeMultiBrandPortfolioSummary,
+    computeWhatIfSensitivitySimulation,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
 
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
 
+  // 1. Автозаполнение юнит-экономики WB: BRN-002 (себестоимость 525 ₽ есть, ставки WB не заполнены -> после applyCategoryWbUnitEconomics прибыль рассчитана!)
+  const rawBrn002 = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-002')!
+  );
+  assert.equal(computeFinancialPnL(rawBrn002, scen1).operatingProfitStatus, 'not_filled');
 
+  const filledBrn002 = applyCategoryWbUnitEconomics(rawBrn002);
+  const pnlBrn002 = computeFinancialPnL(filledBrn002, scen1);
+  assert.equal(pnlBrn002.operatingProfitStatus, 'plan');
+  assert.ok((pnlBrn002.unitOperatingProfitRub ?? 0) > 0);
+  assert.ok((pnlBrn002.annualOperatingProfitRub ?? 0) > 0);
 
+  // А для гипотезы BRN-DLY-01 (где нет себестоимости) с fillMissingCost: true заполняются и себестоимость, и ставки WB
+  const rawDly01 = ensureModelUnifiedV11(
+    S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-DLY-01')!
+  );
+  const filledDly01 = applyCategoryWbUnitEconomics(rawDly01, { fillMissingCost: true });
+  const pnlDly01 = computeFinancialPnL(filledDly01, scen1);
+  assert.equal(pnlDly01.operatingProfitStatus, 'plan');
+  assert.ok((filledDly01.unitCostRub ?? 0) > 0);
 
+  // 2. Быстрый запуск пустых кабинетов (AKUSHA, LISKANI, НА ТЕЛЕ) и подключение всех 5 кабинетов холдинга
+  const baseModels = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
+  const baseScenarios = [...INITIAL_SCENARIOS];
+  const baseMap = {
+    BORNERS: 1,
+    FUKAI: 100,
+    AKUSHA: null,
+    LISKANI: null,
+    NA_TELE: null,
+  };
 
+  const singleLaunch = launchBrandStarterMatrix(baseModels, baseScenarios, 'AKUSHA');
+  assert.equal(singleLaunch.addedCount, 3);
+  assert.ok(singleLaunch.scenarioId > 0);
 
+  const all5Launched = launchAllEmptyCabinetsInHolding(baseModels, baseScenarios, baseMap);
+  const summaryAll5 = computeMultiBrandPortfolioSummary(
+    all5Launched.models,
+    all5Launched.scenarios,
+    all5Launched.selectedScenarioByBrand
+  );
+  const activeBrandsCount = summaryAll5.brands.filter(
+    (b) => b.hasScenario && b.modelsCount > 0 && b.annualRevenueRub > 0
+  ).length;
+  assert.equal(activeBrandsCount, 5, 'Все 5 кабинетов холдинга должны быть активны и приносить выручку');
+  assert.ok(summaryAll5.groupTotal.annualRevenueRub > 900_000_000, 'Консолидированная выручка 5 кабинетов превышает 900 млн ₽');
 
+  // Сброс стартовых кабинетов возвращает 2 базовых кабинета (BORNERS + FUKAI)
+  const resetRes = resetStarterCabinetsFromHolding(
+    all5Launched.models,
+    all5Launched.scenarios,
+    all5Launched.selectedScenarioByBrand
+  );
+  assert.equal(resetRes.selectedScenarioByBrand.AKUSHA, null);
+  assert.equal(resetRes.selectedScenarioByBrand.LISKANI, null);
 
+  // 3. Интерактивный симулятор «Что если?» (Sensitivity Sliders)
+  const baseSim = computeWhatIfSensitivitySimulation(
+    {
+      annualRevenueRub: 776_840_000,
+      annualSoldGoodsCostRub: 166_500_000,
+      annualWbDeductionsAndAdsRub: 297_540_000,
+      annualEstimatedOperatingProfitRub: 312_800_000,
+      peakWorkingCapitalRub: 32_220_000,
+    },
+    {
+      priceDeltaPct: 0,
+      costDeltaPct: 0,
+      wbAndAdsDeltaPts: 0,
+    }
+  );
+  assert.equal(baseSim.profitDeltaRub, 0);
 
-
-
-
-
+  const growthSim = computeWhatIfSensitivitySimulation(
+    {
+      annualRevenueRub: 776_840_000,
+      annualSoldGoodsCostRub: 166_500_000,
+      annualWbDeductionsAndAdsRub: 297_540_000,
+      annualEstimatedOperatingProfitRub: 312_800_000,
+      peakWorkingCapitalRub: 32_220_000,
+    },
+    {
+      priceDeltaPct: 7,
+      costDeltaPct: -5,
+      wbAndAdsDeltaPts: 0,
+    }
+  );
+  assert.ok(growthSim.simulatedRevenueRub > 776_840_000);
+  assert.ok(growthSim.simCogsRub < 166_500_000);
+  assert.ok(growthSim.profitDeltaRub > 40_000_000);
+  assert.ok(growthSim.simulatedMarginPct > baseSim.baseMarginPct);
+});
 

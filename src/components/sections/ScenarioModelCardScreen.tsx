@@ -29,11 +29,13 @@ import {
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
   VALUE_STATUS_LABELS_RU,
+  applyCategoryWbUnitEconomics,
   computeFinancialPnL,
   computeProcurementPlan,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
+  getCategoryWbNormsForBrand,
   getModelChannelSplit,
   importStructuredScenarioPlan,
   parseStructuredPlanCsvOrJson,
@@ -2390,10 +2392,52 @@ export function ScenarioModelCardScreen({
         {/* ==================== ВКЛАДКА «ФИНАНСЫ» (Раздел 05 ТЗ, Стр. 5 и 6) ==================== */}
         {activeTab === 'finance' && (
           <div className="p-5 md:p-6 space-y-6">
+            {/* БАННЕР АВТОЗАПОЛНЕНИЯ НОРМАТИВОВ WB В 1 КЛИК (если у модели-гипотезы не заполнена логистика / комиссия / себестоимость) */}
+            {(!pnl.logisticsFilled || !pnl.expensesFilled || pnl.unitCostPerPackRub === null) && (
+              <div className="rounded-2xl bg-emerald-500/8 border border-emerald-500/30 px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-[13.5px] font-bold text-[#0F172A]">
+                    ⚡ Быстрое заполнение юнит-экономики по нормативам категории WB
+                  </div>
+                  <p className="text-[12px] text-[#475569]">
+                    Применить отраслевые нормативы для бренда {brandPortfolioLabel} (комиссия WB{' '}
+                    {getCategoryWbNormsForBrand(model).marketplaceFeePct}%, логистика{' '}
+                    {getCategoryWbNormsForBrand(model).logisticsRub} ₽, реклама ДРР{' '}
+                    {getCategoryWbNormsForBrand(model).adsPct}%, OPEX{' '}
+                    {getCategoryWbNormsForBrand(model).allocatedFixedOpexRubPerPack} ₽/компл.) и сразу рассчитать чистую прибыль.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = applyCategoryWbUnitEconomics(model, {
+                      fillMissingCost: true,
+                      forceOverwriteRates: true,
+                    });
+                    commitWithAudit(
+                      updated,
+                      'finance',
+                      'Применены отраслевые нормативы юнит-экономики WB (комиссия, логистика, ДРР, OPEX)',
+                      'Не заполнено',
+                      `WB ${updated.marketplaceFeePct}% · Лог. ${updated.logisticsRub} ₽ · ДРР ${updated.adsPct}%`
+                    );
+                    notify(
+                      'success',
+                      'Юнит-экономика WB заполнена',
+                      `Комиссия ${updated.marketplaceFeePct}%, логистика ${updated.logisticsRub} ₽, ДРР ${updated.adsPct}%`
+                    );
+                  }}
+                  className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition shrink-0"
+                >
+                  ⚡ Заполнить отраслевые нормативы WB
+                </button>
+              </div>
+            )}
+
             {/* ВЕРХНЯЯ СЕТКА: БЛОК А (Сколько остаётся с одного комплекта) + БЛОК Б (Результат за выбранный период) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* БЛОК А. Сколько остаётся с одного комплекта (Стр. 5 ТЗ) */}
-              <div className="lg:col-span-6 rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 space-y-3">
+              <div className="lg:col-span-6 rounded-2xl bg-white border border-[#E2E6EE] p-4 md:p-5 space-y-3 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
                   <div>
                     <h3 className="text-[15px] font-bold text-[#141413]">
@@ -2403,7 +2447,30 @@ export function ScenarioModelCardScreen({
                       Последовательный расчёт расходов на 1 комплект ({model.unitsInPack} изд.)
                     </p>
                   </div>
-                  <StatusPill status={pnl.operatingProfitStatus} />
+                  <div className="flex items-center gap-2">
+                    {(!pnl.logisticsFilled || !pnl.expensesFilled || pnl.unitCostPerPackRub === null) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = applyCategoryWbUnitEconomics(model, {
+                            fillMissingCost: true,
+                            forceOverwriteRates: true,
+                          });
+                          commitWithAudit(
+                            updated,
+                            'finance',
+                            'Автозаполнение нормативов WB',
+                            'Не заполнено',
+                            `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
+                          );
+                        }}
+                        className="h-7 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-700 text-[11px] font-semibold cursor-pointer transition"
+                      >
+                        ⚡ Авто-нормы WB
+                      </button>
+                    )}
+                    <StatusPill status={pnl.operatingProfitStatus} />
+                  </div>
                 </div>
 
                 <div className="divide-y divide-[#EFECE4] text-[13px]">
@@ -2694,23 +2761,45 @@ export function ScenarioModelCardScreen({
                     </p>
                   </div>
 
-                  {model.logisticsRub > 0 && (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        const updated = applyCategoryWbUnitEconomics(model, {
+                          fillMissingCost: true,
+                          forceOverwriteRates: true,
+                        });
                         commitWithAudit(
-                          { ...model, logisticsRub: 0 },
+                          updated,
                           'finance',
-                          'Очищено поле логистики (проверка защиты от ложной прибыли)',
-                          `${model.logisticsRub} ₽`,
-                          'Не заполнено'
-                        )
-                      }
-                      className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[11.5px] font-semibold cursor-pointer"
+                          'Применены отраслевые нормативы WB в Блоке В',
+                          `${model.marketplaceFeePct}% / ${model.logisticsRub} ₽`,
+                          `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
+                        );
+                        notify('success', 'Применены отраслевые нормативы WB');
+                      }}
+                      className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
                     >
-                      Очистить поле логистики
+                      ⚡ Применить нормативы WB
                     </button>
-                  )}
+                    {model.logisticsRub > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          commitWithAudit(
+                            { ...model, logisticsRub: 0 },
+                            'finance',
+                            'Очищено поле логистики (проверка защиты от ложной прибыли)',
+                            `${model.logisticsRub} ₽`,
+                            'Не заполнено'
+                          )
+                        }
+                        className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[11.5px] font-semibold cursor-pointer"
+                      >
+                        Очистить поле логистики
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Редактируемые поля с человеческими названиями и пояснением под каждым полем */}

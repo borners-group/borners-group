@@ -38,6 +38,7 @@ import {
   RecommendedProcurementBatch,
   approveRecommendedBatch,
   computeProcurementPlan,
+  computeWhatIfSensitivitySimulation,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   getBrandUnitConfig,
@@ -79,6 +80,9 @@ export interface BrandCabinetsMatrixTableProps {
   onSelectActiveScenarioId: (scenarioId: number) => void;
   onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenCreateModelForBrand: (brandCode: string) => void;
+  onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
+  onLaunchAllCabinets?: () => void;
+  onResetStarterCabinets?: () => void;
 }
 
 export function BrandCabinetsMatrixTable({
@@ -90,8 +94,14 @@ export function BrandCabinetsMatrixTable({
   onSelectActiveScenarioId,
   onOpenCreateScenarioForBrand,
   onOpenCreateModelForBrand,
+  onLaunchStarterCabinet,
+  onLaunchAllCabinets,
+  onResetStarterCabinets,
 }: BrandCabinetsMatrixTableProps) {
   const gt = multiBrandSummary.groupTotal;
+  const activeCount = multiBrandSummary.brands.filter(
+    (b) => b.hasScenario && b.hasModels && b.annualRevenueRub > 0
+  ).length;
 
   return (
     <div className="rounded-[16px] border border-[#CFD6E0] bg-white overflow-hidden shadow-[0_4px_16px_-4px_rgba(15,23,42,0.06)]">
@@ -286,7 +296,24 @@ export function BrandCabinetsMatrixTable({
                         </div>
                       </div>
                     ) : (
-                      <div className="inline-flex items-center justify-end gap-1.5">
+                      <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        {onLaunchStarterCabinet &&
+                          (b.brandCode === 'AKUSHA' ||
+                            b.brandCode === 'LISKANI' ||
+                            b.brandCode === 'NA_TELE') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onLaunchStarterCabinet(
+                                  b.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                                )
+                              }
+                              title={`Запустить готовую стартовую матрицу ${b.displayCode} (3 флагманских SKU + сценарий 2027)`}
+                              className="h-7 px-2.5 rounded-[7px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shadow-2xs"
+                            >
+                              🚀 Запустить (3 SKU)
+                            </button>
+                          )}
                         {!b.hasScenario && (
                           <button
                             type="button"
@@ -329,13 +356,37 @@ export function BrandCabinetsMatrixTable({
               className="bg-[#F4F6F9] border-t border-[#DCE2EC] font-bold text-[#111827] text-[12px] cursor-pointer hover:bg-[#E9EDF4] transition"
             >
               <td className="py-3 px-4" colSpan={2}>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="uppercase tracking-wider text-[10.5px] text-[#475569]">
                     Итого по холдингу (5 кабинетов)
                   </span>
                   <span className="px-2 py-0.5 rounded-[5px] bg-white border border-[#CBD5E1] font-mono text-[10px] text-[#334155]">
                     {gt.modelsCount} SKU
                   </span>
+                  {activeCount < 5 && onLaunchAllCabinets && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLaunchAllCabinets();
+                      }}
+                      className="px-2.5 py-0.5 rounded-[6px] bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-semibold transition cursor-pointer"
+                    >
+                      ⚡ Подключить все 5 кабинетов
+                    </button>
+                  )}
+                  {activeCount > 2 && onResetStarterCabinets && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResetStarterCabinets();
+                      }}
+                      className="px-2 py-0.5 rounded-[6px] bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] text-[#475569] text-[10.5px] font-semibold transition cursor-pointer"
+                    >
+                      ↺ Вернуть 2 базовых кабинета
+                    </button>
+                  )}
                 </div>
               </td>
               <td className="py-3 px-3 text-right font-mono font-extrabold text-[#111827]">
@@ -432,6 +483,9 @@ export interface PeaklyMasterCabinetsSummaryProps {
   onSelectActiveScenarioId: (scenarioId: number) => void;
   onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenCreateModelForBrand: (brandCode: string) => void;
+  onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
+  onLaunchAllCabinets?: () => void;
+  onResetStarterCabinets?: () => void;
   onNavigateSection: (section: 'product-catalog' | 'launch-calendar' | 'roadmap-tasks' | 'finance') => void;
   embeddedInHero?: boolean;
   isStandaloneHome?: boolean;
@@ -448,6 +502,9 @@ export function PeaklyMasterCabinetsSummary({
   onSelectActiveScenarioId,
   onOpenCreateScenarioForBrand,
   onOpenCreateModelForBrand,
+  onLaunchStarterCabinet,
+  onLaunchAllCabinets,
+  onResetStarterCabinets,
   onNavigateSection,
   isStandaloneHome = false,
   onOpenStrategySummary,
@@ -455,6 +512,11 @@ export function PeaklyMasterCabinetsSummary({
 }: PeaklyMasterCabinetsSummaryProps) {
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
+  const [procurementWavesOpen, setProcurementWavesOpen] = useState(true);
+  const [whatIfOpen, setWhatIfOpen] = useState(true);
+  const [whatIfPriceDelta, setWhatIfPriceDelta] = useState(0);
+  const [whatIfCostDelta, setWhatIfCostDelta] = useState(0);
+  const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState(0);
   const [hoveredWaterfallKey, setHoveredWaterfallKey] = useState<string | null>(null);
   const [waterfallViewMode, setWaterfallViewMode] = useState<'pnl' | 'brands'>('pnl');
 
@@ -756,6 +818,111 @@ export function PeaklyMasterCabinetsSummary({
     trendChartData.coords[selectedTrendMonthIdx] ||
     trendChartData.coords[11];
 
+  // Интерактивный симулятор чувствительности «Что если?» (Цена / Себестоимость / Комиссия WB и ДРР)
+  const whatIfSim = useMemo(
+    () =>
+      computeWhatIfSensitivitySimulation(
+        {
+          annualRevenueRub: gt.annualRevenueRub,
+          annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
+          annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
+          totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
+          verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+        },
+        {
+          priceDeltaPct: whatIfPriceDelta,
+          costDeltaPct: whatIfCostDelta,
+          mpAndAdsDeltaPt: whatIfMpAdsDelta,
+        }
+      ),
+    [
+      gt.annualRevenueRub,
+      gt.annualSoldGoodsCostRub,
+      gt.annualEstimatedOperatingProfitRub,
+      gt.totalProcurementBudgetRub,
+      gt.verifiedOwnMoneyRequiredRub,
+      whatIfPriceDelta,
+      whatIfCostDelta,
+      whatIfMpAdsDelta,
+    ]
+  );
+  const hasActiveWhatIf =
+    whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
+
+  // Данные 4 волн закупок 2027 года (Gantt-таймлайн и защита от кассового разрыва)
+  const procurementWavesTimeline = useMemo(() => {
+    const totalProc = Math.max(gt.totalProcurementBudgetRub, 0);
+    const w1Budget = Math.max(gt.firstWaveStartBudgetRub, Math.round(totalProc * 0.197));
+    const w1Prepay = Math.max(gt.firstWavePrepaymentRub, Math.round(w1Budget * 0.3));
+    const remainingBudget = Math.max(0, totalProc - w1Budget);
+    const w2Budget = Math.round(remainingBudget * 0.27);
+    const w3Budget = Math.round(remainingBudget * 0.34);
+    const w4Budget = Math.max(0, remainingBudget - w2Budget - w3Budget);
+
+    return [
+      {
+        id: 'wave-1',
+        waveNum: 'Волна №1 · Q1',
+        title: 'Стартовая партия (Янв – Мар)',
+        orderWindow: 'Ноя – Дек',
+        arrivalMonth: 'Январь',
+        coverageMonths: [0, 1, 2],
+        orderMonthIdx: 0,
+        budgetRub: w1Budget,
+        prepayRub: w1Prepay,
+        balanceRub: Math.max(0, w1Budget - w1Prepay),
+        fundingLabel: 'Аванс 30% + доплата 70% (свой капитал)',
+        fundingTone: 'cyan',
+        sharePct: totalProc > 0 ? Math.round((w1Budget / totalProc) * 100) : 20,
+      },
+      {
+        id: 'wave-2',
+        waveNum: 'Волна №2 · Q2',
+        title: 'Весна – Лето (Апр – Июн)',
+        orderWindow: 'Февраль',
+        arrivalMonth: 'Апрель',
+        coverageMonths: [3, 4, 5],
+        orderMonthIdx: 1,
+        budgetRub: w2Budget,
+        prepayRub: Math.round(w2Budget * 0.3),
+        balanceRub: Math.round(w2Budget * 0.7),
+        fundingLabel: 'Частично с выручки WB (пик капитала)',
+        fundingTone: 'indigo',
+        sharePct: totalProc > 0 ? Math.round((w2Budget / totalProc) * 100) : 22,
+      },
+      {
+        id: 'wave-3',
+        waveNum: 'Волна №3 · Q3',
+        title: 'Осень и Back-to-Office (Июл – Сен)',
+        orderWindow: 'Май',
+        arrivalMonth: 'Июль',
+        coverageMonths: [6, 7, 8],
+        orderMonthIdx: 4,
+        budgetRub: w3Budget,
+        prepayRub: Math.round(w3Budget * 0.3),
+        balanceRub: Math.round(w3Budget * 0.7),
+        fundingLabel: '100% из оборотной выручки WB',
+        fundingTone: 'emerald',
+        sharePct: totalProc > 0 ? Math.round((w3Budget / totalProc) * 100) : 27,
+      },
+      {
+        id: 'wave-4',
+        waveNum: 'Волна №4 · Q4',
+        title: 'Высокий сезон и пик декабря (Окт – Дек)',
+        orderWindow: 'Август',
+        arrivalMonth: 'Октябрь',
+        coverageMonths: [9, 10, 11],
+        orderMonthIdx: 7,
+        budgetRub: w4Budget,
+        prepayRub: Math.round(w4Budget * 0.3),
+        balanceRub: Math.round(w4Budget * 0.7),
+        fundingLabel: '100% из оборотной выручки WB · защита от Out-of-Stock',
+        fundingTone: 'emerald',
+        sharePct: totalProc > 0 ? Math.max(1, 100 - Math.round(((w1Budget + w2Budget + w3Budget) / totalProc) * 100)) : 31,
+      },
+    ];
+  }, [gt.totalProcurementBudgetRub, gt.firstWaveStartBudgetRub, gt.firstWavePrepaymentRub]);
+
   return (
     <div className="space-y-6">
       {/* 0. СТРОКА ПРИВЕТСТВИЯ И ФИЛЬТРА КАБИНЕТОВ ПРЯМО НА ХОЛСТЕ (БЕЗ ЛИШНЕЙ РАМКИ) */}
@@ -846,6 +1013,28 @@ export function PeaklyMasterCabinetsSummary({
             );
           })}
 
+          {activeBrandsCount < 5 && onLaunchAllCabinets && (
+            <button
+              type="button"
+              onClick={onLaunchAllCabinets}
+              title="В 1 клик запустить стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ в сводке холдинга"
+              className="h-8 px-3 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <span>⚡ Все 5 кабинетов</span>
+            </button>
+          )}
+
+          {activeBrandsCount > 2 && onResetStarterCabinets && (
+            <button
+              type="button"
+              onClick={onResetStarterCabinets}
+              title="Вернуть эталонную сводку из 2 действующих кабинетов (BORNERS + FUKAI)"
+              className="h-8 px-2.5 rounded-lg bg-white dark:bg-[#121620] hover:bg-[#F8FAFC] border border-[#E2E6EE] dark:border-[#222938] text-[#64748B] text-[11.5px] font-medium transition cursor-pointer inline-flex items-center gap-1"
+            >
+              <span>↺ 2 базовых</span>
+            </button>
+          )}
+
           {onOpenStrategySummary && (
             <button
               type="button"
@@ -858,6 +1047,56 @@ export function PeaklyMasterCabinetsSummary({
           )}
         </div>
       </div>
+
+      {/* БАННЕР БЫСТРОГО ЗАПУСКА ПУСТОГО КАБИНЕТА (если выбран AKUSHA, LISKANI или НА ТЕЛЕ с 0 выручки) */}
+      {selectedBrandRow &&
+        (!selectedBrandRow.hasScenario ||
+          !selectedBrandRow.hasModels ||
+          selectedBrandRow.annualRevenueRub === 0) && (
+          <div className="rounded-2xl border border-emerald-500/35 bg-emerald-500/8 dark:bg-emerald-500/10 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[11px] font-semibold">
+                  Кабинет {selectedBrandRow.displayCode} · Готов к запуску
+                </span>
+                <span className="text-xs text-[#64748B]">
+                  {getBrandUnitConfig(selectedBrandRow.brandCode).categoryDefault}
+                </span>
+              </div>
+              <div className="text-[15px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                В кабинете {selectedBrandRow.displayCode} пока нет активного плана продаж на 2027 год
+              </div>
+              <p className="text-xs text-[#64748B]">
+                Запустите подготовленную стартовую матрицу из 3 флагманских SKU с заполненной юнит-экономикой WB и помесячным планом на 2027 год в один клик — или добавьте свои товары вручную.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {onLaunchStarterCabinet &&
+                (selectedBrandRow.brandCode === 'AKUSHA' ||
+                  selectedBrandRow.brandCode === 'LISKANI' ||
+                  selectedBrandRow.brandCode === 'NA_TELE') && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onLaunchStarterCabinet(
+                        selectedBrandRow.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                      )
+                    }
+                    className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer shadow-2xs"
+                  >
+                    🚀 Запустить стартовую матрицу {selectedBrandRow.displayCode} (3 SKU)
+                  </button>
+                )}
+              <button
+                type="button"
+                onClick={() => onOpenCreateModelForBrand(selectedBrandRow.brandCode)}
+                className="h-9 px-3.5 rounded-xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] text-xs font-medium cursor-pointer"
+              >
+                + Свой товар
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* 1. ГЛАВНЫЙ HERO-БАННЕР: ЧИСТАЯ ПРИБЫЛЬ + «✨ КОРОТКО О ПЕРИОДЕ» */}
       <div
@@ -1534,17 +1773,269 @@ export function PeaklyMasterCabinetsSummary({
         </div>
       </div>
 
-      {/* 5. СЕКЦИЯ «| КАБИНЕТЫ И БРЕНДЫ ХОЛДИНГА» ПРЯМО НА ХОЛСТЕ */}
+      {/* 4-B. ИНТЕРАКТИВНЫЙ СИМУЛЯТОР ЧУВСТВИТЕЛЬНОСТИ «ЧТО ЕСЛИ?» (ЦЕНА WB · СЕБЕСТОИМОСТЬ · КОМИССИЯ И ДРР) */}
+      <div className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="w-1 h-4 rounded-full bg-emerald-500" />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
+                  Симулятор «Что если?» · Чувствительность прибыли 2027
+                </h3>
+                {hasActiveWhatIf && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-mono text-[11px] font-semibold ${
+                      whatIfSim.profitDeltaRub >= 0
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {whatIfSim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}
+                    {formatMln(Math.abs(whatIfSim.profitDeltaRub))}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                Проверьте в реальном времени, как изменение розничной цены WB, закупочной себестоимости или комиссии повлияет на годовую прибыль
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setWhatIfOpen(true);
+                setWhatIfPriceDelta(7);
+                setWhatIfCostDelta(-5);
+                setWhatIfMpAdsDelta(0);
+              }}
+              className="h-7.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 font-medium transition cursor-pointer"
+            >
+              🔥 Цена +7% · Себест. −5%
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setWhatIfOpen(true);
+                setWhatIfPriceDelta(0);
+                setWhatIfCostDelta(10);
+                setWhatIfMpAdsDelta(4);
+              }}
+              className="h-7.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/25 text-amber-700 dark:text-amber-300 font-medium transition cursor-pointer"
+            >
+              ⚠️ Стресс-тест WB +4 п.п.
+            </button>
+            {hasActiveWhatIf && (
+              <button
+                type="button"
+                onClick={() => {
+                  setWhatIfPriceDelta(0);
+                  setWhatIfCostDelta(0);
+                  setWhatIfMpAdsDelta(0);
+                }}
+                className="h-7.5 px-2.5 rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] hover:bg-[#E2E8F0] text-[#0F172A] dark:text-[#EDF0F7] font-medium transition cursor-pointer"
+              >
+                ↺ Сбросить
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setWhatIfOpen((v) => !v)}
+              className="h-7.5 px-2.5 rounded-lg border border-[#E2E6EE] dark:border-[#222938] text-[#64748B] hover:text-[#0F172A] transition cursor-pointer"
+            >
+              {whatIfOpen ? 'Свернуть ▴' : 'Открыть ▾'}
+            </button>
+          </div>
+        </div>
+
+        {whatIfOpen && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-2 border-t border-[#EEF2F6] dark:border-[#222938]">
+            {/* 3 ползунка чувствительности (7 колонок) */}
+            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              {/* Ползунок 1: Розничная цена WB */}
+              <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-medium text-[#475569] dark:text-[#94A3B8]">
+                    Розничная цена WB
+                  </span>
+                  <span
+                    className={`font-mono font-bold px-1.5 py-0.5 rounded ${
+                      whatIfPriceDelta > 0
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : whatIfPriceDelta < 0
+                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                        : 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7]'
+                    }`}
+                  >
+                    {whatIfPriceDelta > 0 ? `+${whatIfPriceDelta}%` : `${whatIfPriceDelta}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Изменение розничной цены WB"
+                  min={-15}
+                  max={20}
+                  step={1}
+                  value={whatIfPriceDelta}
+                  onChange={(e) => setWhatIfPriceDelta(Number(e.target.value))}
+                  className="w-full accent-emerald-600 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10.5px] font-mono text-[#64748B]">
+                  <span>−15%</span>
+                  <span>0%</span>
+                  <span>+20%</span>
+                </div>
+              </div>
+
+              {/* Ползунок 2: Закупочная себестоимость */}
+              <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-medium text-[#475569] dark:text-[#94A3B8]">
+                    Себестоимость фабрик
+                  </span>
+                  <span
+                    className={`font-mono font-bold px-1.5 py-0.5 rounded ${
+                      whatIfCostDelta < 0
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : whatIfCostDelta > 0
+                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                        : 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7]'
+                    }`}
+                  >
+                    {whatIfCostDelta > 0 ? `+${whatIfCostDelta}%` : `${whatIfCostDelta}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Изменение закупочной себестоимости"
+                  min={-15}
+                  max={25}
+                  step={1}
+                  value={whatIfCostDelta}
+                  onChange={(e) => setWhatIfCostDelta(Number(e.target.value))}
+                  className="w-full accent-indigo-600 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10.5px] font-mono text-[#64748B]">
+                  <span>−15%</span>
+                  <span>0%</span>
+                  <span>+25%</span>
+                </div>
+              </div>
+
+              {/* Ползунок 3: Комиссия WB и ДРР */}
+              <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-medium text-[#475569] dark:text-[#94A3B8]">
+                    Комиссия WB и ДРР
+                  </span>
+                  <span
+                    className={`font-mono font-bold px-1.5 py-0.5 rounded ${
+                      whatIfMpAdsDelta < 0
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : whatIfMpAdsDelta > 0
+                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                        : 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7]'
+                    }`}
+                  >
+                    {whatIfMpAdsDelta > 0
+                      ? `+${whatIfMpAdsDelta} п.п.`
+                      : `${whatIfMpAdsDelta} п.п.`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Изменение комиссии WB и ДРР"
+                  min={-5}
+                  max={10}
+                  step={0.5}
+                  value={whatIfMpAdsDelta}
+                  onChange={(e) => setWhatIfMpAdsDelta(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10.5px] font-mono text-[#64748B]">
+                  <span>−5 п.п.</span>
+                  <span>0</span>
+                  <span>+10 п.п.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Итог симуляции (5 колонок) */}
+            <div className="lg:col-span-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5 flex flex-col justify-between">
+                <span className="text-[11px] font-medium text-[#64748B]">
+                  Прибыль «Что если?»
+                </span>
+                <div className="font-mono text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                  +{formatMln(whatIfSim.simulatedProfitRub)}
+                </div>
+                <span
+                  className={`font-mono text-[11px] font-medium mt-1 ${
+                    whatIfSim.profitDeltaRub >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {whatIfSim.profitDeltaRub >= 0 ? '↑ +' : '↓ −'}
+                  {formatMln(Math.abs(whatIfSim.profitDeltaRub))} к базе
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC] dark:bg-[#181D2A] p-3.5 flex flex-col justify-between">
+                <span className="text-[11px] font-medium text-[#64748B]">
+                  Новая выручка
+                </span>
+                <div className="font-mono text-lg font-bold text-[#0F172A] dark:text-[#EDF0F7] mt-1">
+                  {formatMln(whatIfSim.simulatedRevenueRub)}
+                </div>
+                <span className="font-mono text-[11px] text-[#64748B] mt-1">
+                  Маржа: {whatIfSim.simulatedMarginPct.toFixed(1).replace('.', ',')}%
+                </span>
+              </div>
+
+              <div className="col-span-2 sm:col-span-1 rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC] dark:bg-[#181D2A] p-3.5 flex flex-col justify-between">
+                <span className="text-[11px] font-medium text-[#64748B]">
+                  Пик своих денег и ROI
+                </span>
+                <div className="font-mono text-lg font-bold text-[#0F172A] dark:text-[#EDF0F7] mt-1">
+                  {formatMln(whatIfSim.simulatedOwnCapitalRub)}
+                </div>
+                <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 mt-1">
+                  {whatIfSim.simulatedRoiMult
+                    ? `Отдача ROI ×${whatIfSim.simulatedRoiMult.toFixed(1).replace('.', ',')}`
+                    : 'Реинвест из WB'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. СЕКЦИЯ «| КАБИНЕТЫ, 4 ВОЛНЫ ЗАКУПОК И КЭШФЛОУ ХОЛДИНГА» ПРЯМО НА ХОЛСТЕ */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="w-1 h-4 rounded-full bg-teal-500" />
             <h3 className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
-              Кабинеты и бренды холдинга (5)
+              Кабинеты холдинга (5) и Платёжный календарь 4 волн закупок
             </h3>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setProcurementWavesOpen((v) => !v)}
+              className={`h-7.5 px-3 rounded-lg border text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5 ${
+                procurementWavesOpen
+                  ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                  : 'border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              <span>📦 4 волны закупок {procurementWavesOpen ? '▴' : '▾'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setMonthlyCashflowOpen((v) => !v)}
@@ -1565,6 +2056,127 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         </div>
 
+        {/* ВИЗУАЛЬНЫЙ ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК (GANTT TIMELINE & CASH-GAP RADAR) */}
+        {procurementWavesOpen && (
+          <div className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                  Платёжный календарь 4 волн закупок 2027 · Авансы 30%, доплаты 70% и реинвест из выручки WB
+                </div>
+                <div className="text-[11.5px] text-[#64748B] mt-0.5">
+                  С Волны №3 закупки полностью финансируются из оборотных поступлений Wildberries без привлечения новых собственных средств
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigateSection('roadmap-tasks')}
+                className="h-7.5 px-3 rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] hover:bg-[#E2E8F0] text-xs font-medium text-[#0F172A] dark:text-[#EDF0F7] transition cursor-pointer"
+              >
+                Открыть 03 · Закупки →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+              {procurementWavesTimeline.map((wave) => {
+                const isSelfFunded = wave.fundingTone === 'emerald';
+                return (
+                  <div
+                    key={wave.id}
+                    onClick={() => onNavigateSection('roadmap-tasks')}
+                    className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/70 dark:bg-[#181D2A] p-4 flex flex-col justify-between gap-3 cursor-pointer hover-lift"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                          {wave.waveNum}
+                        </span>
+                        <span
+                          className={`font-mono text-[10.5px] font-medium px-2 py-0.5 rounded-md ${
+                            isSelfFunded
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+                          }`}
+                        >
+                          {wave.sharePct}% бюджета
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                        {wave.title}
+                      </div>
+                      <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                        {formatMln(wave.budgetRub)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-[11.5px] text-[#64748B]">
+                      <div className="flex items-center justify-between">
+                        <span>Аванс 30% ({wave.orderWindow}):</span>
+                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                          {formatMln(wave.prepayRub)}
+                        </strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Доплата 70% ({wave.arrivalMonth}):</span>
+                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                          {formatMln(wave.balanceRub)}
+                        </strong>
+                      </div>
+
+                      {/* 12-месячный мини-Gantt покрытия волны */}
+                      <div className="pt-1">
+                        <div className="grid grid-cols-12 gap-0.5 h-2 rounded overflow-hidden bg-[#E2E8F0] dark:bg-[#222938]">
+                          {MONTHS_SHORT_RU.map((mName, mIdx) => {
+                            const isCovered = wave.coverageMonths.includes(mIdx);
+                            const isOrder = wave.orderMonthIdx === mIdx;
+                            return (
+                              <div
+                                key={mName}
+                                title={`${mName}: ${
+                                  isCovered
+                                    ? 'Продажи партии на WB'
+                                    : isOrder
+                                    ? 'Размещение заказа и аванс 30%'
+                                    : ''
+                                }`}
+                                className={`h-full ${
+                                  isCovered
+                                    ? isSelfFunded
+                                      ? 'bg-emerald-500'
+                                      : 'bg-indigo-500'
+                                    : isOrder
+                                    ? 'bg-amber-400'
+                                    : 'bg-transparent'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div
+                        className={`text-[11px] font-medium pt-0.5 ${
+                          isSelfFunded
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-[#475569] dark:text-[#94A3B8]'
+                        }`}
+                      >
+                        {wave.fundingLabel}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`absolute inset-x-0 bottom-0 h-[3px] ${
+                        isSelfFunded ? 'bg-emerald-500/80' : 'bg-indigo-500/80'
+                      }`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {cabinetsMatrixOpen && (
           <BrandCabinetsMatrixTable
             multiBrandSummary={multiBrandSummary}
@@ -1575,6 +2187,9 @@ export function PeaklyMasterCabinetsSummary({
             onSelectActiveScenarioId={onSelectActiveScenarioId}
             onOpenCreateScenarioForBrand={onOpenCreateScenarioForBrand}
             onOpenCreateModelForBrand={onOpenCreateModelForBrand}
+            onLaunchStarterCabinet={onLaunchStarterCabinet}
+            onLaunchAllCabinets={onLaunchAllCabinets}
+            onResetStarterCabinets={onResetStarterCabinets}
           />
         )}
 
@@ -1775,6 +2390,9 @@ export interface PeaklyCatalogGroupsAndBrandsProps {
     e: React.MouseEvent | React.ChangeEvent<HTMLInputElement>
   ) => void;
   onCyclePriority?: (model: ScenarioModelSpec, e: React.MouseEvent) => void;
+  onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
+  onLaunchAllCabinets?: () => void;
+  onResetStarterCabinets?: () => void;
   notify?: (type: 'success' | 'warning' | 'error', title: string, desc?: string) => void;
 }
 
@@ -1796,6 +2414,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
   onOpenCreateModel,
   onQuickAdjustDecPacks,
   onCyclePriority,
+  onLaunchStarterCabinet,
+  onLaunchAllCabinets,
+  onResetStarterCabinets,
   notify,
 }: PeaklyCatalogGroupsAndBrandsProps) {
   // Режим отображения:
@@ -2477,6 +3098,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
                   onSelectActiveScenarioId={onSelectActiveScenarioId}
                   onOpenCreateScenarioForBrand={onOpenCreateScenarioForBrand}
                   onOpenCreateModelForBrand={(bCode) => onOpenCreateModel(bCode)}
+                  onLaunchStarterCabinet={onLaunchStarterCabinet}
+                  onLaunchAllCabinets={onLaunchAllCabinets}
+                  onResetStarterCabinets={onResetStarterCabinets}
                 />
               </div>
             )}
@@ -2583,15 +3207,33 @@ export function PeaklyCatalogGroupsAndBrandsView({
                         Каталог бренда {sec.displayCode} пока пуст
                       </div>
                       <p className="text-[12px] text-[#64748B] max-w-md mx-auto">
-                        Добавьте первую позицию ({sec.categoryLabel}) — она автоматически получит единицу измерения «{sec.primaryUnit}» и нулевой стартовый план без выдуманных цифр.
+                        Запустите готовую стартовую матрицу ({sec.categoryLabel}, 3 SKU) в 1 клик или создайте первую позицию вручную («{sec.primaryUnit}»).
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => onOpenCreateModel(sec.brandCode)}
-                        className="mt-1 h-8.5 px-4 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
-                      >
-                        + Создать первую карточку {sec.displayCode}
-                      </button>
+                      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                        {onLaunchStarterCabinet &&
+                          (sec.brandCode === 'AKUSHA' ||
+                            sec.brandCode === 'LISKANI' ||
+                            sec.brandCode === 'NA_TELE') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onLaunchStarterCabinet(
+                                  sec.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                                )
+                              }
+                              className="h-8.5 px-4 rounded-[9px] bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                            >
+                              🚀 Запустить матрицу {sec.displayCode} (3 SKU)
+                            </button>
+                          )}
+                        <button
+                          type="button"
+                          onClick={() => onOpenCreateModel(sec.brandCode)}
+                          className="h-8.5 px-4 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                        >
+                          + Создать первую карточку {sec.displayCode}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

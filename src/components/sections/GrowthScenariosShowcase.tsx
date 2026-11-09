@@ -68,6 +68,8 @@ import {
 } from '@/lib/useLiveScenarioPortfolio';
 import {
   CanonicalBrandCode,
+  applyCategoryWbUnitEconomics,
+  applyCategoryWbUnitEconomicsToPortfolio,
   computeFinancialPnL,
   computeGroupBrandsInvestmentReport,
   computeMultiBrandPortfolioSummary,
@@ -82,10 +84,13 @@ import {
   getScenariosForBrand,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
+  launchAllEmptyCabinetsInHolding,
+  launchBrandStarterMatrix,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
   parseStructuredPlanCsvOrJson,
   renameBrandScenario,
+  resetStarterCabinetsFromHolding,
   serializeStructuredPlanToCsv,
 } from '@/lib/unifiedBusinessEngine';
 
@@ -163,14 +168,7 @@ function overlayUserPlansBackup(
     STORAGE_KEY_USER_PLANS_BACKUP
   );
   return modelsList.map((rawM) => {
-    const isRawUnconfiguredWb =
-      Boolean(getActingSkuByWbOrVendor(rawM.code, rawM.title)) &&
-      (rawM.marketplaceFeePct ?? 0) === 0 &&
-      (rawM.logisticsRub ?? 0) === 0 &&
-      (rawM.adsPct ?? 0) === 0;
-    const m = isRawUnconfiguredWb
-      ? { ...rawM, marketplaceFeePct: 22, logisticsRub: 95, adsPct: 10 }
-      : rawM;
+    const m = applyCategoryWbUnitEconomics(rawM);
 
     if (!backup || typeof backup !== 'object') return m;
     const saved =
@@ -179,12 +177,7 @@ function overlayUserPlansBackup(
         (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
       );
     if (!saved) return m;
-    const isUnconfiguredActingWb =
-      Boolean(getActingSkuByWbOrVendor(m.code, m.title)) &&
-      (saved.marketplaceFeePct ?? 0) === 0 &&
-      (saved.logisticsRub ?? 0) === 0 &&
-      (saved.adsPct ?? 0) === 0;
-    return {
+    return applyCategoryWbUnitEconomics({
       ...m,
       code: saved.code ?? m.code,
       title: saved.title ?? m.title,
@@ -197,11 +190,9 @@ function overlayUserPlansBackup(
       unitsInPack: saved.unitsInPack ?? m.unitsInPack,
       retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
       unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-      marketplaceFeePct: isUnconfiguredActingWb
-        ? 22
-        : saved.marketplaceFeePct ?? m.marketplaceFeePct,
-      logisticsRub: isUnconfiguredActingWb ? 95 : saved.logisticsRub ?? m.logisticsRub,
-      adsPct: isUnconfiguredActingWb ? 10 : saved.adsPct ?? m.adsPct,
+      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
+      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
+      adsPct: saved.adsPct ?? m.adsPct,
       priority: saved.priority ?? m.priority,
       launchStatus: saved.launchStatus ?? m.launchStatus,
       gallery: saved.gallery || m.gallery,
@@ -212,14 +203,16 @@ function overlayUserPlansBackup(
       attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
       plansByScenario: saved.plansByScenario || m.plansByScenario,
       sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
-    };
+    });
   });
 }
 
-const DEFAULT_RESTORED_MODELS: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
-  ...ACTING_2027_SCENARIO_MODELS,
-  ...S1_100M_SCENARIO_MODELS,
-]);
+const DEFAULT_RESTORED_MODELS: ScenarioModelSpec[] = applyCategoryWbUnitEconomicsToPortfolio(
+  applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ])
+);
 
 interface GrowthScenariosShowcaseProps {
   initialScreen?: 'scenarios' | 'model' | 'sales-plan';
@@ -579,6 +572,114 @@ export function GrowthScenariosShowcase({
     },
     []
   );
+
+  // Мгновенный запуск стартовой матрицы пустого кабинета (AKUSHA / LISKANI / НА ТЕЛЕ · 3 SKU + сценарий 2027)
+  const handleLaunchStarterCabinet = useCallback(
+    (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
+      const res = launchBrandStarterMatrix(models, scenarios, brandCode);
+      const nextByBrand = {
+        ...selectedScenarioByBrand,
+        [brandCode]: res.scenarioId,
+      };
+      setModels(res.models);
+      setScenarios(res.scenarios);
+      setSelectedScenarioByBrandState(nextByBrand);
+      safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+      saveUserPlansBackup(res.models);
+      safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+      safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
+      if (res.scenarioId) {
+        setSelectedScenarioId(res.scenarioId);
+      }
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+          window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+          window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+        }, 0);
+      }
+      const brandLabel = brandCode === 'NA_TELE' ? 'НА ТЕЛЕ' : brandCode;
+      notify(
+        'success',
+        `Кабинет ${brandLabel} запущен`,
+        `Активировано 3 флагманских SKU и сценарий развития 2027`
+      );
+    },
+    [models, scenarios, selectedScenarioByBrand, setSelectedScenarioId, notify]
+  );
+
+  // Запуск всех 5 кабинетов холдинга в 1 клик
+  const handleLaunchAllCabinets = useCallback(() => {
+    const res = launchAllEmptyCabinetsInHolding(
+      models,
+      scenarios,
+      selectedScenarioByBrand
+    );
+    setModels(res.models);
+    setScenarios(res.scenarios);
+    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+    saveUserPlansBackup(res.models);
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+        window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+      }, 0);
+    }
+    notify(
+      'success',
+      'Все 5 кабинетов холдинга подключены',
+      'Стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ активированы в сводке 2027'
+    );
+  }, [models, scenarios, selectedScenarioByBrand, notify]);
+
+  // Возврат к 2 базовым кабинетам (BORNERS + FUKAI)
+  const handleResetStarterCabinets = useCallback(() => {
+    const res = resetStarterCabinetsFromHolding(
+      models,
+      scenarios,
+      selectedScenarioByBrand
+    );
+    setModels(res.models);
+    setScenarios(res.scenarios);
+    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+    saveUserPlansBackup(res.models);
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    if (
+      brandFilterLocal === 'AKUSHA' ||
+      brandFilterLocal === 'LISKANI' ||
+      brandFilterLocal === 'NA_TELE'
+    ) {
+      setBrandFilterLocal('ALL');
+      setBrandFilter('ALL');
+      setSelectedScenarioId(1);
+    }
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+        window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+      }, 0);
+    }
+    notify(
+      'success',
+      'Возвращены 2 базовых кабинета холдинга',
+      'Активны эталонные кабинеты BORNERS и FUKAI (+312,80 млн ₽ прибыли)'
+    );
+  }, [
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    brandFilterLocal,
+    setBrandFilter,
+    setSelectedScenarioId,
+    notify,
+  ]);
 
   // Загрузка сохранённых данных из localStorage без перезаписи пользовательских правок продаж
   useEffect(() => {
@@ -1777,6 +1878,9 @@ export function GrowthScenariosShowcase({
                 setDraftBrand(bCode);
                 setNewModelModalOpen(true);
               }}
+              onLaunchStarterCabinet={handleLaunchStarterCabinet}
+              onLaunchAllCabinets={handleLaunchAllCabinets}
+              onResetStarterCabinets={handleResetStarterCabinets}
               onNavigateSection={(sec) => navigateTo(sec)}
             />
           )}
@@ -2157,27 +2261,40 @@ export function GrowthScenariosShowcase({
                         normalizePortfolioBrandCode(brandFilterLocal)
                       );
                 if (visibleScenarios.length === 0) {
+                  const nb = normalizePortfolioBrandCode(brandFilterLocal);
+                  const canQuickLaunch =
+                    nb === 'AKUSHA' || nb === 'LISKANI' || nb === 'NA_TELE';
                   return (
-                    <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] bg-white p-5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="col-span-full rounded-2xl border border-dashed border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-[13.5px] font-bold text-[#111827]">
+                        <div className="text-[13.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                           Нет сценария для выбранного бренда ({brandFilterLocal})
                         </div>
                         <div className="text-[12px] text-[#64748B] mt-0.5">
-                          Создайте независимый сценарий на 2027 или 2028 год — финансовые показатели не подменяются пустыми цифрами до создания сценария.
+                          Запустите готовую стартовую матрицу (3 флагманских SKU + сценарий 2027) в 1 клик или создайте пустой сценарий вручную.
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nb = normalizePortfolioBrandCode(brandFilterLocal);
-                          setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
-                          setNewScenarioModalOpen(true);
-                        }}
-                        className="h-9 px-4 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
-                      >
-                        + Создать сценарий бренда
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canQuickLaunch && (
+                          <button
+                            type="button"
+                            onClick={() => handleLaunchStarterCabinet(nb)}
+                            className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                          >
+                            🚀 Запустить матрицу {nb === 'NA_TELE' ? 'НА ТЕЛЕ' : nb} (3 SKU)
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
+                            setNewScenarioModalOpen(true);
+                          }}
+                          className="h-9 px-4 rounded-xl bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                        >
+                          + Создать сценарий бренда
+                        </button>
+                      </div>
                     </div>
                   );
                 }
@@ -3535,22 +3652,35 @@ export function GrowthScenariosShowcase({
                   {(brandFilterLocal === 'NA_TELE' ||
                     brandFilterLocal === 'AKUSHA' ||
                     brandFilterLocal === 'LISKANI') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraftBrand(brandFilterLocal);
-                        setNewModelModalOpen(true);
-                      }}
-                      className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
-                    >
-                      + Добавить модель (
-                      {brandFilterLocal === 'NA_TELE'
-                        ? 'НА ТЕЛЕ'
-                        : brandFilterLocal === 'AKUSHA'
-                          ? 'AKUSHA'
-                          : 'LISKANI'}
-                      )
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleLaunchStarterCabinet(
+                            brandFilterLocal as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                          )
+                        }
+                        className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
+                      >
+                        🚀 Запустить стартовую матрицу (3 SKU)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftBrand(brandFilterLocal);
+                          setNewModelModalOpen(true);
+                        }}
+                        className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
+                      >
+                        + Добавить модель (
+                        {brandFilterLocal === 'NA_TELE'
+                          ? 'НА ТЕЛЕ'
+                          : brandFilterLocal === 'AKUSHA'
+                            ? 'AKUSHA'
+                            : 'LISKANI'}
+                        )
+                      </button>
+                    </>
                   )}
                   <button
                     type="button"
@@ -3612,6 +3742,9 @@ export function GrowthScenariosShowcase({
                 }}
                 onQuickAdjustDecPacks={handleQuickAdjustDecPacks}
                 onCyclePriority={handleCycleCardPriority}
+                onLaunchStarterCabinet={handleLaunchStarterCabinet}
+                onLaunchAllCabinets={handleLaunchAllCabinets}
+                onResetStarterCabinets={handleResetStarterCabinets}
                 notify={notify}
               />
             ) : (

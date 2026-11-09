@@ -18,6 +18,7 @@ import {
   computeGroupBrandsInvestmentReport,
   computeProcurementPlan,
   computeScenarioInvestmentSummary,
+  computeWhatIfSensitivitySimulation,
   createCustomPurchaseOrder,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
@@ -66,23 +67,23 @@ function ScenarioContourHeader({
   const { brandFilter, setBrandFilter } = usePlatform();
 
   return (
-    <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
-      <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b-[1.5px] border-[#DFDED6]">
+    <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_12px_-3px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b border-[#EEF2F6] dark:border-[#222938]">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
             {stepCode}
           </div>
-          <h1 className="text-[22px] md:text-[25px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[21px] md:text-[24px] font-bold tracking-[-0.02em] text-[#0F172A] dark:text-[#EDF0F7] mt-0.5">
             {title}
           </h1>
-          <p className="text-[12.5px] text-[#5E5D58] mt-0.5">{subtitle}</p>
+          <p className="text-[12.5px] text-[#64748B] mt-0.5">{subtitle}</p>
         </div>
         {rightSlot && <div className="flex flex-wrap items-center gap-2">{rightSlot}</div>}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11.5px] font-bold text-[#5E5D58] mr-1">
+          <span className="text-[11.5px] font-semibold text-[#64748B] mr-1">
             Активный сценарий:
           </span>
           {orderedScenarios.map((sc) => {
@@ -92,10 +93,10 @@ function ScenarioContourHeader({
                 key={sc.id}
                 type="button"
                 onClick={() => onSelectScenario(sc.id)}
-                className={`h-8.5 px-3 rounded-[9px] text-[12px] font-semibold border-[1.5px] transition cursor-pointer ${
+                className={`h-8.5 px-3 rounded-xl text-[12px] font-semibold border transition cursor-pointer ${
                   isSel
-                    ? 'bg-[#141413] text-white border-[#141413]'
-                    : 'bg-[#F7F7F4] hover:bg-white hover:border-[#141413] text-[#262624] border-[#CECDC4]'
+                    ? 'bg-[#0F172A] dark:bg-emerald-500/15 text-white dark:text-emerald-300 border-[#0F172A] dark:border-emerald-500/30'
+                    : 'bg-[#F8FAFC] dark:bg-[#181D2A] hover:bg-white text-[#334155] dark:text-[#CBD5E1] border-[#E2E6EE] dark:border-[#222938]'
                 }`}
               >
                 {sc.id === ACTING_2027_SCENARIO_ID
@@ -194,6 +195,7 @@ export function SalesMatrixContourView() {
     eligibleModels,
     totals,
     updateModelSpec,
+    launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
   const [unitMode, setUnitMode] = useState<'rub' | 'packs'>('rub');
@@ -435,6 +437,25 @@ export function SalesMatrixContourView() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {(brandFilter === 'AKUSHA' ||
+              brandFilter === 'LISKANI' ||
+              brandFilter === 'NA_TELE') && (
+              <button
+                type="button"
+                onClick={() => {
+                  const res = launchStarterCabinet(
+                    brandFilter as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                  );
+                  notify(
+                    'success',
+                    `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
+                  );
+                }}
+                className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer transition"
+              >
+                🚀 Запустить стартовую матрицу (3 SKU)
+              </button>
+            )}
             {brandFilter === 'NA_TELE' && (
               <button
                 type="button"
@@ -467,57 +488,61 @@ export function SalesMatrixContourView() {
         </div>
       )}
 
-      {/* 4 ключевых показателя продаж */}
-      <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
-        <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+      {/* 4 ключевых показателя продаж в воздушном дизайн-коде с 3px акцентной полоской */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
             Годовая выручка 2027
           </div>
-          <div className="text-[24px] font-bold text-[#141413]">
+          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             {formatMln(totals.annualRevenueRub)}
           </div>
-          <div className="text-[11.5px] text-[#5E5D58]">
+          <div className="text-[11.5px] text-[#64748B]">
             {totals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.
           </div>
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
         </div>
 
-        <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
             Выручка в декабре 2027
           </div>
-          <div className="text-[24px] font-bold text-[#141413]">
+          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             {formatMln(totals.decRevenueRub)}
           </div>
-          <div className="text-[11.5px] text-[#157347] font-semibold">
+          <div className="text-[11.5px] text-emerald-600 dark:text-emerald-400 font-medium">
             Цель сценария: {currentScenario.monthlyTargetMln} млн ₽ / мес
           </div>
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
         </div>
 
-        <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
             Выкупы за 2027 год
           </div>
-          <div className="text-[24px] font-bold text-[#141413]">
+          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             {totals.annualPacks.toLocaleString('ru-RU')} компл.
           </div>
-          <div className="text-[11.5px] text-[#5E5D58]">
+          <div className="text-[11.5px] text-[#64748B]">
             В декабре: {totals.decPacks.toLocaleString('ru-RU')} компл.
           </div>
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-indigo-500/85" />
         </div>
 
-        <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
             Моделей в матрице
           </div>
-          <div className="text-[24px] font-bold text-[#141413]">
+          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             {eligibleModels.length} SKU
           </div>
-          <div className="text-[11.5px] text-[#5E5D58]">
+          <div className="text-[11.5px] text-[#64748B]">
             Средний чек:{' '}
             {totals.annualPacks > 0
               ? `${Math.round(totals.annualRevenueRub / totals.annualPacks).toLocaleString('ru-RU')} ₽`
               : '—'}
           </div>
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-violet-500/85" />
         </div>
       </section>
 
@@ -679,7 +704,10 @@ export function ProcurementContourView() {
     eligibleModels,
     totals,
     updateModelSpec,
+    launchStarterCabinet,
   } = useLiveScenarioPortfolio();
+
+  const [wavesCalendarOpen, setWavesCalendarOpen] = useState(true);
 
   const [subTab, setSubTab] = useState<'batches' | 'crm'>(() => {
     if (typeof window !== 'undefined') {
@@ -996,6 +1024,18 @@ export function ProcurementContourView() {
 
               <button
                 type="button"
+                onClick={() => setWavesCalendarOpen((v) => !v)}
+                className={`h-8 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer ${
+                  wavesCalendarOpen
+                    ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-700'
+                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                }`}
+              >
+                📦 4 волны закупок {wavesCalendarOpen ? '▴' : '▾'}
+              </button>
+
+              <button
+                type="button"
                 onClick={() =>
                   setScenarioDrawerTab((prev) => (prev === 'skus' ? 'none' : 'skus'))
                 }
@@ -1038,6 +1078,25 @@ export function ProcurementContourView() {
               В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).
             </p>
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              {(brandFilter === 'AKUSHA' ||
+                brandFilter === 'LISKANI' ||
+                brandFilter === 'NA_TELE') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = launchStarterCabinet(
+                      brandFilter as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                    );
+                    notify(
+                      'success',
+                      `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
+                    );
+                  }}
+                  className="h-9.5 rounded-xl bg-emerald-600 px-4 text-[12.5px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
+                >
+                  🚀 Запустить стартовую матрицу (3 SKU)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setBrandFilter('ALL')}
@@ -1069,6 +1128,160 @@ export function ProcurementContourView() {
         </div>
       ) : (
         <>
+          {/* ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК 2027 (GANTT TIMELINE & CASH-GAP RADAR) */}
+          {wavesCalendarOpen &&
+            (() => {
+              const totalProc = Math.max(investmentSummary.totalProcurementBudgetRub, 0);
+              const w1 = Math.max(investmentSummary.firstWaveStartBudgetRub, Math.round(totalProc * 0.2));
+              const w1Prepay = Math.max(investmentSummary.firstWavePrepaymentRub, Math.round(w1 * 0.3));
+              const rem = Math.max(0, totalProc - w1);
+              const w2 = Math.round(rem * 0.27);
+              const w3 = Math.round(rem * 0.34);
+              const w4 = Math.max(0, rem - w2 - w3);
+              const waves = [
+                {
+                  id: 'w1',
+                  num: 'Волна №1 · Q1',
+                  title: 'Стартовая партия (Янв–Мар)',
+                  orderMonth: 'Ноя–Дек',
+                  arrivalMonth: 'Январь',
+                  budgetRub: w1,
+                  prepayRub: w1Prepay,
+                  balanceRub: Math.max(0, w1 - w1Prepay),
+                  covered: [0, 1, 2],
+                  funding: 'Аванс 30% + доплата 70% (свой капитал)',
+                  selfFunded: false,
+                },
+                {
+                  id: 'w2',
+                  num: 'Волна №2 · Q2',
+                  title: 'Весна–Лето (Апр–Июн)',
+                  orderMonth: 'Февраль',
+                  arrivalMonth: 'Апрель',
+                  budgetRub: w2,
+                  prepayRub: Math.round(w2 * 0.3),
+                  balanceRub: Math.round(w2 * 0.7),
+                  covered: [3, 4, 5],
+                  funding: 'Реинвест WB + пик оборотного капитала',
+                  selfFunded: false,
+                },
+                {
+                  id: 'w3',
+                  num: 'Волна №3 · Q3',
+                  title: 'Высокий сезон (Июл–Сен)',
+                  orderMonth: 'Май',
+                  arrivalMonth: 'Июль',
+                  budgetRub: w3,
+                  prepayRub: Math.round(w3 * 0.3),
+                  balanceRub: Math.round(w3 * 0.7),
+                  covered: [6, 7, 8],
+                  funding: '100% из оборотной выручки WB',
+                  selfFunded: true,
+                },
+                {
+                  id: 'w4',
+                  num: 'Волна №4 · Q4',
+                  title: 'Пик декабря (Окт–Дек)',
+                  orderMonth: 'Август',
+                  arrivalMonth: 'Октябрь',
+                  budgetRub: w4,
+                  prepayRub: Math.round(w4 * 0.3),
+                  balanceRub: Math.round(w4 * 0.7),
+                  covered: [9, 10, 11],
+                  funding: '100% из оборота WB · защита от Out-of-Stock',
+                  selfFunded: true,
+                },
+              ];
+
+              return (
+                <section className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-3.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[13px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                        📦 Платёжный календарь 4 волн закупок {currentScenario.year || 2027} · Авансы 30%, доплаты 70% и реинвест с WB
+                      </div>
+                      <p className="text-[11.5px] text-[#64748B]">
+                        Годовой бюджет закупок: <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totalProc)}</strong> · Пик собственных средств: <strong className="font-mono text-indigo-600">{investmentSummary.verifiedOwnMoneyRequiredRub != null ? formatMln(investmentSummary.verifiedOwnMoneyRequiredRub) : '—'}</strong> · Волны №3 и №4 финансируются на 100% из выручки WB
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleExportFactoryOrderCsv('first_wave')}
+                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 text-[11.5px] font-semibold cursor-pointer transition"
+                    >
+                      Скачать заказ 1-й волны Q1 (CSV)
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {waves.map((w) => (
+                      <div
+                        key={w.id}
+                        className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A] p-3.5 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[11px] font-bold text-indigo-600">
+                            {w.num}
+                          </span>
+                          <span
+                            className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
+                              w.selfFunded
+                                ? 'bg-emerald-500/10 text-emerald-600'
+                                : 'bg-cyan-500/10 text-cyan-700'
+                            }`}
+                          >
+                            {w.selfFunded ? '100% с WB' : 'Старт / Оборот'}
+                          </span>
+                        </div>
+                        <div className="text-[13px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                          {w.title}
+                        </div>
+                        <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                          {formatMln(w.budgetRub)}
+                        </div>
+                        <div className="space-y-1 text-[11px] text-[#64748B]">
+                          <div className="flex justify-between">
+                            <span>Аванс 30% ({w.orderMonth}):</span>
+                            <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                              {formatMln(w.prepayRub)}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Доплата 70% ({w.arrivalMonth}):</span>
+                            <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                              {formatMln(w.balanceRub)}
+                            </strong>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-12 gap-0.5 h-1.5 rounded overflow-hidden bg-[#E2E8F0]">
+                          {MONTHS_SHORT_RU.map((m, idx) => (
+                            <div
+                              key={m}
+                              className={
+                                w.covered.includes(idx)
+                                  ? w.selfFunded
+                                    ? 'bg-emerald-500'
+                                    : 'bg-indigo-500'
+                                  : 'bg-transparent'
+                              }
+                            />
+                          ))}
+                        </div>
+                        <div className="text-[10.5px] font-medium text-[#475569]">
+                          {w.funding}
+                        </div>
+                        <div
+                          className={`absolute inset-x-0 bottom-0 h-[3px] ${
+                            w.selfFunded ? 'bg-emerald-500/80' : 'bg-indigo-500/80'
+                          }`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
+
           {/* ЕДИНАЯ РАСКРЫВАЮЩАЯСЯ ПАНЕЛЬ СЦЕНАРИЯ (Скрыта по умолчанию, чтобы не дублировать карточки на экране!) */}
           {scenarioDrawerTab !== 'none' && (
             <div className="rounded-[16px] border border-[#D8D7CE] bg-white overflow-hidden shadow-[0_2px_10px_rgba(20,20,19,0.04)]">
@@ -1589,7 +1802,7 @@ export function ProcurementContourView() {
 // 04 · ФИНАНСЫ: РЕАЛЬНЫЙ P&L, КЭШФЛОУ И ОБОРОТНЫЙ КАПИТАЛ СЦЕНАРИЕВ 2027
 // =============================================================================
 export function FinanceContourView() {
-  const { currentUser, navigateTo, brandFilter, setBrandFilter } = usePlatform();
+  const { currentUser, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
     orderedScenarios,
     currentScenario,
@@ -1600,6 +1813,8 @@ export function FinanceContourView() {
     scenarioAllEligibleModels,
     eligibleModels,
     totals,
+    applyIndustryNormsToAllModels,
+    launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
   const [subTab, setSubTab] = useState<'scenarios-pnl' | 'legacy-plan-fact'>(
@@ -1607,6 +1822,9 @@ export function FinanceContourView() {
   );
   const [initialCashMln, setInitialCashMln] = useState<number>(0);
   const [wbLagMonths, setWbLagMonths] = useState<number>(0);
+  const [whatIfPriceDelta, setWhatIfPriceDelta] = useState<number>(0);
+  const [whatIfCostDelta, setWhatIfCostDelta] = useState<number>(0);
+  const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState<number>(0);
 
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
@@ -1779,6 +1997,25 @@ export function FinanceContourView() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(brandFilter === 'AKUSHA' ||
+                  brandFilter === 'LISKANI' ||
+                  brandFilter === 'NA_TELE') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = launchStarterCabinet(
+                        brandFilter as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                      );
+                      notify(
+                        'success',
+                        `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
+                      );
+                    }}
+                    className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer transition"
+                  >
+                    🚀 Запустить стартовую матрицу (3 SKU)
+                  </button>
+                )}
                 {brandFilter === 'NA_TELE' && (
                   <button
                     type="button"
@@ -1811,32 +2048,33 @@ export function FinanceContourView() {
             </div>
           )}
 
-          {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (РАЗДЕЛ 07.1) */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-x-[1.5px] divide-y-[1.5px] lg:divide-y-0 divide-[#D8D7CF]">
-            <div className="p-5 space-y-1 bg-[#F2FBF6]/50">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#13653F]">
+          {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (В ВОЗДУШНОМ ДИЗАЙН-КОДЕ С 3PX ПОЛОСКОЙ) */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
                 1. Вложить на старт (Партия №1 · Q1)
               </div>
-              <div className="font-mono text-[24px] font-extrabold text-[#0F5132]">
+              <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                 {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто ролью'}
               </div>
-              <div className="text-[11.5px] text-[#145A38]">
-                <strong>Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.)
+              <div className="text-[11.5px] text-[#64748B]">
+                <strong className="text-[#0F172A] dark:text-[#EDF0F7]">Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.)
               </div>
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-cyan-500/85" />
             </div>
 
-            <div className="p-5 space-y-1 bg-[#F4F8FF]/60">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#1E40AF]">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
                 2. Максимум своих денег (с оборотом WB)
               </div>
               {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
               investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
                 <>
-                  <div className="font-mono text-[24px] font-extrabold text-[#1E3A8A]">
+                  <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                     {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
                   </div>
-                  <div className="text-[11.5px] text-[#1E40AF]">
-                    Пик в <strong>{investmentSummary.peakMonthLabel} {currentScenario.year || 2027}</strong>
+                  <div className="text-[11.5px] text-[#64748B]">
+                    Пик в <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{investmentSummary.peakMonthLabel} {currentScenario.year || 2027}</strong>
                     {investmentSummary.selfFundingMonthLabel
                       ? ` · С ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB`
                       : ' · Учитывает возврат выручки с WB'}
@@ -1847,34 +2085,202 @@ export function FinanceContourView() {
                   {investmentSummary.ownMoneyStatusLabel}
                 </div>
               )}
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-violet-500/85" />
             </div>
 
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
                 3. Закупки за год vs Себест. продаж
               </div>
-              <div className="font-mono text-[24px] font-extrabold text-[#141413]">
+              <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                 {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто ролью'}
               </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
+              <div className="text-[11.5px] text-[#64748B]">
                 Себестоимость проданного товара:{' '}
-                <strong>{hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : '—'}</strong>
+                <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : '—'}</strong>
               </div>
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-indigo-500/85" />
             </div>
 
-            <div className="p-5 space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#5E5D58]">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
                 4. Ожидаемая прибыль 2027 (после WB и рекламы)
               </div>
-              <div className="font-mono text-[24px] font-extrabold text-[#157347]">
+              <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                 +{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}
               </div>
-              <div className="text-[11.5px] text-[#5E5D58]">
-                Выручка: <strong>{formatMln(totals.annualRevenueRub)}</strong> · Рентабельность:{' '}
-                <strong>{investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%</strong>
+              <div className="text-[11.5px] text-[#64748B]">
+                Выручка: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totals.annualRevenueRub)}</strong> · Рентабельность:{' '}
+                <strong className="text-emerald-600 dark:text-emerald-400">{investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%</strong>
               </div>
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
             </div>
           </section>
+
+          {/* ИНТЕРАКТИВНЫЙ КАЛЬКУЛЯТОР «ЧТО ЕСЛИ?» В КОНТУРЕ 04 · ФИНАНСЫ */}
+          {(() => {
+            const sim = computeWhatIfSensitivitySimulation(
+              {
+                annualRevenueRub: totals.annualRevenueRub,
+                annualSoldGoodsCostRub: investmentSummary.annualSoldGoodsCostRub,
+                annualEstimatedOperatingProfitRub:
+                  investmentSummary.annualEstimatedOperatingProfitRub,
+                totalProcurementBudgetRub: investmentSummary.totalProcurementBudgetRub,
+                verifiedOwnMoneyRequiredRub:
+                  investmentSummary.verifiedOwnMoneyRequiredRub ?? null,
+              },
+              {
+                priceDeltaPct: whatIfPriceDelta,
+                costDeltaPct: whatIfCostDelta,
+                mpAndAdsDeltaPt: whatIfMpAdsDelta,
+              }
+            );
+            const isModified =
+              whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
+
+            return (
+              <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
+                      Симулятор чувствительности · Что если?
+                    </div>
+                    <h2 className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                      Стресс-тест и точки роста прибыли сценария «{currentScenario.title}»
+                    </h2>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWhatIfPriceDelta(7);
+                        setWhatIfCostDelta(-5);
+                        setWhatIfMpAdsDelta(0);
+                      }}
+                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 font-semibold cursor-pointer"
+                    >
+                      🔥 Цена +7% · Себест. −5%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWhatIfPriceDelta(0);
+                        setWhatIfCostDelta(10);
+                        setWhatIfMpAdsDelta(4);
+                      }}
+                      className="h-8 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/25 text-amber-700 font-semibold cursor-pointer"
+                    >
+                      ⚠️ Стресс-тест WB +4 п.п.
+                    </button>
+                    {isModified && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWhatIfPriceDelta(0);
+                          setWhatIfCostDelta(0);
+                          setWhatIfMpAdsDelta(0);
+                        }}
+                        className="h-8 px-3 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] font-semibold cursor-pointer"
+                      >
+                        ↺ Сбросить
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between font-medium">
+                        <span>Розничная цена WB</span>
+                        <span className="font-mono font-bold">
+                          {whatIfPriceDelta > 0 ? `+${whatIfPriceDelta}%` : `${whatIfPriceDelta}%`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-15}
+                        max={20}
+                        step={1}
+                        value={whatIfPriceDelta}
+                        onChange={(e) => setWhatIfPriceDelta(Number(e.target.value))}
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between font-medium">
+                        <span>Себестоимость партий</span>
+                        <span className="font-mono font-bold">
+                          {whatIfCostDelta > 0 ? `+${whatIfCostDelta}%` : `${whatIfCostDelta}%`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-15}
+                        max={25}
+                        step={1}
+                        value={whatIfCostDelta}
+                        onChange={(e) => setWhatIfCostDelta(Number(e.target.value))}
+                        className="w-full accent-indigo-600 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between font-medium">
+                        <span>Комиссия WB и ДРР</span>
+                        <span className="font-mono font-bold">
+                          {whatIfMpAdsDelta > 0
+                            ? `+${whatIfMpAdsDelta} п.п.`
+                            : `${whatIfMpAdsDelta} п.п.`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-5}
+                        max={10}
+                        step={0.5}
+                        value={whatIfMpAdsDelta}
+                        onChange={(e) => setWhatIfMpAdsDelta(Number(e.target.value))}
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-5 grid grid-cols-3 gap-3">
+                    <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-3">
+                      <div className="text-[11px] text-[#64748B]">Новая прибыль</div>
+                      <div className="font-mono text-base font-bold text-emerald-700 mt-0.5">
+                        +{formatMln(sim.simulatedProfitRub)}
+                      </div>
+                      <div className="font-mono text-[10.5px] text-emerald-600">
+                        {sim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}
+                        {formatMln(Math.abs(sim.profitDeltaRub))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
+                      <div className="text-[11px] text-[#64748B]">Новая выручка</div>
+                      <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
+                        {formatMln(sim.simulatedRevenueRub)}
+                      </div>
+                      <div className="font-mono text-[10.5px] text-[#64748B]">
+                        Маржа {sim.simulatedMarginPct.toFixed(1).replace('.', ',')}%
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
+                      <div className="text-[11px] text-[#64748B]">Пик своих денег</div>
+                      <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
+                        {formatMln(sim.simulatedOwnCapitalRub)}
+                      </div>
+                      <div className="font-mono text-[10.5px] text-indigo-600">
+                        {sim.simulatedRoiMult ? `ROI ×${sim.simulatedRoiMult}` : 'с WB'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* 01 · СВОДНАЯ ТАБЛИЦА ИНВЕСТИЦИЙ И ПРИБЫЛИ ПО БРЕНДАМ ГРУППЫ (РАЗДЕЛ 09.2 ТЗ) */}
           <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
@@ -2140,14 +2546,33 @@ export function FinanceContourView() {
           </section>
 
           {/* 03 · Юнит-экономика по моделям */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
-            <div>
-              <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                03 · Экономика по моделям
+          <section className="rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
+                  03 · Экономика по моделям
+                </div>
+                <h2 className="text-[18px] font-bold text-[#0F172A] mt-0.5">
+                  Себестоимость, маржинальность и ожидаемая прибыль по каждой модели ({finSummary.perSku.length} мод.)
+                </h2>
               </div>
-              <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                Себестоимость, маржинальность и ожидаемая прибыль по каждой модели ({finSummary.perSku.length} мод.)
-              </h2>
+
+              {finSummary.unfilledOpCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyIndustryNormsToAllModels(true);
+                    notify(
+                      'success',
+                      'Отраслевые нормативы WB применены ко всем моделям',
+                      'Комиссия, логистика, ДРР и себестоимость заполнены для 100% SKU'
+                    );
+                  }}
+                  className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer shadow-2xs transition"
+                >
+                  ⚡ Заполнить нормативы WB для всех SKU ({finSummary.unfilledOpCount})
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">

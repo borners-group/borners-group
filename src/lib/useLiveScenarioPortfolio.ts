@@ -22,11 +22,16 @@ import {
 } from '@/lib/scenarioS1_100M';
 import {
   CanonicalBrandCode,
+  applyCategoryWbUnitEconomics,
+  applyCategoryWbUnitEconomicsToPortfolio,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
+  launchAllEmptyCabinetsInHolding,
+  launchBrandStarterMatrix,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
+  resetStarterCabinetsFromHolding,
 } from '@/lib/unifiedBusinessEngine';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 
@@ -111,14 +116,7 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
     STORAGE_KEY_USER_PLANS_BACKUP
   );
   return modelsList.map((rawM) => {
-    const isRawUnconfiguredWb =
-      Boolean(getActingSkuByWbOrVendor(rawM.code, rawM.title)) &&
-      (rawM.marketplaceFeePct ?? 0) === 0 &&
-      (rawM.logisticsRub ?? 0) === 0 &&
-      (rawM.adsPct ?? 0) === 0;
-    const m = isRawUnconfiguredWb
-      ? { ...rawM, marketplaceFeePct: 22, logisticsRub: 95, adsPct: 10 }
-      : rawM;
+    const m = applyCategoryWbUnitEconomics(rawM);
 
     if (!backup || typeof backup !== 'object') return m;
     const saved =
@@ -127,12 +125,7 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
         (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
       );
     if (!saved) return m;
-    const isUnconfiguredActingWb =
-      Boolean(getActingSkuByWbOrVendor(m.code, m.title)) &&
-      (saved.marketplaceFeePct ?? 0) === 0 &&
-      (saved.logisticsRub ?? 0) === 0 &&
-      (saved.adsPct ?? 0) === 0;
-    return {
+    const mergedRaw: ScenarioModelSpec = {
       ...m,
       code: saved.code ?? m.code,
       title: saved.title ?? m.title,
@@ -148,11 +141,9 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
       unitsInPack: saved.unitsInPack ?? m.unitsInPack,
       retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
       unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-      marketplaceFeePct: isUnconfiguredActingWb
-        ? 22
-        : saved.marketplaceFeePct ?? m.marketplaceFeePct,
-      logisticsRub: isUnconfiguredActingWb ? 95 : saved.logisticsRub ?? m.logisticsRub,
-      adsPct: isUnconfiguredActingWb ? 10 : saved.adsPct ?? m.adsPct,
+      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
+      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
+      adsPct: saved.adsPct ?? m.adsPct,
       priority: saved.priority ?? m.priority,
       launchStatus: saved.launchStatus ?? m.launchStatus,
       gallery: saved.gallery || m.gallery,
@@ -164,6 +155,7 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
       plansByScenario: saved.plansByScenario || m.plansByScenario,
       sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
     };
+    return applyCategoryWbUnitEconomics(mergedRaw);
   });
 }
 
@@ -467,6 +459,96 @@ export function useLiveScenarioPortfolio() {
     };
   }, [eligibleModels, currentScenario]);
 
+  const applyIndustryNormsToAllModels = useCallback((fillMissingCost: boolean = true) => {
+    setModels((prev) => {
+      const next = applyCategoryWbUnitEconomicsToPortfolio(prev, {
+        fillMissingCost,
+        forceOverwriteRates: false,
+      });
+      safeSetStorageJson(STORAGE_KEY_MODELS, next);
+      syncUserPlansBackup(next);
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+        }, 0);
+      }
+      return next;
+    });
+  }, []);
+
+  const launchStarterCabinet = useCallback(
+    (bCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
+      const res = launchBrandStarterMatrix(models, scenarios, bCode);
+      setModels(res.models);
+      setScenarios(res.scenarios);
+      safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+      syncUserPlansBackup(res.models);
+      safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+      setSelectedScenarioByBrandState((prev) => {
+        const next = { ...prev, [bCode]: res.scenarioId };
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+        return next;
+      });
+      setSelectedScenarioIdState(res.scenarioId);
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, res.scenarioId);
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+          window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+          window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+        }, 0);
+      }
+      return res;
+    },
+    [models, scenarios]
+  );
+
+  const launchAllCabinets = useCallback(() => {
+    const res = launchAllEmptyCabinetsInHolding(
+      models,
+      scenarios,
+      selectedScenarioByBrand
+    );
+    setModels(res.models);
+    setScenarios(res.scenarios);
+    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+    syncUserPlansBackup(res.models);
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+        window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+      }, 0);
+    }
+    return res;
+  }, [models, scenarios, selectedScenarioByBrand]);
+
+  const resetStarterCabinets = useCallback(() => {
+    const res = resetStarterCabinetsFromHolding(
+      models,
+      scenarios,
+      selectedScenarioByBrand
+    );
+    setModels(res.models);
+    setScenarios(res.scenarios);
+    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
+    syncUserPlansBackup(res.models);
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+        window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+      }, 0);
+    }
+    return res;
+  }, [models, scenarios, selectedScenarioByBrand]);
+
   return {
     scenarios,
     orderedScenarios,
@@ -485,5 +567,9 @@ export function useLiveScenarioPortfolio() {
     updateModelSpec,
     updateModelsBatch,
     updateScenariosBatch,
+    applyIndustryNormsToAllModels,
+    launchStarterCabinet,
+    launchAllCabinets,
+    resetStarterCabinets,
   };
 }

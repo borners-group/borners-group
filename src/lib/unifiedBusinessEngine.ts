@@ -3920,4 +3920,585 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   return `\uFEFF${header}\n${row}`;
 }
 
+// =============================================================================
+// АВТОЗАПОЛНЕНИЕ ОТРАСЛЕВЫХ НОРМАТИВОВ WB И СТАРТОВЫЕ МАТРИЦЫ КАБИНЕТОВ
+// =============================================================================
+
+export interface CategoryWbNorms {
+  brandCode: CanonicalBrandCode;
+  marketplaceFeePct: number;
+  logisticsRub: number;
+  adsPct: number;
+  otherVariableRubPerPack: number;
+  allocatedFixedOpexRubPerPack: number;
+  defaultCostSharePct: number;
+}
+
+export function getCategoryWbNormsForBrand(
+  brandOrModel: string | ScenarioModelSpec
+): CategoryWbNorms {
+  const cfg = getBrandUnitConfig(brandOrModel);
+  switch (cfg.brandCode) {
+    case 'AKUSHA':
+      return {
+        brandCode: 'AKUSHA',
+        marketplaceFeePct: 24,
+        logisticsRub: 140,
+        adsPct: 10,
+        otherVariableRubPerPack: 20,
+        allocatedFixedOpexRubPerPack: 55,
+        defaultCostSharePct: 30,
+      };
+    case 'LISKANI':
+      return {
+        brandCode: 'LISKANI',
+        marketplaceFeePct: 21,
+        logisticsRub: 130,
+        adsPct: 9,
+        otherVariableRubPerPack: 15,
+        allocatedFixedOpexRubPerPack: 45,
+        defaultCostSharePct: 31,
+      };
+    case 'NA_TELE':
+      return {
+        brandCode: 'NA_TELE',
+        marketplaceFeePct: 22,
+        logisticsRub: 90,
+        adsPct: 10,
+        otherVariableRubPerPack: 15,
+        allocatedFixedOpexRubPerPack: 35,
+        defaultCostSharePct: 26,
+      };
+    case 'FUKAI':
+    case 'BORNERS':
+    default:
+      return {
+        brandCode: cfg.brandCode,
+        marketplaceFeePct: 22,
+        logisticsRub: 95,
+        adsPct: 10,
+        otherVariableRubPerPack: 0,
+        allocatedFixedOpexRubPerPack: 35,
+        defaultCostSharePct: 28,
+      };
+  }
+}
+
+/**
+ * Применяет реалистичные отраслевые нормативы WB к карточке товара,
+ * чтобы в Блоке А и Блоке Б не оставалось пустых строк «Не заполнено».
+ */
+export function applyCategoryWbUnitEconomics(
+  rawModel: ScenarioModelSpec,
+  options?: { fillMissingCost?: boolean; forceOverwriteRates?: boolean }
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const norms = getCategoryWbNormsForBrand(model);
+  const fillMissingCost = options?.fillMissingCost ?? false;
+  const forceOverwrite = options?.forceOverwriteRates ?? false;
+
+  const nextUnitCostRub =
+    model.unitCostRub > 0
+      ? model.unitCostRub
+      : fillMissingCost
+      ? Math.max(
+          250,
+          Math.round(((model.retailPriceRub || 1990) * norms.defaultCostSharePct) / 100 / 5) * 5
+        )
+      : model.unitCostRub;
+
+  const hasUnitCost = nextUnitCostRub > 0;
+  const shouldFillRates =
+    forceOverwrite ||
+    hasUnitCost ||
+    fillMissingCost;
+
+  if (!shouldFillRates) {
+    return model;
+  }
+
+  const nextMpPct =
+    forceOverwrite || (model.marketplaceFeePct ?? 0) <= 0
+      ? norms.marketplaceFeePct
+      : model.marketplaceFeePct;
+  const nextLogRub =
+    forceOverwrite || (model.logisticsRub ?? 0) <= 0
+      ? norms.logisticsRub
+      : model.logisticsRub;
+  const nextAdsPct =
+    forceOverwrite || (model.adsPct ?? 0) <= 0
+      ? norms.adsPct
+      : model.adsPct;
+
+  const nextOpexRub =
+    forceOverwrite || shared.allocatedFixedOpexRubPerPack === null
+      ? norms.allocatedFixedOpexRubPerPack
+      : shared.allocatedFixedOpexRubPerPack;
+
+  return {
+    ...model,
+    unitCostRub: nextUnitCostRub,
+    marketplaceFeePct: nextMpPct,
+    logisticsRub: nextLogRub,
+    adsPct: nextAdsPct,
+    sharedSupplyAndFact: {
+      ...shared,
+      costStatus: nextUnitCostRub > 0 ? (shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus) : 'not_filled',
+      expensesFilled: true,
+      otherVariableRubPerPack:
+        shared.otherVariableRubPerPack > 0
+          ? shared.otherVariableRubPerPack
+          : norms.otherVariableRubPerPack,
+      allocatedFixedOpexRubPerPack: nextOpexRub,
+      wbPayoutScheduleConfirmed: shared.wbPayoutScheduleConfirmed ?? true,
+    },
+  };
+}
+
+export function applyCategoryWbUnitEconomicsToPortfolio(
+  models: ScenarioModelSpec[],
+  options?: { fillMissingCost?: boolean; forceOverwriteRates?: boolean }
+): ScenarioModelSpec[] {
+  return models.map((m) => applyCategoryWbUnitEconomics(m, options));
+}
+
+export interface StarterBrandSkuTemplate {
+  code: string;
+  title: string;
+  subtitle: string;
+  retailPriceRub: number;
+  unitCostRub: number;
+  unitsInPack: number;
+  priority: 'Высший' | 'Высокий' | 'Средний';
+  monthlyPacks: number[];
+  composition: string;
+  density: string;
+}
+
+export const STARTER_BRAND_MATRICES: Record<
+  'AKUSHA' | 'LISKANI' | 'NA_TELE',
+  {
+    scenarioTitle: string;
+    monthlyTargetMln: number;
+    skus: StarterBrandSkuTemplate[];
+  }
+> = {
+  AKUSHA: {
+    scenarioTitle: 'AKUSHA · Старт обувной линейки 2027',
+    monthlyTargetMln: 32,
+    skus: [
+      {
+        code: 'AKU-001',
+        title: 'Кроссовки городские AKUSHA Cloud Walk',
+        subtitle: 'Натуральная замша и дышащая сетка · анатомическая стелька',
+        retailPriceRub: 4490,
+        unitCostRub: 1350,
+        unitsInPack: 1,
+        priority: 'Высший',
+        monthlyPacks: [850, 1050, 1300, 1650, 1950, 2200, 2450, 2750, 3100, 3400, 3700, 4100],
+        composition: 'Натуральная замша 65%, текстиль Mesh 35%, подошва EVA',
+        density: 'Всесезонная пара',
+      },
+      {
+        code: 'AKU-002',
+        title: 'Лоферы базовые AKUSHA Soft Suede',
+        subtitle: 'Мягкая замша премиум · гибкая облегчённая колодка',
+        retailPriceRub: 4890,
+        unitCostRub: 1480,
+        unitsInPack: 1,
+        priority: 'Высокий',
+        monthlyPacks: [620, 780, 950, 1200, 1450, 1680, 1850, 2100, 2350, 2600, 2850, 3100],
+        composition: 'Натуральная замша 100%, кожаная стелька, термоэластопласт',
+        density: 'Демисезон / лето',
+      },
+      {
+        code: 'AKU-003',
+        title: 'Кеды минималистичные AKUSHA Everyday',
+        subtitle: 'Базовая капсула на каждый день · износостойкая подошва',
+        retailPriceRub: 3990,
+        unitCostRub: 1190,
+        unitsInPack: 1,
+        priority: 'Высокий',
+        monthlyPacks: [700, 880, 1100, 1350, 1600, 1850, 2050, 2300, 2550, 2800, 3050, 3300],
+        composition: 'Эко-кожа премиум микрофибра, хлопок 100% внутри',
+        density: 'Базовая капсула',
+      },
+    ],
+  },
+  LISKANI: {
+    scenarioTitle: 'LISKANI · Интерьерный текстиль и шторы 2027',
+    monthlyTargetMln: 28,
+    skus: [
+      {
+        code: 'LSK-001',
+        title: 'Шторы блэкаут LISKANI Венеция 300×270 (2 полотна)',
+        subtitle: 'Светонепроницаемость 98% · плотный матовый велюр-рогожка',
+        retailPriceRub: 4290,
+        unitCostRub: 1320,
+        unitsInPack: 6,
+        priority: 'Высший',
+        monthlyPacks: [680, 820, 980, 1180, 1400, 1650, 1900, 2200, 2550, 2850, 3150, 3500],
+        composition: 'Трёхслойный Blackout полиэстер 100% на шторной ленте 6 см',
+        density: '290 г/м²',
+      },
+      {
+        code: 'LSK-002',
+        title: 'Шторы димаут со льном LISKANI Скандинавия 400×270',
+        subtitle: 'Природная фактура льна · защита от солнца 85%',
+        retailPriceRub: 4690,
+        unitCostRub: 1450,
+        unitsInPack: 8,
+        priority: 'Высокий',
+        monthlyPacks: [520, 640, 780, 940, 1120, 1320, 1520, 1760, 2040, 2300, 2550, 2850],
+        composition: 'Лён 30%, полиэстер Dimout 70%',
+        density: '265 г/м²',
+      },
+      {
+        code: 'LSK-003',
+        title: 'Тюль вуаль премиум LISKANI Воздушный шёлк 400×270',
+        subtitle: 'Утяжелитель по низу · мягкая драпировка без глажки',
+        retailPriceRub: 2490,
+        unitCostRub: 740,
+        unitsInPack: 4,
+        priority: 'Средний',
+        monthlyPacks: [900, 1100, 1320, 1580, 1850, 2150, 2450, 2800, 3200, 3550, 3900, 4300],
+        composition: 'Микровуаль грек-сетка с утяжелителем 100% ПЭ',
+        density: '75 г/м²',
+      },
+    ],
+  },
+  NA_TELE: {
+    scenarioTitle: 'НА ТЕЛЕ · Женская и базовая капсула 2027',
+    monthlyTargetMln: 26,
+    skus: [
+      {
+        code: 'NTL-001',
+        title: 'Комплект женских слипов НА ТЕЛЕ Invisible Seam (3 шт.)',
+        subtitle: 'Бесшовная лазерная обработка края · неощутимая посадка',
+        retailPriceRub: 1790,
+        unitCostRub: 460,
+        unitsInPack: 3,
+        priority: 'Высший',
+        monthlyPacks: [1100, 1350, 1650, 2000, 2400, 2850, 3300, 3800, 4350, 4900, 5450, 6100],
+        composition: 'Микромодал 86%, эластан 14%, хлопковая ластовица',
+        density: '165 г/м²',
+      },
+      {
+        code: 'NTL-002',
+        title: 'Топ-бра и бразилиана НА ТЕЛЕ Ribbed Modal Set',
+        subtitle: 'Мягкий трикотаж в рубчик без косточек · тактильный комфорт',
+        retailPriceRub: 2290,
+        unitCostRub: 610,
+        unitsInPack: 2,
+        priority: 'Высокий',
+        monthlyPacks: [850, 1050, 1280, 1550, 1880, 2220, 2600, 3000, 3450, 3900, 4350, 4850],
+        composition: 'Модал лензинг 92%, эластан 8%',
+        density: '190 г/м²',
+      },
+      {
+        code: 'NTL-003',
+        title: 'Базовые шортики женские НА ТЕЛЕ Pure Cotton (3 шт.)',
+        subtitle: 'Хлопок компакт-пенье · мягкая резинка без давления',
+        retailPriceRub: 1690,
+        unitCostRub: 430,
+        unitsInPack: 3,
+        priority: 'Высокий',
+        monthlyPacks: [950, 1180, 1450, 1750, 2100, 2480, 2900, 3350, 3820, 4300, 4780, 5300],
+        composition: 'Хлопок компакт-пенье 95%, эластан 5%',
+        density: '180 г/м²',
+      },
+    ],
+  },
+};
+
+/**
+ * Запускает стартовую товарную матрицу (3 флагманских SKU + независимый сценарий 2027)
+ * для кабинета AKUSHA, LISKANI или НА ТЕЛЕ в 1 клик.
+ */
+export function launchBrandStarterMatrix(
+  models: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+): {
+  models: ScenarioModelSpec[];
+  scenarios: GrowthScenarioDef[];
+  scenarioId: number;
+  addedCount: number;
+} {
+  const template = STARTER_BRAND_MATRICES[brandCode];
+  let currentScenarios = [...scenarios];
+  let currentModels = [...models];
+
+  // Проверяем, есть ли уже сценарий у этого бренда
+  const existingBrandScenarios = getScenariosForBrand(currentScenarios, brandCode, {
+    onlyExplicitForNewBrands: brandCode !== 'NA_TELE',
+  });
+
+  let targetScenarioId: number;
+  if (existingBrandScenarios.length > 0) {
+    targetScenarioId = existingBrandScenarios[0].id;
+  } else {
+    const created = createIndependentBrandScenario(currentScenarios, currentModels, {
+      title: template.scenarioTitle,
+      brandCode,
+      year: 2027,
+      monthlyTargetMln: template.monthlyTargetMln,
+      copyFromScenarioId: null,
+    });
+    currentScenarios = created.scenarios;
+    currentModels = created.models;
+    targetScenarioId = created.scenario.id;
+  }
+
+  let addedCount = 0;
+  for (const skuTpl of template.skus) {
+    const existingIdx = currentModels.findIndex(
+      (m) => m.code.toUpperCase() === skuTpl.code.toUpperCase()
+    );
+    if (existingIdx >= 0) {
+      // Обновляем план продаж и юнит-экономику, если модель уже была создана с 0 продаж
+      const existingMod = currentModels[existingIdx];
+      const updatedPlans = { ...existingMod.plansByScenario };
+      for (const sc of currentScenarios) {
+        updatedPlans[sc.id] = {
+          ...(updatedPlans[sc.id] || {
+            scenarioId: sc.id,
+            monthlyReceiptsPacks: Array(12).fill(0),
+            initialStockPacks: 0,
+            firstOrderPacks: skuTpl.monthlyPacks[0] * 3,
+            nextOrderDateLabel: '15 ноября 2026',
+            salesStartMonthIdx: 0,
+            warehouseArrivalMonthIdx: 0,
+            warehouseArrivalDateLabel: '10 января 2027',
+          }),
+          scenarioId: sc.id,
+          monthlyPacks: [...skuTpl.monthlyPacks],
+          monthlyPricesRub: Array(12).fill(skuTpl.retailPriceRub),
+        };
+      }
+      currentModels[existingIdx] = applyCategoryWbUnitEconomics(
+        {
+          ...existingMod,
+          plansByScenario: updatedPlans,
+        },
+        { fillMissingCost: true, forceOverwriteRates: true }
+      );
+    } else {
+      const created = createBrandProductModel(currentModels, currentScenarios, {
+        brandCode,
+        code: skuTpl.code,
+        title: skuTpl.title,
+        retailPriceRub: skuTpl.retailPriceRub,
+        unitCostRub: skuTpl.unitCostRub,
+        unitsInPack: skuTpl.unitsInPack,
+        initialMonthlyPacks: [...skuTpl.monthlyPacks],
+      });
+      const newMod = applyCategoryWbUnitEconomics(
+        {
+          ...created.model,
+          subtitle: skuTpl.subtitle,
+          priority: skuTpl.priority,
+          fabric: {
+            ...created.model.fabric,
+            composition: skuTpl.composition,
+            density: skuTpl.density,
+          },
+        },
+        { fillMissingCost: true, forceOverwriteRates: true }
+      );
+      currentModels = [
+        ...created.models.filter((m) => m.id !== created.model.id),
+        newMod,
+      ];
+      addedCount += 1;
+    }
+  }
+
+  return {
+    models: currentModels,
+    scenarios: currentScenarios,
+    scenarioId: targetScenarioId,
+    addedCount,
+  };
+}
+
+/**
+ * Подключает сразу все 3 новых кабинета (AKUSHA, LISKANI, НА ТЕЛЕ), чтобы все 5 кабинетов холдинга работали на полную мощность.
+ */
+export function launchAllEmptyCabinetsInHolding(
+  models: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>
+): {
+  models: ScenarioModelSpec[];
+  scenarios: GrowthScenarioDef[];
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>;
+  addedCount: number;
+} {
+  let nextModels = [...models];
+  let nextScenarios = [...scenarios];
+  const nextMap: Partial<Record<CanonicalBrandCode, number | null>> = {
+    ...selectedScenarioByBrand,
+  };
+  let totalAdded = 0;
+
+  for (const bCode of ['AKUSHA', 'LISKANI', 'NA_TELE'] as const) {
+    const res = launchBrandStarterMatrix(nextModels, nextScenarios, bCode);
+    nextModels = res.models;
+    nextScenarios = res.scenarios;
+    nextMap[bCode] = res.scenarioId;
+    totalAdded += res.addedCount;
+  }
+
+  return {
+    models: nextModels,
+    scenarios: nextScenarios,
+    selectedScenarioByBrand: nextMap,
+    addedCount: totalAdded,
+  };
+}
+
+/**
+ * Сбрасывает демо-матрицы AKUSHA, LISKANI и НА ТЕЛЕ обратно к базовым 2 активным кабинетам (BORNERS + FUKAI).
+ */
+export function resetStarterCabinetsFromHolding(
+  models: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>
+): {
+  models: ScenarioModelSpec[];
+  scenarios: GrowthScenarioDef[];
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>;
+} {
+  const starterCodes = new Set(
+    [
+      ...STARTER_BRAND_MATRICES.AKUSHA.skus,
+      ...STARTER_BRAND_MATRICES.LISKANI.skus,
+      ...STARTER_BRAND_MATRICES.NA_TELE.skus,
+    ].map((s) => s.code.toUpperCase())
+  );
+
+  const nextModels = models.filter((m) => !starterCodes.has(m.code.toUpperCase()));
+  const starterTitles = new Set([
+    STARTER_BRAND_MATRICES.AKUSHA.scenarioTitle,
+    STARTER_BRAND_MATRICES.LISKANI.scenarioTitle,
+    STARTER_BRAND_MATRICES.NA_TELE.scenarioTitle,
+  ]);
+  const nextScenarios = scenarios.filter((s) => !starterTitles.has(s.title));
+
+  return {
+    models: nextModels,
+    scenarios: nextScenarios,
+    selectedScenarioByBrand: {
+      ...selectedScenarioByBrand,
+      BORNERS: selectedScenarioByBrand.BORNERS ?? 1,
+      FUKAI: selectedScenarioByBrand.FUKAI ?? 100,
+      AKUSHA: null,
+      LISKANI: null,
+      NA_TELE: 2,
+    },
+  };
+}
+
+export interface WhatIfSensitivityResult {
+  simRevenueRub: number;
+  simCogsRub: number;
+  simDeductionsRub: number;
+  simNetProfitRub: number;
+  simMarginPct: number;
+  simPeakCapitalRub: number;
+  simRoiMultiplier: number;
+  profitDeltaRub: number;
+  marginDeltaPts: number;
+  revenueDeltaRub: number;
+  // Удобные алиасы для UI-компонентов
+  simulatedRevenueRub: number;
+  simulatedProfitRub: number;
+  simulatedMarginPct: number;
+  simulatedOwnCapitalRub: number;
+  simulatedRoiMult: number;
+  baseMarginPct: number;
+}
+
+/**
+ * Интерактивный калькулятор чувствительности «Что если?» (Sensitivity Sliders):
+ * пересчитывает выручку, себестоимость, удержания WB/ДРР, чистую прибыль, маржу и ROI.
+ */
+export function computeWhatIfSensitivitySimulation(
+  base: {
+    annualRevenueRub: number;
+    annualSoldGoodsCostRub: number;
+    annualWbDeductionsAndAdsRub?: number;
+    annualEstimatedOperatingProfitRub: number;
+    peakWorkingCapitalRub?: number;
+    totalProcurementBudgetRub?: number;
+    verifiedOwnMoneyRequiredRub?: number | null;
+  },
+  params: {
+    priceDeltaPct: number; // -20 .. +25 (%)
+    costDeltaPct: number; // -20 .. +30 (%)
+    wbAndAdsDeltaPts?: number; // -8 .. +12 (п.п. к ставке удержаний и ДРР)
+    mpAndAdsDeltaPt?: number;
+  }
+): WhatIfSensitivityResult {
+  const baseRev = Math.max(0, base.annualRevenueRub);
+  const baseCogs = Math.max(0, base.annualSoldGoodsCostRub);
+  const baseProfit = base.annualEstimatedOperatingProfitRub;
+  const baseDed = Math.max(
+    0,
+    base.annualWbDeductionsAndAdsRub ?? baseRev - baseCogs - baseProfit
+  );
+  const baseMarginPct = baseRev > 0 ? (baseProfit / baseRev) * 100 : 0;
+
+  const priceFactor = 1 + params.priceDeltaPct / 100;
+  const costFactor = 1 + params.costDeltaPct / 100;
+  const deltaPts = params.wbAndAdsDeltaPts ?? params.mpAndAdsDeltaPt ?? 0;
+
+  const simRevenueRub = Math.round(baseRev * priceFactor);
+  const simCogsRub = Math.round(baseCogs * costFactor);
+
+  // Базовая доля удержаний (комиссия + логистика + реклама) + сдвиг в п.п.
+  const baseDedSharePct = baseRev > 0 ? (baseDed / baseRev) * 100 : 38;
+  const simDedSharePct = Math.max(10, Math.min(75, baseDedSharePct + deltaPts));
+  const simDeductionsRub = Math.round((simRevenueRub * simDedSharePct) / 100);
+
+  const simNetProfitRub = simRevenueRub - simCogsRub - simDeductionsRub;
+  const simMarginPct =
+    simRevenueRub > 0
+      ? Math.round((simNetProfitRub / simRevenueRub) * 1000) / 10
+      : 0;
+
+  const basePeakCap =
+    base.peakWorkingCapitalRub ??
+    base.verifiedOwnMoneyRequiredRub ??
+    Math.round((base.totalProcurementBudgetRub ?? baseCogs) * 0.182);
+  const simPeakCapitalRub = Math.max(
+    1,
+    Math.round(Math.max(1, basePeakCap) * costFactor)
+  );
+  const simRoiMultiplier =
+    Math.round((simNetProfitRub / simPeakCapitalRub) * 10) / 10;
+
+  return {
+    simRevenueRub,
+    simCogsRub,
+    simDeductionsRub,
+    simNetProfitRub,
+    simMarginPct,
+    simPeakCapitalRub,
+    simRoiMultiplier,
+    profitDeltaRub: simNetProfitRub - baseProfit,
+    marginDeltaPts: Math.round((simMarginPct - baseMarginPct) * 10) / 10,
+    revenueDeltaRub: simRevenueRub - baseRev,
+    simulatedRevenueRub: simRevenueRub,
+    simulatedProfitRub: simNetProfitRub,
+    simulatedMarginPct: simMarginPct,
+    simulatedOwnCapitalRub: simPeakCapitalRub,
+    simulatedRoiMult: simRoiMultiplier,
+    baseMarginPct: Math.round(baseMarginPct * 10) / 10,
+  };
+}
+
+
 
