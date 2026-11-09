@@ -499,12 +499,12 @@ export function getModelBrandAccentStyles(brandInput?: string): {
   switch (code) {
     case 'BORNERS':
       return {
-        badgeBg: 'bg-[#EEF2FA]',
-        badgeText: 'text-[#1E3A8A]',
-        badgeBorder: 'border-[#C7D5F2]',
-        folderBg: 'bg-[#F2F5FC] border-[#D3DEF5]',
-        folderIconText: 'text-[#1E40AF]',
-        accentBar: 'bg-[#2B4C9B]',
+        badgeBg: 'bg-[#ECFDF5]',
+        badgeText: 'text-[#065F46]',
+        badgeBorder: 'border-[#A7F3D0]',
+        folderBg: 'bg-[#F0FDF4] border-[#BBF7D0]',
+        folderIconText: 'text-[#059669]',
+        accentBar: 'bg-emerald-600',
       };
     case 'NA_TELE':
       return {
@@ -517,12 +517,12 @@ export function getModelBrandAccentStyles(brandInput?: string): {
       };
     case 'FUKAI':
       return {
-        badgeBg: 'bg-[#EEF5F9]',
-        badgeText: 'text-[#1E4E68]',
-        badgeBorder: 'border-[#C6DCE8]',
-        folderBg: 'bg-[#F2F7FA] border-[#CFE1EC]',
-        folderIconText: 'text-[#1E4E68]',
-        accentBar: 'bg-[#256385]',
+        badgeBg: 'bg-[#F0FDFA]',
+        badgeText: 'text-[#115E59]',
+        badgeBorder: 'border-[#99F6E4]',
+        folderBg: 'bg-[#F0FDFA] border-[#CCFBF1]',
+        folderIconText: 'text-[#0D9488]',
+        accentBar: 'bg-teal-600',
       };
     case 'AKUSHA':
       return {

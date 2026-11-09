@@ -124,14 +124,14 @@ function ScenarioContourHeader({
           )}
 
           {selectedScenarioId === 1 && (
-            <div className="inline-flex items-center rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[11.5px]">
+            <div className="inline-flex items-center rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[11.5px]">
               <button
                 type="button"
                 onClick={() => onToggleGroupPortfolio(false)}
-                className={`px-2.5 py-1 rounded-[7px] transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                   !includeGroupPortfolioInS1
-                    ? 'bg-[#141413] text-white font-semibold'
-                    : 'text-[#52514C] hover:text-[#141413] font-semibold'
+                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
                 }`}
               >
                 Цель BORNERS · 21 SKU
@@ -139,10 +139,10 @@ function ScenarioContourHeader({
               <button
                 type="button"
                 onClick={() => onToggleGroupPortfolio(true)}
-                className={`px-2.5 py-1 rounded-[7px] transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                   includeGroupPortfolioInS1
-                    ? 'bg-[#141413] text-white font-semibold'
-                    : 'text-[#52514C] hover:text-[#141413] font-semibold'
+                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
                 }`}
               >
                 С FUKAI · 23 SKU
@@ -389,14 +389,14 @@ export function SalesMatrixContourView() {
         eligibleCount={eligibleModels.length}
         rightSlot={
           <>
-            <div className="inline-flex rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12px] font-semibold">
+            <div className="inline-flex rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[12px] font-medium">
               <button
                 type="button"
                 onClick={() => setUnitMode('rub')}
-                className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
+                className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
                   unitMode === 'rub'
-                    ? 'bg-[#141413] text-white'
-                    : 'text-[#52514C] hover:text-[#141413]'
+                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
                 }`}
               >
                 Млн ₽
@@ -404,10 +404,10 @@ export function SalesMatrixContourView() {
               <button
                 type="button"
                 onClick={() => setUnitMode('packs')}
-                className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
+                className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
                   unitMode === 'packs'
-                    ? 'bg-[#141413] text-white'
-                    : 'text-[#52514C] hover:text-[#141413]'
+                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
                 }`}
               >
                 Комплекты (шт.)
@@ -416,7 +416,7 @@ export function SalesMatrixContourView() {
             <button
               type="button"
               onClick={handleExportCsv}
-              className="h-9 px-3.5 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
+              className="h-9 px-3.5 rounded-xl bg-white dark:bg-[#121620] hover:bg-[#F8FAFC] dark:hover:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[12px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] cursor-pointer"
             >
               Экспорт CSV
             </button>
@@ -526,7 +526,7 @@ export function SalesMatrixContourView() {
           <div className="text-[11.5px] text-[#64748B]">
             В декабре: {totals.decPacks.toLocaleString('ru-RU')} компл.
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-indigo-500/85" />
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
         </div>
 
         <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
@@ -542,14 +542,14 @@ export function SalesMatrixContourView() {
               ? `${Math.round(totals.annualRevenueRub / totals.annualPacks).toLocaleString('ru-RU')} ₽`
               : '—'}
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-violet-500/85" />
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
         </div>
       </section>
 
       {/* Полноширинная матрица 12 месяцев по всем SKU */}
-      <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
+      <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[16px] font-bold text-[#141413]">
+          <div className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             Помесячная матрица ({unitMode === 'rub' ? 'млн ₽' : 'комплектов'} · {visibleModels.length} SKU)
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -560,7 +560,7 @@ export function SalesMatrixContourView() {
                   e.target.value as 'default' | 'dec_desc' | 'year_desc' | 'priority'
                 )
               }
-              className="h-9 px-3 rounded-[9px] bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] cursor-pointer"
+              className="h-9 px-3 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] hover:border-emerald-500/40 text-[12px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] cursor-pointer"
             >
               <option value="dec_desc">Сортировка: Выручка дек. ↓</option>
               <option value="year_desc">Сортировка: Год 2027 ↓</option>
@@ -572,16 +572,16 @@ export function SalesMatrixContourView() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Фильтр по WB, коду или названию..."
-              className="h-9 px-3.5 rounded-[9px] bg-[#F7F7F4] focus:bg-white border-[1.5px] border-[#CECDC4] focus:border-[#141413] text-[12.5px] font-medium text-[#141413] w-60"
+              className="h-9 px-3.5 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] focus:bg-white dark:focus:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] focus:border-emerald-500/50 text-[12.5px] font-medium text-[#0F172A] dark:text-[#EDF0F7] placeholder:text-[#64748B] w-60"
             />
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
+        <div className="overflow-x-auto rounded-xl border border-[#E2E6EE] dark:border-[#222938]">
           <table className="w-full text-left border-collapse text-[12px]">
             <thead>
-              <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                <th className="py-2.5 px-3 font-bold min-w-[215px] sticky left-0 z-10 bg-[#F5F5F1] border-r border-[#DFDED6]">
+              <tr className="bg-[#F8FAFC] dark:bg-[#181D2A] text-[#64748B] dark:text-[#94A3B8] border-b border-[#E2E6EE] dark:border-[#222938]">
+                <th className="py-2.5 px-3 font-bold min-w-[215px] sticky left-0 z-10 bg-[#F8FAFC] dark:bg-[#181D2A] border-r border-[#E2E6EE] dark:border-[#222938]">
                   Артикул / Модель
                 </th>
                 <th className="py-2.5 px-2 font-bold text-right">Цена</th>
@@ -589,18 +589,20 @@ export function SalesMatrixContourView() {
                   <th
                     key={m}
                     className={`py-2.5 px-2 font-bold text-right ${
-                      idx === 11 ? 'bg-[#EAEAE3] text-[#141413]' : ''
+                      idx === 11
+                        ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : ''
                     }`}
                   >
                     {m}
                   </th>
                 ))}
-                <th className="py-2.5 px-3 font-bold text-right bg-[#EFEFE9] text-[#141413]">
+                <th className="py-2.5 px-3 font-bold text-right bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                   Год 2027
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E4E3DC]">
+            <tbody className="divide-y divide-[#EEF2F6] dark:divide-[#222938]">
               {visibleModels.map((mod) => {
                 const met = computeModelScenarioMetrics(mod, currentScenario);
                 const acting = getActingSkuByWbOrVendor(mod.code, mod.title);
@@ -609,18 +611,18 @@ export function SalesMatrixContourView() {
                     key={mod.id}
                     onClick={() => setEditingModelId(mod.id)}
                     title="Нажмите, чтобы редактировать помесячный план модели"
-                    className="group hover:bg-[#FAFAF7] cursor-pointer transition"
+                    className="group hover:bg-[#F8FAFC] dark:hover:bg-[#181D2A]/80 cursor-pointer transition"
                   >
-                    <td className="py-2.5 px-3 sticky left-0 z-10 bg-white group-hover:bg-[#FAFAF7] border-r border-[#ECEBE4]">
-                      <div className="font-bold text-[#141413] truncate max-w-[235px]">
+                    <td className="py-2.5 px-3 sticky left-0 z-10 bg-white dark:bg-[#121620] group-hover:bg-[#F8FAFC] dark:group-hover:bg-[#181D2A] border-r border-[#EEF2F6] dark:border-[#222938]">
+                      <div className="font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate max-w-[235px]">
                         {mod.title}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#5E5D58]">
+                      <div className="font-mono text-[10.5px] text-[#64748B] dark:text-[#8E9AB0]">
                         {acting ? `WB ${acting.wbSku}` : mod.code} ·{' '}
                         {detectModelBrandPortfolioLabel(mod)}
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-right font-mono text-[#5E5D58] whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-right font-mono text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
                       {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                     </td>
                     {MONTHS_SHORT_RU.map((_, mIdx) => {
@@ -631,10 +633,10 @@ export function SalesMatrixContourView() {
                           key={mIdx}
                           className={`py-2.5 px-2 text-right font-mono ${
                             mIdx === 11
-                              ? 'bg-[#F7F7F3] font-bold text-[#141413]'
+                              ? 'bg-emerald-500/6 dark:bg-emerald-500/12 font-bold text-emerald-700 dark:text-emerald-300'
                               : valPacks === 0
-                              ? 'text-[#B5B4AD]'
-                              : 'text-[#262624]'
+                              ? 'text-[#CBD5E1] dark:text-[#475569]'
+                              : 'text-[#0F172A] dark:text-[#E2E8F0]'
                           }`}
                         >
                           {unitMode === 'rub'
@@ -647,7 +649,7 @@ export function SalesMatrixContourView() {
                         </td>
                       );
                     })}
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413] bg-[#FAFAF7] whitespace-nowrap">
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] bg-[#F8FAFC] dark:bg-[#161C28] whitespace-nowrap">
                       {unitMode === 'rub'
                         ? (met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                         : met.annualPacks.toLocaleString('ru-RU')}
@@ -657,8 +659,8 @@ export function SalesMatrixContourView() {
               })}
             </tbody>
             <tfoot>
-              <tr className="bg-[#F5F5F1] font-bold text-[#141413] border-t-[1.5px] border-[#CECDC4]">
-                <td className="py-3 px-3 sticky left-0 z-10 bg-[#F5F5F1] border-r border-[#DFDED6]">
+              <tr className="bg-[#F8FAFC] dark:bg-[#181D2A] font-bold text-[#0F172A] dark:text-[#EDF0F7] border-t border-[#E2E6EE] dark:border-[#222938]">
+                <td className="py-3 px-3 sticky left-0 z-10 bg-[#F8FAFC] dark:bg-[#181D2A] border-r border-[#E2E6EE] dark:border-[#222938]">
                   ИТОГО ({eligibleModels.length} SKU)
                 </td>
                 <td className="py-3 px-2 text-right">—</td>
@@ -666,7 +668,9 @@ export function SalesMatrixContourView() {
                   <td
                     key={mIdx}
                     className={`py-3 px-2 text-right font-mono ${
-                      mIdx === 11 ? 'bg-[#E5E4DC] text-[#157347]' : ''
+                      mIdx === 11
+                        ? 'bg-emerald-500/12 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                        : ''
                     }`}
                   >
                     {unitMode === 'rub'
@@ -674,7 +678,7 @@ export function SalesMatrixContourView() {
                       : totals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
                   </td>
                 ))}
-                <td className="py-3 px-3 text-right font-mono bg-[#EAEAE3]">
+                <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
                   {unitMode === 'rub'
                     ? (totals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                     : totals.annualPacks.toLocaleString('ru-RU')}
@@ -1189,13 +1193,13 @@ export function ProcurementContourView() {
                         📦 Платёжный календарь 4 волн закупок {currentScenario.year || 2027} · Авансы 30%, доплаты 70% и реинвест с WB
                       </div>
                       <p className="text-[11.5px] text-[#64748B]">
-                        Годовой бюджет закупок: <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totalProc)}</strong> · Пик собственных средств: <strong className="font-mono text-indigo-600">{investmentSummary.verifiedOwnMoneyRequiredRub != null ? formatMln(investmentSummary.verifiedOwnMoneyRequiredRub) : '—'}</strong> · Волны №3 и №4 финансируются на 100% из выручки WB
+                        Годовой бюджет закупок: <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totalProc)}</strong> · Пик собственных средств: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{investmentSummary.verifiedOwnMoneyRequiredRub != null ? formatMln(investmentSummary.verifiedOwnMoneyRequiredRub) : '—'}</strong> · Волны №3 и №4 финансируются на 100% из выручки WB
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleExportFactoryOrderCsv('first_wave')}
-                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 text-[11.5px] font-semibold cursor-pointer transition"
+                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11.5px] font-semibold cursor-pointer transition"
                     >
                       Скачать заказ 1-й волны Q1 (CSV)
                     </button>
@@ -1208,14 +1212,14 @@ export function ProcurementContourView() {
                         className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A] p-3.5 space-y-2"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[11px] font-bold text-indigo-600">
+                          <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                             {w.num}
                           </span>
                           <span
                             className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
                               w.selfFunded
-                                ? 'bg-emerald-500/10 text-emerald-600'
-                                : 'bg-cyan-500/10 text-cyan-700'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-[#F1F5F9] dark:bg-[#1E2536] text-[#475569] dark:text-[#94A3B8]'
                             }`}
                           >
                             {w.selfFunded ? '100% с WB' : 'Старт / Оборот'}
@@ -1241,7 +1245,7 @@ export function ProcurementContourView() {
                             </strong>
                           </div>
                         </div>
-                        <div className="grid grid-cols-12 gap-0.5 h-1.5 rounded overflow-hidden bg-[#E2E8F0]">
+                        <div className="grid grid-cols-12 gap-0.5 h-1.5 rounded overflow-hidden bg-[#E2E8F0] dark:bg-[#222938]">
                           {MONTHS_SHORT_RU.map((m, idx) => (
                             <div
                               key={m}
@@ -1249,18 +1253,18 @@ export function ProcurementContourView() {
                                 w.covered.includes(idx)
                                   ? w.selfFunded
                                     ? 'bg-emerald-500'
-                                    : 'bg-indigo-500'
+                                    : 'bg-teal-500'
                                   : 'bg-transparent'
                               }
                             />
                           ))}
                         </div>
-                        <div className="text-[10.5px] font-medium text-[#475569]">
+                        <div className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8]">
                           {w.funding}
                         </div>
                         <div
                           className={`absolute inset-x-0 bottom-0 h-[3px] ${
-                            w.selfFunded ? 'bg-emerald-500/80' : 'bg-indigo-500/80'
+                            w.selfFunded ? 'bg-emerald-500/80' : 'bg-teal-500/80'
                           }`}
                         />
                       </div>
@@ -2053,7 +2057,7 @@ export function FinanceContourView() {
               <div className="text-[11.5px] text-[#64748B]">
                 <strong className="text-[#0F172A] dark:text-[#EDF0F7]">Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.)
               </div>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-cyan-500/85" />
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
             </div>
 
             <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
@@ -2074,11 +2078,11 @@ export function FinanceContourView() {
                   </div>
                 </>
               ) : (
-                <div className="text-[12.5px] font-semibold text-amber-900 pt-1 leading-snug">
+                <div className="text-[12.5px] font-semibold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
                   {investmentSummary.ownMoneyStatusLabel}
                 </div>
               )}
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-violet-500/85" />
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
             </div>
 
             <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
@@ -2092,7 +2096,7 @@ export function FinanceContourView() {
                 Себестоимость проданного товара:{' '}
                 <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : '—'}</strong>
               </div>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-indigo-500/85" />
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/80" />
             </div>
 
             <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
@@ -2231,7 +2235,7 @@ export function FinanceContourView() {
                         step={1}
                         value={whatIfCostDelta}
                         onChange={(e) => setWhatIfCostDelta(Number(e.target.value))}
-                        className="w-full accent-indigo-600 cursor-pointer"
+                        className="w-full accent-teal-600 cursor-pointer"
                       />
                     </div>
 
@@ -2259,10 +2263,10 @@ export function FinanceContourView() {
                   <div className="lg:col-span-5 grid grid-cols-3 gap-3">
                     <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-3">
                       <div className="text-[11px] text-[#64748B]">Новая прибыль</div>
-                      <div className="font-mono text-base font-bold text-emerald-700 mt-0.5">
+                      <div className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
                         +{formatMln(sim.simulatedProfitRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-emerald-600">
+                      <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
                         {sim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}
                         {formatMln(Math.abs(sim.profitDeltaRub))}
                       </div>
@@ -2281,7 +2285,7 @@ export function FinanceContourView() {
                       <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
                         {formatMln(sim.simulatedOwnCapitalRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-indigo-600">
+                      <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
                         {sim.simulatedRoiMult ? `ROI ×${sim.simulatedRoiMult}` : 'с WB'}
                       </div>
                     </div>
@@ -2322,10 +2326,10 @@ export function FinanceContourView() {
                     <th className="py-2.5 px-2.5 font-bold text-right">Моделей</th>
                     <th className="py-2.5 px-3 font-bold text-right">План выручки 2027</th>
                     <th className="py-2.5 px-3 font-bold text-right">К заказу</th>
-                    <th className="py-2.5 px-3 font-bold text-right bg-[#E9F7EF] text-[#0F5132]">
+                    <th className="py-2.5 px-3 font-bold text-right bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                       Вложить на старт (Q1)
                     </th>
-                    <th className="py-2.5 px-3 font-bold text-right bg-[#EDF4FF] text-[#1E3A8A]">
+                    <th className="py-2.5 px-3 font-bold text-right bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                       Пик своих денег (с WB)
                     </th>
                     <th className="py-2.5 px-3 font-bold text-right">Закупки за год</th>
@@ -2354,11 +2358,11 @@ export function FinanceContourView() {
                           ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
                           : '—'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono bg-[#F2FBF6]/70 text-[#0F5132]">
+                      <td className="py-2.5 px-3 text-right font-mono bg-emerald-500/6 text-emerald-700 dark:text-emerald-300">
                         {b.modelsCount > 0 ? (
                           <div>
                             <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
-                            <div className="text-[10.5px] text-[#145A38]">
+                            <div className="text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80">
                               аванс 30%: {formatMln(b.firstWavePrepaymentRub)}
                             </div>
                           </div>
@@ -2366,7 +2370,7 @@ export function FinanceContourView() {
                           '—'
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F4F8FF]/70 text-[#1E3A8A]">
+                      <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7]">
                         {b.modelsCount > 0 ? formatMln(b.peakWorkingCapitalRub) : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
@@ -2398,13 +2402,13 @@ export function FinanceContourView() {
                     <td className="py-3 px-3 text-right font-mono">
                       {brandsReport.groupTotal.totalProcurementPacks.toLocaleString('ru-RU')} компл.
                     </td>
-                    <td className="py-3 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
+                    <td className="py-3 px-3 text-right font-mono bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
                       <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
                       <div className="text-[10.5px] font-semibold">
                         аванс 30%: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
+                    <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                       {formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
@@ -2530,8 +2534,8 @@ export function FinanceContourView() {
                       </td>
                     ))}
                   </tr>
-                  <tr className="bg-[#F2F6FF] font-extrabold">
-                    <td className="py-2.5 px-3 text-[#1E3A8A] sticky left-0 z-10 bg-[#F2F6FF] border-r border-[#D5E2FA]">
+                  <tr className="bg-[#F1F5F9] dark:bg-[#1E2536] font-extrabold">
+                    <td className="py-2.5 px-3 text-[#0F172A] dark:text-[#EDF0F7] sticky left-0 z-10 bg-[#F1F5F9] dark:bg-[#1E2536] border-r border-[#E2E6EE] dark:border-[#222938]">
                       Накопленный баланс денег (минус = пик своих денег)
                     </td>
                     {investmentSummary.monthlyRows.map((r) => (

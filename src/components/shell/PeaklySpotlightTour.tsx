@@ -258,15 +258,15 @@ export function PeaklySpotlightTour({
           width: `${boxWidth}px`,
           height: `${boxHeight}px`,
           boxShadow:
-            '0 0 0 9999px rgba(8, 10, 18, 0.78), 0 0 32px rgba(59, 130, 246, 0.65), inset 0 0 14px rgba(59, 130, 246, 0.25)',
+            '0 0 0 9999px rgba(8, 10, 18, 0.78), 0 0 32px rgba(16, 185, 129, 0.55), inset 0 0 14px rgba(16, 185, 129, 0.22)',
         }}
-        className="fixed rounded-[18px] border-2 border-[#3B82F6] pointer-events-none transition-all duration-300 ease-out"
+        className="fixed rounded-[18px] border-2 border-[#10B981] pointer-events-none transition-all duration-300 ease-out"
       >
-        {/* Светящаяся синяя точка в правом верхнем углу рамки */}
-        <span className="absolute -top-1.5 -right-1.5 h-3 w-3 rounded-full bg-[#3B82F6] shadow-[0_0_12px_#3B82F6] ring-2 ring-[#0F172A]" />
+        {/* Светящаяся изумрудная точка в правом верхнем углу рамки */}
+        <span className="absolute -top-1.5 -right-1.5 h-3 w-3 rounded-full bg-[#10B981] shadow-[0_0_12px_#10B981] ring-2 ring-[#0F172A]" />
       </div>
 
-      {/* ВСПЛЫВАЮЩАЯ КАРТОЧКА ОБУЧЕНИЯ PEAKLY РЯДОМ С ПОДСВЕЧЕННЫМ ЭЛЕМЕНТОМ */}
+      {/* ВСПЛЫВАЮЩАЯ КАРТОЧКА ОБУЧЕНИЯ РЯДОМ С ПОДСВЕЧЕННЫМ ЭЛЕМЕНТОМ */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -274,16 +274,16 @@ export function PeaklySpotlightTour({
           left: `${cardLeft}px`,
           width: `${cardWidth}px`,
         }}
-        className="fixed z-[100] rounded-[22px] bg-[#141824] border border-white/12 p-5 text-white shadow-[0_24px_64px_rgba(0,0,0,0.7),0_0_42px_rgba(59,130,246,0.22)] transition-all duration-300 ease-out space-y-4"
+        className="fixed z-[100] rounded-[22px] bg-[#141824] border border-white/12 p-5 text-white shadow-[0_24px_64px_rgba(0,0,0,0.7),0_0_42px_rgba(16,185,129,0.20)] transition-all duration-300 ease-out space-y-4"
       >
-        {/* Верхняя часть: Иконка в кружке + Синий бейдж + Заголовок + Кнопка закрытия */}
+        {/* Верхняя часть: Иконка в кружке + Изумрудный бейдж + Заголовок + Кнопка закрытия */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-full bg-[#1B253B] border border-[#3B82F6]/35 flex items-center justify-center text-[#60A5FA] shrink-0 mt-0.5">
+            <div className="h-10 w-10 rounded-full bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
               <StepIcon className="h-4 w-4" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#3B82F6]">
+              <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-emerald-400">
                 <span>✦</span>
                 <span>{currentStep.eyebrow}</span>
               </div>
@@ -308,7 +308,7 @@ export function PeaklySpotlightTour({
           {currentStep.description}
         </p>
 
-        {/* Сегментированная синяя полоса прогресса (как на скриншоте Peakly) */}
+        {/* Сегментированная изумрудная полоса прогресса */}
         <div className="flex items-center gap-1.5 pt-0.5">
           {SPOTLIGHT_STEPS.map((_, idx) => {
             const isActive = idx === stepIdx;
@@ -320,9 +320,9 @@ export function PeaklySpotlightTour({
                 onClick={() => setStepIdx(idx)}
                 className={`h-1.5 rounded-full transition-all cursor-pointer ${
                   isActive
-                    ? 'w-11 bg-[#3B82F6] shadow-[0_0_10px_rgba(59,130,246,0.7)]'
+                    ? 'w-11 bg-[#10B981] shadow-[0_0_10px_rgba(16,185,129,0.7)]'
                     : isPassed
-                    ? 'w-8 bg-[#3B82F6]/55'
+                    ? 'w-8 bg-[#10B981]/55'
                     : 'w-8 bg-white/12 hover:bg-white/25'
                 }`}
                 aria-label={`Шаг ${idx + 1}`}
@@ -358,7 +358,7 @@ export function PeaklySpotlightTour({
                   onClose();
                 }
               }}
-              className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-[13px] font-bold ring-2 ring-[#3B82F6] shadow-[0_0_18px_rgba(59,130,246,0.55)] transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-[13px] font-bold ring-2 ring-[#10B981] shadow-[0_0_18px_rgba(16,185,129,0.45)] transition cursor-pointer"
             >
               <span>{stepIdx < totalSteps - 1 ? 'Далее' : 'Готово'}</span>
               <ArrowRight className="h-3.5 w-3.5" />

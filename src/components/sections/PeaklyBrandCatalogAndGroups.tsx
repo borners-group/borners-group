@@ -580,7 +580,7 @@ export function PeaklyMasterCabinetsSummary({
         subtitle: 'Доставка до клиента и склады',
         valueRub: wbLogisticsStorageRub,
         pct: gt.annualRevenueRub > 0 ? (wbLogisticsStorageRub / rev) * 100 : 0,
-        color: '#06B6D4',
+        color: '#D97706',
       },
       {
         key: 'ads',
@@ -588,7 +588,7 @@ export function PeaklyMasterCabinetsSummary({
         subtitle: 'Реклама карточек (ДРР) и налог УСН',
         valueRub: adsAndTaxRub,
         pct: gt.annualRevenueRub > 0 ? (adsAndTaxRub / rev) * 100 : 0,
-        color: '#6366F1',
+        color: '#64748B',
       },
     ];
   }, [
@@ -627,11 +627,11 @@ export function PeaklyMasterCabinetsSummary({
   const brandSegments = useMemo(() => {
     const rev = Math.max(holdingTotal.annualRevenueRub, 1);
     const palette: Record<string, string> = {
-      BORNERS: '#334155',
+      BORNERS: '#10B981',
       FUKAI: '#0D9488',
-      NA_TELE: '#6366F1',
+      NA_TELE: '#64748B',
       AKUSHA: '#F59E0B',
-      LISKANI: '#10B981',
+      LISKANI: '#334155',
     };
     return multiBrandSummary.brands.map((b) => ({
       key: b.brandCode,
@@ -1018,7 +1018,7 @@ export function PeaklyMasterCabinetsSummary({
               type="button"
               onClick={onLaunchAllCabinets}
               title="В 1 клик запустить стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ в сводке холдинга"
-              className="h-8 px-3 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5"
+              className="h-8 px-3 rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] hover:bg-emerald-500/10 border border-[#CBD5E1] dark:border-[#2E374B] text-[#0F172A] dark:text-[#EDF0F7] text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5"
             >
               <span>⚡ Все 5 кабинетов</span>
             </button>
@@ -1455,7 +1455,7 @@ export function PeaklyMasterCabinetsSummary({
                 <span className="text-sm font-medium text-[#64748B]">
                   План закупок на год
                 </span>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-[#F1F5F9] dark:bg-[#181D2A] text-[#475569] dark:text-[#94A3B8]">
                   4 волны
                 </span>
               </div>
@@ -1472,7 +1472,7 @@ export function PeaklyMasterCabinetsSummary({
                 {selfFundedProcurementPct}% партий
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-indigo-500/80" />
+            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
           </div>
 
           {/* Карточка 3: Старт 1-й партии (Q1) */}
@@ -1485,7 +1485,7 @@ export function PeaklyMasterCabinetsSummary({
                 <span className="text-sm font-medium text-[#64748B]">
                   Старт 1-й партии (Q1)
                 </span>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   аванс 30%
                 </span>
               </div>
@@ -1502,7 +1502,7 @@ export function PeaklyMasterCabinetsSummary({
                 {formatMln(gt.firstWavePrepaymentRub)}
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-cyan-500/80" />
+            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
           </div>
 
           {/* Карточка 4: Пик своих денег */}
@@ -1515,7 +1515,7 @@ export function PeaklyMasterCabinetsSummary({
                 <span className="text-sm font-medium text-[#64748B]">
                   Пик своих денег
                 </span>
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   {ownCapitalRoiMult ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : 'с WB'}
                 </span>
               </div>
@@ -1538,7 +1538,7 @@ export function PeaklyMasterCabinetsSummary({
                   : 'реинвест'}
               </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-violet-500/80" />
+            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/80" />
           </div>
         </div>
       </div>
@@ -1547,7 +1547,7 @@ export function PeaklyMasterCabinetsSummary({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="w-1 h-4 rounded-full bg-indigo-500" />
+            <span className="w-1 h-4 rounded-full bg-emerald-500" />
             <h3 className="text-xs font-medium uppercase tracking-wider text-[#64748B]">
               Расходы и рентабельность
             </h3>
@@ -1718,8 +1718,8 @@ export function PeaklyMasterCabinetsSummary({
                     cy="56"
                     r="46"
                     fill="none"
-                    stroke="#10B981"
-                    strokeOpacity="0.28"
+                    stroke="currentColor"
+                    className="text-[#E2E8F0] dark:text-[#222938]"
                     strokeWidth="8"
                   />
                   <circle
@@ -1727,27 +1727,27 @@ export function PeaklyMasterCabinetsSummary({
                     cy="56"
                     r="46"
                     fill="none"
-                    stroke="#6366F1"
+                    stroke="#10B981"
                     strokeWidth="8"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 46}
                     strokeDashoffset={
-                      2 * Math.PI * 46 * (1 - Math.min(100, Math.max(5, totalExpensesPct)) / 100)
+                      2 * Math.PI * 46 * (1 - Math.min(100, Math.max(5, groupMarginPct)) / 100)
                     }
                     className="transition-all duration-1000 ease-out"
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <span className="font-mono text-2xl font-bold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                    {totalExpensesPct.toFixed(1).replace('.', ',')}%
+                  <span className="font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
                   </span>
                   <span className="text-[10px] font-medium uppercase tracking-wider text-[#64748B] mt-0.5">
-                    все затраты
+                    чистыми со 100 ₽
                   </span>
                 </div>
               </div>
               <div className="mt-2 font-mono text-base font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
-                {formatMln(totalExpensesRub)} за год
+                Затраты: {formatMln(totalExpensesRub)}
               </div>
             </div>
 
@@ -1915,7 +1915,7 @@ export function PeaklyMasterCabinetsSummary({
                   step={1}
                   value={whatIfCostDelta}
                   onChange={(e) => setWhatIfCostDelta(Number(e.target.value))}
-                  className="w-full accent-indigo-600 cursor-pointer"
+                  className="w-full accent-teal-600 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10.5px] font-mono text-[#64748B]">
                   <span>−15%</span>
@@ -2002,7 +2002,7 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="font-mono text-lg font-bold text-[#0F172A] dark:text-[#EDF0F7] mt-1">
                   {formatMln(whatIfSim.simulatedOwnCapitalRub)}
                 </div>
-                <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 mt-1">
+                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
                   {whatIfSim.simulatedRoiMult
                     ? `Отдача ROI ×${whatIfSim.simulatedRoiMult.toFixed(1).replace('.', ',')}`
                     : 'Реинвест из WB'}
@@ -2029,7 +2029,7 @@ export function PeaklyMasterCabinetsSummary({
               onClick={() => setProcurementWavesOpen((v) => !v)}
               className={`h-7.5 px-3 rounded-lg border text-xs font-medium transition cursor-pointer inline-flex items-center gap-1.5 ${
                 procurementWavesOpen
-                  ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                  ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                   : 'border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] text-[#64748B] hover:text-[#0F172A]'
               }`}
             >
@@ -2088,14 +2088,14 @@ export function PeaklyMasterCabinetsSummary({
                   >
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                        <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                           {wave.waveNum}
                         </span>
                         <span
                           className={`font-mono text-[10.5px] font-medium px-2 py-0.5 rounded-md ${
                             isSelfFunded
                               ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+                              : 'bg-[#F1F5F9] dark:bg-[#1E2536] text-[#475569] dark:text-[#94A3B8]'
                           }`}
                         >
                           {wave.sharePct}% бюджета
@@ -2143,7 +2143,7 @@ export function PeaklyMasterCabinetsSummary({
                                   isCovered
                                     ? isSelfFunded
                                       ? 'bg-emerald-500'
-                                      : 'bg-indigo-500'
+                                      : 'bg-teal-500'
                                     : isOrder
                                     ? 'bg-amber-400'
                                     : 'bg-transparent'
@@ -2167,7 +2167,7 @@ export function PeaklyMasterCabinetsSummary({
 
                     <div
                       className={`absolute inset-x-0 bottom-0 h-[3px] ${
-                        isSelfFunded ? 'bg-emerald-500/80' : 'bg-indigo-500/80'
+                        isSelfFunded ? 'bg-emerald-500/80' : 'bg-teal-500/80'
                       }`}
                     />
                   </div>

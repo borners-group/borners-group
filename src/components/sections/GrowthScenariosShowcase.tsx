@@ -2630,7 +2630,7 @@ export function GrowthScenariosShowcase({
 
                 const strokeColor =
                   trajectoryChartMetric === 'procurement'
-                    ? '#6366F1'
+                    ? '#0D9488'
                     : '#10B981';
 
                 const metricLabelTitle =
@@ -3139,10 +3139,10 @@ export function GrowthScenariosShowcase({
                           <th className="py-2 px-3 font-bold text-right">План продаж</th>
                           <th className="py-2 px-3 font-bold text-right">Нужно закупить</th>
                           <th className="py-2 px-3 font-bold text-right">Стоимость закупки</th>
-                          <th className="py-2 px-3 font-bold text-right bg-[#F2FBF6] text-[#0F5132]">
+                          <th className="py-2 px-3 font-bold text-right bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                             Вложить на старт (Q1)
                           </th>
-                          <th className="py-2 px-3 font-bold text-right bg-[#F4F8FF] text-[#1E3A8A]">
+                          <th className="py-2 px-3 font-bold text-right bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                             Потребность в своих деньгах
                           </th>
                           <th className="py-2 px-3 font-bold text-right">Опер. прибыль</th>
@@ -3234,12 +3234,12 @@ export function GrowthScenariosShowcase({
                                   ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
                                   : '—'}
                               </td>
-                              <td className="py-2 px-3 text-right font-mono bg-[#F2FBF6]/60 text-[#0F5132] font-bold">
+                              <td className="py-2 px-3 text-right font-mono bg-emerald-500/6 text-emerald-700 dark:text-emerald-300 font-bold">
                                 {b.hasScenario && b.hasModels
                                   ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
                                   : '—'}
                               </td>
-                              <td className="py-2 px-3 text-right font-mono bg-[#F4F8FF]/60 text-[#1E3A8A] font-bold">
+                              <td className="py-2 px-3 text-right font-mono bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7] font-bold">
                                 {b.hasScenario && b.hasModels
                                   ? b.verifiedOwnMoneyRequiredRub !== null
                                     ? `${(b.verifiedOwnMoneyRequiredRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
@@ -3291,7 +3291,7 @@ export function GrowthScenariosShowcase({
                               .replace('.', ',')}{' '}
                             млн ₽
                           </td>
-                          <td className="py-2.5 px-3 text-right font-mono bg-[#E6F7EE] text-[#0F5132]">
+                          <td className="py-2.5 px-3 text-right font-mono bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
                             {(
                               v11ScenarioSummary.multiBrandSummary.groupTotal
                                 .firstWaveStartBudgetRub / 1_000_000
@@ -3300,7 +3300,7 @@ export function GrowthScenariosShowcase({
                               .replace('.', ',')}{' '}
                             млн ₽
                           </td>
-                          <td className="py-2.5 px-3 text-right font-mono bg-[#E8F0FE] text-[#1E3A8A]">
+                          <td className="py-2.5 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                             {v11ScenarioSummary.multiBrandSummary.groupTotal
                               .verifiedOwnMoneyRequiredRub !== null
                               ? `${(
@@ -3374,12 +3374,12 @@ export function GrowthScenariosShowcase({
                               </td>
                             ))}
                           </tr>
-                          <tr className="bg-white font-bold">
-                            <td className="py-1.5 px-2 font-sans text-[#1E3A8A]">
+                          <tr className="bg-white dark:bg-[#121620] font-bold">
+                            <td className="py-1.5 px-2 font-sans text-[#0F172A] dark:text-[#EDF0F7]">
                               Накопленный баланс / свои деньги (млн ₽)
                             </td>
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
-                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#1E3A8A]">
+                              <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#0F172A] dark:text-[#EDF0F7]">
                                 {(m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
                               </td>
                             ))}

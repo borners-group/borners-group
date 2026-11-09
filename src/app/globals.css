@@ -105,7 +105,7 @@ table tbody tr + tr {
   border-color: var(--border-color) !important;
 }
 
-/* Адаптация карточек и секций под Obsidian Dark (.dark) */
+/* Адаптация карточек, таблиц, инпутов и секций под Obsidian Dark (.dark) */
 html.dark .bg-\[\#E4E8EE\],
 html.dark .bg-\[\#F6F7F9\] {
   background-color: #0B0E14 !important;
@@ -114,38 +114,219 @@ html.dark .bg-\[\#F6F7F9\] {
 html.dark .bg-white,
 html.dark .bg-white\/95,
 html.dark .bg-white\/90,
-html.dark .bg-white\/80 {
+html.dark .bg-white\/80,
+html.dark .bg-\[\#FDFCFA\],
+html.dark .bg-\[\#FDFBF7\] {
   background-color: #121620 !important;
 }
 
 html.dark .bg-\[\#F8FAFC\],
+html.dark .bg-\[\#F8FAFC\]\/80,
+html.dark .bg-\[\#F8FAFC\]\/70,
 html.dark .bg-\[\#F4F6F9\],
 html.dark .bg-\[\#F1F5F9\],
 html.dark .bg-\[\#EEF1F6\],
-html.dark .bg-\[\#EEF2F6\] {
+html.dark .bg-\[\#EEF2F6\],
+html.dark .bg-\[\#EEF0F5\],
+html.dark .bg-\[\#F5F5F1\],
+html.dark .bg-\[\#F5F5F4\],
+html.dark .bg-\[\#F7F7F3\],
+html.dark .bg-\[\#F7F7F4\],
+html.dark .bg-\[\#F7F7F5\],
+html.dark .bg-\[\#FAFAF7\],
+html.dark .bg-\[\#FAF9F6\],
+html.dark .bg-\[\#FAF9F6\]\/50,
+html.dark .bg-\[\#FAF9F5\],
+html.dark .bg-\[\#FAF8F5\],
+html.dark .bg-\[\#FAF8F4\],
+html.dark .bg-\[\#F8F8F5\],
+html.dark .bg-\[\#F8F8F4\],
+html.dark .bg-\[\#F8F6F2\],
+html.dark .bg-\[\#F6F6F4\],
+html.dark .bg-\[\#F4F4F0\],
+html.dark .bg-\[\#F4F3EE\],
+html.dark .bg-\[\#F4F3EE\]\/80,
+html.dark .bg-\[\#F3F3EE\],
+html.dark .bg-\[\#F3F2EC\],
+html.dark .bg-\[\#F2F1EC\],
+html.dark .bg-\[\#F1F1EE\],
+html.dark .bg-\[\#F0F0EC\],
+html.dark .bg-\[\#F0EFE9\],
+html.dark .bg-\[\#EFEFE9\],
+html.dark .bg-\[\#EAEAE3\],
+html.dark .bg-\[\#EAEAE4\],
+html.dark .bg-\[\#EAE9E2\],
+html.dark .bg-\[\#E5E4DC\],
+html.dark .bg-\[\#E4E3DC\],
+html.dark .bg-\[\#E2E8F0\],
+html.dark .bg-\[\#E9EDF4\] {
   background-color: #181D2A !important;
+}
+
+html.dark .bg-\[\#EAF6F0\],
+html.dark .bg-\[\#EAF8F0\],
+html.dark .bg-\[\#EBF5F0\],
+html.dark .bg-\[\#ECF6F1\],
+html.dark .bg-\[\#ECFDF5\],
+html.dark .bg-\[\#E6F4EE\],
+html.dark .bg-\[\#E6F7EE\],
+html.dark .bg-\[\#E9F7EF\],
+html.dark .bg-\[\#F0F9F4\],
+html.dark .bg-\[\#F2FBF6\],
+html.dark .bg-\[\#F2FBF6\]\/70,
+html.dark .bg-\[\#F2FBF6\]\/60,
+html.dark .bg-\[\#F3FAF6\],
+html.dark .bg-\[\#F4F9F6\],
+html.dark .bg-\[\#F4FAF6\],
+html.dark .bg-\[\#F4FBF7\],
+html.dark .bg-\[\#D1EBD5\],
+html.dark .bg-\[\#D1FAE5\],
+html.dark .bg-\[\#D2ECDF\] {
+  background-color: rgba(16, 185, 129, 0.14) !important;
 }
 
 html.dark .text-\[\#111827\],
 html.dark .text-\[\#0F172A\],
+html.dark .text-\[\#0F141C\],
 html.dark .text-\[\#1E293B\],
+html.dark .text-\[\#1E2638\],
 html.dark .text-\[\#141413\],
-html.dark .text-\[\#181715\] {
+html.dark .text-\[\#161615\],
+html.dark .text-\[\#171717\],
+html.dark .text-\[\#181715\],
+html.dark .text-\[\#1D1D1F\],
+html.dark .text-\[\#262624\],
+html.dark .text-\[\#263042\] {
   color: #EDF0F7 !important;
 }
 
 html.dark .text-\[\#334155\],
 html.dark .text-\[\#475569\],
-html.dark .text-\[\#64748B\] {
+html.dark .text-\[\#64748B\],
+html.dark .text-\[\#3D3A36\],
+html.dark .text-\[\#3D3C38\],
+html.dark .text-\[\#3F3E3A\],
+html.dark .text-\[\#4A4740\],
+html.dark .text-\[\#4A4742\],
+html.dark .text-\[\#4A5568\],
+html.dark .text-\[\#4E4A42\],
+html.dark .text-\[\#52514C\],
+html.dark .text-\[\#52524E\],
+html.dark .text-\[\#525252\],
+html.dark .text-\[\#5A564F\],
+html.dark .text-\[\#5C5852\],
+html.dark .text-\[\#5C5B55\],
+html.dark .text-\[\#5E5D58\],
+html.dark .text-\[\#64635E\],
+html.dark .text-\[\#686760\],
+html.dark .text-\[\#686762\],
+html.dark .text-\[\#6E6A63\],
+html.dark .text-\[\#6E6D66\],
+html.dark .text-\[\#6E6D68\],
+html.dark .text-\[\#6E6E73\],
+html.dark .text-\[\#737373\],
+html.dark .text-\[\#7A756C\],
+html.dark .text-\[\#7A756D\],
+html.dark .text-\[\#7E7D77\],
+html.dark .text-\[\#8A8983\],
+html.dark .text-\[\#8E8880\],
+html.dark .text-\[\#8E8A82\],
+html.dark .text-\[\#8E8D85\] {
   color: #94A3B8 !important;
+}
+
+html.dark .text-\[\#A09F98\],
+html.dark .text-\[\#B5B4AD\],
+html.dark .text-\[\#C8C3B9\],
+html.dark .text-\[\#CBD5E1\] {
+  color: #64748B !important;
+}
+
+html.dark .text-\[\#047857\],
+html.dark .text-\[\#059669\],
+html.dark .text-\[\#064E3B\],
+html.dark .text-\[\#065F46\],
+html.dark .text-\[\#0F5132\],
+html.dark .text-\[\#14533C\],
+html.dark .text-\[\#145A38\],
+html.dark .text-\[\#146C43\],
+html.dark .text-\[\#157347\],
+html.dark .text-\[\#16805D\],
+html.dark .text-\[\#1F6E50\],
+html.dark .text-\[\#256044\],
+html.dark .text-\[\#2A6F53\],
+html.dark .text-\[\#2E6B4E\] {
+  color: #34D399 !important;
 }
 
 html.dark .border-\[\#E2E8F0\],
 html.dark .border-\[\#E2E6EE\],
 html.dark .border-\[\#DCE2EC\],
+html.dark .border-\[\#DCE0E8\],
 html.dark .border-\[\#CBD5E1\],
-html.dark .border-\[\#D8DEE8\] {
+html.dark .border-\[\#CFD6E0\],
+html.dark .border-\[\#D8DEE8\],
+html.dark .border-\[\#EAEEF4\],
+html.dark .border-\[\#EEF2F6\],
+html.dark .border-\[\#C8C7BE\],
+html.dark .border-\[\#CECDC4\],
+html.dark .border-\[\#CFC8BC\],
+html.dark .border-\[\#CFCEC6\],
+html.dark .border-\[\#D2D1C8\],
+html.dark .border-\[\#D4CDC2\],
+html.dark .border-\[\#D4D3C9\],
+html.dark .border-\[\#D5CEC2\],
+html.dark .border-\[\#D5D3CE\],
+html.dark .border-\[\#D5D4CC\],
+html.dark .border-\[\#D6CFC2\],
+html.dark .border-\[\#D8D1C5\],
+html.dark .border-\[\#D8D7CE\],
+html.dark .border-\[\#D8D7CF\],
+html.dark .border-\[\#DCD6CC\],
+html.dark .border-\[\#DCDAD0\],
+html.dark .border-\[\#DED8CC\],
+html.dark .border-\[\#DED8CD\],
+html.dark .border-\[\#DEDDD5\],
+html.dark .border-\[\#DFD8CC\],
+html.dark .border-\[\#DFDED6\],
+html.dark .border-\[\#DFDED7\],
+html.dark .border-\[\#E2D5C1\],
+html.dark .border-\[\#E2D8C5\],
+html.dark .border-\[\#E2DBD0\],
+html.dark .border-\[\#E2DCD2\],
+html.dark .border-\[\#E2DDD2\],
+html.dark .border-\[\#E2E1D8\],
+html.dark .border-\[\#E2E1D9\],
+html.dark .border-\[\#E4E3DC\],
+html.dark .border-\[\#E5E0D5\],
+html.dark .border-\[\#E5E0D8\],
+html.dark .border-\[\#E5E4DF\],
+html.dark .border-\[\#E6E0D4\],
+html.dark .border-\[\#E6E5DD\],
+html.dark .border-\[\#E8E8E5\],
+html.dark .border-\[\#EAE6DF\],
+html.dark .border-\[\#EAE9E2\],
+html.dark .border-\[\#ECEBE4\],
+html.dark .border-\[\#ECEBE6\],
+html.dark .border-\[\#EFECE4\],
+html.dark .border-\[\#EFECE6\] {
   border-color: #222938 !important;
+}
+
+html.dark .divide-\[\#E4E3DC\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#ECEBE4\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#EAE9E2\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#EAEEF4\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#EEF2F6\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#DFD8CC\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#D4CDC2\] > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-\[\#D5CEC2\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #222938 !important;
+}
+
+html.dark select option {
+  background-color: #121620;
+  color: #EDF0F7;
 }
 
 /* Чистый и мягкий фокус без агрессивных чёрных рамок при клике */
