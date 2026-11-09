@@ -2188,3 +2188,94 @@ test('36. Пакет из 5 улучшений платформы: авто-но
   assert.ok(growthSim.simulatedMarginPct > baseSim.baseMarginPct);
 });
 
+test('37. Чистые карточки по брендам (LISKANI / AKUSHA / НА ТЕЛЕ): отсутствие чужих дефолтов Borners2 (244995893), сохранение и удаление единственного фото, инлайн-редактирование характеристик и палитр', () => {
+  const basePortfolio = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
+
+  // 1. Создание новой модели LISKANI (шторы) не наследует WB 244995893, мужские боксеры или палитру Borners2
+  const { model: liskaniCreated } = createBrandProductModel(
+    basePortfolio,
+    INITIAL_SCENARIOS,
+    {
+      title: 'БЛЭКАУТ СЕРЫЙ',
+      brandCode: 'LISKANI',
+      categoryLabel: 'Портьеры блэкаут',
+      unitsInPack: 1,
+      retailPriceRub: 3190,
+      unitCostRub: 1150,
+    }
+  );
+  assert.equal(liskaniCreated.wbArticle, '');
+  assert.equal(liskaniCreated.customBrandLabel, 'LISKANI');
+  assert.equal(liskaniCreated.gallery.length, 0);
+  assert.equal(
+    liskaniCreated.palettes.some((p) => p.title.includes('244995893')),
+    false
+  );
+  assert.equal(
+    liskaniCreated.construction.type.includes('Боксеры'),
+    false
+  );
+  assert.equal(
+    liskaniCreated.fabric.composition.includes('полиэстер'),
+    true
+  );
+
+  // 2. Авто-лечение (ensureModelUnifiedV11) существующей карточки LISKANI от чужих дефолтов Borners2 и borners-core-modal.svg
+  const corruptedLiskani = ensureModelUnifiedV11({
+    ...liskaniCreated,
+    wbArticle: '244995893',
+    gallery: [
+      {
+        id: 'bad-svg',
+        category: 'pack',
+        label: 'Боксеры',
+        url: 'images/products/borners-core-modal.svg',
+        originalUrl: 'images/products/borners-core-modal.svg',
+        isMain: true,
+      },
+    ],
+    palettes: [
+      {
+        id: 'pal-act-244995893',
+        title: 'КАРТОЧКА WB 244995893 — Borners2',
+        subtitle: '4 шт. в комплекте · размеры 42–60 · BORNERS (по фото)',
+        statusLabel: 'ВКЛЮЧЁН В ЦЕЛЬ BORNERS',
+        imageUrl: 'images/wb/244995893_main.webp',
+        colors: [],
+      },
+    ],
+    construction: {
+      ...liskaniCreated.construction,
+      type: 'Боксеры мужские (4 шт. в наборе)',
+    },
+  });
+  assert.equal(corruptedLiskani.wbArticle, '');
+  assert.equal(corruptedLiskani.gallery.length, 0);
+  assert.equal(
+    corruptedLiskani.palettes.some((p) => p.title.includes('244995893')),
+    false
+  );
+  assert.equal(
+    corruptedLiskani.construction.type.includes('Боксеры'),
+    false
+  );
+
+  // 3. Проверка safeStorage и ScenarioModelCardScreen: отсутствие подмены фото на borners-core-modal.svg и возможность удалить единственное фото
+  const safeStorageCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'lib', 'safeStorage.ts'),
+    'utf-8'
+  );
+  assert.equal(safeStorageCode.includes('borners-core-modal.svg'), false);
+
+  const cardScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'sections', 'ScenarioModelCardScreen.tsx'),
+    'utf-8'
+  );
+  assert.equal(
+    cardScreenCode.includes('В карточке должна оставаться хотя бы одна фотография'),
+    false
+  );
+  assert.equal(cardScreenCode.includes('+ Добавить палитру / вариант'), true);
+});
+
+

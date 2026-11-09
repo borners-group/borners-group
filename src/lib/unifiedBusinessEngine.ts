@@ -418,8 +418,401 @@ export function getDefaultSharedSupplyAndFact(model: ScenarioModelSpec): SharedS
   };
 }
 
-export function ensureModelUnifiedV11(model: ScenarioModelSpec): ScenarioModelSpec {
-  const codeUpper = (model.code || '').trim().toUpperCase();
+export function getBrandDefaultModelSpecs(
+  brandInput: string,
+  titleInput: string,
+  unitsInPack = 1
+): {
+  fabric: ScenarioModelSpec['fabric'];
+  construction: ScenarioModelSpec['construction'];
+  waistband: ScenarioModelSpec['waistband'];
+  palette: ScenarioModelSpec['palettes'][number];
+} {
+  const norm = normalizePortfolioBrandCode(brandInput);
+  const brandCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+  const cleanTitle = (titleInput || '').trim() || 'Базовая модель';
+  const palId = `pal-${brandCode.toLowerCase()}-${ cleanTitle.replace(/[^a-zA-Z0-9а-яА-Я]/g, '').slice(0, 8) || 'base' }`;
+
+  if (brandCode === 'LISKANI') {
+    return {
+      fabric: {
+        composition: '100% полиэстер премиум (портьерный блэкаут / димаут / вуаль)',
+        density: '260–310 г/м² (светонепроницаемость 85–98%)',
+        knitType: 'Трёхслойное переплетение рогожка / сатин матовый',
+        touchFeel: 'Мягкая фактурная ткань без блеска',
+        swatchHex: '#D6CFC2',
+      },
+      construction: {
+        type: 'Комплект готовых штор на шторной ленте',
+        fit: 'Высота 270 см · ширина полотен 150–200 см',
+        sideSeam: 'Широкий боковой евро-подгиб 2×2 см',
+        frontPanel: 'Мягкая равномерная драпировка глубокими складками',
+        gusset: 'Утяжелитель / евро-подгиб по нижнему краю',
+        seams: 'Закрытые боковые швы евро-стандарта без стягивания',
+      },
+      waistband: {
+        width: 'Шторная лента 6 см (коэффициент сборки 1:2)',
+        type: 'Крепление: крючки, карнизная труба или потолочная шина',
+        colorRule: 'В тон основного полотна',
+        logoRepeat: 'Фирменный тканевый ярлык LISKANI и ПВХ-кофр на молнии',
+        elasticity: 'Стабильная геометрия полотна после стирки',
+        bandBgHex: '#D6CFC2',
+        bandTextHex: '#1E293B',
+      },
+      palette: {
+        id: palId,
+        title: `Цветовая палитра — ${cleanTitle}`,
+        subtitle: `Комплект штор (${unitsInPack} изд.) · размеры 300×270 / 400×270 · LISKANI`,
+        statusLabel: 'В плане',
+        colors: [
+          {
+            nameRu: 'Тёплый бежевый лён',
+            hex: '#D6CFC2',
+            bandHex: '#C5BDB0',
+            textHex: '#2E2B26',
+            pantone: 'LISKANI · Тон #1',
+          },
+          {
+            nameRu: 'Графитовый серый',
+            hex: '#4B5563',
+            bandHex: '#374151',
+            textHex: '#F9FAFB',
+            pantone: 'LISKANI · Тон #2',
+          },
+          {
+            nameRu: 'Молочный шёлк',
+            hex: '#F3EFEA',
+            bandHex: '#E5DFD7',
+            textHex: '#2E2B26',
+            pantone: 'LISKANI · Тон #3',
+          },
+        ],
+      },
+    };
+  }
+
+  if (brandCode === 'AKUSHA') {
+    return {
+      fabric: {
+        composition: 'Натуральная кожа / замша премиум + дышащий текстиль',
+        density: 'Износостойкая подошва ТЭП / ЭВА с амортизацией',
+        knitType: 'Двухслойная анатомическая стелька Comfort',
+        touchFeel: 'Мягкая выделанная кожа и комфортная подкладка',
+        swatchHex: '#1F2937',
+      },
+      construction: {
+        type: 'Пара обуви в индивидуальной фирменной коробке',
+        fit: 'Комфортная полнота G · размер в размер',
+        sideSeam: 'Анатомический боковой профиль стопы',
+        frontPanel: 'Усиленный мысок и формованный задник',
+        gusset: 'Мягкий кант щиколотки против натирания',
+        seams: 'Прошивной и клеевой борт повышенной прочности',
+      },
+      waistband: {
+        width: 'Высота подошвы 25–35 мм',
+        type: 'Противоскользящий протектор город / всесезон',
+        colorRule: 'Монохромная или контрастная подошва',
+        logoRepeat: 'Тиснение логотипа AKUSHA на язычке и стельке',
+        elasticity: 'Амортизация пятки и гибкий перекат стопы',
+        bandBgHex: '#1F2937',
+        bandTextHex: '#F9FAFB',
+      },
+      palette: {
+        id: palId,
+        title: `Цветовая гамма — ${cleanTitle}`,
+        subtitle: `Пара обуви · размерная сетка 36–41 / 40–45 · AKUSHA`,
+        statusLabel: 'В плане',
+        colors: [
+          {
+            nameRu: 'Чёрный оникс',
+            hex: '#1F2937',
+            bandHex: '#111827',
+            textHex: '#F9FAFB',
+            pantone: 'AKUSHA · #1',
+          },
+          {
+            nameRu: 'Молочный беж',
+            hex: '#E5E0D8',
+            bandHex: '#D4CEC3',
+            textHex: '#1F2937',
+            pantone: 'AKUSHA · #2',
+          },
+        ],
+      },
+    };
+  }
+
+  if (brandCode === 'NA_TELE') {
+    return {
+      fabric: {
+        composition: '92% микромодал (Австрия), 8% эластан',
+        density: '175–185 г/м²',
+        knitType: 'Шелковистое кулирное полотно Soft Touch',
+        touchFeel: 'Эффект второй кожи Soft Touch',
+        swatchHex: '#F3EFEA',
+      },
+      construction: {
+        type: 'Женский комплект / базовое изделие НА ТЕЛЕ',
+        fit: 'Анатомическая посадка · размеры XS–XL',
+        sideSeam: 'Деликатный боковой шов без давления',
+        frontPanel: 'Мягкая бесшовная обработка краёв',
+        gusset: 'Ластовица из 100% органического хлопка',
+        seams: 'Плоские деликатные швы, незаметные под одеждой',
+      },
+      waistband: {
+        width: 'Тонкая эластичная тесьма 12–18 мм',
+        type: 'Мягкая брендированная посадка НА ТЕЛЕ',
+        colorRule: 'Тон в тон с полотном изделия',
+        logoRepeat: 'Минималистичный термотрансфер НА ТЕЛЕ внутри',
+        elasticity: 'Мягкое прилегание без следов на коже',
+        bandBgHex: '#F3EFEA',
+        bandTextHex: '#2E2B26',
+      },
+      palette: {
+        id: palId,
+        title: `Палитра оттенков — ${cleanTitle}`,
+        subtitle: `${unitsInPack} изд. в комплекте · размеры XS–XL · НА ТЕЛЕ`,
+        statusLabel: 'В плане',
+        colors: [
+          {
+            nameRu: 'Молочный',
+            hex: '#F3EFEA',
+            bandHex: '#E5DFD7',
+            textHex: '#2E2B26',
+            pantone: 'НА ТЕЛЕ · #1',
+          },
+          {
+            nameRu: 'Пудровый беж',
+            hex: '#DFC7B8',
+            bandHex: '#CFAF9D',
+            textHex: '#2E2B26',
+            pantone: 'НА ТЕЛЕ · #2',
+          },
+          {
+            nameRu: 'Глубокий чёрный',
+            hex: '#1C1B1A',
+            bandHex: '#141413',
+            textHex: '#F5F5F1',
+            pantone: 'НА ТЕЛЕ · #3',
+          },
+        ],
+      },
+    };
+  }
+
+  if (brandCode === 'FUKAI') {
+    return {
+      fabric: {
+        composition: '95% хлопок пенье, 5% эластан',
+        density: '180 г/м²',
+        knitType: 'Кулирная гладь базовая',
+        touchFeel: 'Натуральный дышащий хлопок на каждый день',
+        swatchHex: '#1F242D',
+      },
+      construction: {
+        type: 'Базовый комплект FUKAI',
+        fit: 'Стандартная посадка · размеры 44–56',
+        sideSeam: 'Сглаженный боковой шов',
+        frontPanel: 'Двухслойная передняя деталь',
+        gusset: 'Усиленная вставка',
+        seams: 'Плоские распошивальные швы',
+      },
+      waistband: {
+        width: '32–35 мм',
+        type: 'Эластичный пояс FUKAI',
+        colorRule: 'В тон изделия',
+        logoRepeat: 'Базовый пояс без лишнего декора',
+        elasticity: 'Стабильная фиксация на талии',
+        bandBgHex: '#1F242D',
+        bandTextHex: '#F3F4F6',
+      },
+      palette: {
+        id: palId,
+        title: `Цвета комплекта — ${cleanTitle}`,
+        subtitle: `${unitsInPack} шт. в комплекте · размеры 44–56 · FUKAI`,
+        statusLabel: 'В плане',
+        colors: [
+          {
+            nameRu: 'Чёрный',
+            hex: '#1F242D',
+            bandHex: '#151920',
+            textHex: '#F3F4F6',
+            pantone: 'FUKAI · #1',
+          },
+          {
+            nameRu: 'Тёмно-синий',
+            hex: '#25334A',
+            bandHex: '#1B2638',
+            textHex: '#F3F4F6',
+            pantone: 'FUKAI · #2',
+          },
+          {
+            nameRu: 'Графит',
+            hex: '#4B5563',
+            bandHex: '#374151',
+            textHex: '#F3F4F6',
+            pantone: 'FUKAI · #3',
+          },
+        ],
+      },
+    };
+  }
+
+  return {
+    fabric: {
+      composition: '92% модал / хлопок компакт-пенье, 8% эластан',
+      density: '185–195 г/м²',
+      knitType: 'Кулирная гладь Premium',
+      touchFeel: 'Шелковистый премиальный трикотаж',
+      swatchHex: '#1B1C1E',
+    },
+    construction: {
+      type: 'Комплект BORNERS',
+      fit: 'Анатомическая посадка · размеры S–XXL',
+      sideSeam: 'Без бокового шва / комфортный крой',
+      frontPanel: 'Двойная профилированная передняя панель',
+      gusset: 'Анатомическая ластовица без задирания',
+      seams: 'Плоские эластичные швы Flatlock',
+    },
+    waistband: {
+      width: '35–38 мм',
+      type: 'Мягкий жаккардовый пояс BORNERS',
+      colorRule: 'В тон основного полотна',
+      logoRepeat: 'Фирменный логотип BORNERS тон в тон',
+      elasticity: 'Упругая посадка без перекручивания',
+      bandBgHex: '#1B1C1E',
+      bandTextHex: '#F5F5F1',
+    },
+    palette: {
+      id: palId,
+      title: `Палитра комплекта — ${cleanTitle}`,
+      subtitle: `${unitsInPack} шт. в комплекте · размеры S–XXL · BORNERS`,
+      statusLabel: 'В плане',
+      colors: [
+        {
+          nameRu: 'Чёрный оникс',
+          hex: '#1B1C1E',
+          bandHex: '#121314',
+          textHex: '#F3F4F6',
+          pantone: 'Pantone 19-4006 TCX',
+        },
+        {
+          nameRu: 'Графит',
+          hex: '#464B53',
+          bandHex: '#34383E',
+          textHex: '#F3F4F6',
+          pantone: 'Pantone 19-3908 TCX',
+        },
+        {
+          nameRu: 'Олива / Хаки',
+          hex: '#4A5546',
+          bandHex: '#384135',
+          textHex: '#F3F4F6',
+          pantone: 'Pantone 19-0414 TCX',
+        },
+      ],
+    },
+  };
+}
+
+export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioModelSpec {
+  const codeUpper = (rawModel.code || '').trim().toUpperCase();
+  const isBorners2Original =
+    codeUpper === '244995893' || rawModel.id === 'scen-acting-244995893';
+  const detectedBrand = detectModelBrandPortfolioLabel(rawModel);
+  const normBrand = normalizePortfolioBrandCode(detectedBrand);
+  const brandSpecs = getBrandDefaultModelSpecs(
+    normBrand,
+    rawModel.title,
+    rawModel.unitsInPack || 1
+  );
+
+  // Автоматическая очистка чужих дефолтов Borners2 (WB 244995893 / мужские боксеры / borners-core-modal.svg)
+  // у всех новых карточек и карточек брендов LISKANI / AKUSHA / НА ТЕЛЕ / FUKAI
+  const rawPalettes = Array.isArray(rawModel.palettes) ? rawModel.palettes : [];
+  const hasForeignBorners2Palette =
+    !isBorners2Original &&
+    (rawPalettes.length === 0 ||
+      rawPalettes.some(
+        (p) =>
+          (p.title || '').includes('244995893') ||
+          (p.title || '').includes('Borners2') ||
+          (p.imageUrl || '').includes('244995893_main.webp')
+      ));
+
+  let cleanedWbArticle = rawModel.wbArticle;
+  if (
+    !isBorners2Original &&
+    cleanedWbArticle === '244995893' &&
+    (hasForeignBorners2Palette || normBrand !== 'BORNERS')
+  ) {
+    cleanedWbArticle = '';
+  }
+
+  const rawGallery = Array.isArray(rawModel.gallery) ? rawModel.gallery : [];
+  const sanitizedGallery = isBorners2Original
+    ? rawGallery
+    : rawGallery.filter((g) => {
+        const u = (g.url || '').trim();
+        const orig = (g.originalUrl || '').trim();
+        if (!u && !orig) return false;
+        if (
+          u.includes('borners-core-modal.svg') ||
+          orig.includes('borners-core-modal.svg') ||
+          u.includes('244995893_main.webp') ||
+          orig.includes('244995893_main.webp')
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+  const sanitizedPalettes = hasForeignBorners2Palette
+    ? [brandSpecs.palette]
+    : rawPalettes.map((p) =>
+        !isBorners2Original && (p.imageUrl || '').includes('244995893_main.webp')
+          ? { ...p, imageUrl: undefined }
+          : p
+      );
+
+  const isNonUnderwearOrForeignSpec =
+    !isBorners2Original &&
+    (normBrand === 'LISKANI' ||
+      normBrand === 'AKUSHA' ||
+      normBrand === 'NA_TELE' ||
+      hasForeignBorners2Palette) &&
+    ((rawModel.construction?.type || '').includes('Боксеры мужские') ||
+      (rawModel.waistband?.type || '').includes('BORNERS (по фото)') ||
+      (rawModel.waistband?.logoRepeat || '').includes('Жаккардовый пояс по фото карточки'));
+
+  const model: ScenarioModelSpec = {
+    ...rawModel,
+    wbArticle: cleanedWbArticle,
+    gallery: sanitizedGallery,
+    palettes: sanitizedPalettes,
+    fabric: isNonUnderwearOrForeignSpec
+      ? {
+          ...brandSpecs.fabric,
+          composition:
+            rawModel.fabric?.composition &&
+            rawModel.fabric.composition !== '93% хлопок компакт-пенье, 7% спандекс'
+              ? rawModel.fabric.composition
+              : brandSpecs.fabric.composition,
+          density:
+            rawModel.fabric?.density && rawModel.fabric.density !== '180–190 г/м²'
+              ? rawModel.fabric.density
+              : brandSpecs.fabric.density,
+          knitType: brandSpecs.fabric.knitType,
+        }
+      : rawModel.fabric || brandSpecs.fabric,
+    construction: isNonUnderwearOrForeignSpec
+      ? brandSpecs.construction
+      : rawModel.construction || brandSpecs.construction,
+    waistband: isNonUnderwearOrForeignSpec
+      ? brandSpecs.waistband
+      : rawModel.waistband || brandSpecs.waistband,
+  };
+
   const isSorbetReference =
     codeUpper === 'BRN-001-SC' || model.id === 'scen-brn-001-sc';
 
@@ -3258,6 +3651,8 @@ export function createBrandProductModel(
     unitCostRub: number;
     unitsInPack?: number;
     factoryName?: string;
+    composition?: string;
+    imageUrl?: string;
     initialMonthlyPacks?: number[];
   }
 ): { model: ScenarioModelSpec; models: ScenarioModelSpec[] } {
@@ -3266,12 +3661,18 @@ export function createBrandProductModel(
     normBrand === 'ALL' ? 'BORNERS' : normBrand;
   const unitCfg = BRAND_UNIT_CONFIGS[effectiveBrand];
 
+  const brandModels = existingModels.filter((m) =>
+    matchesBrandFilter(m, effectiveBrand)
+  );
   const usedNums = new Set<number>();
-  existingModels.forEach((m) => {
+  brandModels.forEach((m) => {
     const match = m.code.match(/(\d+)$/);
     if (match) usedNums.add(Number(match[1]));
   });
-  let candidate = Math.max(existingModels.length + 1, 24);
+  let candidate =
+    effectiveBrand === 'BORNERS'
+      ? Math.max(brandModels.length + 1, 24)
+      : Math.max(brandModels.length + 1, 1);
   while (usedNums.has(candidate)) candidate += 1;
 
   const prefix =
@@ -3297,6 +3698,7 @@ export function createBrandProductModel(
   const cleanPrice = Math.max(0, Math.round(input.retailPriceRub || 1990));
   const cleanCost = Math.max(0, Math.round(input.unitCostRub || 650));
   const category = input.categoryLabel?.trim() || unitCfg.categoryDefault;
+  const cleanTitle = input.title.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
 
   const customBrandLabel =
     effectiveBrand === 'AKUSHA'
@@ -3333,12 +3735,18 @@ export function createBrandProductModel(
     };
   }
 
-  const template = existingModels[0];
+  const brandSpecs = getBrandDefaultModelSpecs(
+    effectiveBrand,
+    cleanTitle,
+    unitsInPack
+  );
+  const cleanImageUrl = input.imageUrl?.trim() || '';
+
   const baseCreated: ScenarioModelSpec = {
-    ...(template || ({} as ScenarioModelSpec)),
     id: `scen-${effectiveBrand.toLowerCase()}-${Date.now()}-${candidate}`,
     code: generatedCode,
-    title: input.title.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`,
+    wbArticle: '',
+    title: cleanTitle,
     subtitle: `${category} · ${unitsInPack} ${unitCfg.secondaryUnit} / ${unitCfg.primaryUnit}`,
     brandId: effectiveBrand === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
     customBrandLabel,
@@ -3356,17 +3764,29 @@ export function createBrandProductModel(
     responsiblePerson: 'Владелец бренда',
     priority: 'Высокий',
     hasActualSalesOrPurchases: false,
-    palettes: template?.palettes || [],
-    gallery: [
-      {
-        id: `g-main-${Date.now()}`,
-        category: 'pack',
-        label: 'Главное фото',
-        isMain: true,
-      },
-    ],
+    fabric: {
+      ...brandSpecs.fabric,
+      ...(input.composition?.trim()
+        ? { composition: input.composition.trim() }
+        : {}),
+    },
+    construction: brandSpecs.construction,
+    waistband: brandSpecs.waistband,
+    palettes: [brandSpecs.palette],
+    gallery: cleanImageUrl
+      ? [
+          {
+            id: `g-main-${Date.now()}`,
+            category: 'pack',
+            label: cleanTitle,
+            url: cleanImageUrl,
+            originalUrl: cleanImageUrl,
+            isMain: true,
+          },
+        ]
+      : [],
     attachedPdfs: [],
-    productionSteps: template?.productionSteps || [],
+    productionSteps: [],
     plansByScenario,
   };
 

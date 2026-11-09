@@ -2862,7 +2862,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
             <div className="transition-transform duration-200 group-hover:scale-[1.03]">
               <BoxerPackStackSvg
                 colors={colors}
-                brandLabel={displayBrand === 'НА ТЕЛЕ' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                brandLabel={displayBrand}
                 customPhotoUrl={mainGallery?.url}
               />
             </div>

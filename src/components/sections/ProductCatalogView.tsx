@@ -1,106 +1,181 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
-  Archive,
-  ArrowUpRight,
-  CalendarPlus,
+  ArrowLeft,
   Check,
-  Download,
-  FilePlus,
+  Edit3,
+  Folder,
   ImagePlus,
-  Lock,
+  LayoutGrid,
   Plus,
   Search,
+  Table as TableIcon,
   Trash2,
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { Product, ProductStatus } from '@/types/platform';
-import { compressImageFileToDataUrl, exportDocumentAsPdf } from '@/lib/document-export';
+import { compressImageFileToDataUrl } from '@/lib/document-export';
+import { formatCurrencyRub } from '@/lib/finance';
 import {
-  calculateUnitEconomics,
-  canUserEditBrand,
-  canUserViewCostPrice,
-  canUserViewFinance,
-  formatCurrencyRub,
-} from '@/lib/finance';
-import { INITIAL_SCENARIO_MODELS, ScenarioModelSpec } from '@/lib/scenarioData';
+  ScenarioModelSpec,
+  computeModelScenarioMetrics,
+} from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
+import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import {
+  CanonicalBrandCode,
   createBrandProductModel,
   detectModelBrandPortfolioLabel,
+  ensureModelUnifiedV11,
   getBrandUnitConfig,
   matchesBrandFilter,
+  normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
+import { getModelBrandAccentStyles } from '@/lib/productGroups';
 
-const STATUS_META: Record<ProductStatus, { label: string; dotColor: string }> = {
-  in_development: {
-    label: 'В разработке',
-    dotColor: 'bg-[#D99527]',
+interface BrandCreatePreset {
+  skuPrefix: string;
+  categories: string[];
+  placeholderName: string;
+  defaultCollection: string;
+  defaultComposition: string;
+  defaultPrice: string;
+  defaultCost: string;
+  defaultUnitsInPack: string;
+  unitHint: string;
+}
+
+const BRAND_CREATE_PRESETS: Record<CanonicalBrandCode, BrandCreatePreset> = {
+  LISKANI: {
+    skuPrefix: 'LSC',
+    categories: [
+      'Портьеры блэкаут',
+      'Шторы димаут',
+      'Тюль и вуаль',
+      'Римские шторы',
+      'Покрывала и пледы',
+      'Декоративный текстиль',
+    ],
+    placeholderName: 'Например: Шторы блэкаут LISKANI Венеция 300×270',
+    defaultCollection: 'LISKANI Home 2027',
+    defaultComposition: '100% полиэстер премиум (портьерный блэкаут / димаут)',
+    defaultPrice: '3990',
+    defaultCost: '1350',
+    defaultUnitsInPack: '2',
+    unitHint: 'полотен / ед. в комплекте',
   },
-  sampled: {
-    label: 'Образец готов',
-    dotColor: 'bg-[#171717]',
+  AKUSHA: {
+    skuPrefix: 'AKU',
+    categories: [
+      'Кроссовки и кеды',
+      'Ботинки и челси',
+      'Лоферы и туфли',
+      'Домашняя обувь',
+      'Аксессуары',
+    ],
+    placeholderName: 'Например: Кроссовки кожаные AKUSHA Urban Base',
+    defaultCollection: 'AKUSHA Footwear 2027',
+    defaultComposition: 'Натуральная кожа / замша премиум + подошва ТЭП',
+    defaultPrice: '4490',
+    defaultCost: '1490',
+    defaultUnitsInPack: '1',
+    unitHint: 'пар в коробке',
   },
-  approved: {
-    label: 'Утверждён',
-    dotColor: 'bg-[#16805D]',
+  NA_TELE: {
+    skuPrefix: 'NTL',
+    categories: [
+      'Женские комплекты',
+      'Топы и бралетты',
+      'Боди и лонгсливы',
+      'Базовое бельё',
+      'Домашняя одежда',
+    ],
+    placeholderName: 'Например: Комплект микромодал НА ТЕЛЕ Soft Touch',
+    defaultCollection: 'НА ТЕЛЕ 2027',
+    defaultComposition: '92% микромодал (Австрия), 8% эластан',
+    defaultPrice: '2690',
+    defaultCost: '780',
+    defaultUnitsInPack: '2',
+    unitHint: 'изд. в комплекте',
   },
-  in_production: {
-    label: 'В производстве',
-    dotColor: 'bg-[#D97745]',
+  FUKAI: {
+    skuPrefix: 'FUK',
+    categories: [
+      'Базовые комплекты WB',
+      'Мультипаки 3–5 шт.',
+      'Термобельё и база',
+      'Носки и база',
+    ],
+    placeholderName: 'Например: Мультипак базовый FUKAI 4 шт.',
+    defaultCollection: 'FUKAI Base 2027',
+    defaultComposition: '95% хлопок пенье, 5% эластан',
+    defaultPrice: '1490',
+    defaultCost: '480',
+    defaultUnitsInPack: '4',
+    unitHint: 'шт. в комплекте',
   },
-  active: {
-    label: 'В продаже',
-    dotColor: 'bg-[#16805D]',
-  },
-  out_of_stock: {
-    label: 'Нет в наличии',
-    dotColor: 'bg-[#C94B4B]',
-  },
-  archived: {
-    label: 'Архив',
-    dotColor: 'bg-[#737373]',
+  BORNERS: {
+    skuPrefix: 'BRN',
+    categories: [
+      'Боксеры',
+      'Транки',
+      'Брифы',
+      'Мультипак',
+      'Футболки и база',
+      'Лимитированная капсула',
+    ],
+    placeholderName: 'Например: Боксеры BORNERS Architect Modal',
+    defaultCollection: 'BORNERS CORE 2027',
+    defaultComposition: '92% модал / хлопок компакт-пенье, 8% эластан',
+    defaultPrice: '2390',
+    defaultCost: '620',
+    defaultUnitsInPack: '4',
+    unitHint: 'шт. в комплекте',
   },
 };
+
+function computeNextBrandSkuCode(
+  models: ScenarioModelSpec[],
+  brandCode: CanonicalBrandCode
+): string {
+  const preset = BRAND_CREATE_PRESETS[brandCode] || BRAND_CREATE_PRESETS.BORNERS;
+  const brandModels = models.filter((m) => matchesBrandFilter(m, brandCode));
+  const usedNums = new Set<number>();
+  brandModels.forEach((m) => {
+    const match = m.code.match(/(\d+)$/);
+    if (match) usedNums.add(Number(match[1]));
+  });
+  let candidate =
+    brandCode === 'BORNERS'
+      ? Math.max(brandModels.length + 1, 24)
+      : Math.max(brandModels.length + 1, 1);
+  while (usedNums.has(candidate)) candidate += 1;
+  return `${preset.skuPrefix}-${String(candidate).padStart(3, '0')}`;
+}
 
 export function ProductCatalogView() {
   const {
     products,
-    concepts,
-    launches,
-    campaigns,
-    tasks,
-    documents,
-    users,
-    currentUser,
     brandFilter,
     setBrandFilter,
-    platformMode,
-    selectedProductId,
-    setSelectedProductId,
     navigateTo,
-    createProduct,
-    updateProduct,
-    createLaunch,
     archiveEntity,
     notify,
   } = usePlatform();
 
-  const isStrategyMode = platformMode === 'strategy';
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'groups' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [productTypeFilter, setProductTypeFilter] = useState<string>('ALL');
-  const [priceSegmentFilter, setPriceSegmentFilter] = useState<string>('ALL');
+  const [stageFilter, setStageFilter] = useState<string>('ALL');
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [activePassportModelId, setActivePassportModelId] = useState<string | null>(null);
+
   const {
-    models: scenarioModels,
+    models: rawScenarioModels,
     scenarios,
     currentScenario,
     selectedScenarioByBrand,
@@ -110,784 +185,782 @@ export function ProductCatalogView() {
     updateModelsBatch,
   } = useLiveScenarioPortfolio();
 
-  // Однократная безопасная синхронизация моделей из «Сценариев роста» в основной «Каталог моделей (SKU)»
-  // (не пересоздаёт удалённые/архивированные карточки и не создаёт дубликатов)
-  const syncedScenarioKeysRef = useRef<Set<string>>(new Set());
+  // Гарантируем, что все модели очищены от чужих дефолтов Borners2
+  const scenarioModels = useMemo(
+    () => rawScenarioModels.map((m) => ensureModelUnifiedV11(m)),
+    [rawScenarioModels]
+  );
+
+  // Сбрасываем фильтр категории при смене бренда
   useEffect(() => {
-    scenarioModels.forEach((spec) => {
-      if (spec.launchStatus === 'В архиве') return;
-      const cleanCode = spec.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
-      const targetSku = `${spec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`;
-      const mainPhotoUrl =
-        (spec.gallery.find((g) => g.isMain && g.url) ||
-          spec.gallery.find((g) => Boolean(g.url)))?.url ||
-        spec.palettes.find((p) => Boolean(p.imageUrl))?.imageUrl;
+    setCategoryFilter('ALL');
+  }, [brandFilter]);
 
-      // Проверяем в том числе и архивные записи, чтобы удалённая пользователем карточка НИКОГДА не воскресала сама
-      const existingAny = products.find(
-        (p) =>
-          p.sku.trim().toUpperCase() === targetSku.toUpperCase() ||
-          p.name.trim().toUpperCase() === spec.title.trim().toUpperCase()
-      );
+  // Форма создания новой модели с адаптацией под выбранный бренд
+  const initialModalBrand: CanonicalBrandCode =
+    brandFilter && brandFilter !== 'ALL'
+      ? normalizePortfolioBrandCode(brandFilter) === 'ALL'
+        ? 'BORNERS'
+        : (normalizePortfolioBrandCode(brandFilter) as CanonicalBrandCode)
+      : 'BORNERS';
 
-      if (!existingAny) {
-        if (syncedScenarioKeysRef.current.has(spec.id)) return;
-        syncedScenarioKeysRef.current.add(spec.id);
-        createProduct({
-          sku: targetSku,
-          name: spec.title,
-          brandId: spec.brandId,
-          category: 'Боксеры',
-          productType: 'Базовая коллекция',
-          priceSegment: 'Middle+',
-          collection: `${spec.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} 2027`,
-          materials: spec.fabric.composition,
-          fitType: `${spec.subtitle} · резинка ${spec.waistband.width}`,
-          imageUrl: mainPhotoUrl || undefined,
-          economics: {
-            currency: 'RUB',
-            plannedRetailPrice: spec.retailPriceRub,
-            actualRetailPrice: spec.retailPriceRub,
-            discountPct: 0,
-            vatPct: 20,
-            returnRatePct: 3.5,
-            unitCostPrice: spec.unitCostRub,
-            marketplaceCommissionRub: Math.round(
-              (spec.retailPriceRub * spec.marketplaceFeePct) / 100
-            ),
-            logisticsRub: spec.logisticsRub,
-            advertisingRub: Math.round((spec.retailPriceRub * spec.adsPct) / 100),
-            otherVariableRub: 0,
-          },
-        });
-      } else if (
-        !existingAny.isArchived &&
-        ((mainPhotoUrl && existingAny.imageUrl !== mainPhotoUrl) ||
-          existingAny.name !== spec.title)
-      ) {
-        updateProduct(existingAny.id, {
-          name: spec.title,
-          ...(mainPhotoUrl
-            ? {
-                imageUrl: mainPhotoUrl,
-                galleryUrls: [mainPhotoUrl],
-              }
-            : {}),
-        });
-      }
+  const [newSkuForm, setNewSkuForm] = useState(() => {
+    const preset = BRAND_CREATE_PRESETS[initialModalBrand];
+    return {
+      brandCode: initialModalBrand,
+      sku: computeNextBrandSkuCode(scenarioModels, initialModalBrand),
+      name: '',
+      category: preset.categories[0],
+      customCategory: '',
+      collection: preset.defaultCollection,
+      materials: preset.defaultComposition,
+      unitsInPack: preset.defaultUnitsInPack,
+      plannedRetailPrice: preset.defaultPrice,
+      unitCostPrice: preset.defaultCost,
+      imageUrl: '',
+    };
+  });
+
+  const openCreateModalForBrand = (targetBrandInput?: string) => {
+    const norm = normalizePortfolioBrandCode(
+      targetBrandInput || (brandFilter !== 'ALL' ? brandFilter : 'BORNERS')
+    );
+    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const preset = BRAND_CREATE_PRESETS[bCode] || BRAND_CREATE_PRESETS.BORNERS;
+    setNewSkuForm({
+      brandCode: bCode,
+      sku: computeNextBrandSkuCode(scenarioModels, bCode),
+      name: '',
+      category: preset.categories[0],
+      customCategory: '',
+      collection: preset.defaultCollection,
+      materials: preset.defaultComposition,
+      unitsInPack: preset.defaultUnitsInPack,
+      plannedRetailPrice: preset.defaultPrice,
+      unitCostPrice: preset.defaultCost,
+      imageUrl: '',
     });
-  }, [scenarioModels]);
+    setCreateModalOpen(true);
+  };
 
-  const handleDeleteScenarioModel = (modelToDelete: ScenarioModelSpec) => {
+  const handleModalBrandChange = (nextBrandRaw: string) => {
+    const norm = normalizePortfolioBrandCode(nextBrandRaw);
+    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const preset = BRAND_CREATE_PRESETS[bCode] || BRAND_CREATE_PRESETS.BORNERS;
+    setNewSkuForm((prev) => ({
+      ...prev,
+      brandCode: bCode,
+      sku: computeNextBrandSkuCode(scenarioModels, bCode),
+      category: preset.categories[0],
+      customCategory: '',
+      collection: preset.defaultCollection,
+      materials: preset.defaultComposition,
+      unitsInPack: preset.defaultUnitsInPack,
+      plannedRetailPrice: preset.defaultPrice,
+      unitCostPrice: preset.defaultCost,
+    }));
+  };
+
+  const handleDeleteScenarioModel = (
+    modelToDelete: ScenarioModelSpec,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
     updateModelsBatch((prev) => prev.filter((x) => x.id !== modelToDelete.id));
 
-    // Одновременно удаляем (архивируем) связанный SKU из основного каталога
     const cleanCode = modelToDelete.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
     const targetSku = `${modelToDelete.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`.toUpperCase();
     products.forEach((p) => {
       if (
         !p.isArchived &&
         (p.sku.trim().toUpperCase() === targetSku ||
+          p.sku.trim().toUpperCase() === modelToDelete.code.trim().toUpperCase() ||
           p.name.trim().toUpperCase() === modelToDelete.title.trim().toUpperCase())
       ) {
         archiveEntity('product', p.id);
       }
     });
 
-    notify('warning', `Карточка модели ${modelToDelete.code} / ${modelToDelete.title} удалена`);
-  };
+    if (activePassportModelId === modelToDelete.id) {
+      setActivePassportModelId(null);
+    }
 
-  // Полное удаление карточки из Каталога моделей (и из Сценариев роста, чтобы она не создавалась заново)
-  const handleDeleteCatalogProduct = (
-    productToDelete: Product,
-    e?: React.MouseEvent
-  ) => {
-    e?.stopPropagation();
-    const cleanName = productToDelete.name.trim().toUpperCase();
-    const cleanSku = productToDelete.sku.trim().toUpperCase();
-
-    // 1. Убираем совпадающую модель из сценариев роста
-    updateModelsBatch((prev) =>
-      prev.filter((m) => {
-        const mCode = m.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '';
-        const mSku = `${m.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${mCode}`.toUpperCase();
-        return m.title.trim().toUpperCase() !== cleanName && mSku !== cleanSku;
-      })
+    notify(
+      'warning',
+      `Карточка модели ${modelToDelete.code} · ${modelToDelete.title} удалена`
     );
-
-    // 2. Архивируем саму карточку (и любые её дубли) в каталоге
-    archiveEntity('product', productToDelete.id);
   };
 
-  const [drawerTab, setDrawerTab] = useState<
-    'passport' | 'variants' | 'economics' | 'relations'
-  >('passport');
-
-  const [newVariantForm, setNewVariantForm] = useState({
-    skuVariant: '',
-    color: 'Чёрный Оникс',
-    size: 'L' as 'S' | 'M' | 'L' | 'XL' | 'XXL',
-    packConfiguration: '1-pack' as '1-pack' | '2-pack' | '3-pack',
-    stockQty: '450',
-  });
-
-  const [newSkuForm, setNewSkuForm] = useState({
-    sku: 'BRN-MOD-08',
-    name: '',
-    brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
-    category: 'Боксеры' as Product['category'],
-    productType: 'Базовая коллекция' as Product['productType'],
-    priceSegment: 'Middle+' as Product['priceSegment'],
-    collection: 'CORE 2027',
-    materials: '92% микромодал (Австрия), 8% эластан, 190 г/м²',
-    fitType: 'Анатомический крой без заднего среднего шва',
-    plannedRetailPrice: '2390',
-    unitCostPrice: '470',
-    logisticsRub: '110',
-    imageUrl: '',
-  });
-
-  const hasFinance = canUserViewFinance(currentUser);
-  const hasCostAccess = canUserViewCostPrice(currentUser);
-
-  const matchesProductBrandFilter = (p: Product, filter: string) => {
-    if (!filter || filter === 'ALL') return true;
-    const acting = getActingSkuByWbOrVendor(p.sku, p.name);
-    if (filter === 'FUKAI') {
-      return (
-        acting?.wbSku === '72302360' ||
-        p.name.toUpperCase().includes('FUKAI') ||
-        p.sku.toUpperCase().includes('FUKAI')
-      );
-    }
-    if (filter === 'AKUSHA') {
-      return (
-        p.name.toUpperCase().includes('АКУША') ||
-        p.name.toUpperCase().includes('AKUSHA')
-      );
-    }
-    if (filter === 'LISKANI') {
-      return (
-        p.name.toUpperCase().includes('LISKANI') ||
-        p.name.toUpperCase().includes('ЛИСКАНИ')
-      );
-    }
-    return p.brandId === filter;
-  };
-
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (!p.isArchived && matchesProductBrandFilter(p, brandFilter)) {
-        set.add(p.category);
-      }
-    });
-    return Array.from(set);
-  }, [products, brandFilter]);
-
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      if (p.isArchived) return false;
-      if (!matchesProductBrandFilter(p, brandFilter)) return false;
-      if (categoryFilter !== 'ALL' && p.category !== categoryFilter) return false;
-      if (statusFilter !== 'ALL' && p.status !== statusFilter) return false;
-      if (productTypeFilter !== 'ALL' && p.productType !== productTypeFilter) return false;
-      if (priceSegmentFilter !== 'ALL' && p.priceSegment !== priceSegmentFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        return (
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.collection.toLowerCase().includes(q) ||
-          p.materials.toLowerCase().includes(q) ||
-          p.supplierName.toLowerCase().includes(q) ||
-          p.colorCombinations.some((c) => c.toLowerCase().includes(q))
-        );
-      }
-      return true;
-    });
-  }, [
-    products,
-    brandFilter,
-    categoryFilter,
-    statusFilter,
-    productTypeFilter,
-    priceSegmentFilter,
-    searchQuery,
-  ]);
-
-  const activeProduct: Product | null = useMemo(
-    () => products.find((p) => p.id === selectedProductId) || null,
-    [products, selectedProductId]
-  );
-
-  const canEditActiveProduct =
-    !isStrategyMode &&
-    activeProduct !== null &&
-    canUserEditBrand(currentUser, activeProduct.brandId);
-
-  const handleCreateProduct = () => {
-    if (!newSkuForm.name.trim()) return;
-    const retail = Number(newSkuForm.plannedRetailPrice) || 2390;
-    const cost = Number(newSkuForm.unitCostPrice) || 470;
-    const log = Number(newSkuForm.logisticsRub) || 110;
-
-    createProduct({
-      sku: newSkuForm.sku.trim() || `SKU-${Date.now().toString().slice(-4)}`,
-      name: newSkuForm.name.trim(),
-      brandId: newSkuForm.brandId,
-      category: newSkuForm.category,
-      productType: newSkuForm.productType,
-      priceSegment: newSkuForm.priceSegment,
-      collection: newSkuForm.collection,
-      materials: newSkuForm.materials,
-      fitType: newSkuForm.fitType,
-      imageUrl: newSkuForm.imageUrl || undefined,
-      status: 'in_development',
-      economics: {
-        currency: 'RUB',
-        plannedRetailPrice: retail,
-        actualRetailPrice: retail,
-        discountPct: 10,
-        vatPct: 20,
-        returnRatePct: 8,
-        unitCostPrice: cost,
-        marketplaceCommissionRub: Math.round(retail * 0.18),
-        logisticsRub: log,
-        advertisingRub: Math.round(retail * 0.1),
-        otherVariableRub: 45,
-      },
-    });
-
-    // Также автоматически регистрируем новую модель в «Сценариях роста» (единая база карточек без выдуманных продаж по п. 4.4 ТЗ)
-    const unitCfg = getBrandUnitConfig(newSkuForm.brandId);
-    const { model: baseCreated } = createBrandProductModel(
-      scenarioModels,
-      scenarios,
-      {
-        title: newSkuForm.name.trim().toUpperCase(),
-        brandCode: newSkuForm.brandId,
-        code: newSkuForm.sku.trim() || undefined,
-        categoryLabel: newSkuForm.category || unitCfg.categoryDefault,
-        retailPriceRub: retail,
-        unitCostRub: cost,
-        unitsInPack: unitCfg.secondaryPerPrimaryDefault,
-      }
-    );
-    const createdScenarioModel: ScenarioModelSpec = newSkuForm.imageUrl
-      ? {
-          ...baseCreated,
-          gallery: [
-            {
-              id: `g-main-${Date.now()}`,
-              category: 'pack',
-              label: 'Главное фото',
-              url: newSkuForm.imageUrl,
-              isMain: true,
-            },
-          ],
-        }
-      : baseCreated;
-    updateModelsBatch((prev) => [...prev, createdScenarioModel]);
-
-    setCreateModalOpen(false);
-  };
-
-  const handleUploadProductPhoto = async (
+  const handleQuickUploadCardPhoto = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    product: Product
+    mod: ScenarioModelSpec
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await compressImageFileToDataUrl(file, 720, 0.78);
-      if (!dataUrl) return;
-      updateProduct(product.id, {
-        imageUrl: dataUrl,
-        galleryUrls: [dataUrl, ...product.galleryUrls],
+      const compressedUrl = await compressImageFileToDataUrl(file, 920, 0.82);
+      if (!compressedUrl) return;
+      const cleanExisting = mod.gallery.filter((g) => {
+        const u = (g.url || g.originalUrl || '').trim();
+        return (
+          Boolean(u) &&
+          !u.includes('borners-core-modal.svg') &&
+          !u.includes('244995893_main.webp')
+        );
       });
-      notify('success', `Фотография для ${product.sku} обновлена`);
+      const updatedGallery: ScenarioModelSpec['gallery'] = [
+        {
+          id: `gal-${Date.now()}`,
+          category: 'pack',
+          label: file.name.replace(/\.[^.]+$/, ''),
+          url: compressedUrl,
+          originalUrl: compressedUrl,
+          isMain: true,
+        },
+        ...cleanExisting.map((g) => ({ ...g, isMain: false })),
+      ];
+      updateModelSpec({
+        ...mod,
+        gallery: updatedGallery,
+      });
+      notify('success', `Фотография для ${mod.code} загружена и сохранена`);
     } catch {
-      // ignore
+      notify('error', 'Не удалось загрузить фотографию');
     }
     e.target.value = '';
   };
 
-  const handleUploadTechFile = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    product: Product
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    updateProduct(product.id, {
-      techFiles: [
-        ...product.techFiles,
-        {
-          id: `asset-${Date.now()}`,
-          title: file.name,
-          assetType: 'tech_pack',
-          url: '#',
-          uploadedAt: new Date().toISOString().slice(0, 10),
-        },
-      ],
-    });
-    notify('success', `Техфайл «${file.name}» прикреплён к паспорту ${product.sku}`);
+  const handleCreateProduct = (openPassportAfterCreate: boolean) => {
+    const bCode = newSkuForm.brandCode;
+    const unitCfg = getBrandUnitConfig(bCode);
+    const cleanTitle =
+      newSkuForm.name.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
+    const resolvedCategory =
+      newSkuForm.category === '__CUSTOM__'
+        ? newSkuForm.customCategory.trim() || unitCfg.categoryDefault
+        : newSkuForm.category || unitCfg.categoryDefault;
+    const retail = Math.max(0, Number(newSkuForm.plannedRetailPrice) || 1990);
+    const cost = Math.max(0, Number(newSkuForm.unitCostPrice) || 650);
+    const units = Math.max(
+      1,
+      Number(newSkuForm.unitsInPack) || unitCfg.secondaryPerPrimaryDefault
+    );
+
+    const { model: createdScenarioModel } = createBrandProductModel(
+      scenarioModels,
+      scenarios,
+      {
+        title: cleanTitle,
+        brandCode: bCode,
+        code: newSkuForm.sku.trim() || undefined,
+        categoryLabel: resolvedCategory,
+        retailPriceRub: retail,
+        unitCostRub: cost,
+        unitsInPack: units,
+        composition: newSkuForm.materials.trim() || undefined,
+        imageUrl: newSkuForm.imageUrl || undefined,
+      }
+    );
+
+    updateModelsBatch((prev) => [...prev, createdScenarioModel]);
+    setCreateModalOpen(false);
+    notify(
+      'success',
+      `✓ Карточка ${createdScenarioModel.code} · ${createdScenarioModel.title} создана`,
+      `Бренд: ${unitCfg.displayCode} · Категория: ${resolvedCategory}`
+    );
+
+    if (openPassportAfterCreate) {
+      setActivePassportModelId(createdScenarioModel.id);
+    }
   };
 
-  const handleAddVariant = (product: Product) => {
-    const skuVar =
-      newVariantForm.skuVariant.trim() ||
-      `${product.sku}-${newVariantForm.size}-${product.variants.length + 1}`;
-    const nextVar = {
-      id: `var-${Date.now()}`,
-      productId: product.id,
-      variantSku: skuVar,
-      colorName: newVariantForm.color,
-      colorHex: '#171717',
-      size: newVariantForm.size,
-      packConfiguration: newVariantForm.packConfiguration,
-      stockQty: Number(newVariantForm.stockQty) || 0,
+  // Фильтрация моделей по бренду
+  const brandFilteredModels = useMemo(
+    () =>
+      scenarioModels.filter(
+        (m) =>
+          m.launchStatus !== 'В архиве' &&
+          (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
+      ),
+    [scenarioModels, brandFilter]
+  );
+
+  // Динамический список категорий для выбранного бренда
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    brandFilteredModels.forEach((m) => {
+      const cat = (m.categoryLabel || getBrandUnitConfig(m).categoryDefault).trim();
+      if (cat) set.add(cat);
+    });
+    return Array.from(set);
+  }, [brandFilteredModels]);
+
+  // Финальный отфильтрованный список моделей для Витрины и Таблицы
+  const filteredModels = useMemo(() => {
+    return brandFilteredModels.filter((m) => {
+      const cat = (m.categoryLabel || getBrandUnitConfig(m).categoryDefault).trim();
+      if (categoryFilter !== 'ALL' && cat !== categoryFilter) return false;
+      const stage = m.modelStageStatus || m.launchStatus;
+      if (stageFilter !== 'ALL' && stage !== stageFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const brandLabel = detectModelBrandPortfolioLabel(m).toLowerCase();
+        return (
+          m.title.toLowerCase().includes(q) ||
+          m.code.toLowerCase().includes(q) ||
+          (m.wbArticle || '').toLowerCase().includes(q) ||
+          m.subtitle.toLowerCase().includes(q) ||
+          (m.fabric?.composition || '').toLowerCase().includes(q) ||
+          brandLabel.includes(q)
+        );
+      }
+      return true;
+    });
+  }, [brandFilteredModels, categoryFilter, stageFilter, searchQuery]);
+
+  // Счётчики SKU по каждому бренду
+  const countsByBrand = useMemo(() => {
+    const active = scenarioModels.filter((m) => m.launchStatus !== 'В архиве');
+    return {
+      ALL: active.length,
+      BORNERS: active.filter((m) => matchesBrandFilter(m, 'BORNERS')).length,
+      FUKAI: active.filter((m) => matchesBrandFilter(m, 'FUKAI')).length,
+      AKUSHA: active.filter((m) => matchesBrandFilter(m, 'AKUSHA')).length,
+      LISKANI: active.filter((m) => matchesBrandFilter(m, 'LISKANI')).length,
+      NA_TELE: active.filter((m) => matchesBrandFilter(m, 'NA_TELE')).length,
     };
-    updateProduct(product.id, {
-      variants: [...product.variants, nextVar],
-    });
-    setNewVariantForm((prev) => ({ ...prev, skuVariant: '' }));
-    notify('success', `Добавлен вариант ${skuVar}`);
-  };
+  }, [scenarioModels]);
 
-  const handleCreateLaunchForProduct = (product: Product) => {
-    const created = createLaunch({
-      name: `Релиз SKU: ${product.name}`,
-      brandId: product.brandId,
-      collectionName: product.collection,
-      productId: product.id,
-      conceptId: product.conceptId,
-      startDate: '2027-04-20',
-      marketingBudgetRub: 900000,
-      salesPlanUnits: 4000,
-      salesPlanRub: 4000 * product.economics.actualRetailPrice,
-      ownerId: product.ownerId || currentUser.id,
-    });
-    setSelectedProductId(null);
-    navigateTo('launch-calendar', { launchId: created.id });
-  };
+  const activePassportModel = useMemo(
+    () =>
+      activePassportModelId
+        ? scenarioModels.find((m) => m.id === activePassportModelId) || null
+        : null,
+    [scenarioModels, activePassportModelId]
+  );
 
-  return (
-    <div className="space-y-6 pb-20">
-      {/* Архитектурная шапка раздела 01 · Продукт */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
-        <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-            01 · Продукт · Ассортиментная матрица ({filteredProducts.length} SKU)
-          </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
-            Каталог моделей (SKU)
-          </h1>
-        </div>
+  // ЕСЛИ ОТКРЫТ ПАСПОРТ МОДЕЛИ — ПОКАЗЫВАЕМ ЕГО ПРЯМО ВНУТРИ 01 · ПРОДУКТ (СО ВСЕМИ ПОЛЯМИ РЕДАКТИРОВАНИЯ)
+  if (activePassportModel) {
+    const modBrandCode = normalizePortfolioBrandCode(
+      detectModelBrandPortfolioLabel(activePassportModel)
+    );
+    const activeBrandScenarioId =
+      modBrandCode !== 'ALL' ? selectedScenarioByBrand[modBrandCode] : undefined;
+    const effectiveScenario =
+      (typeof activeBrandScenarioId === 'number'
+        ? scenarios.find((s) => s.id === activeBrandScenarioId)
+        : undefined) || currentScenario;
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex items-center rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12px]">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
-              }`}
-            >
-              Витрина
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
-                viewMode === 'table'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
-              }`}
-            >
-              Таблица
-            </button>
-          </div>
-
-          {!isStrategyMode && (
-            <button
-              onClick={() => setCreateModalOpen(true)}
-              className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
-            >
-              Добавить модель
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* СИНХРОНИЗИРОВАННЫЕ МОДЕЛИ ИЗ СЦЕНАРИЕВ РОСТА */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 shadow-[0_2px_10px_rgba(20,20,19,0.03)] space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b-[1.5px] border-[#DFDED6]">
-          <div>
-            <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-              Сквозная синхронизация со сценариями 2027
-            </div>
-            <h2 className="text-[19px] font-bold text-[#141413] mt-0.5">
-              Модели в сценариях развития ({scenarioModels.filter((m) => m.launchStatus !== 'В архиве' && (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))).length} SKU)
-            </h2>
-            <p className="text-[12px] text-[#5E5D58]">
-              Нажмите на любую позицию, чтобы открыть паспорт изделия, матрицу 12 мес., закупки и экономику.
-            </p>
-          </div>
+    return (
+      <div className="space-y-4 pb-20">
+        <div className="rounded-[14px] bg-white border border-[#CBD5E1] px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
           <button
             type="button"
-            onClick={() => navigateTo('dashboard', { scenarioScreen: 'scenarios' })}
-            className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] transition cursor-pointer"
+            onClick={() => setActivePassportModelId(null)}
+            className="h-9 px-3.5 rounded-[9px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[12.5px] font-bold inline-flex items-center gap-2 cursor-pointer transition"
           >
-            Открыть Сводку и сценарии →
+            <ArrowLeft className="h-4 w-4" />
+            <span>Назад в каталог (01 · Продукт)</span>
           </button>
+
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#475569]">
+            <select
+              value={activePassportModel.id}
+              onChange={(e) => setActivePassportModelId(e.target.value)}
+              className="h-8 px-2.5 rounded-[8px] border border-[#CBD5E1] bg-[#F8FAFC] text-[12px] font-semibold text-[#0F172A] cursor-pointer"
+            >
+              {(filteredModels.length > 0 ? filteredModels : scenarioModels).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.code} — {m.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => handleDeleteScenarioModel(activePassportModel)}
+              className="h-8 px-3 rounded-[8px] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#B42318] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>Удалить карточку</span>
+            </button>
+          </div>
         </div>
 
-        <PeaklyCatalogGroupsAndBrandsView
-          models={scenarioModels}
-          filteredModels={scenarioModels.filter(
-            (m) =>
-              m.launchStatus !== 'В архиве' &&
-              (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
-          )}
-          currentScenario={currentScenario}
-          scenarios={scenarios}
-          brandFilter={brandFilter}
-          onSelectBrandFilter={(bCode) => setBrandFilter(bCode)}
-          selectedScenarioByBrand={selectedScenarioByBrand}
-          onSelectScenarioForBrand={(bCode, scenId) => {
-            setSelectedScenarioForBrand(bCode, scenId);
-          }}
-          onSelectActiveScenarioId={(scenId) => {
-            setSelectedScenarioId(scenId);
-          }}
-          onOpenModelPassport={(modelId) => {
-            try {
-              sessionStorage.setItem('borners_open_scenario_model_id', modelId);
-            } catch {
-              // ignore
-            }
-            navigateTo('dashboard');
-          }}
+        <ScenarioModelCardScreen
+          model={activePassportModel}
+          scenario={effectiveScenario}
+          allScenarios={scenarios}
+          onSelectScenario={(id) => setSelectedScenarioId(id)}
+          onBackToScenarios={() => setActivePassportModelId(null)}
+          onOpenSalesPlan={() => navigateTo('launch-calendar')}
           onUpdateModel={updateModelSpec}
-          onDeleteModel={handleDeleteScenarioModel}
-          onOpenCreateModel={(defaultBrandCode) => {
-            if (defaultBrandCode) {
-              setNewSkuForm((prev) => ({ ...prev, brandId: defaultBrandCode }));
-            }
-            setCreateModalOpen(true);
+          onDuplicateModel={(m) => {
+            const copyId = `scen-copy-${Date.now()}`;
+            const copy: ScenarioModelSpec = {
+              ...m,
+              id: copyId,
+              code: `${m.code}-COPY`,
+              title: `${m.title} (КОПИЯ)`,
+            };
+            updateModelsBatch((prev) => [...prev, copy]);
+            setActivePassportModelId(copy.id);
+            notify('success', `Создана копия модели ${copy.code}`);
           }}
+          onDeleteOrArchiveModel={(m) => handleDeleteScenarioModel(m)}
+          onOpenPdfModal={() =>
+            notify(
+              'success',
+              'ТЗ карточки модели готово к выгрузке',
+              'Все параметры, фото и экономика сохранены в паспорте изделия.'
+            )
+          }
           notify={notify}
         />
       </div>
+    );
+  }
 
-      {/* Панель поиска и расширенных фильтров (п. 6 и 17 ТЗ) */}
-      <div className="space-y-4">
+  const activeModalPreset =
+    BRAND_CREATE_PRESETS[newSkuForm.brandCode] || BRAND_CREATE_PRESETS.BORNERS;
+
+  return (
+    <div className="space-y-5 pb-20">
+      {/* 1. ШАПКА ЕДИНОГО КАТАЛОГА 01 · ПРОДУКТ */}
+      <div className="rounded-2xl bg-white border border-[#CBD5E1] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
+          <div>
+            <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#475569]">
+              01 · Продукт · Единый каталог моделей и паспортов ({filteredModels.length} SKU)
+            </div>
+            <h1 className="text-[22px] sm:text-[24px] font-extrabold tracking-tight text-[#0F172A] mt-0.5">
+              Каталог моделей (SKU)
+            </h1>
+            <p className="text-[12.5px] text-[#475569] mt-0.5">
+              Нажмите на любую карточку, чтобы загрузить фото, изменить характеристики, цвета, закупки и план продаж на 12 мес.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex items-center rounded-[10px] bg-[#EEF2F6] border border-[#CBD5E1] p-1 text-[12px]">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewMode === 'grid'
+                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    : 'text-[#475569] hover:text-[#0F172A]'
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span>Витрина</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('groups')}
+                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewMode === 'groups'
+                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    : 'text-[#475569] hover:text-[#0F172A]'
+                }`}
+              >
+                <Folder className="h-3.5 w-3.5" />
+                <span>Группы и бренды</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-[#0F172A] text-white shadow-2xs'
+                    : 'text-[#475569] hover:text-[#0F172A]'
+                }`}
+              >
+                <TableIcon className="h-3.5 w-3.5" />
+                <span>Таблица</span>
+              </button>
+            </div>
+
             <button
+              type="button"
+              onClick={() => openCreateModalForBrand()}
+              className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Добавить модель</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Быстрый переключатель брендов прямо в шапке каталога */}
+        <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { code: 'ALL', label: 'Все бренды', count: countsByBrand.ALL },
+                { code: 'BORNERS', label: 'BORNERS', count: countsByBrand.BORNERS },
+                { code: 'FUKAI', label: 'FUKAI', count: countsByBrand.FUKAI },
+                { code: 'AKUSHA', label: 'AKUSHA', count: countsByBrand.AKUSHA },
+                { code: 'LISKANI', label: 'LISKANI', count: countsByBrand.LISKANI },
+                { code: 'NA_TELE', label: 'НА ТЕЛЕ', count: countsByBrand.NA_TELE },
+              ] as const
+            ).map((b) => {
+              const isAct =
+                b.code === 'ALL'
+                  ? brandFilter === 'ALL'
+                  : normalizePortfolioBrandCode(brandFilter) === b.code;
+              return (
+                <button
+                  key={b.code}
+                  type="button"
+                  onClick={() => setBrandFilter(b.code)}
+                  className={`h-8 px-3 rounded-[8px] text-[12px] font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                    isAct
+                      ? 'bg-[#0F172A] text-white border-[#0F172A]'
+                      : 'bg-[#F8FAFC] hover:bg-white text-[#334155] border-[#CBD5E1]'
+                  }`}
+                >
+                  <span>{b.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded font-mono text-[10.5px] ${
+                      isAct ? 'bg-white/20 text-white' : 'bg-[#E2E8F0] text-[#334155]'
+                    }`}
+                  >
+                    {b.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-64">
+              <Search className="h-3.5 w-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск SKU, названия, ткани..."
+                className="w-full h-8.5 rounded-[8px] bg-[#F8FAFC] focus:bg-white border border-[#CBD5E1] focus:border-[#0F172A] pl-8.5 pr-3 text-[12.5px] outline-none"
+              />
+            </div>
+
+            <select
+              value={stageFilter}
+              onChange={(e) => setStageFilter(e.target.value)}
+              className="h-8.5 rounded-[8px] bg-[#F8FAFC] border border-[#CBD5E1] px-2.5 text-[12px] font-semibold text-[#334155] outline-none cursor-pointer"
+            >
+              <option value="ALL">Все статусы</option>
+              <option value="Действующий">Действующий</option>
+              <option value="В плане">В плане</option>
+              <option value="Идея">Идея</option>
+              <option value="В разработке">В разработке</option>
+              <option value="Тест">Тест</option>
+              <option value="Масштабирование">Масштабирование</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Фильтр по категориям выбранного бренда */}
+        {availableCategories.length > 1 && viewMode !== 'groups' && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <button
+              type="button"
               onClick={() => setCategoryFilter('ALL')}
-              className={`px-4 py-2 rounded-xl text-[14px] font-semibold border transition cursor-pointer ${
+              className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold border transition cursor-pointer ${
                 categoryFilter === 'ALL'
-                  ? 'bg-[#111111] text-white border-[#111111]'
-                  : 'bg-white text-[#171717] border-[#E8E8E5] hover:border-[#171717]'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0F172A]'
               }`}
             >
-              Все категории
+              Все категории ({brandFilteredModels.length})
             </button>
-            {categories.map((cat) => (
+            {availableCategories.map((cat) => (
               <button
                 key={cat}
+                type="button"
                 onClick={() => setCategoryFilter(cat)}
-                className={`px-4 py-2 rounded-xl text-[14px] font-semibold border transition cursor-pointer ${
+                className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold border transition cursor-pointer ${
                   categoryFilter === cat
-                    ? 'bg-[#111111] text-white border-[#111111]'
-                    : 'bg-white text-[#171717] border-[#E8E8E5] hover:border-[#171717]'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0F172A]'
                 }`}
               >
                 {cat}
               </button>
             ))}
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-64">
-              <Search className="h-4 w-4 text-[#737373] absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск SKU, ткани, фабрики..."
-                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] pl-10 pr-4 text-[14px] outline-none"
-              />
-            </div>
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 text-[13px] font-semibold outline-none cursor-pointer"
-            >
-              <option value="ALL">Все статусы</option>
-              <option value="active">В продаже</option>
-              <option value="in_production">В производстве</option>
-              <option value="approved">Утверждён</option>
-              <option value="sampled">Образец готов</option>
-              <option value="in_development">В разработке</option>
-              <option value="out_of_stock">Нет в наличии</option>
-            </select>
-
-            <select
-              value={productTypeFilter}
-              onChange={(e) => setProductTypeFilter(e.target.value)}
-              className="h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 text-[13px] font-semibold outline-none cursor-pointer"
-            >
-              <option value="ALL">Все типы линеек</option>
-              <option value="Базовая коллекция">Базовая коллекция</option>
-              <option value="Лимитированная коллекция">Лимитированная коллекция</option>
-              <option value="Капсула оттенков кожи">Капсула оттенков кожи</option>
-              <option value="Мультипак">Мультипак</option>
-            </select>
-
-            <select
-              value={priceSegmentFilter}
-              onChange={(e) => setPriceSegmentFilter(e.target.value)}
-              className="h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 text-[13px] font-semibold outline-none cursor-pointer"
-            >
-              <option value="ALL">Все ценовые сегменты</option>
-              <option value="Mass-Market+">Mass-Market+</option>
-              <option value="Middle+">Middle+</option>
-              <option value="Premium">Premium</option>
-            </select>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* РЕЖИМ 1: ГАЛЕРЕЯ МОДЕЛЕЙ (крупные карточки с чистой предметной иллюстрацией без плашек поверх фото) */}
+      {/* РЕЖИМ 1: ВИТРИНА КАРТОЧЕК (ЕДИНАЯ БАЗА БЕЗ ДУБЛЕЙ И ЧУЖИХ ФОТО) */}
       {viewMode === 'grid' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredProducts.map((product) => {
-            const st = STATUS_META[product.status];
-            const calc = calculateUnitEconomics(product.economics);
-            const isBorners = product.brandId === 'BORNERS';
-            const actingMeta = getActingSkuByWbOrVendor(product.sku, product.name);
-
-            return (
-              <div
-                key={product.id}
-                onClick={() => {
-                  setSelectedProductId(product.id);
-                  setDrawerTab('passport');
-                }}
-                className="relative bg-white rounded-[16px] border-[1.5px] border-[#CECDC4] hover:border-[#141413] p-5 flex flex-col justify-between transition cursor-pointer group space-y-4"
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteCatalogProduct(product);
-                  }}
-                  title="Удалить карточку модели"
-                  className="absolute top-7 right-7 z-10 h-6 w-6 rounded-[6px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 bg-white border border-[#CECDC4] hover:border-[#FCA5A5] text-[#686762] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none font-bold transition cursor-pointer"
-                >
-                  ×
-                </button>
-                <div className="space-y-3.5">
-                  {/* Предметное фото модели в чистой рамке */}
-                  <div className="h-48 w-full rounded-[12px] bg-[#F5F5F1] border border-[#DFDED6] flex items-center justify-center p-4">
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      loading="lazy"
-                      decoding="async"
-                      className="h-full w-full object-contain group-hover:scale-[1.03] transition-transform"
-                    />
-                  </div>
-
-                  {/* Строка бренда, SKU и статуса под иллюстрацией */}
-                  <div className="flex items-center justify-between gap-2 text-[13px]">
-                    <div className="flex items-center gap-2 font-semibold">
-                      <span
-                        style={{
-                          color:
-                            actingMeta && actingMeta.wbSku === '72302360'
-                              ? '#B45309'
-                              : isBorners
-                              ? '#D97745'
-                              : '#8B8078',
-                        }}
-                      >
-                        {actingMeta
-                          ? actingMeta.brandStatus
-                          : isBorners
-                          ? 'BORNERS'
-                          : 'НА ТЕЛЕ'}
-                      </span>
-                      <span className="text-[#737373]">
-                        · {actingMeta ? `WB ${actingMeta.wbSku}` : product.sku}
-                      </span>
-                      {product.isDemo && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#F7F7F5] border border-[#E8E8E5] text-[10px] font-semibold text-[#737373]">
-                          DEMO
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="inline-flex items-center gap-1.5 font-medium text-[#171717]">
-                      <span className={`h-2 w-2 rounded-full ${st.dotColor}`} />
-                      <span>{st.label}</span>
-                    </span>
-                  </div>
-
-                  {/* Название модели и коллекция */}
-                  <div>
-                    <h3 className="text-[20px] font-bold text-[#171717] dark:text-white leading-snug">
-                      {product.name}
-                    </h3>
-                    <div className="text-[14px] text-[#737373] mt-1">
-                      {actingMeta
-                        ? `${actingMeta.subtitle} · ИП Нерсесянц`
-                        : `${product.category} · ${product.collection} · ${product.productType}`}
-                    </div>
-                  </div>
-
-                  {/* Состав ткани */}
-                  <p className="text-[14px] text-[#737373] leading-relaxed">
-                    {product.fabricComposition} · {product.fabricDensityGsm} г/м²
-                  </p>
-                </div>
-
-                {/* Нижний блок: Цена, Себестоимость и Маржа / План 2027 */}
-                {actingMeta ? (
-                  <div className="pt-4 border-t border-[#E8E8E5] grid grid-cols-3 gap-4">
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Цена (выр./вык.)</div>
-                      <div className="text-[18px] font-bold text-[#171717] dark:text-white mt-0.5">
-                        {formatCurrencyRub(actingMeta.weightedAvgPriceRub)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Выкупы / год</div>
-                      <div className="text-[18px] font-bold text-[#171717] dark:text-white mt-0.5">
-                        {actingMeta.totalBuyoutsSets.toLocaleString('ru-RU')}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[12px] text-[#737373]">План 2027</div>
-                      <div className="text-[18px] font-bold text-[#16805D] mt-0.5">
-                        {(actingMeta.totalRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="pt-4 border-t border-[#E8E8E5] grid grid-cols-3 gap-4">
-                    <div>
-                      <div className="text-[12px] text-[#737373]">РРЦ</div>
-                      <div className="text-[18px] font-bold text-[#171717] dark:text-white mt-0.5">
-                        {formatCurrencyRub(product.economics.actualRetailPrice)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Себестоимость</div>
-                      <div className="text-[18px] font-bold text-[#171717] dark:text-white mt-0.5">
-                        {hasCostAccess
-                          ? formatCurrencyRub(product.economics.unitCostPrice)
-                          : 'Скрыто'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[12px] text-[#737373]">Маржа</div>
-                      <div
-                        className={`text-[18px] font-bold mt-0.5 ${
-                          hasFinance
-                            ? calc.marginPct >= 30
-                              ? 'text-[#16805D]'
-                              : 'text-[#D99527]'
-                            : 'text-[#737373]'
-                        }`}
-                      >
-                        {hasFinance ? `${calc.marginPct}%` : '—'}
-                      </div>
-                    </div>
-                  </div>
-                )}
+        <>
+          {filteredModels.length === 0 ? (
+            <div className="rounded-2xl bg-white border border-[#CBD5E1] p-10 text-center space-y-3">
+              <div className="text-[16px] font-bold text-[#0F172A]">
+                В выбранном фильтре пока нет карточек моделей
               </div>
-            );
-          })}
+              <p className="text-[13px] text-[#475569] max-w-md mx-auto">
+                Добавьте новую модель для бренда{' '}
+                <strong>{brandFilter === 'ALL' ? 'холдинга' : brandFilter}</strong> или сбросьте поисковый фильтр.
+              </p>
+              <button
+                type="button"
+                onClick={() => openCreateModalForBrand()}
+                className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <Plus className="h-4 w-4" />
+                <span>+ Добавить первую модель</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {filteredModels.map((mod) => {
+                const displayBrand = detectModelBrandPortfolioLabel(mod);
+                const modBrandCode = normalizePortfolioBrandCode(displayBrand);
+                const activeScenId =
+                  modBrandCode !== 'ALL'
+                    ? selectedScenarioByBrand[modBrandCode]
+                    : undefined;
+                const activeScen =
+                  (typeof activeScenId === 'number'
+                    ? scenarios.find((s) => s.id === activeScenId)
+                    : undefined) || currentScenario;
+                const met = computeModelScenarioMetrics(mod, activeScen);
+                const unitCfg = getBrandUnitConfig(mod);
+                const accent = getModelBrandAccentStyles(displayBrand);
+                const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
+                const mainGallery =
+                  mod.gallery.find((g) => g.isMain && Boolean(g.url || g.originalUrl)) ||
+                  mod.gallery.find((g) => Boolean(g.url || g.originalUrl));
+                const mainPhotoUrl = mainGallery?.url || mainGallery?.originalUrl || '';
+                const colors = mod.palettes[0]?.colors || [];
+                const categoryText = mod.categoryLabel || unitCfg.categoryDefault;
+
+                return (
+                  <div
+                    key={mod.id}
+                    onClick={() => setActivePassportModelId(mod.id)}
+                    className="relative bg-white rounded-2xl border border-[#CBD5E1] hover:border-[#0F172A] p-5 flex flex-col justify-between transition cursor-pointer group space-y-4 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:shadow-[0_12px_28px_-6px_rgba(15,23,42,0.10)]"
+                  >
+                    <div className="space-y-3.5">
+                      {/* Верхняя строка: Бренд, артикул, статус и удаление */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className={`px-2 py-0.5 rounded-[6px] font-mono text-[10.5px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
+                          >
+                            {displayBrand}
+                          </span>
+                          <span className="font-mono text-[12px] font-bold text-[#334155] truncate">
+                            {actingMeta ? `WB ${actingMeta.wbSku}` : mod.code}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] border border-[#CBD5E1] text-[10.5px] font-bold text-[#334155]">
+                            {mod.modelStageStatus || mod.launchStatus}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteScenarioModel(mod, e)}
+                            title="Удалить карточку модели"
+                            className="h-6 w-6 rounded-[6px] bg-white hover:bg-[#FEF2F2] border border-[#CBD5E1] hover:border-[#FECACA] text-[#64748B] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none font-bold transition cursor-pointer"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Визуальный блок: реальное фото или аккуратная векторная иллюстрация по категории бренда + быстрая кнопка фото */}
+                      <div className="relative h-48 w-full rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center p-3 overflow-hidden">
+                        <BoxerPackStackSvg
+                          colors={colors}
+                          brandLabel={displayBrand}
+                          customPhotoUrl={mainPhotoUrl}
+                        />
+                        <label
+                          onClick={(e) => e.stopPropagation()}
+                          title="Загрузить или заменить фото карточки"
+                          className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
+                        >
+                          <ImagePlus className="h-3.5 w-3.5" />
+                          <span>{mainPhotoUrl ? 'Заменить фото' : '+ Фото'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleQuickUploadCardPhoto(e, mod)}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {/* Название и категория */}
+                      <div>
+                        <h3 className="text-[17px] font-extrabold text-[#0F172A] leading-snug group-hover:text-emerald-700 transition-colors">
+                          {mod.title}
+                        </h3>
+                        <div className="text-[12.5px] font-medium text-[#475569] mt-1">
+                          {categoryText} · {mod.unitsInPack} {unitCfg.secondaryUnit} / {unitCfg.primaryUnit}
+                        </div>
+                      </div>
+
+                      {/* Состав ткани */}
+                      <p className="text-[12.5px] text-[#64748B] leading-relaxed line-clamp-2">
+                        {mod.fabric?.composition}
+                        {mod.fabric?.density ? ` · ${mod.fabric.density}` : ''}
+                      </p>
+                    </div>
+
+                    {/* Нижний блок: Цена, Себестоимость, Маржа и кнопка открытия паспорта */}
+                    <div className="pt-3.5 border-t border-[#E2E8F0] space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <div className="text-[11px] font-medium text-[#64748B]">РРЦ</div>
+                          <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
+                            {formatCurrencyRub(met.avgRetailPriceRub)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-medium text-[#64748B]">Себестоимость</div>
+                          <div className="font-mono text-[15px] font-bold text-[#334155] mt-0.5">
+                            {formatCurrencyRub(mod.unitCostRub)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[11px] font-medium text-[#64748B]">Маржа / Год</div>
+                          <div className="font-mono text-[14px] font-extrabold text-emerald-600 mt-0.5">
+                            {met.unitMarginPct.toFixed(0)}% · {(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[12px] font-bold text-[#0F172A] group-hover:text-emerald-700">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Edit3 className="h-3.5 w-3.5" />
+                          <span>Открыть и редактировать карточку</span>
+                        </span>
+                        <span>→</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* РЕЖИМ 2: ГРУППЫ ТОВАРОВ И КАБИНЕТЫ БРЕНДОВ */}
+      {viewMode === 'groups' && (
+        <div className="rounded-2xl bg-white border border-[#CBD5E1] p-5 md:p-6 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+          <PeaklyCatalogGroupsAndBrandsView
+            models={scenarioModels}
+            filteredModels={filteredModels}
+            currentScenario={currentScenario}
+            scenarios={scenarios}
+            brandFilter={brandFilter}
+            onSelectBrandFilter={(bCode) => setBrandFilter(bCode)}
+            selectedScenarioByBrand={selectedScenarioByBrand}
+            onSelectScenarioForBrand={(bCode, scenId) => {
+              setSelectedScenarioForBrand(bCode, scenId);
+            }}
+            onSelectActiveScenarioId={(scenId) => {
+              setSelectedScenarioId(scenId);
+            }}
+            onOpenModelPassport={(modelId) => {
+              setActivePassportModelId(modelId);
+            }}
+            onUpdateModel={updateModelSpec}
+            onDeleteModel={(m) => handleDeleteScenarioModel(m)}
+            onOpenCreateModel={(defaultBrandCode) => {
+              openCreateModalForBrand(defaultBrandCode);
+            }}
+            notify={notify}
+          />
         </div>
       )}
 
-      {/* РЕЖИМ 2: ТАБЛИЦА КАТАЛОГА */}
+      {/* РЕЖИМ 3: СВОДНАЯ ТАБЛИЦА КАТАЛОГА */}
       {viewMode === 'table' && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-2xl border border-[#CBD5E1] overflow-x-auto shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+          <table className="w-full text-left text-[13.5px]">
+            <thead className="border-b border-[#CBD5E1] text-[11px] font-bold uppercase tracking-wider text-[#475569] bg-[#F8FAFC]">
               <tr>
-                <th className="py-4 px-6">SKU</th>
-                <th className="py-4 px-4">Модель и состав</th>
-                <th className="py-4 px-4">Бренд</th>
-                <th className="py-4 px-4">Категория / Тип</th>
-                <th className="py-4 px-4 text-right">РРЦ</th>
-                <th className="py-4 px-4 text-right">Себестоимость</th>
-                <th className="py-4 px-4 text-right">Прибыль / ед.</th>
-                <th className="py-4 px-4 text-right">Маржа</th>
-                <th className="py-4 px-6 text-right">Статус</th>
+                <th className="py-3.5 px-5">Артикул</th>
+                <th className="py-3.5 px-4">Модель и материалы</th>
+                <th className="py-3.5 px-4">Бренд</th>
+                <th className="py-3.5 px-4">Категория</th>
+                <th className="py-3.5 px-4 text-right">РРЦ</th>
+                <th className="py-3.5 px-4 text-right">Себест.</th>
+                <th className="py-3.5 px-4 text-right">Маржа</th>
+                <th className="py-3.5 px-4 text-right">Выручка 2027</th>
+                <th className="py-3.5 px-5 text-right">Действия</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
-              {filteredProducts.map((p) => {
-                const st = STATUS_META[p.status];
-                const calc = calculateUnitEconomics(p.economics);
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {filteredModels.map((mod) => {
+                const displayBrand = detectModelBrandPortfolioLabel(mod);
+                const unitCfg = getBrandUnitConfig(mod);
+                const met = computeModelScenarioMetrics(mod, currentScenario);
+                const accent = getModelBrandAccentStyles(displayBrand);
                 return (
                   <tr
-                    key={p.id}
-                    onClick={() => {
-                      setSelectedProductId(p.id);
-                      setDrawerTab('passport');
-                    }}
-                    className="hover:bg-[#F7F7F5]/60 transition cursor-pointer"
+                    key={mod.id}
+                    onClick={() => setActivePassportModelId(mod.id)}
+                    className="hover:bg-[#F8FAFC] transition cursor-pointer"
                   >
-                    <td className="py-4 px-6 font-semibold text-[#171717]">
-                      {p.sku}
+                    <td className="py-3.5 px-5 font-mono font-bold text-[#0F172A]">
+                      {mod.code}
                     </td>
-                    <td className="py-4 px-4">
-                      <div className="font-semibold text-[16px] text-[#171717] dark:text-white">
-                        {p.name}
-                      </div>
-                      <div className="text-[13px] text-[#737373] truncate max-w-md">
-                        {p.fabricComposition} · {p.fabricDensityGsm} г/м²
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-[#0F172A]">{mod.title}</div>
+                      <div className="text-[12px] text-[#64748B] truncate max-w-md">
+                        {mod.fabric?.composition}
                       </div>
                     </td>
-                    <td className="py-4 px-4 font-semibold">
-                      {p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-[5px] font-mono text-[10.5px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
+                      >
+                        {displayBrand}
+                      </span>
                     </td>
-                    <td className="py-4 px-4 text-[#737373]">
-                      <div>{p.category}</div>
-                      <div className="text-[12px]">{p.productType}</div>
+                    <td className="py-3.5 px-4 text-[#334155]">
+                      <div>{mod.categoryLabel || unitCfg.categoryDefault}</div>
+                      <div className="text-[11px] text-[#64748B]">
+                        {mod.unitsInPack} {unitCfg.secondaryUnit} / {unitCfg.primaryUnit}
+                      </div>
                     </td>
-                    <td className="py-4 px-4 text-right font-semibold">
-                      {formatCurrencyRub(p.economics.actualRetailPrice)}
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
+                      {formatCurrencyRub(met.avgRetailPriceRub)}
                     </td>
-                    <td className="py-4 px-4 text-right text-[#737373]">
-                      {hasCostAccess
-                        ? formatCurrencyRub(p.economics.unitCostPrice)
-                        : 'Скрыто'}
+                    <td className="py-3.5 px-4 text-right font-mono text-[#334155]">
+                      {formatCurrencyRub(mod.unitCostRub)}
                     </td>
-                    <td className="py-4 px-4 text-right font-semibold">
-                      {hasFinance ? formatCurrencyRub(calc.unitProfitRub) : '—'}
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
+                      {met.unitMarginPct.toFixed(1)}%
                     </td>
-                    <td className="py-4 px-4 text-right font-bold text-[#16805D]">
-                      {hasFinance ? `${calc.marginPct}%` : '—'}
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
+                      {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
                     </td>
-                    <td className="py-4 px-6 text-right">
-                      <div className="inline-flex items-center justify-end gap-3">
-                        <span className="inline-flex items-center gap-2 text-[13px] font-medium">
-                          <span className={`h-2 w-2 rounded-full ${st.dotColor}`} />
-                          <span>{st.label}</span>
-                        </span>
+                    <td className="py-3.5 px-5 text-right">
+                      <div className="inline-flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteCatalogProduct(p, e)}
-                          title="Удалить карточку из каталога"
-                          className="h-8 w-8 rounded-lg border border-[#E8E8E5] bg-white hover:bg-[#FEF2F2] hover:border-[#F87171] text-[#737373] hover:text-[#DC2626] flex items-center justify-center transition cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActivePassportModelId(mod.id);
+                          }}
+                          className="h-7.5 px-2.5 rounded-[7px] bg-[#EEF2F6] hover:bg-[#0F172A] text-[#0F172A] hover:text-white text-[11.5px] font-semibold transition cursor-pointer"
+                        >
+                          Редактировать
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteScenarioModel(mod, e)}
+                          title="Удалить карточку"
+                          className="h-7.5 w-7.5 rounded-[7px] border border-[#CBD5E1] bg-white hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#64748B] hover:text-[#DC2626] flex items-center justify-center transition cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -901,1080 +974,252 @@ export function ProductCatalogView() {
         </div>
       )}
 
-      {/* БОКОВАЯ ПАНЕЛЬ ПАСПОРТА МОДЕЛИ (ВСЕ 6 РАЗДЕЛОВ ПО П. 6 ТЗ) */}
-      {activeProduct && (
-        <div
-          onClick={() => setSelectedProductId(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/40"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-3xl bg-white dark:bg-zinc-900 h-full overflow-y-auto p-8 md:p-10 space-y-8 shadow-2xl border-l border-[#E8E8E5]"
-          >
-            {/* Шапка спецификации */}
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-6">
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2.5 text-[13px] font-semibold">
-                  <span className="px-2.5 py-0.5 rounded-md bg-[#111111] text-white">
-                    {activeProduct.sku}
-                  </span>
-                  <span className="text-[#737373]">
-                    UUID: {activeProduct.id} ·{' '}
-                    {activeProduct.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} ·{' '}
-                    {activeProduct.collection}
-                  </span>
-                  {activeProduct.isDemo && (
-                    <span className="px-2 py-0.5 rounded bg-[#F7F7F5] border border-[#E8E8E5] text-[11px] text-[#737373]">
-                      DEMO
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-[28px] font-bold text-[#171717] dark:text-white">
-                  {activeProduct.name}
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {canEditActiveProduct && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateProduct(activeProduct.id, {
-                          name: activeProduct.name,
-                          description: activeProduct.description,
-                        });
-                        notify(
-                          'success',
-                          '✓ Карточка модели сохранена',
-                          `${activeProduct.sku} · ${activeProduct.name}`
-                        );
-                      }}
-                      className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
-                    >
-                      <Check className="h-4 w-4" />
-                      <span>Сохранить карточку</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCatalogProduct(activeProduct)}
-                      title="Удалить карточку из каталога"
-                      className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#FEF2F2] hover:bg-[#FEE2E2] border border-[#FECACA] text-[#DC2626] text-[13px] font-bold transition cursor-pointer"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Удалить</span>
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setSelectedProductId(null)}
-                  className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] hover:bg-[#111111] hover:text-white cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Переключение статуса и быстрый запуск */}
-            {canEditActiveProduct && (
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E8E8E5] pb-6">
-                <div className="flex items-center gap-3">
-                  <span className="text-[14px] font-semibold text-[#171717]">
-                    Статус SKU:
-                  </span>
-                  <select
-                    value={activeProduct.status}
-                    onChange={(e) =>
-                      updateProduct(activeProduct.id, {
-                        status: e.target.value as ProductStatus,
-                      })
-                    }
-                    className="h-11 rounded-xl border border-[#E8E8E5] px-4 text-[14px] font-semibold bg-white cursor-pointer"
-                  >
-                    <option value="in_development">В разработке</option>
-                    <option value="sampled">Образец готов</option>
-                    <option value="approved">Утверждён</option>
-                    <option value="in_production">В производстве</option>
-                    <option value="active">В продаже</option>
-                    <option value="out_of_stock">Нет в наличии</option>
-                  </select>
-                </div>
-
-                <button
-                  onClick={() => handleCreateLaunchForProduct(activeProduct)}
-                  className="inline-flex items-center gap-2 h-11 rounded-xl border border-[#E8E8E5] bg-white px-4 text-[14px] font-semibold text-[#171717] hover:bg-[#F7F7F5] transition cursor-pointer"
-                >
-                  <CalendarPlus className="h-4 w-4" />
-                  <span>+ Создать запуск по этой модели</span>
-                </button>
-              </div>
-            )}
-
-            {/* Навигация по 6 блокам паспорта продукта */}
-            <div className="flex flex-wrap bg-[#F7F7F5] p-1 rounded-xl border border-[#E8E8E5] gap-1">
-              <button
-                onClick={() => setDrawerTab('passport')}
-                className={`flex-1 py-2.5 px-3 rounded-lg text-[13px] font-semibold transition cursor-pointer ${
-                  drawerTab === 'passport'
-                    ? 'bg-white text-[#171717] shadow-2xs'
-                    : 'text-[#737373] hover:text-[#171717]'
-                }`}
-              >
-                1–2. Основное и дизайн
-              </button>
-              <button
-                onClick={() => setDrawerTab('variants')}
-                className={`flex-1 py-2.5 px-3 rounded-lg text-[13px] font-semibold transition cursor-pointer ${
-                  drawerTab === 'variants'
-                    ? 'bg-white text-[#171717] shadow-2xs'
-                    : 'text-[#737373] hover:text-[#171717]'
-                }`}
-              >
-                3. Варианты ({activeProduct.variants.length}) и Фабрика
-              </button>
-              <button
-                onClick={() => setDrawerTab('economics')}
-                className={`flex-1 py-2.5 px-3 rounded-lg text-[13px] font-semibold transition cursor-pointer ${
-                  drawerTab === 'economics'
-                    ? 'bg-white text-[#171717] shadow-2xs'
-                    : 'text-[#737373] hover:text-[#171717]'
-                }`}
-              >
-                4–5. Экономика и Продажи
-              </button>
-              <button
-                onClick={() => setDrawerTab('relations')}
-                className={`flex-1 py-2.5 px-3 rounded-lg text-[13px] font-semibold transition cursor-pointer ${
-                  drawerTab === 'relations'
-                    ? 'bg-white text-[#171717] shadow-2xs'
-                    : 'text-[#737373] hover:text-[#171717]'
-                }`}
-              >
-                6. Связи (R&D, Релизы, Задачи)
-              </button>
-            </div>
-
-            {/* ВКЛАДКА 1: ОСНОВНАЯ ИНФОРМАЦИЯ И ПАРАМЕТРЫ ПРОДУКТА */}
-            {drawerTab === 'passport' && (
-              <div className="space-y-8 text-[15px]">
-                {/* Галерея и загрузка фото */}
-                <div className="space-y-3">
-                  <div className="h-56 w-full rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] flex items-center justify-center p-6">
-                    <img
-                      src={activeProduct.imageUrl}
-                      alt={activeProduct.name}
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      {activeProduct.galleryUrls.map((url, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() =>
-                            updateProduct(activeProduct.id, { imageUrl: url })
-                          }
-                          className={`h-14 w-14 rounded-xl bg-[#F7F7F5] border p-1.5 cursor-pointer ${
-                            activeProduct.imageUrl === url
-                              ? 'border-[#171717]'
-                              : 'border-[#E8E8E5]'
-                          }`}
-                        >
-                          <img
-                            src={url}
-                            alt=""
-                            className="h-full w-full object-contain"
-                          />
-                        </button>
-                      ))}
-                    </div>
-
-                    {canEditActiveProduct && (
-                      <label className="inline-flex items-center gap-2 h-10 rounded-xl border border-[#E8E8E5] bg-white px-4 text-[13px] font-semibold text-[#171717] hover:bg-[#F7F7F5] cursor-pointer">
-                        <ImagePlus className="h-4 w-4" />
-                        <span>Загрузить фото / рендер</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleUploadProductPhoto(e, activeProduct)}
-                          className="hidden"
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-
-                {/* 1. Основная информация */}
-                <div className="space-y-4">
-                  <h3 className="text-[19px] font-bold border-b border-[#E8E8E5] pb-2">
-                    1. Основная информация паспорта
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-[14px]">
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Системный ID</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.id}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Артикул (SKU)</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.sku}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Тип продукта</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.productType}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Ценовой сегмент</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.priceSegment}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Ответственный</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {users.find((u) => u.id === activeProduct.ownerId)?.fullName ||
-                          'Команда продукта'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Размерный ряд</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.sizes.join(' · ')}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-[12px] text-[#737373] mb-1">Описание модели</div>
-                    {canEditActiveProduct ? (
-                      <textarea
-                        rows={2}
-                        value={activeProduct.description}
-                        onChange={(e) =>
-                          updateProduct(activeProduct.id, {
-                            description: e.target.value,
-                          })
-                        }
-                        className="w-full rounded-xl border border-[#E8E8E5] p-3 text-[14px]"
-                      />
-                    ) : (
-                      <p className="text-[14px] text-[#171717]">
-                        {activeProduct.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2. Дизайн и параметры продукта */}
-                <div className="space-y-4">
-                  <h3 className="text-[19px] font-bold border-b border-[#E8E8E5] pb-2">
-                    2. Дизайн, материалы и конструкция
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[14px]">
-                    <div>
-                      <div className="text-[12px] text-[#737373] mb-1">Полотно и плотность</div>
-                      <div className="font-semibold text-[#171717]">
-                        {activeProduct.fabricComposition} ({activeProduct.fabricDensityGsm} г/м²)
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373] mb-1">Цветовая палитра</div>
-                      <div className="font-semibold text-[#171717]">
-                        {activeProduct.colorCombinations.join(', ')}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373] mb-1">Посадка и тип резинки</div>
-                      <div className="font-semibold text-[#171717]">
-                        {activeProduct.fitType} · {activeProduct.waistbandType}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373] mb-1">Конструктивные особенности</div>
-                      <div className="font-semibold text-[#171717]">
-                        {activeProduct.constructionDetails}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ВКЛАДКА 2: ВАРИАНТЫ (ЦВЕТОРАЗМЕРЫ) И ПРОИЗВОДСТВО */}
-            {drawerTab === 'variants' && (
-              <div className="space-y-8 text-[15px]">
-                {/* Таблица вариантов (Variants) */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[19px] font-bold">
-                      Матрица цветоразмеров и комплектов (Variants)
-                    </h3>
-                    <span className="text-[13px] font-semibold text-[#737373]">
-                      Всего остаток:{' '}
-                      {activeProduct.variants
-                        .reduce((s, v) => s + v.stockQty, 0)
-                        .toLocaleString('ru-RU')}{' '}
-                      шт.
-                    </span>
-                  </div>
-
-                  <div className="rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-                    <table className="w-full text-left text-[14px]">
-                      <thead className="bg-[#F7F7F5] border-b border-[#E8E8E5] text-[12px] font-semibold uppercase text-[#737373]">
-                        <tr>
-                          <th className="py-3 px-4">Артикул варианта</th>
-                          <th className="py-3 px-4">Цвет</th>
-                          <th className="py-3 px-4">Размер</th>
-                          <th className="py-3 px-4">Комплектация</th>
-                          <th className="py-3 px-4 text-right">Остаток (шт.)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#E8E8E5]">
-                        {activeProduct.variants.map((v) => (
-                          <tr key={v.id}>
-                            <td className="py-3 px-4 font-semibold text-[#171717]">
-                              {v.variantSku}
-                            </td>
-                            <td className="py-3 px-4">{v.colorName}</td>
-                            <td className="py-3 px-4 font-semibold">{v.size}</td>
-                            <td className="py-3 px-4 text-[#737373]">
-                              {v.packConfiguration}
-                            </td>
-                            <td className="py-3 px-4 text-right font-bold">
-                              {v.stockQty.toLocaleString('ru-RU')}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {canEditActiveProduct && (
-                    <div className="rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 grid grid-cols-2 sm:grid-cols-5 gap-3 text-[13px]">
-                      <input
-                        value={newVariantForm.color}
-                        onChange={(e) =>
-                          setNewVariantForm({ ...newVariantForm, color: e.target.value })
-                        }
-                        placeholder="Цвет"
-                        className="h-10 rounded-lg bg-white border border-[#E8E8E5] px-3"
-                      />
-                      <select
-                        value={newVariantForm.size}
-                        onChange={(e) =>
-                          setNewVariantForm({
-                            ...newVariantForm,
-                            size: e.target.value as typeof newVariantForm.size,
-                          })
-                        }
-                        className="h-10 rounded-lg bg-white border border-[#E8E8E5] px-3 font-semibold"
-                      >
-                        {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
-                          <option key={sz} value={sz}>
-                            {sz}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={newVariantForm.packConfiguration}
-                        onChange={(e) =>
-                          setNewVariantForm({
-                            ...newVariantForm,
-                            packConfiguration: e.target
-                              .value as typeof newVariantForm.packConfiguration,
-                          })
-                        }
-                        className="h-10 rounded-lg bg-white border border-[#E8E8E5] px-3 font-semibold"
-                      >
-                        <option value="1-pack">1-pack</option>
-                        <option value="2-pack">2-pack</option>
-                        <option value="3-pack">3-pack</option>
-                      </select>
-                      <input
-                        type="number"
-                        value={newVariantForm.stockQty}
-                        onChange={(e) =>
-                          setNewVariantForm({
-                            ...newVariantForm,
-                            stockQty: e.target.value,
-                          })
-                        }
-                        placeholder="Остаток"
-                        className="h-10 rounded-lg bg-white border border-[#E8E8E5] px-3"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleAddVariant(activeProduct)}
-                        className="h-10 rounded-lg bg-[#111111] text-white font-semibold hover:bg-neutral-800 cursor-pointer"
-                      >
-                        + Добавить вариант
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Производство и техфайлы */}
-                <div className="space-y-4 pt-4 border-t border-[#E8E8E5]">
-                  <h3 className="text-[19px] font-bold">
-                    3. Производственный паспорт и техфайлы
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-[14px]">
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Фабрика-производитель</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.supplierName}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Страна производства</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.supplierCountry}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Минимальный тираж (MOQ)</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.moq.toLocaleString('ru-RU')} шт.
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Цикл пошива / Доставка</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.productionLeadDays} дн. / {activeProduct.deliveryLeadDays} дн.
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Тип линейки</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {activeProduct.productType}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-[#737373]">Статус жизненного цикла</div>
-                      <div className="font-semibold text-[#171717] mt-0.5">
-                        {STATUS_META[activeProduct.status].label}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Техфайлы */}
-                  <div className="space-y-2.5 pt-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-semibold text-[#737373]">
-                        Прикреплённые техфайлы и лекала ({activeProduct.techFiles.length})
-                      </span>
-                      {canEditActiveProduct && (
-                        <label className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer">
-                          <FilePlus className="h-4 w-4" />
-                          <span>Прикрепить техфайл</span>
-                          <input
-                            type="file"
-                            onChange={(e) => handleUploadTechFile(e, activeProduct)}
-                            className="hidden"
-                          />
-                        </label>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {activeProduct.techFiles.map((tf) => (
-                        <button
-                          key={tf.id}
-                          type="button"
-                          onClick={() =>
-                            exportDocumentAsPdf(
-                              {
-                                id: tf.id,
-                                title: `${tf.title} — ${activeProduct.name}`,
-                                fileName: `${activeProduct.sku}_${tf.title.replace(/\s+/g, '_')}.pdf`,
-                                fileType: 'PDF',
-                                fileSizeBytes: 1_450_000,
-                                brandId: activeProduct.brandId,
-                                category: 'производство',
-                                productId: activeProduct.id,
-                                tags: ['Техфайл', activeProduct.sku],
-                                isFinancialRestricted: false,
-                                minRole: 'Viewer',
-                                uploadedBy: 'КБ BORNERS GROUP',
-                                uploadedAt: tf.uploadedAt,
-                                isDemo: false,
-                                isArchived: false,
-                              },
-                              { products, concepts },
-                            )
-                          }
-                          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#F7F7F5] hover:bg-[#EFECE6] border border-[#E8E8E5] text-[13px] font-medium text-[#171717] transition-colors cursor-pointer"
-                          title="Скачать техническую спецификацию (PDF)"
-                        >
-                          <Download className="h-3.5 w-3.5 text-[#737373]" />
-                          <span>
-                            {tf.title} ({tf.assetType})
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ВКЛАДКА 3: ЮНИТ-ЭКОНОМИКА И ПРОДАЖИ */}
-            {drawerTab === 'economics' && (
-              <div className="space-y-8 text-[15px]">
-                {/* 4. Калькулятор юнит-экономики */}
-                <div className="space-y-4">
-                  <h3 className="text-[19px] font-bold border-b border-[#E8E8E5] pb-2">
-                    4. Юнит-экономика (на 1 ед.)
-                  </h3>
-
-                  {hasFinance && hasCostAccess ? (
-                    (() => {
-                      const res = calculateUnitEconomics(activeProduct.economics);
-                      return (
-                        <div className="space-y-5 rounded-2xl border border-[#E8E8E5] p-6 bg-[#F7F7F5]">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-[14px]">
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Розничная цена (₽)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.actualRetailPrice}
-                                onChange={(e) => {
-                                  const val = Number(e.target.value) || 0;
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      actualRetailPrice: val,
-                                      plannedRetailPrice: val,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Себестоимость (₽)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.unitCostPrice}
-                                onChange={(e) => {
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      unitCostPrice: Number(e.target.value) || 0,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Логистика (₽)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.logisticsRub}
-                                onChange={(e) => {
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      logisticsRub: Number(e.target.value) || 0,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Комиссия МП (₽)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.marketplaceCommissionRub}
-                                onChange={(e) => {
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      marketplaceCommissionRub:
-                                        Number(e.target.value) || 0,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Реклама на 1 ед. (₽)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.advertisingRub}
-                                onChange={(e) => {
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      advertisingRub: Number(e.target.value) || 0,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-semibold mb-1.5">
-                                Скидка СПП / Промо (%)
-                              </label>
-                              <input
-                                type="number"
-                                disabled={!canEditActiveProduct}
-                                value={activeProduct.economics.discountPct}
-                                onChange={(e) => {
-                                  updateProduct(activeProduct.id, {
-                                    economics: {
-                                      ...activeProduct.economics,
-                                      discountPct: Number(e.target.value) || 0,
-                                    },
-                                  });
-                                }}
-                                className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] px-3.5 font-semibold"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-[#E8E8E5]">
-                            <div>
-                              <div className="text-[12px] text-[#737373]">Чистая выручка</div>
-                              <div className="text-[18px] font-bold mt-0.5">
-                                {formatCurrencyRub(res.netRevenuePerUnit)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[12px] text-[#737373]">
-                                Переменные расх.
-                              </div>
-                              <div className="text-[18px] font-bold mt-0.5">
-                                {formatCurrencyRub(res.totalVariableCostsPerUnit)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[12px] text-[#737373]">
-                                Прибыль на 1 шт.
-                              </div>
-                              <div className="text-[18px] font-bold text-[#16805D] mt-0.5">
-                                {formatCurrencyRub(res.unitProfitRub)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[12px] text-[#737373]">Чистая маржа</div>
-                              <div className="text-[18px] font-bold text-[#171717] mt-0.5">
-                                {res.marginPct}%
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-[#E8E8E5] p-6 text-[15px] text-[#737373] flex items-center gap-2">
-                      <Lock className="h-4 w-4" />
-                      <span>Себестоимость и маржа скрыты для вашей роли</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 5. Продажи и каналы (п. 6 ТЗ) */}
-                <div className="space-y-4">
-                  <h3 className="text-[19px] font-bold border-b border-[#E8E8E5] pb-2">
-                    5. Продажи и каналы дистрибуции
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div className="rounded-xl border border-[#E8E8E5] p-4">
-                      <div className="text-[12px] text-[#737373]">Продано штук</div>
-                      <div className="text-[20px] font-bold text-[#171717] mt-1">
-                        {activeProduct.unitsSold.toLocaleString('ru-RU')} шт.
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[#E8E8E5] p-4">
-                      <div className="text-[12px] text-[#737373]">Выручка модели</div>
-                      <div className="text-[20px] font-bold text-[#171717] mt-1">
-                        {hasFinance
-                          ? formatCurrencyRub(activeProduct.revenueRub)
-                          : 'Скрыто'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[#E8E8E5] p-4">
-                      <div className="text-[12px] text-[#737373]">Опер. прибыль</div>
-                      <div className="text-[20px] font-bold text-[#16805D] mt-1">
-                        {hasFinance
-                          ? formatCurrencyRub(activeProduct.operatingProfitRub)
-                          : 'Скрыто'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[#E8E8E5] p-4">
-                      <div className="text-[12px] text-[#737373]">Динамика к м/м</div>
-                      <div className="text-[20px] font-bold text-[#16805D] mt-1">
-                        +{activeProduct.monthlyDynamicsPct}%
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 pt-2">
-                    <span className="text-[13px] font-semibold text-[#737373]">
-                      Активные каналы продаж:
-                    </span>
-                    {activeProduct.salesChannels.map((ch) => (
-                      <span
-                        key={ch}
-                        className="px-3 py-1 rounded-lg bg-[#F7F7F5] border border-[#E8E8E5] text-[13px] font-semibold text-[#171717]"
-                      >
-                        {ch}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ВКЛАДКА 4: СВЯЗАННЫЕ СУЩНОСТИ (R&D, ЗАПУСКИ, КАМПАНИИ, ЗАДАЧИ, ДОКУМЕНТЫ) */}
-            {drawerTab === 'relations' && (
-              <div className="space-y-6 text-[15px]">
-                <h3 className="text-[19px] font-bold border-b border-[#E8E8E5] pb-2">
-                  6. Связанные разделы экосистемы BORNERS GROUP
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Запуски */}
-                  {launches
-                    .filter((l) => l.productIds.includes(activeProduct.id))
-                    .map((l) => (
-                      <div
-                        key={l.id}
-                        onClick={() => {
-                          setSelectedProductId(null);
-                          navigateTo('launch-calendar', { launchId: l.id });
-                        }}
-                        className="rounded-xl border border-[#E8E8E5] p-4 hover:bg-[#F7F7F5] cursor-pointer transition flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase text-[#737373]">
-                            Запуск в календаре · {l.startDate}
-                          </div>
-                          <div className="text-[15px] font-bold text-[#171717] mt-0.5">
-                            {l.name}
-                          </div>
-                        </div>
-                        <ArrowUpRight className="h-4 w-4 text-[#171717]" />
-                      </div>
-                    ))}
-
-                  {/* Прототип R&D */}
-                  {activeProduct.conceptId && (
-                    <div
-                      onClick={() => {
-                        const cId = activeProduct.conceptId!;
-                        setSelectedProductId(null);
-                        navigateTo('product-lab', { conceptId: cId });
-                      }}
-                      className="rounded-xl border border-[#E8E8E5] p-4 hover:bg-[#F7F7F5] cursor-pointer transition flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase text-[#737373]">
-                          Прототип R&D
-                        </div>
-                        <div className="text-[15px] font-bold text-[#171717] mt-0.5">
-                          {concepts.find((c) => c.id === activeProduct.conceptId)?.name ||
-                            'Открыть карточку R&D'}
-                        </div>
-                      </div>
-                      <ArrowUpRight className="h-4 w-4 text-[#171717]" />
-                    </div>
-                  )}
-
-                  {/* Маркетинговые кампании */}
-                  {campaigns
-                    .filter((camp) => camp.productIds.includes(activeProduct.id))
-                    .map((camp) => (
-                      <div
-                        key={camp.id}
-                        onClick={() => {
-                          setSelectedProductId(null);
-                          navigateTo('marketing-growth');
-                        }}
-                        className="rounded-xl border border-[#E8E8E5] p-4 hover:bg-[#F7F7F5] cursor-pointer transition flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase text-[#737373]">
-                            Маркетинговая кампания · {camp.channel}
-                          </div>
-                          <div className="text-[15px] font-bold text-[#171717] mt-0.5">
-                            {camp.name}
-                          </div>
-                        </div>
-                        <ArrowUpRight className="h-4 w-4 text-[#171717]" />
-                      </div>
-                    ))}
-
-                  {/* Задачи */}
-                  {tasks
-                    .filter((t) => t.productId === activeProduct.id)
-                    .map((t) => (
-                      <div
-                        key={t.id}
-                        onClick={() => {
-                          setSelectedProductId(null);
-                          navigateTo('roadmap-tasks');
-                        }}
-                        className="rounded-xl border border-[#E8E8E5] p-4 hover:bg-[#F7F7F5] cursor-pointer transition flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase text-[#737373]">
-                            Задача · Срок {t.deadline}
-                          </div>
-                          <div className="text-[15px] font-bold text-[#171717] mt-0.5">
-                            {t.title}
-                          </div>
-                        </div>
-                        <ArrowUpRight className="h-4 w-4 text-[#171717]" />
-                      </div>
-                    ))}
-
-                  {/* Документы */}
-                  {documents
-                    .filter((d) => d.productId === activeProduct.id)
-                    .map((d) => (
-                      <div
-                        key={d.id}
-                        onClick={() => {
-                          setSelectedProductId(null);
-                          navigateTo('documents');
-                        }}
-                        className="rounded-xl border border-[#E8E8E5] p-4 hover:bg-[#F7F7F5] cursor-pointer transition flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase text-[#737373]">
-                            Документ · {d.fileType}
-                          </div>
-                          <div className="text-[15px] font-bold text-[#171717] mt-0.5">
-                            {d.title}
-                          </div>
-                        </div>
-                        <ArrowUpRight className="h-4 w-4 text-[#171717]" />
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Кнопки сохранения и удаления в корзину */}
-            {canEditActiveProduct && (
-              <div className="pt-6 border-t border-[#E8E8E5] flex flex-wrap justify-between items-center gap-3">
-                <button
-                  onClick={() => {
-                    handleDeleteCatalogProduct(activeProduct);
-                    setSelectedProductId(null);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#C94B4B] px-4 py-2.5 text-[14px] font-semibold text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white transition cursor-pointer"
-                >
-                  <Archive className="h-4 w-4" />
-                  <span>Удалить карточку</span>
-                </button>
-
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateProduct(activeProduct.id, {
-                        name: activeProduct.name,
-                        description: activeProduct.description,
-                      });
-                      notify(
-                        'success',
-                        '✓ Карточка модели сохранена',
-                        `${activeProduct.sku} · ${activeProduct.name}`
-                      );
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#16805D] hover:bg-[#116649] px-5 py-2.5 text-[14px] font-bold text-white transition cursor-pointer shadow-xs"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>Сохранить карточку</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateProduct(activeProduct.id, {
-                        name: activeProduct.name,
-                        description: activeProduct.description,
-                      });
-                      notify(
-                        'success',
-                        '✓ Карточка модели сохранена',
-                        `${activeProduct.sku} · ${activeProduct.name}`
-                      );
-                      setSelectedProductId(null);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#111111] hover:opacity-90 px-5 py-2.5 text-[14px] font-bold text-white transition cursor-pointer"
-                  >
-                    <span>Сохранить и закрыть</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Модальное окно создания модели */}
+      {/* УМНОЕ МОДАЛЬНОЕ ОКНО СОЗДАНИЯ МОДЕЛИ (С КАТЕГОРИЯМИ И ПАРАМЕТРАМИ ПОД БРЕНД LISKANI / AKUSHA / НА ТЕЛЕ / FUKAI / BORNERS) */}
       {createModalOpen && (
         <div
           onClick={() => setCreateModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl"
+            className="w-full max-w-xl bg-white rounded-2xl border border-[#CBD5E1] p-6 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
-              <h3 className="text-[22px] font-bold">Новая модель в каталоге</h3>
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3.5">
+              <div>
+                <h3 className="text-[20px] font-extrabold text-[#0F172A]">
+                  Новая модель в каталоге
+                </h3>
+                <p className="text-[12px] text-[#475569]">
+                  Категории и характеристики автоматически подстраиваются под выбранный бренд
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setCreateModalOpen(false)}
-                className="text-[13px] font-semibold text-[#737373] hover:text-[#171717] cursor-pointer"
+                className="h-8 w-8 rounded-lg border border-[#CBD5E1] flex items-center justify-center text-[#475569] hover:text-[#0F172A] cursor-pointer"
               >
-                Закрыть
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[14px]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13.5px]">
               <div>
-                <label className="block font-semibold mb-1.5">Артикул (SKU)</label>
-                <input
-                  value={newSkuForm.sku}
-                  onChange={(e) => setNewSkuForm({ ...newSkuForm, sku: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1.5">Бренд</label>
+                <label className="block font-bold text-[#0F172A] mb-1">Бренд</label>
                 <select
-                  value={newSkuForm.brandId}
-                  onChange={(e) => setNewSkuForm({ ...newSkuForm, brandId: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                  value={newSkuForm.brandCode}
+                  onChange={(e) => handleModalBrandChange(e.target.value)}
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3 text-[14px] bg-white font-bold text-[#0F172A] cursor-pointer"
                 >
-                  <option value="BORNERS">BORNERS</option>
-                  <option value="NA_TELE">НА ТЕЛЕ</option>
-                  <option value="FUKAI">FUKAI</option>
-                  <option value="AKUSHA">AKUSHA</option>
-                  <option value="LISKANI">LISKANI</option>
+                  <option value="BORNERS">BORNERS (Мужское бельё и база)</option>
+                  <option value="LISKANI">LISKANI (Шторы и домашний текстиль)</option>
+                  <option value="AKUSHA">AKUSHA (Обувь и аксессуары)</option>
+                  <option value="NA_TELE">НА ТЕЛЕ (Женское бельё и одежда)</option>
+                  <option value="FUKAI">FUKAI (Базовые мультипаки WB)</option>
                 </select>
               </div>
-              <div className="sm:col-span-2">
-                <label className="block font-semibold mb-1.5">Наименование модели</label>
+
+              <div>
+                <label className="block font-bold text-[#0F172A] mb-1">Артикул (SKU)</label>
                 <input
-                  value={newSkuForm.name}
-                  onChange={(e) => setNewSkuForm({ ...newSkuForm, name: e.target.value })}
-                  placeholder="Например: Боксеры BORNERS Architect Modal"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  value={newSkuForm.sku}
+                  onChange={(e) =>
+                    setNewSkuForm({ ...newSkuForm, sku: e.target.value })
+                  }
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3 font-mono font-bold text-[14px] text-[#0F172A]"
                 />
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Наименование модели
+                </label>
+                <input
+                  value={newSkuForm.name}
+                  onChange={(e) =>
+                    setNewSkuForm({ ...newSkuForm, name: e.target.value })
+                  }
+                  placeholder={activeModalPreset.placeholderName}
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] text-[#0F172A]"
+                />
+              </div>
+
               <div>
-                <label className="block font-semibold mb-1.5">Категория</label>
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Категория ({newSkuForm.brandCode})
+                </label>
                 <select
                   value={newSkuForm.category}
                   onChange={(e) =>
                     setNewSkuForm({
                       ...newSkuForm,
-                      category: e.target.value as Product['category'],
+                      category: e.target.value,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3 text-[14px] bg-white font-medium text-[#0F172A] cursor-pointer"
                 >
-                  <option value="Боксеры">Боксеры</option>
-                  <option value="Транки">Транки</option>
-                  <option value="Брифы">Брифы</option>
-                  <option value="Мультипак">Мультипак</option>
-                  <option value="Лимитированная капсула">Лимитированная капсула</option>
+                  {activeModalPreset.categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                  <option value="__CUSTOM__">+ Своя категория...</option>
                 </select>
+                {newSkuForm.category === '__CUSTOM__' && (
+                  <input
+                    type="text"
+                    value={newSkuForm.customCategory}
+                    onChange={(e) =>
+                      setNewSkuForm({
+                        ...newSkuForm,
+                        customCategory: e.target.value,
+                      })
+                    }
+                    placeholder="Введите название категории"
+                    className="mt-2 w-full h-9 rounded-lg border border-[#CBD5E1] px-3 text-[13px]"
+                  />
+                )}
               </div>
+
               <div>
-                <label className="block font-semibold mb-1.5">Коллекция</label>
-                <input
-                  value={newSkuForm.collection}
-                  onChange={(e) =>
-                    setNewSkuForm({ ...newSkuForm, collection: e.target.value })
-                  }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1.5">Розничная цена (РРЦ, ₽)</label>
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Комплектация ({activeModalPreset.unitHint})
+                </label>
                 <input
                   type="number"
+                  min={1}
+                  max={24}
+                  value={newSkuForm.unitsInPack}
+                  onChange={(e) =>
+                    setNewSkuForm({ ...newSkuForm, unitsInPack: e.target.value })
+                  }
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] font-bold text-[#0F172A]"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Состав / материал изделия
+                </label>
+                <input
+                  type="text"
+                  value={newSkuForm.materials}
+                  onChange={(e) =>
+                    setNewSkuForm({ ...newSkuForm, materials: e.target.value })
+                  }
+                  placeholder={activeModalPreset.defaultComposition}
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[13.5px] text-[#0F172A]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Розничная цена (РРЦ, ₽)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
                   value={newSkuForm.plannedRetailPrice}
                   onChange={(e) =>
-                    setNewSkuForm({ ...newSkuForm, plannedRetailPrice: e.target.value })
+                    setNewSkuForm({
+                      ...newSkuForm,
+                      plannedRetailPrice: e.target.value,
+                    })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] font-bold text-[#0F172A]"
                 />
               </div>
+
               <div>
-                <label className="block font-semibold mb-1.5">Себестоимость пошива (₽)</label>
+                <label className="block font-bold text-[#0F172A] mb-1">
+                  Себестоимость под ключ (₽)
+                </label>
                 <input
                   type="number"
+                  min={0}
+                  step={10}
                   value={newSkuForm.unitCostPrice}
                   onChange={(e) =>
-                    setNewSkuForm({ ...newSkuForm, unitCostPrice: e.target.value })
+                    setNewSkuForm({
+                      ...newSkuForm,
+                      unitCostPrice: e.target.value,
+                    })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] font-bold text-[#0F172A]"
                 />
               </div>
-              <div className="sm:col-span-2">
-                <label className="block font-semibold mb-1.5">Фото / рендер модели (опционально)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    compressImageFileToDataUrl(f, 720, 0.78).then((url) => {
-                      if (url) {
-                        setNewSkuForm((prev) => ({ ...prev, imageUrl: url }));
+
+              <div className="sm:col-span-2 space-y-2">
+                <label className="block font-bold text-[#0F172A]">
+                  Фото модели (опционально — чужие заглушки не подставляются)
+                </label>
+                {newSkuForm.imageUrl ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] p-2.5">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={newSkuForm.imageUrl}
+                      alt="Превью"
+                      className="h-16 w-20 object-contain rounded-lg bg-white border border-[#E2E8F0]"
+                    />
+                    <div className="flex-1 text-[12px] text-emerald-700 font-semibold">
+                      ✓ Фотография выбрана и готова к сохранению
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewSkuForm((prev) => ({ ...prev, imageUrl: '' }))
                       }
-                    });
-                    e.target.value = '';
-                  }}
-                  className="w-full text-[13px] text-[#737373]"
-                />
+                      className="h-8 px-2.5 rounded-lg border border-[#FECACA] bg-white hover:bg-[#FEF2F2] text-[#B42318] text-[12px] font-semibold cursor-pointer"
+                    >
+                      Удалить фото
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 h-11 rounded-xl border border-dashed border-[#CBD5E1] hover:border-[#0F172A] bg-[#F8FAFC] hover:bg-white text-[13px] font-semibold text-[#334155] cursor-pointer transition">
+                    <ImagePlus className="h-4 w-4" />
+                    <span>Выбрать файл фотографии (PNG, JPG, WEBP)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        compressImageFileToDataUrl(f, 920, 0.82).then((url) => {
+                          if (url) {
+                            setNewSkuForm((prev) => ({ ...prev, imageUrl: url }));
+                          }
+                        });
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex flex-wrap justify-end gap-2.5 pt-4 border-t border-[#E2E8F0]">
               <button
+                type="button"
                 onClick={() => setCreateModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-xl border border-[#CBD5E1] text-[13px] font-semibold text-[#334155] cursor-pointer"
               >
                 Отмена
               </button>
               <button
-                onClick={handleCreateProduct}
-                className="h-11 px-6 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[14px] font-bold inline-flex items-center gap-2 cursor-pointer transition"
+                type="button"
+                onClick={() => handleCreateProduct(false)}
+                className="h-10 px-4 rounded-xl border border-[#0F172A] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-[13px] font-bold cursor-pointer transition"
+              >
+                Сохранить в каталог
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCreateProduct(true)}
+                className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
               >
                 <Check className="h-4 w-4" />
-                <span>Сохранить карточку</span>
+                <span>Сохранить и открыть карточку →</span>
               </button>
             </div>
           </div>

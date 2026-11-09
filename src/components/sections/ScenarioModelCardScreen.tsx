@@ -512,29 +512,33 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Загрузка одной или нескольких фотографий сразу с сохранением оригинала и превью (Стр. 3 ТЗ)
+  // Загрузка одной или нескольких фотографий сразу с надёжным сжатием для localStorage (Стр. 3 ТЗ)
   const handleUploadOriginalPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
     try {
+      const cleanExisting = model.gallery.filter((g) => {
+        const u = (g.url || g.originalUrl || '').trim();
+        if (!u) return false;
+        if (
+          model.code !== '244995893' &&
+          (u.includes('borners-core-modal.svg') || u.includes('244995893_main.webp'))
+        ) {
+          return false;
+        }
+        return true;
+      });
+
       const addedItems: ScenarioModelSpec['gallery'] = [];
-      let existingHasMain = model.gallery.some(
+      let existingHasMain = cleanExisting.some(
         (g) => g.isMain && Boolean(g.url || g.originalUrl)
       );
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const originalDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('Read error'));
-          reader.readAsDataURL(file);
-        });
-        const previewUrl =
-          file.size > 350_000
-            ? await compressImageFileToDataUrl(file, 1400, 0.92)
-            : originalDataUrl;
+        const compressedUrl = await compressImageFileToDataUrl(file, 920, 0.82);
+        if (!compressedUrl) continue;
 
         const newItemId = `gal-${Date.now()}-${i}`;
         const makeMain = !existingHasMain && i === 0;
@@ -544,13 +548,19 @@ export function ScenarioModelCardScreen({
           id: newItemId,
           category: 'pack' as const,
           label: file.name.replace(/\.[^.]+$/, ''),
-          url: previewUrl,
-          originalUrl: originalDataUrl || previewUrl,
+          url: compressedUrl,
+          originalUrl: compressedUrl,
           isMain: makeMain,
         });
       }
 
-      const nextGallery = [...model.gallery, ...addedItems];
+      if (addedItems.length === 0) {
+        notify('error', 'Не удалось обработать выбранный файл изображения');
+        e.target.value = '';
+        return;
+      }
+
+      const nextGallery = [...cleanExisting, ...addedItems];
       commitWithAudit(
         { ...model, gallery: nextGallery },
         'product',
@@ -567,9 +577,9 @@ export function ScenarioModelCardScreen({
       notify(
         'success',
         addedItems.length === 1
-          ? 'Фотография добавлена в карточку'
+          ? 'Фотография загружена и сохранена'
           : `Загружено фотографий: ${addedItems.length} шт.`,
-        'Сохранены превью и оригинал без изменения цветов и логотипов.'
+        'Изображение сохранено в карточке модели.'
       );
     } catch {
       notify('error', 'Не удалось прочитать файл изображения');
@@ -618,33 +628,32 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Удаление фото с подтверждением (Стр. 3 ТЗ)
-  const handleRemoveGalleryPhoto = (photoId: string) => {
-    if (filteredGallery.length <= 1) {
-      notify('warning', 'В карточке должна оставаться хотя бы одна фотография');
-      return;
-    }
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm('Удалить эту фотографию из карточки модели?')
-    ) {
-      return;
-    }
-    const remaining = model.gallery.filter((g) => g.id !== photoId);
+  // Удаление фото (разрешено в том числе когда фотография одна в карточке)
+  const handleRemoveGalleryPhoto = (photoId?: string) => {
+    const targetId = photoId || activeGalleryItem?.id;
+    const remaining = targetId
+      ? model.gallery.filter(
+          (g) => g.id !== targetId && Boolean((g.url || g.originalUrl || '').trim())
+        )
+      : [];
     const hasMain = remaining.some((g) => g.isMain);
     const nextGallery = remaining.map((g, idx) => ({
       ...g,
       isMain: hasMain ? g.isMain : idx === 0,
     }));
+    const nextPalettes =
+      nextGallery.length === 0
+        ? model.palettes.map((p) => ({ ...p, imageUrl: undefined }))
+        : model.palettes;
     const nextSel =
-      nextGallery.find((g) => Boolean(g.url || g.originalUrl))?.id || 'g-1';
+      nextGallery.find((g) => Boolean(g.url || g.originalUrl))?.id || '';
     setSelectedGalleryId(nextSel);
     commitWithAudit(
-      { ...model, gallery: nextGallery },
+      { ...model, gallery: nextGallery, palettes: nextPalettes },
       'product',
       'Удалена фотография из галереи модели'
     );
-    notify('success', 'Фотография удалена из галереи');
+    notify('success', 'Фотография удалена из карточки');
   };
 
   // Загрузка фабричного PDF
@@ -1433,24 +1442,39 @@ export function ScenarioModelCardScreen({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* ЛЕВАЯ КОЛОНКА: Большое фото без фильтров + ряд миниатюр + «+ Загрузить фото» */}
         <div className="lg:col-span-6 rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-4 md:p-5 flex flex-col justify-between space-y-3">
-          <div
-            onClick={() => mainImageSrc && setLightboxOpen(true)}
-            title="Нажмите для полноэкранного просмотра фотографии (Zoom, 100%, По размеру экрана, Оригинал)"
-            className="relative rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-[#DFDED6] h-[310px] md:h-[360px] flex items-center justify-center p-3 overflow-hidden group cursor-zoom-in"
-          >
-            {mainImageSrc ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
+          {mainImageSrc ? (
+            <div
+              onClick={() => setLightboxOpen(true)}
+              title="Нажмите для полноэкранного просмотра фотографии (Zoom, 100%, По размеру экрана, Оригинал)"
+              className="relative rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-[#DFDED6] h-[310px] md:h-[360px] flex items-center justify-center p-3 overflow-hidden group cursor-zoom-in"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={mainImageSrc}
                 alt={`${model.code} ${model.title}`}
                 className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover:scale-[1.02]"
               />
-            ) : (
-              <div className="text-center text-[13px] text-[#686762]">
-                Фотография ещё не загружена
+            </div>
+          ) : (
+            <label className="relative rounded-[14px] bg-[#F5F5F1] hover:bg-[#EFEFE9] border-[1.5px] border-dashed border-[#CECDC4] hover:border-[#141413] h-[310px] md:h-[360px] flex flex-col items-center justify-center gap-2.5 p-6 text-center cursor-pointer transition">
+              <div className="h-11 w-11 rounded-full bg-white border border-[#CECDC4] flex items-center justify-center text-[#141413]">
+                <Plus className="h-5 w-5" />
               </div>
-            )}
-          </div>
+              <div className="text-[14px] font-bold text-[#141413]">
+                Нажмите, чтобы загрузить фото модели
+              </div>
+              <div className="text-[12px] text-[#686762]">
+                Поддерживаются PNG, JPG, WEBP · можно выбрать сразу несколько файлов
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleUploadOriginalPhotos}
+                className="hidden"
+              />
+            </label>
+          )}
 
           {/* Горизонтальный ряд миниатюр + управление главным фото / порядком / удалением + кнопка «+ Загрузить фото» */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
@@ -1524,7 +1548,7 @@ export function ScenarioModelCardScreen({
                           <ArrowRight className="h-2.5 w-2.5" />
                         </button>
                       )}
-                      {filteredGallery.length > 1 && (
+                      {filteredGallery.length >= 1 && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1543,17 +1567,28 @@ export function ScenarioModelCardScreen({
               })}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               {mainImageSrc && (
-                <button
-                  type="button"
-                  onClick={() => setLightboxOpen(true)}
-                  className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer transition"
-                >
-                  Во весь экран
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(true)}
+                    className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer transition"
+                  >
+                    Во весь экран
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveGalleryPhoto(activeGalleryItem?.id)}
+                    title="Удалить текущую фотографию из карточки"
+                    className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border-[1.5px] border-[#FECACA] text-[12px] font-semibold text-[#B42318] inline-flex items-center gap-1 cursor-pointer transition"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Удалить фото</span>
+                  </button>
+                </>
               )}
-              <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] text-[12px] font-semibold text-[#141413] inline-flex items-center shrink-0 cursor-pointer transition">
+              <label className="h-8.5 px-3 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold inline-flex items-center shrink-0 cursor-pointer transition">
                 <span>+ Загрузить фото</span>
                 <input
                   type="file"
@@ -1799,87 +1834,257 @@ export function ScenarioModelCardScreen({
           </span>
         </div>
 
-        {/* ==================== ВКЛАДКА «ПРОДУКТ» ==================== */}
+        {/* ==================== ВКЛАДКА «ПРОДУКТ» (ПРЯМОЕ INLINE-РЕДАКТИРОВАНИЕ ВСЕХ ПОЛЕЙ) ==================== */}
         {activeTab === 'product' && (
           <div className="p-5 md:p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Блок 1: Материалы, состав и плотность */}
               <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
                 <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                  Ткань, состав и плотность
+                  1. Материалы, состав и плотность
                 </div>
-                <div className="space-y-1.5 text-[13px] text-[#141413]">
-                  <div>
-                    <span className="text-[#5E5D58]">Состав:</span>{' '}
-                    <strong>{model.fabric.composition}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Плотность:</span>{' '}
-                    <strong>{model.fabric.density}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Переплетение:</span>{' '}
-                    {model.fabric.knitType}
-                  </div>
-                  {model.description && (
-                    <div className="pt-1 text-[12px] text-[#5E5D58]">
-                      {model.description}
-                    </div>
-                  )}
+                <div className="space-y-2 text-[12.5px] text-[#141413]">
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Состав материала:</span>
+                    <input
+                      type="text"
+                      value={model.fabric.composition}
+                      placeholder="Например: 100% полиэстер блэкаут / 92% модал"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            fabric: { ...model.fabric, composition: e.target.value },
+                          },
+                          'product',
+                          'Изменён состав материала',
+                          model.fabric.composition,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Плотность / светозащита:</span>
+                    <input
+                      type="text"
+                      value={model.fabric.density}
+                      placeholder="Например: 280 г/м² или 190 г/м²"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            fabric: { ...model.fabric, density: e.target.value },
+                          },
+                          'product',
+                          'Изменена плотность материала',
+                          model.fabric.density,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Фактура / переплетение:</span>
+                    <input
+                      type="text"
+                      value={model.fabric.knitType}
+                      placeholder="Например: Рогожка матовая / Кулирная гладь"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            fabric: { ...model.fabric, knitType: e.target.value },
+                          },
+                          'product',
+                          'Изменено переплетение / фактура',
+                          model.fabric.knitType,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                    />
+                  </label>
                 </div>
               </div>
 
+              {/* Блок 2: Конструкция и комплектация */}
               <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
                 <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                  Конструкция и посадка
+                  2. Конструкция и комплектация
                 </div>
-                <div className="space-y-1.5 text-[13px] text-[#141413]">
-                  <div>
-                    <span className="text-[#5E5D58]">Комплектация:</span>{' '}
-                    <strong>
-                      {model.construction.type} ({model.unitsInPack} изд. = 1 компл.)
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Посадка:</span> {model.construction.fit}
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Передняя панель:</span>{' '}
-                    {model.construction.frontPanel}
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Швы и ластовица:</span>{' '}
-                    {model.construction.gusset} · {model.construction.seams}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
-                <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                  Резинка / пояс и размерная сетка
-                </div>
-                <div className="space-y-1.5 text-[13px] text-[#141413]">
-                  <div>
-                    <span className="text-[#5E5D58]">Ширина и тип:</span>{' '}
-                    <strong>
-                      {model.waistband.width} · {model.waistband.type}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-[#5E5D58]">Шаг логотипа:</span>{' '}
-                    {model.waistband.logoRepeat}
-                  </div>
-                  <div className="pt-1">
-                    <span className="text-[#5E5D58] text-[12px]">
-                      Размерная сетка (S–XXL):
+                <div className="space-y-2 text-[12.5px] text-[#141413]">
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">
+                      Тип и комплектация ({model.unitsInPack} изд. = 1 компл.):
                     </span>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
+                    <input
+                      type="text"
+                      value={model.construction.type}
+                      placeholder="Например: Комплект штор 2 полотна / Комплект"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            construction: { ...model.construction, type: e.target.value },
+                          },
+                          'product',
+                          'Изменена комплектация / тип изделия',
+                          model.construction.type,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Габариты / посадка:</span>
+                    <input
+                      type="text"
+                      value={model.construction.fit}
+                      placeholder="Например: Высота 270 см · ширина 300 см"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            construction: { ...model.construction, fit: e.target.value },
+                          },
+                          'product',
+                          'Изменены габариты / посадка',
+                          model.construction.fit,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Детали и пошив:</span>
+                    <input
+                      type="text"
+                      value={model.construction.seams}
+                      placeholder="Например: Закрытые боковые швы евро-стандарта"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            construction: { ...model.construction, seams: e.target.value },
+                          },
+                          'product',
+                          'Изменены детали пошива',
+                          model.construction.seams,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Блок 3: Крепление / обработка и размерная сетка */}
+              <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#CECDC4] p-4 space-y-2.5">
+                <div className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
+                  3. Характеристики и размерная сетка
+                </div>
+                <div className="space-y-2 text-[12.5px] text-[#141413]">
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Крепление / верх / пояс:</span>
+                    <input
+                      type="text"
+                      value={model.waistband.width}
+                      placeholder="Например: Шторная лента 6 см / Пояс 35 мм"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            waistband: { ...model.waistband, width: e.target.value },
+                          },
+                          'product',
+                          'Изменены параметры верха / крепления',
+                          model.waistband.width,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[11px] font-semibold text-[#5E5D58]">Упаковка и маркировка:</span>
+                    <input
+                      type="text"
+                      value={model.waistband.logoRepeat}
+                      placeholder="Например: Фирменный кофр на молнии + ярлык"
+                      onChange={(e) =>
+                        commitWithAudit(
+                          {
+                            ...model,
+                            waistband: { ...model.waistband, logoRepeat: e.target.value },
+                          },
+                          'product',
+                          'Изменены параметры упаковки / маркировки',
+                          model.waistband.logoRepeat,
+                          e.target.value,
+                          true
+                        )
+                      }
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                    />
+                  </label>
+                  <div className="pt-0.5">
+                    <span className="text-[#5E5D58] text-[11px] font-semibold">
+                      Доли размеров / вариантов (%):
+                    </span>
+                    <div className="grid grid-cols-5 gap-1 mt-1">
                       {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
-                        <span
+                        <label
                           key={sz}
-                          className="px-2 py-0.5 rounded-[6px] bg-white border border-[#CECDC4] text-[11px] font-bold text-[#141413]"
+                          className="rounded-[6px] bg-white border border-[#CECDC4] px-1.5 py-1 flex flex-col items-center"
                         >
-                          {sz}: {shared.factoryParams.sizeSharesPct[sz]}%
-                        </span>
+                          <span className="text-[9.5px] font-bold text-[#5E5D58]">{sz}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={shared.factoryParams.sizeSharesPct[sz]}
+                            onChange={(e) => {
+                              const nextVal = Math.max(
+                                0,
+                                Math.min(100, Math.round(Number(e.target.value) || 0))
+                              );
+                              commitWithAudit(
+                                {
+                                  ...model,
+                                  sharedSupplyAndFact: {
+                                    ...shared,
+                                    factoryParams: {
+                                      ...shared.factoryParams,
+                                      sizeSharesPct: {
+                                        ...shared.factoryParams.sizeSharesPct,
+                                        [sz]: nextVal,
+                                      },
+                                    },
+                                  },
+                                },
+                                'product',
+                                `Изменена доля размера ${sz}`,
+                                `${shared.factoryParams.sizeSharesPct[sz]}%`,
+                                `${nextVal}%`,
+                                true
+                              );
+                            }}
+                            className="w-full text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none"
+                          />
+                        </label>
                       ))}
                     </div>
                   </div>
@@ -1887,49 +2092,212 @@ export function ScenarioModelCardScreen({
               </div>
             </div>
 
-            {/* Палитры и Pantone */}
+            {/* Палитры, цвета и варианты модели (100% редактируемые заголовки, цвета, HEX и удаление/добавление) */}
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-[15px] font-bold text-[#141413]">
-                  Цвета комплекта и Pantone ({model.unitsInPack} изд. в 1 комплекте)
-                </h3>
-                <span className="text-[11.5px] text-[#5E5D58]">
-                  Нажмите «Редактировать» в шапке карточки для изменения цветов и характеристик
-                </span>
+                <div>
+                  <h3 className="text-[15px] font-bold text-[#141413]">
+                    Цвета, палитры и варианты модели ({model.unitsInPack} изд. в 1 компл.)
+                  </h3>
+                  <p className="text-[11.5px] text-[#5E5D58]">
+                    Все названия палитр, оттенки, HEX-цвета и артикулы редактируются прямо в карточке
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newPal = {
+                      id: `pal-${Date.now()}`,
+                      title: `Палитра — ${model.title}`,
+                      subtitle: `${model.unitsInPack} изд. · ${brandPortfolioLabel}`,
+                      statusLabel: 'В плане',
+                      colors: [
+                        {
+                          nameRu: 'Основной цвет #1',
+                          hex: '#334155',
+                          bandHex: '#1E293B',
+                          textHex: '#FFFFFF',
+                          pantone: `${model.code} · #1`,
+                        },
+                      ],
+                    };
+                    commitWithAudit(
+                      { ...model, palettes: [...model.palettes, newPal] },
+                      'product',
+                      `Добавлена цветовая палитра «${newPal.title}»`,
+                      undefined,
+                      newPal.title,
+                      true
+                    );
+                  }}
+                  className="h-8 px-3 rounded-[8px] bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Добавить палитру / вариант</span>
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {model.palettes.map((pal) => (
-                  <div
-                    key={pal.id}
-                    className="rounded-[14px] border-[1.5px] border-[#CECDC4] p-4 space-y-3 bg-white"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-[13.5px] font-bold text-[#141413]">
-                          {pal.title}
-                        </div>
-                        <div className="text-[11.5px] text-[#5E5D58]">{pal.subtitle}</div>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] text-[11px] font-semibold text-[#3F3E3A]">
-                        {pal.statusLabel}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {pal.colors.map((c, cIdx) => (
-                        <div
-                          key={`${pal.id}-${cIdx}`}
-                          className="rounded-[10px] border border-[#DFDED6] p-2 bg-[#F7F7F4] space-y-1.5"
-                        >
-                          <div
-                            className="h-8 w-full rounded-[6px] border border-black/10"
-                            style={{ backgroundColor: c.hex }}
+              {model.palettes.length === 0 ? (
+                <div className="rounded-[14px] border border-dashed border-[#CECDC4] bg-[#F7F7F4] p-5 text-center text-[13px] text-[#5E5D58]">
+                  Цветовые палитры пока не добавлены. Нажмите «+ Добавить палитру / вариант», чтобы задать цвета модели.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {model.palettes.map((pal) => (
+                    <div
+                      key={pal.id}
+                      className="rounded-[14px] border-[1.5px] border-[#CECDC4] p-4 space-y-3 bg-white"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 space-y-1.5 min-w-0">
+                          <input
+                            type="text"
+                            value={pal.title}
+                            placeholder="Название палитры / карточки"
+                            onChange={(e) => {
+                              const nextPalettes = model.palettes.map((p) =>
+                                p.id === pal.id ? { ...p, title: e.target.value } : p
+                              );
+                              commitWithAudit(
+                                { ...model, palettes: nextPalettes },
+                                'product',
+                                'Изменено название палитры',
+                                pal.title,
+                                e.target.value,
+                                true
+                              );
+                            }}
+                            className="h-7.5 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[13px] font-bold text-[#141413]"
                           />
-                          {isEditing ? (
+                          <input
+                            type="text"
+                            value={pal.subtitle}
+                            placeholder="Описание комплектации и размеров"
+                            onChange={(e) => {
+                              const nextPalettes = model.palettes.map((p) =>
+                                p.id === pal.id ? { ...p, subtitle: e.target.value } : p
+                              );
+                              commitWithAudit(
+                                { ...model, palettes: nextPalettes },
+                                'product',
+                                'Изменено описание палитры',
+                                pal.subtitle,
+                                e.target.value,
+                                true
+                              );
+                            }}
+                            className="h-7 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[11.5px] text-[#5E5D58]"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="text"
+                            value={pal.statusLabel}
+                            onChange={(e) => {
+                              const nextPalettes = model.palettes.map((p) =>
+                                p.id === pal.id ? { ...p, statusLabel: e.target.value } : p
+                              );
+                              commitWithAudit(
+                                { ...model, palettes: nextPalettes },
+                                'product',
+                                'Изменён статус палитры',
+                                pal.statusLabel,
+                                e.target.value
+                              );
+                            }}
+                            className="h-7 w-28 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] px-2 text-[10.5px] font-semibold text-[#3F3E3A] text-center"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextPalettes = model.palettes.filter(
+                                (p) => p.id !== pal.id
+                              );
+                              commitWithAudit(
+                                { ...model, palettes: nextPalettes },
+                                'product',
+                                `Удалена палитра «${pal.title}»`
+                              );
+                            }}
+                            title="Удалить эту палитру"
+                            className="h-7 w-7 rounded-[6px] border border-[#FECACA] bg-white hover:bg-[#FEF2F2] text-[#B42318] flex items-center justify-center cursor-pointer transition"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {pal.colors.map((c, cIdx) => (
+                          <div
+                            key={`${pal.id}-${cIdx}`}
+                            className="relative rounded-[10px] border border-[#DFDED6] p-2 bg-[#F7F7F4] space-y-1.5 group/color"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <label
+                                title="Нажмите, чтобы выбрать цвет"
+                                className="relative h-7 flex-1 rounded-[6px] border border-black/15 overflow-hidden cursor-pointer block"
+                                style={{ backgroundColor: c.hex }}
+                              >
+                                <input
+                                  type="color"
+                                  value={/^#[0-9A-Fa-f]{6}$/.test(c.hex) ? c.hex : '#334155'}
+                                  onChange={(e) => {
+                                    const nextHex = e.target.value;
+                                    const nextPalettes = model.palettes.map((p) =>
+                                      p.id !== pal.id
+                                        ? p
+                                        : {
+                                            ...p,
+                                            colors: p.colors.map((col, idx) =>
+                                              idx === cIdx
+                                                ? { ...col, hex: nextHex, bandHex: nextHex }
+                                                : col
+                                            ),
+                                          }
+                                    );
+                                    commitWithAudit(
+                                      { ...model, palettes: nextPalettes },
+                                      'product',
+                                      `Изменён оттенок цвета «${c.nameRu}»`,
+                                      c.hex,
+                                      nextHex
+                                    );
+                                  }}
+                                  className="opacity-0 inset-0 w-full h-full cursor-pointer"
+                                />
+                              </label>
+                              {pal.colors.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextPalettes = model.palettes.map((p) =>
+                                      p.id !== pal.id
+                                        ? p
+                                        : {
+                                            ...p,
+                                            colors: p.colors.filter((_, idx) => idx !== cIdx),
+                                          }
+                                    );
+                                    commitWithAudit(
+                                      { ...model, palettes: nextPalettes },
+                                      'product',
+                                      `Удалён цвет «${c.nameRu}» из палитры`
+                                    );
+                                  }}
+                                  title="Удалить цвет"
+                                  className="h-7 w-6 rounded-[5px] border border-[#DFDED6] bg-white hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#686762] hover:text-[#B42318] text-[12px] font-bold flex items-center justify-center cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+
                             <input
                               type="text"
                               value={c.nameRu}
+                              placeholder="Название цвета"
                               onChange={(e) => {
                                 const nextPalettes = model.palettes.map((p) =>
                                   p.id !== pal.id
@@ -1952,22 +2320,76 @@ export function ScenarioModelCardScreen({
                                   true
                                 );
                               }}
-                              className="w-full h-6 px-1.5 rounded border border-[#DED8CC] bg-white text-[11px]"
+                              className="w-full h-6.5 px-1.5 rounded border border-[#DED8CC] focus:border-[#141413] bg-white text-[11px] font-semibold text-[#141413]"
                             />
-                          ) : (
-                            <div className="text-[11.5px] font-semibold text-[#1D1D1F] leading-tight">
-                              {c.nameRu}
-                            </div>
-                          )}
-                          <div className="text-[10px] font-mono text-[#6E6E73] truncate">
-                            {c.pantone}
+
+                            <input
+                              type="text"
+                              value={c.pantone}
+                              placeholder="Код / артикул"
+                              onChange={(e) => {
+                                const nextPalettes = model.palettes.map((p) =>
+                                  p.id !== pal.id
+                                    ? p
+                                    : {
+                                        ...p,
+                                        colors: p.colors.map((col, idx) =>
+                                          idx === cIdx
+                                            ? { ...col, pantone: e.target.value }
+                                            : col
+                                        ),
+                                      }
+                                );
+                                commitWithAudit(
+                                  { ...model, palettes: nextPalettes },
+                                  'product',
+                                  `Изменён код цвета «${c.nameRu}»`,
+                                  c.pantone,
+                                  e.target.value
+                                );
+                              }}
+                              className="w-full h-6 px-1.5 rounded border border-[#DFDED6] focus:border-[#141413] bg-white text-[10px] font-mono text-[#5E5D58]"
+                            />
                           </div>
-                        </div>
-                      ))}
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextIdx = pal.colors.length + 1;
+                            const nextPalettes = model.palettes.map((p) =>
+                              p.id !== pal.id
+                                ? p
+                                : {
+                                    ...p,
+                                    colors: [
+                                      ...p.colors,
+                                      {
+                                        nameRu: `Цвет #${nextIdx}`,
+                                        hex: '#64748B',
+                                        bandHex: '#475569',
+                                        textHex: '#FFFFFF',
+                                        pantone: `${model.code} · #${nextIdx}`,
+                                      },
+                                    ],
+                                  }
+                            );
+                            commitWithAudit(
+                              { ...model, palettes: nextPalettes },
+                              'product',
+                              `Добавлен цвет #${nextIdx} в палитру «${pal.title}»`
+                            );
+                          }}
+                          className="rounded-[10px] border border-dashed border-[#CECDC4] hover:border-[#141413] bg-white hover:bg-[#F7F7F4] p-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-[#3F3E3A] hover:text-[#141413] min-h-[86px] cursor-pointer transition"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>+ Цвет</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Фабричные PDF */}

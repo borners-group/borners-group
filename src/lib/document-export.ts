@@ -566,8 +566,8 @@ export interface EditorialPdfDocumentSpec {
 
 export async function compressImageFileToDataUrl(
   file: File,
-  maxDim = 680,
-  quality = 0.78
+  maxDim = 840,
+  quality = 0.8
 ): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -579,21 +579,29 @@ export async function compressImageFileToDataUrl(
       }
       const img = new Image();
       img.onload = () => {
-        const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(rawUrl);
-          return;
+        const renderAt = (dim: number, q: number): string => {
+          const scale = Math.min(1, dim / Math.max(img.width || 1, img.height || 1));
+          const w = Math.max(1, Math.round((img.width || 1) * scale));
+          const h = Math.max(1, Math.round((img.height || 1) * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return rawUrl;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          return canvas.toDataURL('image/jpeg', q);
+        };
+
+        let encoded = renderAt(maxDim, quality);
+        if (encoded.length > 170_000) {
+          encoded = renderAt(680, 0.72);
         }
-        ctx.fillStyle = '#FAF8F5';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        if (encoded.length > 170_000) {
+          encoded = renderAt(520, 0.65);
+        }
+        resolve(encoded);
       };
       img.onerror = () => resolve(rawUrl);
       img.src = rawUrl;

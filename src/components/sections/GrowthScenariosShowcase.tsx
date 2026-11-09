@@ -168,7 +168,7 @@ function overlayUserPlansBackup(
     STORAGE_KEY_USER_PLANS_BACKUP
   );
   return modelsList.map((rawM) => {
-    const m = applyCategoryWbUnitEconomics(rawM);
+    const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
 
     if (!backup || typeof backup !== 'object') return m;
     const saved =
@@ -177,33 +177,35 @@ function overlayUserPlansBackup(
         (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
       );
     if (!saved) return m;
-    return applyCategoryWbUnitEconomics({
-      ...m,
-      code: saved.code ?? m.code,
-      title: saved.title ?? m.title,
-      subtitle: saved.subtitle ?? m.subtitle,
-      brandId: saved.brandId ?? m.brandId,
-      customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
-      wbArticle: saved.wbArticle ?? m.wbArticle,
-      modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
-      description: saved.description ?? m.description,
-      unitsInPack: saved.unitsInPack ?? m.unitsInPack,
-      retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
-      unitCostRub: saved.unitCostRub ?? m.unitCostRub,
-      marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
-      logisticsRub: saved.logisticsRub ?? m.logisticsRub,
-      adsPct: saved.adsPct ?? m.adsPct,
-      priority: saved.priority ?? m.priority,
-      launchStatus: saved.launchStatus ?? m.launchStatus,
-      gallery: saved.gallery || m.gallery,
-      palettes: saved.palettes || m.palettes,
-      fabric: saved.fabric || m.fabric,
-      construction: saved.construction || m.construction,
-      waistband: saved.waistband || m.waistband,
-      attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
-      plansByScenario: saved.plansByScenario || m.plansByScenario,
-      sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
-    });
+    return ensureModelUnifiedV11(
+      applyCategoryWbUnitEconomics({
+        ...m,
+        code: saved.code ?? m.code,
+        title: saved.title ?? m.title,
+        subtitle: saved.subtitle ?? m.subtitle,
+        brandId: saved.brandId ?? m.brandId,
+        customBrandLabel: saved.customBrandLabel ?? m.customBrandLabel,
+        wbArticle: saved.wbArticle ?? m.wbArticle,
+        modelStageStatus: saved.modelStageStatus ?? m.modelStageStatus,
+        description: saved.description ?? m.description,
+        unitsInPack: saved.unitsInPack ?? m.unitsInPack,
+        retailPriceRub: saved.retailPriceRub ?? m.retailPriceRub,
+        unitCostRub: saved.unitCostRub ?? m.unitCostRub,
+        marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
+        logisticsRub: saved.logisticsRub ?? m.logisticsRub,
+        adsPct: saved.adsPct ?? m.adsPct,
+        priority: saved.priority ?? m.priority,
+        launchStatus: saved.launchStatus ?? m.launchStatus,
+        gallery: saved.gallery || m.gallery,
+        palettes: saved.palettes || m.palettes,
+        fabric: saved.fabric || m.fabric,
+        construction: saved.construction || m.construction,
+        waistband: saved.waistband || m.waistband,
+        attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
+        plansByScenario: saved.plansByScenario || m.plansByScenario,
+        sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
+      })
+    );
   });
 }
 
@@ -1241,14 +1243,21 @@ export function GrowthScenariosShowcase({
   // Единая синхронизация модели сценария с основным Каталогом моделей (SKU)
   const syncScenarioModelToCatalog = useCallback(
     (spec: ScenarioModelSpec, prevSpec?: ScenarioModelSpec) => {
+      const unitCfg = getBrandUnitConfig(spec.customBrandLabel || spec.brandId);
       const cleanCode = spec.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
-      const targetSku = `${spec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`;
+      const hasBrandPrefix = /^(BRN|NT|NTL|LSC|LSK|AKU|FUK)-/i.test(cleanCode);
+      const targetSku = hasBrandPrefix
+        ? cleanCode
+        : `${spec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`;
 
       const prevCleanCode = prevSpec
         ? prevSpec.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001'
         : cleanCode;
+      const prevHasPrefix = /^(BRN|NT|NTL|LSC|LSK|AKU|FUK)-/i.test(prevCleanCode);
       const prevSku = prevSpec
-        ? `${prevSpec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${prevCleanCode}`
+        ? prevHasPrefix
+          ? prevCleanCode
+          : `${prevSpec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${prevCleanCode}`
         : targetSku;
 
       const mainPhotoUrl =
@@ -1275,7 +1284,7 @@ export function GrowthScenariosShowcase({
           brandId: spec.brandId,
           isArchived: false,
           materials: spec.fabric.composition,
-          fitType: `${spec.subtitle} · резинка ${spec.waistband.width}`,
+          fitType: spec.subtitle,
           ...(mainPhotoUrl
             ? {
                 imageUrl: mainPhotoUrl,
@@ -1299,12 +1308,12 @@ export function GrowthScenariosShowcase({
           sku: targetSku,
           name: spec.title,
           brandId: spec.brandId,
-          category: 'Боксеры',
+          category: (unitCfg.categoryDefault as any) || 'Боксеры',
           productType: 'Базовая коллекция',
           priceSegment: 'Middle+',
-          collection: `${spec.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} 2027`,
+          collection: `${unitCfg.displayCode} 2027`,
           materials: spec.fabric.composition,
-          fitType: `${spec.subtitle} · резинка ${spec.waistband.width}`,
+          fitType: spec.subtitle,
           imageUrl: mainPhotoUrl || undefined,
           economics: {
             currency: 'RUB',

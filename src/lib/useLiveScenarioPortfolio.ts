@@ -116,7 +116,7 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
     STORAGE_KEY_USER_PLANS_BACKUP
   );
   return modelsList.map((rawM) => {
-    const m = applyCategoryWbUnitEconomics(rawM);
+    const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
 
     if (!backup || typeof backup !== 'object') return m;
     const saved =
@@ -155,7 +155,7 @@ function overlayBackupOntoModels(modelsList: ScenarioModelSpec[]): ScenarioModel
       plansByScenario: saved.plansByScenario || m.plansByScenario,
       sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
     };
-    return applyCategoryWbUnitEconomics(mergedRaw);
+    return ensureModelUnifiedV11(applyCategoryWbUnitEconomics(mergedRaw));
   });
 }
 

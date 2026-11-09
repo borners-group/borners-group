@@ -31,14 +31,14 @@ export function cleanupLegacyStorageKeys(): void {
 }
 
 /**
- * Рекурсивно уменьшает слишком тяжёлые base64-строки (неcжатые фото/аудио),
- * чтобы JSON гарантированно помещался в квоту localStorage (5 МБ) и не блокировал сохранение/удаление карточек.
+ * Рекурсивно уменьшает только экстремально тяжёлые base64-строки (неcжатые фото/аудио > 650 КБ),
+ * чтобы JSON гарантированно помещался в квоту localStorage (5 МБ) и никогда не подменял фото чужой заглушкой.
  */
-export function stripOversizedDataUrls<T>(value: T, maxDataUrlLen = 95_000): T {
+export function stripOversizedDataUrls<T>(value: T, maxDataUrlLen = 650_000): T {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
     if (value.startsWith('data:image/') && value.length > maxDataUrlLen) {
-      return 'images/products/borners-core-modal.svg' as unknown as T;
+      return '' as unknown as T;
     }
     if (value.startsWith('data:audio/') && value.length > maxDataUrlLen) {
       return '' as unknown as T;
@@ -70,10 +70,10 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
 
   try {
     const raw = JSON.stringify(data);
-    // Если сериализованный объект слишком большой (> 1.8 МБ), сразу облегчаем тяжёлые base64-картинки
+    // Облегчаем только если общий размер ключа превышает 4.2 МБ
     const payload =
-      raw.length > 1_800_000
-        ? JSON.stringify(stripOversizedDataUrls(data, 70_000))
+      raw.length > 4_200_000
+        ? JSON.stringify(stripOversizedDataUrls(data, 350_000))
         : raw;
 
     window.localStorage.removeItem(key);
@@ -81,14 +81,21 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
     return true;
   } catch {
     try {
-      // Экстренный фоллбэк: убираем все тяжёлые data: URL (> 25 КБ), чтобы структура карточек 100% сохранилась
-      const slim = stripOversizedDataUrls(data, 25_000);
+      // Экстренный фоллбэк: убираем только сверхтяжёлые data: URL (> 180 КБ), сохраняя сжатые превью
+      const slim = stripOversizedDataUrls(data, 180_000);
       window.localStorage.removeItem(key);
       window.localStorage.setItem(key, JSON.stringify(slim));
       return true;
-    } catch (err2) {
-      console.error(`safeSetStorageJson failed for key "${key}":`, err2);
-      return false;
+    } catch {
+      try {
+        const ultraSlim = stripOversizedDataUrls(data, 45_000);
+        window.localStorage.removeItem(key);
+        window.localStorage.setItem(key, JSON.stringify(ultraSlim));
+        return true;
+      } catch (err3) {
+        console.error(`safeSetStorageJson failed for key "${key}":`, err3);
+        return false;
+      }
     }
   }
 }
@@ -104,9 +111,8 @@ export function safeGetStorageJson<T>(key: string): T | null {
     const raw = window.localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as T;
-    // Если в localStorage уже лежала раздутая запись (> 1.5 МБ), сразу лечим и перезаписываем её
-    if (raw.length > 1_500_000) {
-      const healed = stripOversizedDataUrls(parsed, 70_000);
+    if (raw.length > 4_500_000) {
+      const healed = stripOversizedDataUrls(parsed, 350_000);
       safeSetStorageJson(key, healed);
       return healed;
     }

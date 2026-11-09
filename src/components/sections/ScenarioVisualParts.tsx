@@ -16,7 +16,24 @@ export function BoxerPackStackSvg({
   category?: 'pack' | 'single' | 'waistband' | 'fabric' | 'fit' | 'video';
   customPhotoUrl?: string;
 }) {
-  if (customPhotoUrl) {
+  const upperBrand = (brandLabel || 'BORNERS').toUpperCase();
+  const isLiskani =
+    upperBrand.includes('LISK') ||
+    upperBrand.includes('LISCAN') ||
+    upperBrand.includes('ЛИСК');
+  const isAkusha = upperBrand.includes('AKU') || upperBrand.includes('АКУ');
+
+  const safePhotoUrl =
+    customPhotoUrl &&
+    !(
+      (isLiskani || isAkusha) &&
+      (customPhotoUrl.includes('borners-core-modal.svg') ||
+        customPhotoUrl.includes('244995893_main.webp'))
+    )
+      ? customPhotoUrl
+      : '';
+
+  if (safePhotoUrl) {
     return (
       <div
         className={`relative w-full flex items-center justify-center overflow-hidden rounded-[14px] ${
@@ -24,7 +41,7 @@ export function BoxerPackStackSvg({
         }`}
       >
         <img
-          src={customPhotoUrl}
+          src={safePhotoUrl}
           alt={brandLabel}
           className="h-full w-full object-contain"
         />
@@ -35,10 +52,121 @@ export function BoxerPackStackSvg({
   const primary = colors[0] || {
     nameRu: 'Основной тон',
     pantone: 'PANTONE',
-    hex: '#D48B92',
-    bandHex: '#C67A82',
-    textHex: '#9E545D',
+    hex: isLiskani ? '#D6CFC2' : isAkusha ? '#1F2937' : '#D48B92',
+    bandHex: isLiskani ? '#C5BDB0' : isAkusha ? '#111827' : '#C67A82',
+    textHex: isLiskani ? '#2E2B26' : isAkusha ? '#F9FAFB' : '#9E545D',
   };
+
+  if (isLiskani && category === 'pack') {
+    const c1 = colors[0]?.hex || '#D6CFC2';
+    const c2 = colors[1]?.hex || '#4B5563';
+    const c3 = colors[2]?.hex || '#F3EFEA';
+    return (
+      <div
+        className={`relative w-full flex flex-col items-center justify-center select-none ${
+          large ? 'h-[260px]' : 'h-[155px]'
+        }`}
+      >
+        <svg viewBox="0 0 320 200" className="w-full h-full">
+          {/* Карниз */}
+          <rect x="34" y="18" width="252" height="6" rx="3" fill="#475569" />
+          <circle cx="34" cy="21" r="5" fill="#334155" />
+          <circle cx="286" cy="21" r="5" fill="#334155" />
+          {/* Тюль по центру */}
+          <path
+            d="M 96 24 L 224 24 L 230 168 L 90 168 Z"
+            fill={c3}
+            fillOpacity="0.85"
+            stroke="#CBD5E1"
+            strokeWidth="1"
+          />
+          <line x1="125" y1="24" x2="122" y2="168" stroke="#CBD5E1" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="160" y1="24" x2="160" y2="168" stroke="#CBD5E1" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="195" y1="24" x2="198" y2="168" stroke="#CBD5E1" strokeWidth="1" strokeDasharray="3 3" />
+          {/* Левая портьера */}
+          <path
+            d="M 48 24 L 122 24 C 116 74, 110 120, 118 172 L 42 172 Z"
+            fill={c1}
+            stroke="rgba(15,23,42,0.14)"
+            strokeWidth="1.2"
+          />
+          <path d="M 68 24 C 65 75, 63 125, 66 172" fill="none" stroke="rgba(15,23,42,0.12)" strokeWidth="1.2" />
+          <path d="M 92 24 C 89 75, 86 125, 90 172" fill="none" stroke="rgba(15,23,42,0.12)" strokeWidth="1.2" />
+          {/* Правая портьера */}
+          <path
+            d="M 198 24 L 272 24 L 278 172 L 202 172 C 210 120, 204 74, 198 24 Z"
+            fill={c2}
+            stroke="rgba(15,23,42,0.14)"
+            strokeWidth="1.2"
+          />
+          <path d="M 226 24 C 229 75, 232 125, 228 172" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="1.2" />
+          <path d="M 252 24 C 255 75, 257 125, 254 172" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="1.2" />
+          {/* Бейдж бренда */}
+          <rect x="110" y="142" width="100" height="22" rx="6" fill="#0F172A" fillOpacity="0.88" />
+          <text
+            x="160"
+            y="156.5"
+            textAnchor="middle"
+            fill="#FFFFFF"
+            fontSize="10"
+            fontWeight="700"
+            letterSpacing="1.6"
+          >
+            LISKANI
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
+  if (isAkusha && category === 'pack') {
+    const mainCol = colors[0]?.hex || '#1F2937';
+    const accentCol = colors[1]?.hex || '#E5E0D8';
+    return (
+      <div
+        className={`relative w-full flex flex-col items-center justify-center select-none ${
+          large ? 'h-[260px]' : 'h-[155px]'
+        }`}
+      >
+        <svg viewBox="0 0 320 200" className="w-full h-full">
+          {/* Силуэт кроссовка / обуви */}
+          <path
+            d="M 56 128 C 56 96, 78 68, 102 64 L 138 64 C 148 82, 168 94, 198 98 L 244 104 C 262 107, 270 118, 270 132 L 56 132 Z"
+            fill={mainCol}
+            stroke="rgba(15,23,42,0.15)"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M 92 88 L 166 108 L 162 122 L 86 104 Z"
+            fill={accentCol}
+            fillOpacity="0.85"
+          />
+          {/* Подошва */}
+          <rect
+            x="50"
+            y="130"
+            width="224"
+            height="18"
+            rx="7"
+            fill="#F8FAFC"
+            stroke="#CBD5E1"
+            strokeWidth="1.5"
+          />
+          <text
+            x="160"
+            y="172"
+            textAnchor="middle"
+            fill="#334155"
+            fontSize="10.5"
+            fontWeight="700"
+            letterSpacing="1.8"
+          >
+            AKUSHA · FOOTWEAR
+          </text>
+        </svg>
+      </div>
+    );
+  }
 
   if (category === 'waistband') {
     return (
