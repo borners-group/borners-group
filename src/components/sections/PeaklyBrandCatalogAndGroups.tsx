@@ -2594,6 +2594,10 @@ export function PeaklyCatalogGroupsAndBrandsView({
   const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string, boolean>>({
     'grp-borners-wb-base': true,
     'grp-borners-boxers-4pack': false,
+    'grp-natele-womens-base': true,
+    'grp-fukai-wb': true,
+    'grp-akusha-shoes': true,
+    'grp-liscani-curtains': true,
   });
 
   // Модальное окно создания / настройки группы товаров
@@ -2612,6 +2616,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
     const syncGroups = () => {
       setGroups(loadProductGroups(models));
     };
+    syncGroups();
     window.addEventListener('borners-product-groups-changed', syncGroups);
     return () => window.removeEventListener('borners-product-groups-changed', syncGroups);
   }, [models]);

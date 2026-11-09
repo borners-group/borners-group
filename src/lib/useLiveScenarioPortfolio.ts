@@ -171,51 +171,69 @@ export function filterModelsForScenario(
   brandFilter: string = 'ALL'
 ): ScenarioModelSpec[] {
   const isActing = scenario.id === ACTING_2027_SCENARIO_ID;
+  const normFilter =
+    brandFilter && brandFilter !== 'ALL'
+      ? normalizePortfolioBrandCode(brandFilter)
+      : 'ALL';
+  const normOwner =
+    scenario.ownerBrandCode && scenario.ownerBrandCode !== 'ALL'
+      ? normalizePortfolioBrandCode(scenario.ownerBrandCode)
+      : 'ALL';
+
   return models.filter((m) => {
     if (m.launchStatus === 'В архиве') return false;
+    if (
+      ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
+        m.id
+      ) ||
+      ['№001', '№002', '№003', '№004'].includes(m.code)
+    ) {
+      return false;
+    }
+
+    if (normFilter !== 'ALL') {
+      if (!matchesBrandFilter(m, normFilter)) {
+        return false;
+      }
+      if (normFilter === 'AKUSHA' || normFilter === 'LISKANI') {
+        return true;
+      }
+    }
+
+    if (normOwner !== 'ALL' && normOwner !== 'BORNERS') {
+      return matchesBrandFilter(m, normOwner);
+    }
+
+    const modelBrand = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m));
+
     if (isActing) {
+      if (modelBrand !== 'BORNERS' && modelBrand !== 'FUKAI') {
+        return false;
+      }
       const okActing =
         Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
-        (!['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-          m.id
-        ) &&
-          Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]));
-      if (!okActing) return false;
-    } else {
-      if (
-        ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-          m.id
-        )
-      ) {
-        return false;
-      }
-      if (
-        scenario.ownerBrandCode &&
-        scenario.ownerBrandCode !== 'ALL' &&
-        scenario.ownerBrandCode !== 'BORNERS'
-      ) {
-        if (!matchesBrandFilter(m, scenario.ownerBrandCode)) {
-          return false;
-        }
-      } else if (!m.customBrandLabel && !scenario.includedBrands.includes(m.brandId)) {
-        return false;
-      }
-      if (
-        scenario.id === 1 &&
-        !includeGroupPortfolioInS1 &&
-        isUnverifiedActingSku(m.code)
-      ) {
-        return false;
-      }
+        Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]);
+      return okActing;
     }
 
-    if (brandFilter && brandFilter !== 'ALL') {
-      if (!matchesBrandFilter(m, brandFilter)) {
+    if (scenario.id === 1 || normOwner === 'BORNERS') {
+      if (modelBrand === 'FUKAI') {
+        return includeGroupPortfolioInS1 || normFilter === 'FUKAI';
+      }
+      if (modelBrand !== 'BORNERS') {
         return false;
       }
+      if (!includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
+        return false;
+      }
+      return true;
     }
 
-    return true;
+    if (modelBrand === 'AKUSHA' || modelBrand === 'LISKANI') {
+      return false;
+    }
+
+    return scenario.includedBrands.includes(m.brandId) || modelBrand === 'FUKAI';
   });
 }
 
@@ -302,13 +320,26 @@ export function useLiveScenarioPortfolio() {
     };
   }, [syncFromStorage]);
 
-  const setSelectedScenarioId = useCallback((nextId: number) => {
-    setSelectedScenarioIdState(nextId);
-    safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
-    }
-  }, []);
+  const setSelectedScenarioId = useCallback(
+    (nextId: number) => {
+      setSelectedScenarioIdState(nextId);
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
+      if (brandFilter && brandFilter !== 'ALL') {
+        const normCode = normalizePortfolioBrandCode(brandFilter);
+        if (normCode !== 'ALL') {
+          setSelectedScenarioByBrandState((prev) => {
+            const next = { ...prev, [normCode]: nextId };
+            safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+            return next;
+          });
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+      }
+    },
+    [brandFilter]
+  );
 
   const setIncludeGroupPortfolioInS1 = useCallback((nextVal: boolean) => {
     setIncludeGroupState(nextVal);
@@ -383,24 +414,73 @@ export function useLiveScenarioPortfolio() {
     []
   );
 
-  const orderedScenarios = useMemo(
-    () =>
-      [...scenarios]
-        .filter((s) => !s.isArchived)
-        .sort((a, b) =>
-          a.id === ACTING_2027_SCENARIO_ID
-            ? -1
-            : b.id === ACTING_2027_SCENARIO_ID
-            ? 1
-            : a.id - b.id
-        ),
-    [scenarios]
-  );
+  const currentScenario = useMemo(() => {
+    const direct = scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0];
+    if (brandFilter && brandFilter !== 'ALL') {
+      const normBrand = normalizePortfolioBrandCode(brandFilter);
+      if (normBrand !== 'ALL') {
+        if (
+          direct &&
+          direct.ownerBrandCode &&
+          normalizePortfolioBrandCode(direct.ownerBrandCode) === normBrand
+        ) {
+          return direct;
+        }
+        const mappedId = selectedScenarioByBrand[normBrand];
+        if (typeof mappedId === 'number') {
+          const mappedScen = scenarios.find((s) => s.id === mappedId && !s.isArchived);
+          if (mappedScen) return mappedScen;
+        }
+        const brandOwned = scenarios.find(
+          (s) =>
+            !s.isArchived &&
+            s.ownerBrandCode &&
+            normalizePortfolioBrandCode(s.ownerBrandCode) === normBrand
+        );
+        if (brandOwned) return brandOwned;
+      }
+    }
+    return direct;
+  }, [scenarios, selectedScenarioId, brandFilter, selectedScenarioByBrand]);
 
-  const currentScenario = useMemo(
-    () => scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0],
-    [scenarios, selectedScenarioId]
-  );
+  const orderedScenarios = useMemo(() => {
+    const allSorted = [...scenarios]
+      .filter((s) => !s.isArchived)
+      .sort((a, b) =>
+        a.id === ACTING_2027_SCENARIO_ID
+          ? -1
+          : b.id === ACTING_2027_SCENARIO_ID
+          ? 1
+          : a.id - b.id
+      );
+
+    if (brandFilter && brandFilter !== 'ALL') {
+      const normBrand = normalizePortfolioBrandCode(brandFilter);
+      if (normBrand === 'AKUSHA' || normBrand === 'LISKANI') {
+        const owned = allSorted.filter(
+          (s) =>
+            s.ownerBrandCode &&
+            normalizePortfolioBrandCode(s.ownerBrandCode) === normBrand
+        );
+        return owned.length > 0
+          ? owned
+          : currentScenario
+          ? [currentScenario]
+          : allSorted;
+      }
+      if (normBrand === 'NA_TELE') {
+        const naTeleList = allSorted.filter(
+          (s) =>
+            (s.ownerBrandCode &&
+              normalizePortfolioBrandCode(s.ownerBrandCode) === 'NA_TELE') ||
+            (!s.ownerBrandCode && s.includedBrands.includes('NA_TELE'))
+        );
+        return naTeleList.length > 0 ? naTeleList : allSorted;
+      }
+    }
+
+    return allSorted;
+  }, [scenarios, brandFilter, currentScenario]);
 
   const scenarioAllEligibleModels = useMemo(
     () =>
@@ -554,7 +634,7 @@ export function useLiveScenarioPortfolio() {
     orderedScenarios,
     models,
     currentScenario,
-    selectedScenarioId,
+    selectedScenarioId: currentScenario?.id ?? selectedScenarioId,
     setSelectedScenarioId,
     selectedScenarioByBrand,
     setSelectedScenarioForBrand,

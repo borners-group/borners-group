@@ -109,46 +109,49 @@ function ScenarioContourHeader({
 
         <div className="flex flex-wrap items-center gap-2">
           {brandFilter !== 'ALL' && (
-            <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-[9px] bg-[#F4F4F0] border-[1.5px] border-[#141413] text-[11.5px] font-semibold text-[#141413]">
+            <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[11.5px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
               <span>
                 Бренд: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} ({eligibleCount} SKU)
               </span>
               <button
                 type="button"
                 onClick={() => setBrandFilter('ALL')}
-                className="underline hover:opacity-75 cursor-pointer"
+                className="underline hover:opacity-75 cursor-pointer text-emerald-700 dark:text-emerald-300"
               >
                 Все бренды
               </button>
             </div>
           )}
 
-          {selectedScenarioId === 1 && (
-            <div className="inline-flex items-center rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[11.5px]">
-              <button
-                type="button"
-                onClick={() => onToggleGroupPortfolio(false)}
-                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                  !includeGroupPortfolioInS1
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
-                }`}
-              >
-                Цель BORNERS · 21 SKU
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleGroupPortfolio(true)}
-                className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                  includeGroupPortfolioInS1
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
-                }`}
-              >
-                С FUKAI · 23 SKU
-              </button>
-            </div>
-          )}
+          {selectedScenarioId === 1 &&
+            (brandFilter === 'ALL' ||
+              brandFilter === 'BORNERS' ||
+              brandFilter === 'FUKAI') && (
+              <div className="inline-flex items-center rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[11.5px]">
+                <button
+                  type="button"
+                  onClick={() => onToggleGroupPortfolio(false)}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    !includeGroupPortfolioInS1
+                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
+                  }`}
+                >
+                  Цель BORNERS · 21 SKU
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleGroupPortfolio(true)}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    includeGroupPortfolioInS1
+                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
+                  }`}
+                >
+                  С FUKAI · 23 SKU
+                </button>
+              </div>
+            )}
         </div>
       </div>
 

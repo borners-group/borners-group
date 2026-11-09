@@ -29,6 +29,7 @@ import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import {
   CanonicalBrandCode,
   createBrandProductModel,
+  createIndependentBrandScenario,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   getBrandUnitConfig,
@@ -183,6 +184,7 @@ export function ProductCatalogView() {
     setSelectedScenarioId,
     updateModelSpec,
     updateModelsBatch,
+    updateScenariosBatch,
   } = useLiveScenarioPortfolio();
 
   // Гарантируем, что все модели очищены от чужих дефолтов Borners2
@@ -346,9 +348,45 @@ export function ProductCatalogView() {
       Number(newSkuForm.unitsInPack) || unitCfg.secondaryPerPrimaryDefault
     );
 
+    // Если у бренда ещё нет активного сценария (например, AKUSHA или LISKANI) — создаём / подключаем его автоматически
+    let workingScenarios = [...scenarios];
+    let workingModels = [...scenarioModels];
+    const currentBrandScenId = selectedScenarioByBrand[bCode];
+    const hasValidBrandScen =
+      typeof currentBrandScenId === 'number' &&
+      workingScenarios.some((s) => s.id === currentBrandScenId && !s.isArchived);
+
+    if (!hasValidBrandScen) {
+      const existingOwned = workingScenarios.find(
+        (s) =>
+          !s.isArchived &&
+          s.ownerBrandCode &&
+          normalizePortfolioBrandCode(s.ownerBrandCode) === bCode
+      );
+      if (existingOwned) {
+        setSelectedScenarioForBrand(bCode, existingOwned.id);
+      } else {
+        const createdScenRes = createIndependentBrandScenario(
+          workingScenarios,
+          workingModels,
+          {
+            title: `${unitCfg.displayCode} — План развития 2027`,
+            brandCode: bCode,
+            year: 2027,
+            monthlyTargetMln: bCode === 'AKUSHA' ? 35 : bCode === 'LISKANI' ? 28 : 30,
+            copyFromScenarioId: null,
+          }
+        );
+        workingScenarios = createdScenRes.scenarios;
+        workingModels = createdScenRes.models;
+        updateScenariosBatch(() => workingScenarios);
+        setSelectedScenarioForBrand(bCode, createdScenRes.scenario.id);
+      }
+    }
+
     const { model: createdScenarioModel } = createBrandProductModel(
-      scenarioModels,
-      scenarios,
+      workingModels,
+      workingScenarios,
       {
         title: cleanTitle,
         brandCode: bCode,
@@ -362,7 +400,7 @@ export function ProductCatalogView() {
       }
     );
 
-    updateModelsBatch((prev) => [...prev, createdScenarioModel]);
+    updateModelsBatch(() => [...workingModels, createdScenarioModel]);
     setCreateModalOpen(false);
     notify(
       'success',

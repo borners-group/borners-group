@@ -1528,8 +1528,8 @@ test('32. Комплексный аудит багов: синхронизаци
   const emptyBrandMatches = contourSource.match(/Переключить на Сценарий №2 · 150 млн/g) || [];
   assert.ok(emptyBrandMatches.length >= 3);
 
-  // 4. В GrowthScenariosShowcase.tsx filteredModels согласован с includeGroupPortfolioInS1 и не даёт гонки при открытии паспорта SKU
-  assert.ok(showcaseSource.includes('!includeGroupPortfolioInS1 &&'));
+  // 4. В GrowthScenariosShowcase.tsx filteredModels согласован с includeGroupPortfolioInS1 через filterModelsForScenario и не даёт гонки при открытии паспорта SKU
+  assert.ok(showcaseSource.includes('filterModelsForScenario('));
   assert.ok(showcaseSource.includes('Показать все модели сценария'));
 });
 
@@ -2277,5 +2277,260 @@ test('37. Чистые карточки по брендам (LISKANI / AKUSHA / 
   );
   assert.equal(cardScreenCode.includes('+ Добавить палитру / вариант'), true);
 });
+
+test('38. Пользовательский путь LISKANI и AKUSHA: авто-активация группы товаров (не 0 SKU), авто-сценарий бренда и изоляция от BORNERS Сценарий №1', async () => {
+  const {
+    buildDefaultProductGroups,
+    computeProductGroupMetrics,
+    loadProductGroups,
+    resolveGroupModels,
+  } = await import('../src/lib/productGroups.ts');
+
+  const basePortfolio = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
+
+  // 1. До добавления моделей LISKANI дефолтная папка grp-liscani-curtains имеет 0 SKU
+  const initialGroups = buildDefaultProductGroups(basePortfolio);
+  const initialLiskaniGrp = initialGroups.find((g) => g.id === 'grp-liscani-curtains')!;
+  assert.equal(initialLiskaniGrp.modelIds.length, 0);
+
+  // 2. Пользователь создаёт сценарий и карточку штор для LISKANI
+  const scenRes = createIndependentBrandScenario(INITIAL_SCENARIOS, basePortfolio, {
+    title: 'LISKANI — План развития 2027',
+    brandCode: 'LISKANI',
+    year: 2027,
+    monthlyTargetMln: 28,
+    copyFromScenarioId: null,
+  });
+  const liskaniScen = scenRes.scenario;
+
+  const createdRes = createBrandProductModel(scenRes.models, scenRes.scenarios, {
+    title: 'БЛЭКАУТ СЕРЫЙ 300×270',
+    brandCode: 'LISKANI',
+    code: 'LSC-004',
+    categoryLabel: 'Портьеры блэкаут',
+    unitsInPack: 2,
+    retailPriceRub: 3190,
+    unitCostRub: 1150,
+    initialMonthlyPacks: Array(12).fill(500),
+  });
+  const updatedModels = createdRes.models;
+
+  // 3. Даже если сохранённая группа grp-liscani-curtains содержала modelIds: [], resolveGroupModels и loadProductGroups сразу видят новую карточку
+  const resolvedDirect = resolveGroupModels(initialLiskaniGrp, updatedModels);
+  assert.equal(resolvedDirect.length, 1);
+  assert.equal(resolvedDirect[0].code, 'LSC-004');
+
+  const syncedGroups = loadProductGroups(updatedModels);
+  const syncedLiskaniGrp = syncedGroups.find((g) => g.id === 'grp-liscani-curtains')!;
+  const grpMetrics = computeProductGroupMetrics(
+    syncedLiskaniGrp,
+    updatedModels,
+    liskaniScen
+  );
+  assert.equal(grpMetrics.modelsCount, 1);
+  assert.ok(grpMetrics.annualRevenueRub > 0);
+
+  // 4. Мультибрендовая сводка на Главной показывает активный сценарий LISKANI и его выручку
+  const multiSummary = computeMultiBrandPortfolioSummary(
+    updatedModels,
+    scenRes.scenarios,
+    {
+      BORNERS: 1,
+      FUKAI: 100,
+      AKUSHA: null,
+      LISKANI: liskaniScen.id,
+      NA_TELE: 2,
+    }
+  );
+  const liskaniSummaryRow = multiSummary.brands.find((b) => b.brandCode === 'LISKANI')!;
+  assert.equal(liskaniSummaryRow.hasScenario, true);
+  assert.equal(liskaniSummaryRow.modelsCount, 1);
+  assert.equal(liskaniSummaryRow.annualRevenueRub, 500 * 12 * 3190);
+});
+
+test('39. Сквозной путь пользователя по всем 5 шагам (01 Продукт → 02 Продажи → 03 Закупки → 04 Финансы): редактирование паспорта, матрица 12 мес., партии PO и P&L', async () => {
+  const basePortfolio = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+
+  // Шаг 1 (01 · Продукт): создаём новую модель и редактируем характеристики ткани, конструкции, размерной сетки и палитры
+  const { model: rawModel } = createBrandProductModel(
+    basePortfolio,
+    INITIAL_SCENARIOS,
+    {
+      title: 'КРОССОВКИ AKUSHA AERO RUN',
+      brandCode: 'AKUSHA',
+      code: 'AKU-010',
+      categoryLabel: 'Кроссовки и кеды',
+      unitsInPack: 8,
+      retailPriceRub: 4600,
+      unitCostRub: 1500,
+    }
+  );
+
+  const editedProductModel = ensureModelUnifiedV11({
+    ...rawModel,
+    fabric: {
+      ...rawModel.fabric,
+      composition: 'Натуральная кожа 100%, дышащая сетка AirMesh',
+      density: 'Подошва EVA + TPU',
+      knitType: 'Анатомическая стелька OrthoLite',
+    },
+    construction: {
+      ...rawModel.construction,
+      type: 'Кроссовки городские унисекс (1 пара в коробке)',
+      fit: 'Размеры 37–44 · полнота G',
+    },
+    sharedSupplyAndFact: {
+      ...rawModel.sharedSupplyAndFact!,
+      factoryParams: {
+        ...rawModel.sharedSupplyAndFact!.factoryParams,
+        sizeSharesPct: { S: 10, M: 25, L: 35, XL: 20, XXL: 10 },
+      },
+    },
+    palettes: [
+      {
+        id: 'pal-aku-010',
+        title: 'ПАЛИТРА AKU-010 — Белый / Графит',
+        subtitle: 'Кожа премиум · размеры 37–44',
+        statusLabel: 'В ПЛАНЕ 2027',
+        colors: [
+          {
+            nameRu: 'Белый кварц',
+            pantone: '11-0601 TCX',
+            hex: '#F4F5F0',
+            bandHex: '#E2E8F0',
+            textHex: '#0F172A',
+          },
+          {
+            nameRu: 'Графитовый шторм',
+            pantone: '19-4007 TCX',
+            hex: '#2B2E34',
+            bandHex: '#1E293B',
+            textHex: '#FFFFFF',
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(editedProductModel.fabric.composition.includes('Натуральная кожа'), true);
+  assert.equal(editedProductModel.palettes.length, 1);
+  assert.equal(editedProductModel.palettes[0].colors.length, 2);
+
+  // Шаг 2 (02 · Продажи): заполняем помесячный план продаж на 12 месяцев
+  const monthlySales = [300, 350, 400, 450, 500, 550, 600, 700, 800, 900, 1000, 1200];
+  const modelWithSales = {
+    ...editedProductModel,
+    plansByScenario: {
+      ...editedProductModel.plansByScenario,
+      [scen1.id]: {
+        ...editedProductModel.plansByScenario[scen1.id],
+        monthlyPacks: monthlySales,
+        monthlyPricesRub: Array(12).fill(4600),
+      },
+    },
+  };
+
+  const salesMetrics = computeModelScenarioMetrics(modelWithSales, scen1);
+  const expectedAnnualPacks = monthlySales.reduce((a, b) => a + b, 0);
+  assert.equal(salesMetrics.annualPacks, expectedAnnualPacks);
+  assert.equal(salesMetrics.annualRevenueRub, expectedAnnualPacks * 4600);
+  assert.equal(salesMetrics.targetMonthRevenueRub, 1200 * 4600);
+
+  // Шаг 3 (03 · Закупки): в статусе «Гипотеза» формируется 1 тестовая партия, а при переходе в «Масштабирование» — все 4 волны закупок
+  const procHypothesis = computeProcurementPlan(modelWithSales, scen1);
+  assert.equal(procHypothesis.recommendedBatches.length, 1);
+  assert.equal(procHypothesis.recommendedBatches[0].isTestBatch, true);
+
+  const scaledModel = {
+    ...modelWithSales,
+    sharedSupplyAndFact: {
+      ...modelWithSales.sharedSupplyAndFact!,
+      scalingStage: 'scaling' as const,
+    },
+  };
+  const procBefore = computeProcurementPlan(scaledModel, scen1);
+  assert.equal(procBefore.recommendedBatches.length, 4);
+  const firstBatch = procBefore.recommendedBatches[0];
+  assert.ok(firstBatch.recommendedPacks > 0);
+
+  const modelWithApprovedPo = approveRecommendedBatch(
+    scaledModel,
+    firstBatch,
+    'Фабрика AKUSHA Footwear'
+  );
+  const approvedOrder = modelWithApprovedPo.sharedSupplyAndFact!.approvedOrders[0];
+  assert.ok(approvedOrder);
+  assert.equal(approvedOrder.packsQty, firstBatch.recommendedPacks);
+
+  const splitModel = createCustomPurchaseOrder(modelWithApprovedPo, {
+    packsQty: 800,
+    unitCostRub: 1500,
+    arrivalMonthIdx: 3,
+    orderPlacementDateIso: '2027-02-01',
+    factoryName: 'Фабрика AKUSHA Footwear',
+  });
+  assert.equal(splitModel.sharedSupplyAndFact!.approvedOrders.length, 2);
+
+  // Шаг 4 (04 · Финансы): проверяем расчёт P&L, маржи и инвестиционного плана
+  const procAfter = computeProcurementPlan(splitModel, scen1);
+  const pnl = computeFinancialPnL(splitModel, scen1, procAfter);
+  assert.equal(pnl.annualRevenueRub, expectedAnnualPacks * 4600);
+  assert.equal(pnl.annualCogsRub, expectedAnnualPacks * 1500);
+  assert.ok((pnl.annualGrossProfitRub ?? 0) > 0);
+
+  const invSummary = computeScenarioInvestmentSummary([splitModel], scen1);
+  assert.ok(invSummary.totalProcurementBudgetRub > 0);
+  assert.ok(invSummary.firstWaveStartBudgetRub > 0);
+  assert.equal(invSummary.monthlyRows.length, 12);
+});
+
+test('40. Аудит исходного кода компонентов: синхронизация групп при обновлении моделей, изоляция сценариев и единые пресеты создания моделей', () => {
+  const peaklyGroupsCode = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src',
+      'components',
+      'sections',
+      'PeaklyBrandCatalogAndGroups.tsx'
+    ),
+    'utf-8'
+  );
+  // Проверяем, что syncGroups() вызывается сразу при изменении models
+  assert.ok(
+    peaklyGroupsCode.includes('const syncGroups = () => {\n      setGroups(loadProductGroups(models));\n    };\n    syncGroups();'),
+    'PeaklyBrandCatalogAndGroups должен вызывать syncGroups() при обновлении models'
+  );
+
+  const liveHookCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'lib', 'useLiveScenarioPortfolio.ts'),
+    'utf-8'
+  );
+  assert.ok(
+    liveHookCode.includes("if (modelBrand === 'AKUSHA' || modelBrand === 'LISKANI')"),
+    'filterModelsForScenario должен изолировать отдельные кабинеты AKUSHA и LISKANI от базовых сценариев BORNERS'
+  );
+
+  const showcaseCode = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src',
+      'components',
+      'sections',
+      'GrowthScenariosShowcase.tsx'
+    ),
+    'utf-8'
+  );
+  assert.ok(
+    showcaseCode.includes('SHOWCASE_BRAND_PRESETS'),
+    'Модальное окно создания модели в GrowthScenariosShowcase должно использовать пресеты по брендам'
+  );
+  assert.equal(
+    showcaseCode.includes('placeholder="Например: SPORT MODAL 3 PACK"'),
+    false,
+    'Старый захардкоженный плейсхолдер боксеров должен быть заменён на брендовый'
+  );
+});
+
 
 

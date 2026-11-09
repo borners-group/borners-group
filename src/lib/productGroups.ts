@@ -241,10 +241,21 @@ export function resolveGroupModels(
 ): ScenarioModelSpec[] {
   const idSet = new Set(group.modelIds);
   const codeSet = new Set(group.modelCodes.map((c) => c.toUpperCase()));
+  const singleBrandDefaultIds = new Set([
+    'grp-natele-womens-base',
+    'grp-fukai-wb',
+    'grp-akusha-shoes',
+    'grp-liscani-curtains',
+  ]);
   return allModels.filter(
     (m) =>
       m.launchStatus !== 'В архиве' &&
-      (idSet.has(m.id) || codeSet.has(m.code.toUpperCase()))
+      (idSet.has(m.id) ||
+        codeSet.has(m.code.toUpperCase()) ||
+        (Boolean(group.isSystemDefault) &&
+          singleBrandDefaultIds.has(group.id) &&
+          group.brandCode !== 'ALL' &&
+          matchesBrandFilter(m, group.brandCode)))
   );
 }
 

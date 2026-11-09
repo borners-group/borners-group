@@ -61,10 +61,12 @@ import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCard
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import { compressImageFileToDataUrl } from '@/lib/document-export';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
+  filterModelsForScenario,
 } from '@/lib/useLiveScenarioPortfolio';
 import {
   CanonicalBrandCode,
@@ -447,11 +449,13 @@ export function GrowthScenariosShowcase({
 
   // Поля формы создания новой модели (Тест 11 и Раздел 4.4 ТЗ: короткая форма, работает со всеми брендами холдинга)
   const [draftBrand, setDraftBrand] = useState<string>('BORNERS');
+  const [draftCode, setDraftCode] = useState<string>('BRN-024');
   const [draftTitle, setDraftTitle] = useState('');
-  const [draftType, setDraftType] = useState('Боксеры (trunks)');
+  const [draftType, setDraftType] = useState('Боксеры 4-pack');
   const [draftUnitsInPack, setDraftUnitsInPack] = useState(4);
-  const [draftRetailPrice, setDraftRetailPrice] = useState(1290);
-  const [draftUnitCost, setDraftUnitCost] = useState(410);
+  const [draftRetailPrice, setDraftRetailPrice] = useState(1990);
+  const [draftUnitCost, setDraftUnitCost] = useState(650);
+  const [draftImageUrl, setDraftImageUrl] = useState<string>('');
 
   // Поля формы создания нового сценария (Раздел 3.1–3.4 ТЗ: бренд, год 2027/2028, цель, копирование)
   const [draftScenTitle, setDraftScenTitle] = useState('');
@@ -518,6 +522,89 @@ export function GrowthScenariosShowcase({
     []
   );
 
+  const SHOWCASE_BRAND_PRESETS: Record<
+    CanonicalBrandCode,
+    {
+      prefix: string;
+      categories: string[];
+      placeholder: string;
+      defaultPrice: number;
+      defaultCost: number;
+      defaultUnits: number;
+    }
+  > = useMemo(
+    () => ({
+      BORNERS: {
+        prefix: 'BRN',
+        categories: ['Боксеры 4-pack', 'Боксеры 3-pack', 'Семейники 2-pack', 'Плавки / Брифы'],
+        placeholder: 'Например: Боксеры BORNERS Architect Modal 4-pack',
+        defaultPrice: 1990,
+        defaultCost: 650,
+        defaultUnits: 4,
+      },
+      NA_TELE: {
+        prefix: 'NTL',
+        categories: ['Женский комплект', 'Топ-бра и бразилиана', 'Слипы 3-pack', 'Домашняя капсула'],
+        placeholder: 'Например: Комплект женских слипов НА ТЕЛЕ Invisible Seam',
+        defaultPrice: 1890,
+        defaultCost: 520,
+        defaultUnits: 3,
+      },
+      FUKAI: {
+        prefix: 'FUK',
+        categories: ['Боксеры 4-pack', 'Трикотажный сет', 'Базовый мультипак'],
+        placeholder: 'Например: Боксеры FUKAI Bamboo Comfort 4-pack',
+        defaultPrice: 1790,
+        defaultCost: 590,
+        defaultUnits: 4,
+      },
+      AKUSHA: {
+        prefix: 'AKU',
+        categories: ['Кроссовки и кеды', 'Ботинки демисезон', 'Лоферы кожаные', 'Домашняя обувь'],
+        placeholder: 'Например: Кроссовки кожаные AKUSHA Urban Cloud',
+        defaultPrice: 4490,
+        defaultCost: 1480,
+        defaultUnits: 8,
+      },
+      LISKANI: {
+        prefix: 'LSC',
+        categories: [
+          'Портьеры блэкаут',
+          'Шторы димаут',
+          'Тюль и вуаль',
+          'Комплект штор 2 полотна',
+          'Римские шторы',
+        ],
+        placeholder: 'Например: Шторы блэкаут LISKANI Венеция 300×270 (2 полотна)',
+        defaultPrice: 4290,
+        defaultCost: 1320,
+        defaultUnits: 2,
+      },
+    }),
+    []
+  );
+
+  const computeNextDraftCodeForBrand = useCallback(
+    (bInput: string) => {
+      const norm = normalizePortfolioBrandCode(bInput);
+      const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+      const preset = SHOWCASE_BRAND_PRESETS[bCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
+      const brandModels = models.filter((m) => matchesBrandFilter(m, bCode));
+      const usedNums = new Set<number>();
+      brandModels.forEach((m) => {
+        const match = m.code.match(/(\d+)$/);
+        if (match) usedNums.add(Number(match[1]));
+      });
+      let candidate =
+        bCode === 'BORNERS'
+          ? Math.max(brandModels.length + 1, 24)
+          : Math.max(brandModels.length + 1, 1);
+      while (usedNums.has(candidate)) candidate += 1;
+      return `${preset.prefix}-${String(candidate).padStart(3, '0')}`;
+    },
+    [models, SHOWCASE_BRAND_PRESETS]
+  );
+
   // Автоматическая подстановка активного бренда при открытии форм «+ Добавить модель» и «+ Новый сценарий» (Раздел 3.1 и 4.4 ТЗ)
   useEffect(() => {
     if (brandFilter && brandFilter !== 'ALL') {
@@ -525,20 +612,28 @@ export function GrowthScenariosShowcase({
       if (norm !== 'ALL') {
         setDraftBrand(norm);
         setDraftScenBrand(norm);
-        const cfg = getBrandUnitConfig(norm);
-        setDraftType(cfg.categoryDefault);
-        setDraftUnitsInPack(cfg.secondaryPerPrimaryDefault);
+        const preset = SHOWCASE_BRAND_PRESETS[norm] || SHOWCASE_BRAND_PRESETS.BORNERS;
+        setDraftType(preset.categories[0]);
+        setDraftUnitsInPack(preset.defaultUnits);
+        setDraftRetailPrice(preset.defaultPrice);
+        setDraftUnitCost(preset.defaultCost);
+        setDraftCode(computeNextDraftCodeForBrand(norm));
       }
     }
-  }, [brandFilter]);
+  }, [brandFilter, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
 
   useEffect(() => {
     if (draftBrand) {
-      const cfg = getBrandUnitConfig(draftBrand);
-      setDraftType(cfg.categoryDefault);
-      setDraftUnitsInPack(cfg.secondaryPerPrimaryDefault);
+      const norm = normalizePortfolioBrandCode(draftBrand);
+      const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+      const preset = SHOWCASE_BRAND_PRESETS[bCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
+      setDraftType(preset.categories[0]);
+      setDraftUnitsInPack(preset.defaultUnits);
+      setDraftRetailPrice(preset.defaultPrice);
+      setDraftUnitCost(preset.defaultCost);
+      setDraftCode(computeNextDraftCodeForBrand(bCode));
     }
-  }, [draftBrand]);
+  }, [draftBrand, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
 
   const hydratedRef = useRef(false);
 
@@ -882,42 +977,12 @@ export function GrowthScenariosShowcase({
     > = {};
 
     for (const sc of scenarios) {
-      const isActingScenario = sc.id === ACTING_2027_SCENARIO_ID;
-      const eligibleModels = models.filter((m) => {
-        if (m.launchStatus === 'В архиве') return false;
-        if (brandFilterLocal !== 'ALL') {
-          if (!matchesBrandFilter(m, brandFilterLocal)) return false;
-        }
-        if (sc.ownerBrandCode && sc.ownerBrandCode !== 'ALL') {
-          return matchesBrandFilter(m, sc.ownerBrandCode);
-        }
-        if (isActingScenario) {
-          return (
-            Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
-            (!['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-              m.id
-            ) &&
-              Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]))
-          );
-        }
-        if (sc.id === 1) {
-          if (
-            ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-              m.id
-            )
-          ) {
-            return false;
-          }
-          if (
-            brandFilterLocal === 'ALL' &&
-            !includeGroupPortfolioInS1 &&
-            isUnverifiedActingSku(m.code)
-          ) {
-            return false;
-          }
-        }
-        return Boolean(m.customBrandLabel) || sc.includedBrands.includes(m.brandId);
-      });
+      const eligibleModels = filterModelsForScenario(
+        models,
+        sc,
+        includeGroupPortfolioInS1,
+        brandFilterLocal
+      );
 
       let annualRevenueRub = 0;
       let annualProfitRub = 0;
@@ -1027,32 +1092,12 @@ export function GrowthScenariosShowcase({
 
   // Сводка ТЗ v1.1 по выбранному сценарию: Партии закупок, Капитал, Честный P&L и Риски
   const v11ScenarioSummary = useMemo(() => {
-    const isActingScenario = currentScenario.id === ACTING_2027_SCENARIO_ID;
-    const eligible = models.filter((m) => {
-      if (m.launchStatus === 'В архиве') return false;
-      if (isActingScenario) {
-        return (
-          Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
-          (!['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-            m.id
-          ) &&
-            Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]))
-        );
-      }
-      if (currentScenario.id === 1) {
-        if (
-          ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-            m.id
-          )
-        ) {
-          return false;
-        }
-        if (!includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
-          return false;
-        }
-      }
-      return Boolean(m.customBrandLabel) || currentScenario.includedBrands.includes(m.brandId);
-    });
+    const eligible = filterModelsForScenario(
+      models,
+      currentScenario,
+      includeGroupPortfolioInS1,
+      brandFilterLocal
+    );
 
     let approvedOrdersCount = 0;
     let approvedOrdersRub = 0;
@@ -1149,45 +1194,17 @@ export function GrowthScenariosShowcase({
 
   // Отфильтрованные модели для каталога на Экране №1
   const filteredModels = useMemo(() => {
-    const isActingScenario = currentScenario.id === ACTING_2027_SCENARIO_ID;
-    const list = models.filter((m) => {
-      if (m.launchStatus === 'В архиве' && statusFilterLocal !== 'В архиве') {
-        return false;
-      }
-      if (isActingScenario) {
-        const isActingMod =
-          Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
-          (!['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-            m.id
-          ) &&
-            Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]));
-        if (!isActingMod) return false;
-      } else if (currentScenario.id === 1) {
-        if (
-          ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-            m.id
-          )
-        ) {
-          return false;
-        }
-        if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
-          return false;
-        }
-        if (
-          !includeGroupPortfolioInS1 &&
-          brandFilterLocal !== 'FUKAI' &&
-          isUnverifiedActingSku(m.code)
-        ) {
-          return false;
-        }
-      } else if (!m.customBrandLabel && !currentScenario.includedBrands.includes(m.brandId)) {
-        return false;
-      }
-      if (brandFilterLocal !== 'ALL') {
-        if (!matchesBrandFilter(m, brandFilterLocal)) {
-          return false;
-        }
-      }
+    const basePool =
+      statusFilterLocal === 'В архиве'
+        ? models.filter((m) => m.launchStatus === 'В архиве')
+        : filterModelsForScenario(
+            models,
+            currentScenario,
+            includeGroupPortfolioInS1,
+            brandFilterLocal
+          );
+
+    const list = basePool.filter((m) => {
       if (statusFilterLocal !== 'ALL' && m.launchStatus !== statusFilterLocal) {
         return false;
       }
@@ -1518,26 +1535,73 @@ export function GrowthScenariosShowcase({
 
   // Создание новой модели через короткую форму (Раздел 4.4 и 4.5 ТЗ: привязка к выбранному бренду, без выдуманного плана продаж)
   const createAndSaveModel = (openCardAfterSave: boolean) => {
-    const activeBrandForCreation =
+    const rawBrand =
       draftBrand ||
       (brandFilterLocal !== 'ALL' ? brandFilterLocal : 'BORNERS');
-    const unitCfg = getBrandUnitConfig(activeBrandForCreation);
+    const norm = normalizePortfolioBrandCode(rawBrand);
+    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const unitCfg = getBrandUnitConfig(bCode);
     const cleanTitle =
       draftTitle.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
 
-    const { model: created } = createBrandProductModel(models, scenarios, {
-      title: cleanTitle.toUpperCase(),
-      brandCode: activeBrandForCreation,
-      categoryLabel: draftType || unitCfg.categoryDefault,
-      unitsInPack: draftUnitsInPack || unitCfg.secondaryPerPrimaryDefault,
-      retailPriceRub: draftRetailPrice || 1990,
-      unitCostRub: draftUnitCost || 650,
-    });
+    // Если у бренда ещё нет активного сценария (например, AKUSHA или LISKANI) — создаём / подключаем его автоматически
+    let workingScenarios = [...scenarios];
+    let workingModels = [...models];
+    const currentBrandScenId = selectedScenarioByBrand[bCode];
+    const hasValidBrandScen =
+      typeof currentBrandScenId === 'number' &&
+      workingScenarios.some((s) => s.id === currentBrandScenId && !s.isArchived);
 
-    commitModels((prev) => [...prev, created]);
+    if (!hasValidBrandScen) {
+      const existingOwned = workingScenarios.find(
+        (s) =>
+          !s.isArchived &&
+          s.ownerBrandCode &&
+          normalizePortfolioBrandCode(s.ownerBrandCode) === bCode
+      );
+      if (existingOwned) {
+        setSelectedScenarioForBrand(bCode, existingOwned.id);
+        setSelectedScenarioId(existingOwned.id);
+      } else {
+        const createdScenRes = createIndependentBrandScenario(
+          workingScenarios,
+          workingModels,
+          {
+            title: `${unitCfg.displayCode} — План развития 2027`,
+            brandCode: bCode,
+            year: 2027,
+            monthlyTargetMln: bCode === 'AKUSHA' ? 35 : bCode === 'LISKANI' ? 28 : 30,
+            copyFromScenarioId: null,
+          }
+        );
+        workingScenarios = createdScenRes.scenarios;
+        workingModels = createdScenRes.models;
+        commitScenarios(workingScenarios);
+        setSelectedScenarioForBrand(bCode, createdScenRes.scenario.id);
+        setSelectedScenarioId(createdScenRes.scenario.id);
+      }
+    }
+
+    const { model: created } = createBrandProductModel(
+      workingModels,
+      workingScenarios,
+      {
+        title: cleanTitle,
+        brandCode: bCode,
+        code: draftCode.trim() || undefined,
+        categoryLabel: draftType || unitCfg.categoryDefault,
+        unitsInPack: draftUnitsInPack || unitCfg.secondaryPerPrimaryDefault,
+        retailPriceRub: draftRetailPrice || 1990,
+        unitCostRub: draftUnitCost || 650,
+        imageUrl: draftImageUrl || undefined,
+      }
+    );
+
+    commitModels([...workingModels, created]);
     setSelectedModelId(created.id);
     setNewModelModalOpen(false);
     setDraftTitle('');
+    setDraftImageUrl('');
 
     // Автоматически синхронизируем созданную модель с разделом «Модели (SKU)»
     syncScenarioModelToCatalog(created);
@@ -4039,144 +4103,210 @@ export function GrowthScenariosShowcase({
       )}
 
       {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ НОВОЙ МОДЕЛИ (п. 7.1 ТЗ, Тест 11) */}
-      {newModelModalOpen && (
-        <div
-          onClick={() => setNewModelModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <form
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={handleCreateNewModel}
-            className="w-full max-w-md rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
+      {newModelModalOpen && (() => {
+        const modalNorm = normalizePortfolioBrandCode(draftBrand || 'BORNERS');
+        const modalBrandCode: CanonicalBrandCode =
+          modalNorm === 'ALL' ? 'BORNERS' : modalNorm;
+        const modalPreset =
+          SHOWCASE_BRAND_PRESETS[modalBrandCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
+        const modalUnitCfg = getBrandUnitConfig(modalBrandCode);
+        return (
+          <div
+            onClick={() => setNewModelModalOpen(false)}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-[18px] font-bold text-[#1D1D1F]">
-                Новая модель в портфель
-              </h3>
-              <button
-                type="button"
-                onClick={() => setNewModelModalOpen(false)}
-                className="h-8 w-8 rounded-full hover:bg-[#FAF8F4] flex items-center justify-center cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="text-[12px] text-[#6E6E73]">
-              Достаточно указать базовые поля — остальные характеристики можно заполнить позже в карточке модели.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                  Бренд
-                </label>
-                <select
-                  value={draftBrand}
-                  onChange={(e) => setDraftBrand(e.target.value)}
-                  className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
+            <form
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={handleCreateNewModel}
+              className="w-full max-w-lg rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-[18px] font-bold text-[#1D1D1F]">
+                  Новая модель в портфель
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setNewModelModalOpen(false)}
+                  className="h-8 w-8 rounded-full hover:bg-[#FAF8F4] flex items-center justify-center cursor-pointer"
                 >
-                  <option value="BORNERS">BORNERS</option>
-                  <option value="NA_TELE">НА ТЕЛЕ</option>
-                  <option value="FUKAI">FUKAI</option>
-                  <option value="AKUSHA">AKUSHA</option>
-                  <option value="LISKANI">LISKANI</option>
-                </select>
+                  <X className="h-4 w-4" />
+                </button>
               </div>
+              <p className="text-[12px] text-[#6E6E73]">
+                Поля и категории адаптируются под выбранный бренд ({modalUnitCfg.displayCode}). План продаж при создании равен 0 до вашего заполнения.
+              </p>
 
-              <div>
-                <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                  Название модели
-                </label>
-                <input
-                  type="text"
-                  placeholder="Например: SPORT MODAL 3 PACK"
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
-                />
-              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Бренд (кабинет)
+                    </label>
+                    <select
+                      value={modalBrandCode}
+                      onChange={(e) => setDraftBrand(e.target.value)}
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
+                    >
+                      <option value="BORNERS">BORNERS</option>
+                      <option value="NA_TELE">НА ТЕЛЕ</option>
+                      <option value="FUKAI">FUKAI</option>
+                      <option value="AKUSHA">AKUSHA (обувь)</option>
+                      <option value="LISKANI">LISKANI (шторы)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Артикул (SKU)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftCode}
+                      onChange={(e) => setDraftCode(e.target.value)}
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-mono font-semibold"
+                    />
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Тип изделия
+                    Название модели
                   </label>
                   <input
                     type="text"
-                    value={draftType}
-                    onChange={(e) => setDraftType(e.target.value)}
+                    placeholder={modalPreset.placeholder}
+                    value={draftTitle}
+                    onChange={(e) => setDraftTitle(e.target.value)}
                     className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Категория ({modalUnitCfg.displayCode})
+                    </label>
+                    <select
+                      value={
+                        modalPreset.categories.includes(draftType)
+                          ? draftType
+                          : modalPreset.categories[0]
+                      }
+                      onChange={(e) => setDraftType(e.target.value)}
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-medium"
+                    >
+                      {modalPreset.categories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      В 1 ед. ({modalUnitCfg.primaryUnit} → {modalUnitCfg.secondaryUnit})
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={draftUnitsInPack}
+                      onChange={(e) =>
+                        setDraftUnitsInPack(Math.max(1, Number(e.target.value) || 1))
+                      }
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Розничная цена (₽)
+                    </label>
+                    <input
+                      type="number"
+                      value={draftRetailPrice}
+                      onChange={(e) => setDraftRetailPrice(Number(e.target.value))}
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Себестоимость (₽)
+                    </label>
+                    <input
+                      type="number"
+                      value={draftUnitCost}
+                      onChange={(e) => setDraftUnitCost(Number(e.target.value))}
+                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Штук в комплекте
+                  <label className="text-[11.5px] font-semibold text-[#1D1D1F] block mb-1">
+                    Фотография модели (опционально)
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={draftUnitsInPack}
-                    onChange={(e) =>
-                      setDraftUnitsInPack(Math.max(1, Number(e.target.value) || 1))
-                    }
-                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
-                  />
+                  <div className="flex items-center gap-3">
+                    {draftImageUrl && (
+                      <div className="relative h-11 w-11 rounded-[8px] border border-[#DED8CC] overflow-hidden shrink-0 bg-[#F8FAFC]">
+                        <img
+                          src={draftImageUrl}
+                          alt="Превью"
+                          className="h-full w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setDraftImageUrl('')}
+                          className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/75 text-white text-[9px] flex items-center justify-center cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const dataUrl = await compressImageFileToDataUrl(file, 920, 0.82);
+                          setDraftImageUrl(dataUrl);
+                        }
+                      }}
+                      className="w-full text-[12px] text-[#475569] file:mr-2.5 file:py-1.5 file:px-3 file:rounded-[8px] file:border-0 file:text-[11.5px] file:font-semibold file:bg-[#ECFDF5] file:text-[#047857] hover:file:bg-[#D1FAE5]"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Розничная цена (₽)
-                  </label>
-                  <input
-                    type="number"
-                    value={draftRetailPrice}
-                    onChange={(e) => setDraftRetailPrice(Number(e.target.value))}
-                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Себестоимость (₽)
-                  </label>
-                  <input
-                    type="number"
-                    value={draftUnitCost}
-                    onChange={(e) => setDraftUnitCost(Number(e.target.value))}
-                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
-                  />
-                </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setNewModelModalOpen(false)}
+                  className="h-9 px-3.5 rounded-[10px] border border-[#DED8CC] text-[12px] font-semibold text-[#5E5D58] hover:text-[#1E293B] cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={() => createAndSaveModel(false)}
+                  className="h-9 px-3.5 rounded-[10px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Сохранить</span>
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-3.5 rounded-[10px] border border-[#A7F3D0] bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#065F46] text-[12px] font-semibold cursor-pointer transition"
+                >
+                  Сохранить и открыть →
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setNewModelModalOpen(false)}
-                className="h-9 px-3.5 rounded-[10px] border border-[#DED8CC] text-[12px] font-semibold text-[#5E5D58] hover:text-[#1E293B] cursor-pointer"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={() => createAndSaveModel(false)}
-                className="h-9 px-3.5 rounded-[10px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-              >
-                <Check className="h-3.5 w-3.5" />
-                <span>Сохранить</span>
-              </button>
-              <button
-                type="submit"
-                className="h-9 px-3.5 rounded-[10px] border border-[#A7F3D0] bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#065F46] text-[12px] font-semibold cursor-pointer transition"
-              >
-                Сохранить и открыть →
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            </form>
+          </div>
+        );
+      })()}
 
       {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ НОВОГО СЦЕНАРИЯ (п. 7.3 ТЗ) */}
       {newScenarioModalOpen && (
