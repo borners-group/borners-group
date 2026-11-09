@@ -2844,6 +2844,149 @@ test('42. Утверждённый ассортимент LISKANI 2027 (269 SKU 
   );
 });
 
+test('43. Авто-миграция браузерного кэша (localStorage) от старых заглушек Венеция / Скандинавия / BRN-LSK-001..003 и чернового LSC-014 к эталонным 33 карточкам WB (269 SKU · 500 млн ₽)', async () => {
+  const {
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    STORAGE_KEY_DELETED_MODELS,
+    STORAGE_KEY_MODELS,
+    STORAGE_KEY_SCENARIO_BY_BRAND,
+    STORAGE_KEY_USER_PLANS_BACKUP,
+    hydratePortfolioModelsFromStorage,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { loadProductGroups } = await import('../src/lib/productGroups.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    // Имитируем загрязнённый localStorage со скриншотов 5–10 (старые заглушки BRN-LSK-001..003 + черновик LSC-014 без liskaniSizeVariants)
+    store.set(
+      STORAGE_KEY_MODELS,
+      JSON.stringify([
+        {
+          id: 'scen-liskani-1794227333481',
+          code: 'LSC-014',
+          title: 'БЛЭКАУТ СЕРЫЙ',
+          subtitle: 'Портьеры блэкаут',
+          brandId: 'BORNERS',
+          customBrandLabel: 'LISKANI',
+          retailPriceRub: 3190,
+          unitCostRub: 1150,
+          unitsInPack: 1,
+          launchStatus: 'Действующий',
+          gallery: [{ id: 'g1', label: 'Фото', url: 'images/products/borners-core-modal.svg', isMain: true }],
+          palettes: [{ id: 'p1', title: 'КАРТОЧКА WB 244995893 — Borners2', colors: [] }],
+          plansByScenario: {},
+        },
+        {
+          id: 'prod-old-lsk-001',
+          code: 'BRN-LSK-001',
+          title: 'Шторы блэкаут LISKANI Венеция 300×270 (2 полотна)',
+          subtitle: 'Боксеры · BORNERS 2027',
+          brandId: 'BORNERS',
+          customBrandLabel: 'LISKANI',
+          retailPriceRub: 4290,
+          unitCostRub: 1320,
+          unitsInPack: 2,
+          launchStatus: 'Действующий',
+          gallery: [],
+          palettes: [],
+          plansByScenario: {},
+        },
+      ])
+    );
+
+    store.set(
+      STORAGE_KEY_USER_PLANS_BACKUP,
+      JSON.stringify({
+        'scen-liskani-1794227333481': {
+          id: 'scen-liskani-1794227333481',
+          code: 'LSC-014',
+          title: 'БЛЭКАУТ СЕРЫЙ',
+          retailPriceRub: 3190,
+          unitCostRub: 1150,
+          launchStatus: 'Действующий',
+          gallery: [{ id: 'g1', label: 'Фото', url: 'images/products/borners-core-modal.svg', isMain: true }],
+          palettes: [{ id: 'p1', title: 'КАРТОЧКА WB 244995893 — Borners2', colors: [] }],
+          plansByScenario: {},
+        },
+      })
+    );
+
+    store.set(STORAGE_KEY_DELETED_MODELS, JSON.stringify(['LSC-014', 'SCEN-LSC-014']));
+    store.set(
+      STORAGE_KEY_SCENARIO_BY_BRAND,
+      JSON.stringify({ BORNERS: 1, LISKANI: 999111 })
+    );
+    store.set(
+      'borners_product_groups_v1',
+      JSON.stringify([
+        {
+          id: 'grp-liscani-curtains',
+          title: 'Шторы и текстиль LISKANI',
+          brandCode: 'LISKANI',
+          cabinetLabel: 'LISKANI · WB',
+          modelIds: [],
+          modelCodes: [],
+          isSystemDefault: true,
+          createdAt: '2026-11-08',
+        },
+      ])
+    );
+
+    const hydrated = hydratePortfolioModelsFromStorage();
+    const liskaniHydrated = hydrated.filter((m) => m.customBrandLabel === 'LISKANI');
+
+    // 1. Все 33 официальные карточки LISKANI на месте, старые заглушки Венеция / BRN-LSK-001 удалены
+    assert.equal(liskaniHydrated.length, 33, 'После миграции должно быть ровно 33 официальные карточки LISKANI');
+    assert.equal(
+      liskaniHydrated.some((m) => m.code === 'BRN-LSK-001' || m.title.includes('Венеция')),
+      false,
+      'Старые заглушки Венеция / BRN-LSK-001 должны быть полностью очищены'
+    );
+
+    // 2. Карточка LSC-014 теперь имеет реальное фото WB (images/liskani/LSC-014.webp), 8 размерных SKU и не содержит Borners2
+    const lsc014 = liskaniHydrated.find((m) => m.code === 'LSC-014')!;
+    assert.ok(lsc014, 'Официальная карточка LSC-014 должна присутствовать');
+    assert.equal(lsc014.gallery[0]?.url, 'images/liskani/LSC-014.webp');
+    assert.equal(lsc014.liskaniSizeVariants?.length, 8);
+    assert.equal(
+      lsc014.palettes.some((p) => (p.title || '').includes('Borners2')),
+      false
+    );
+
+    // 3. Активный сценарий бренда LISKANI автоматически переключён на 202705 (500 млн ₽)
+    const updatedBrandScen = JSON.parse(store.get(STORAGE_KEY_SCENARIO_BY_BRAND) || '{}');
+    assert.equal(updatedBrandScen.LISKANI, LISKANI_2027_SCENARIO_ID);
+
+    // 4. Группы товаров LISKANI содержат все 4 тканевые линейки с ненулевым числом моделей
+    const syncedGroups = loadProductGroups(hydrated).filter((g) => g.brandCode === 'LISKANI');
+    const blackoutGrp = syncedGroups.find((g) => g.id === 'grp-liskani-blackout')!;
+    const mramorGrp = syncedGroups.find((g) => g.id === 'grp-liskani-mramor')!;
+    const rogozhkaGrp = syncedGroups.find((g) => g.id === 'grp-liskani-rogozhka')!;
+    const tyulGrp = syncedGroups.find((g) => g.id === 'grp-liskani-tyul')!;
+    assert.equal(blackoutGrp.modelIds.length, 13);
+    assert.equal(mramorGrp.modelIds.length, 10);
+    assert.equal(rogozhkaGrp.modelIds.length, 5);
+    assert.equal(tyulGrp.modelIds.length, 5);
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
 
 
 

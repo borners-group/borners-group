@@ -519,9 +519,9 @@ export function AppShell() {
   const [updateDetailsOpen, setUpdateDetailsOpen] = useState(false);
   const [detectedBuildId, setDetectedBuildId] = useState<string>(currentBuildId);
   const [updateChanges, setUpdateChanges] = useState<string[]>([
-    'Закупки напрямую связаны с планом продаж: меняйте сценарий или годовой план выкупов — партии и бюджет пересчитываются мгновенно',
-    'Наглядно выделена сумма инвестиций сразу на старт (Партия №1 · Q1 и аванс 30% фабрике) отдельно от оборотного бюджета на год',
-    'Очищен интерфейс партий от визуального перегруза, исправлен пустой экран при фильтре бренда и настроен возврат на главную сводку по клику на логотип',
+    'Загружены все 33 цветовые карточки LISKANI (LSC-001..LSC-033) с реальными студийными фотографиями с Wildberries и полным реестром 269 размерных SKU (Блэкаут, Мрамор, Рогожка, Тюль Вуаль)',
+    'Помесячный план 2027 сверен рубль-в-рубль: 500 000 000 ₽ выкупов (при 57% выкупа) и 877 192 982 ₽ заказов (289 889 комплектов штор и тюля)',
+    'Полное редактирование всех полей паспорта карточки, удаление даже единственного фото, создание карточек со своими категориями и единый каталог на Главной и в разделе «01 · Продукт»',
   ]);
 
   useEffect(() => {
@@ -588,6 +588,7 @@ export function AppShell() {
   const handleApplySiteUpdate = useCallback(() => {
     try {
       window.localStorage.setItem('borners_seen_build_id_v1', detectedBuildId);
+      window.localStorage.removeItem('borners_liskani_269_official_migrated_v3');
     } catch {
       // ignore
     }

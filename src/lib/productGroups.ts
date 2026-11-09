@@ -279,7 +279,11 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
       for (let i = 0; i < defMatch.modelIds.length; i++) {
         const mId = defMatch.modelIds[i];
         const mCode = defMatch.modelCodes[i];
-        if (!assignedIds.has(mId) && (!mCode || !assignedCodes.has(mCode.toUpperCase()))) {
+        const alreadyInGroup =
+          nextIds.includes(mId) ||
+          (Boolean(mCode) &&
+            nextCodes.some((c) => c.toUpperCase() === mCode.toUpperCase()));
+        if (!alreadyInGroup) {
           nextIds.push(mId);
           if (mCode) nextCodes.push(mCode);
           assignedIds.add(mId);
@@ -288,6 +292,8 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
       }
       return {
         ...g,
+        title: defMatch.title || g.title,
+        subtitle: defMatch.subtitle || g.subtitle,
         modelIds: nextIds,
         modelCodes: nextCodes,
       };

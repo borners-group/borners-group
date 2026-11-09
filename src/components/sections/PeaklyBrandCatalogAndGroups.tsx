@@ -2599,7 +2599,11 @@ export function PeaklyCatalogGroupsAndBrandsView({
     'grp-natele-womens-base': true,
     'grp-fukai-wb': true,
     'grp-akusha-shoes': true,
-    'grp-liscani-curtains': true,
+    'grp-liscani-curtains': false,
+    'grp-liskani-blackout': true,
+    'grp-liskani-mramor': false,
+    'grp-liskani-rogozhka': false,
+    'grp-liskani-tyul': false,
   });
 
   // Модальное окно создания / настройки группы товаров

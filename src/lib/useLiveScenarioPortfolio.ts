@@ -177,6 +177,9 @@ export function useLiveScenarioPortfolio() {
   });
 
   const syncFromStorage = useCallback(() => {
+    const hydratedModels = hydratePortfolioModelsFromStorage();
+    setModels(hydratedModels);
+
     const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
     if (Array.isArray(parsedScen) && parsedScen.length > 0) {
       let nextScen = [...parsedScen];
@@ -188,9 +191,6 @@ export function useLiveScenarioPortfolio() {
       }
       setScenarios(nextScen);
     }
-
-    const hydratedModels = hydratePortfolioModelsFromStorage();
-    setModels(hydratedModels);
 
     const savedByBrand = safeGetStorageJson<
       Partial<Record<CanonicalBrandCode, number | null>>

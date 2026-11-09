@@ -396,8 +396,8 @@ export interface Product {
   name: string;
   brandId: string;
   conceptId?: string;
-  category: 'Боксеры' | 'Транки' | 'Брифы' | 'Мультипак' | 'Лимитированная капсула';
-  productType: 'Базовая коллекция' | 'Лимитированная коллекция' | 'Капсула оттенков кожи' | 'Мультипак';
+  category: 'Боксеры' | 'Транки' | 'Брифы' | 'Мультипак' | 'Лимитированная капсула' | string;
+  productType: 'Базовая коллекция' | 'Лимитированная коллекция' | 'Капсула оттенков кожи' | 'Мультипак' | string;
   collection: string;
   priceSegment: 'Mass-Market+' | 'Middle+' | 'Premium';
   status: ProductStatus;
@@ -413,7 +413,7 @@ export interface Product {
   waistbandType: string;
   fitType: string;
   constructionDetails: string;
-  sizes: ('S' | 'M' | 'L' | 'XL' | 'XXL')[];
+  sizes: string[];
   // Производство
   supplierName: string;
   supplierCountry: string;

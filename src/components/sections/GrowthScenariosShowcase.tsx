@@ -44,6 +44,11 @@ import {
   verifyActingAssortment2027Bundle,
 } from '@/lib/actingAssortment2027';
 import {
+  LISKANI_2027_MODELS,
+  LISKANI_2027_SCENARIO_DEF,
+  LISKANI_2027_SCENARIO_ID,
+} from '@/lib/liskaniAssortment2027';
+import {
   S1_100M_CONTROL_TOTALS,
   S1_100M_NEW_VARIANTS,
   S1_100M_SCENARIO_MODELS,
@@ -116,6 +121,7 @@ const DEFAULT_RESTORED_MODELS: ScenarioModelSpec[] = applyCategoryWbUnitEconomic
   applyClientSavedS1SalesPlan([
     ...ACTING_2027_SCENARIO_MODELS,
     ...S1_100M_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
   ])
 );
 
@@ -149,7 +155,10 @@ export function GrowthScenariosShowcase({
     initialScreen
   );
 
-  const [scenarios, setScenarios] = useState<GrowthScenarioDef[]>(INITIAL_SCENARIOS);
+  const [scenarios, setScenarios] = useState<GrowthScenarioDef[]>([
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+  ]);
   const [models, setModels] = useState<ScenarioModelSpec[]>(DEFAULT_RESTORED_MODELS);
   const [selectedScenarioId, setSelectedScenarioIdState] = useState<number>(1);
   const [selectedModelId, setSelectedModelId] = useState<string>(
@@ -373,7 +382,7 @@ export function GrowthScenariosShowcase({
     BORNERS: 1,
     FUKAI: ACTING_2027_SCENARIO_ID,
     AKUSHA: null,
-    LISKANI: null,
+    LISKANI: LISKANI_2027_SCENARIO_ID,
     NA_TELE: 2,
   });
   const [groupMonthlyDetailsOpen, setGroupMonthlyDetailsOpen] = useState(false);
@@ -470,15 +479,16 @@ export function GrowthScenariosShowcase({
       LISKANI: {
         prefix: 'LSC',
         categories: [
-          'Портьеры блэкаут',
+          'Портьеры Блэкаут',
+          'Портьеры Мрамор',
+          'Портьеры Рогожка',
+          'Тюль Вуаль',
           'Шторы димаут',
-          'Тюль и вуаль',
-          'Комплект штор 2 полотна',
           'Римские шторы',
         ],
-        placeholder: 'Например: Шторы блэкаут LISKANI Венеция 300×270 (2 полотна)',
-        defaultPrice: 4290,
-        defaultCost: 1320,
+        placeholder: 'Например: Портьеры Блэкаут LISKANI (комплект 2 шторы)',
+        defaultPrice: 3100,
+        defaultCost: 1150,
         defaultUnits: 2,
       },
     }),
@@ -682,19 +692,35 @@ export function GrowthScenariosShowcase({
   // Загрузка сохранённых данных из localStorage без перезаписи пользовательских правок продаж
   useEffect(() => {
     const syncFromStorage = () => {
-      const bundleCheck = verifyActingAssortment2027Bundle();
-      const s1Check = verifyScenarioS1_100M();
+      // 1. Сначала запускаем единую гидратацию моделей (включая миграцию LISKANI 269 SKU / 33 модели)
+      const hydratedModels = hydratePortfolioModelsFromStorage();
+      const existingStoredModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
+      if (!Array.isArray(existingStoredModels) || existingStoredModels.length === 0) {
+        safeSetStorageJson(STORAGE_KEY_MODELS, hydratedModels);
+        saveUserPlansBackup(hydratedModels);
+      }
+      setModels(hydratedModels);
+
+      // 2. Загружаем сценарии и гарантируем наличие ACTING 2027 и LISKANI 2027 (500 млн ₽)
       const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
       if (Array.isArray(parsedScen) && parsedScen.length > 0) {
-        const hasActingScen = parsedScen.some((s) => s.id === ACTING_2027_SCENARIO_ID);
-        const nextScen = hasActingScen
-          ? parsedScen
-          : [ACTING_2027_SCENARIO_DEF, ...parsedScen];
-        if (!hasActingScen) {
+        let nextScen = [...parsedScen];
+        let scenChanged = false;
+        if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
+          nextScen = [ACTING_2027_SCENARIO_DEF, ...nextScen];
+          scenChanged = true;
+        }
+        if (!nextScen.some((s) => s.id === LISKANI_2027_SCENARIO_ID)) {
+          nextScen = [...nextScen, LISKANI_2027_SCENARIO_DEF];
+          scenChanged = true;
+        }
+        if (scenChanged) {
           safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
         }
         setScenarios(nextScen);
       }
+
+      // 3. Загружаем привязку сценариев к брендам
       const parsedBrandScen = safeGetStorageJson<Record<string, number | null>>(
         STORAGE_KEY_SCENARIO_BY_BRAND
       );
@@ -703,110 +729,10 @@ export function GrowthScenariosShowcase({
         if (normalizedBrandScen.FUKAI === 1) {
           normalizedBrandScen.FUKAI = ACTING_2027_SCENARIO_ID;
         }
+        if (!normalizedBrandScen.LISKANI) {
+          normalizedBrandScen.LISKANI = LISKANI_2027_SCENARIO_ID;
+        }
         setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedBrandScen }));
-      }
-
-      const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-      const restoredClientV4Flag =
-        typeof window !== 'undefined'
-          ? window.localStorage.getItem('borners_restored_client_s1_109_94m_v4')
-          : '1';
-
-      if (Array.isArray(parsedModels) && parsedModels.length > 0) {
-        // Убираем 4 старые демо-карточки (scen-model-001..004) и любые явно удалённые пользователем карточки
-        const filteredLegacy = parsedModels.filter(
-          (m) =>
-            !['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
-              m.id
-            ) &&
-            !['№001', '№002', '№003', '№004'].includes(m.code) &&
-            !isModelMarkedDeleted(m)
-        );
-
-        // Бережно добавляем недостающие эталонные карточки (если пользователь не удалял их), НИКОГДА не перезаписывая существующие!
-        const merged = [...filteredLegacy];
-        for (const itemMod of [
-          ...ACTING_2027_SCENARIO_MODELS,
-          ...S1_100M_SCENARIO_MODELS,
-        ]) {
-          if (isModelMarkedDeleted(itemMod)) {
-            continue;
-          }
-          const idx = merged.findIndex(
-            (m) =>
-              m.id === itemMod.id ||
-              m.code.toUpperCase() === itemMod.code.toUpperCase() ||
-              m.title.toUpperCase() === itemMod.title.toUpperCase()
-          );
-          if (idx >= 0) {
-            // Сохраняем все пользовательские планы и цены, дополняя только пустые PDF
-            if (
-              (!merged[idx].attachedPdfs || merged[idx].attachedPdfs.length === 0) &&
-              itemMod.attachedPdfs &&
-              itemMod.attachedPdfs.length > 0
-            ) {
-              merged[idx] = {
-                ...merged[idx],
-                attachedPdfs: itemMod.attachedPdfs,
-              };
-            }
-          } else {
-            merged.push(itemMod);
-          }
-        }
-
-        // Однократное авто-восстановление сохранённых клиентом продаж (109,94 млн ₽ в дек / 686,28 млн ₽ за год),
-        // если предыдущая миграция clean_v3 сбросила план к базовым 100 154 901 ₽
-        if (!restoredClientV4Flag && bundleCheck.valid && s1Check.valid) {
-          const scen1Def = INITIAL_SCENARIOS[0];
-          const currentS1DecRub = merged
-            .filter((m) => m.launchStatus !== 'В архиве' && !isUnverifiedActingSku(m.code))
-            .reduce(
-              (acc, m) => acc + computeModelScenarioMetrics(m, scen1Def).targetMonthRevenueRub,
-              0
-            );
-          const wasResetToPdfDefault = Math.abs(currentS1DecRub - 100_154_901) < 100;
-          const nextRestored = wasResetToPdfDefault
-            ? applyClientSavedS1SalesPlan(merged)
-            : overlayUserPlansBackup(merged);
-
-          // Упорядочиваем 7 WB SKU первыми + 16 новых вариантов (как на скриншоте клиента), сохраняя любые добавленные пользователем модели
-          const wbOrderIds = new Set(ACTING_2027_SCENARIO_MODELS.map((m) => m.id));
-          const s1OrderIds = new Set(S1_100M_SCENARIO_MODELS.map((m) => m.id));
-          const ordered = [
-            ...nextRestored.filter((m) => wbOrderIds.has(m.id)),
-            ...nextRestored.filter((m) => s1OrderIds.has(m.id)),
-            ...nextRestored.filter((m) => !wbOrderIds.has(m.id) && !s1OrderIds.has(m.id)),
-          ];
-
-          safeSetStorageJson(STORAGE_KEY_MODELS, ordered);
-          saveUserPlansBackup(ordered);
-          try {
-            window.localStorage.setItem('borners_acting_2027_seeded_v2', '1');
-            window.localStorage.setItem('borners_s1_100m_seeded_v1', '1');
-            window.localStorage.setItem('borners_s1_100m_clean_v3', '1');
-            window.localStorage.setItem('borners_restored_client_s1_109_94m_v4', '1');
-          } catch {
-            // ignore
-          }
-          setModels(ordered);
-        } else {
-          const withBackup = overlayUserPlansBackup(merged);
-          setModels(withBackup);
-        }
-      } else if (bundleCheck.valid && s1Check.valid) {
-        const seeded = overlayUserPlansBackup(DEFAULT_RESTORED_MODELS);
-        safeSetStorageJson(STORAGE_KEY_MODELS, seeded);
-        saveUserPlansBackup(seeded);
-        try {
-          window.localStorage.setItem('borners_acting_2027_seeded_v2', '1');
-          window.localStorage.setItem('borners_s1_100m_seeded_v1', '1');
-          window.localStorage.setItem('borners_s1_100m_clean_v3', '1');
-          window.localStorage.setItem('borners_restored_client_s1_109_94m_v4', '1');
-        } catch {
-          // ignore
-        }
-        setModels(seeded);
       }
 
       const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
@@ -1374,13 +1300,17 @@ export function GrowthScenariosShowcase({
   // Сброс к эталону 28-страничного PDF (15,04 млн WB + 85,11 млн 16 новых = 100,15 млн ₽ в дек)
   const handleResetToPdfBaseline = () => {
     clearDeletedModelsRegistry();
-    const baseline = [...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS];
+    const baseline = [
+      ...ACTING_2027_SCENARIO_MODELS,
+      ...S1_100M_SCENARIO_MODELS,
+      ...LISKANI_2027_MODELS,
+    ];
     commitModels(baseline);
-    commitScenarios(INITIAL_SCENARIOS);
+    commitScenarios([...INITIAL_SCENARIOS, LISKANI_2027_SCENARIO_DEF]);
     notify(
       'success',
       '↺ Восстановлен эталон PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)',
-      '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.).'
+      '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.) + матрица LISKANI.'
     );
   };
 
@@ -1602,6 +1532,8 @@ export function GrowthScenariosShowcase({
             ? 1
             : bCode === 'FUKAI'
             ? ACTING_2027_SCENARIO_ID
+            : bCode === 'LISKANI'
+            ? LISKANI_2027_SCENARIO_ID
             : bCode === 'NA_TELE'
             ? 2
             : null;
@@ -3801,7 +3733,7 @@ export function GrowthScenariosShowcase({
                               {mod.title}
                             </div>
                             <div className="text-[11px] text-[#5E5D58]">
-                              {mod.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {mod.subtitle}
+                              {detectModelBrandPortfolioLabel(mod)} · {mod.subtitle}
                             </div>
                           </td>
                           <td className="py-2.5 px-3">
@@ -4133,9 +4065,15 @@ export function GrowthScenariosShowcase({
                       value={
                         modalPreset.categories.includes(draftType)
                           ? draftType
-                          : modalPreset.categories[0]
+                          : '__CUSTOM__'
                       }
-                      onChange={(e) => setDraftType(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value === '__CUSTOM__') {
+                          setDraftType('');
+                        } else {
+                          setDraftType(e.target.value);
+                        }
+                      }}
                       className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-medium"
                     >
                       {modalPreset.categories.map((cat) => (
@@ -4143,7 +4081,17 @@ export function GrowthScenariosShowcase({
                           {cat}
                         </option>
                       ))}
+                      <option value="__CUSTOM__">+ Своя категория...</option>
                     </select>
+                    {!modalPreset.categories.includes(draftType) && (
+                      <input
+                        type="text"
+                        value={draftType}
+                        onChange={(e) => setDraftType(e.target.value)}
+                        placeholder="Введите название категории"
+                        className="w-full h-8 px-2.5 mt-1.5 rounded-[8px] border border-[#DED8CC] text-[12px]"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
@@ -4390,10 +4338,8 @@ export function GrowthScenariosShowcase({
         <PdfConstructorModal
           concept={{
             ...conceptForPdf,
-            code: `BRN-${activeModel.code.replace('№', '')}`,
-            name: `${
-              activeModel.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'
-            } ${activeModel.code} · ${activeModel.title}`,
+            code: activeModel.code.replace('№', ''),
+            name: `${detectModelBrandPortfolioLabel(activeModel)} ${activeModel.code} · ${activeModel.title}`,
             plannedUnitCost: activeModel.unitCostRub,
             plannedRetailPrice: activeModel.retailPriceRub,
             packUnitsCount: activeModel.unitsInPack,

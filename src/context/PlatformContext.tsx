@@ -1320,40 +1320,33 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     (input: Partial<Product> & { name: string; sku: string; brandId: string }): Product => {
       const now = new Date().toISOString().slice(0, 10);
       const id = makeUniqueId('prod');
+      const isLiskani = (input.brandId || '').toUpperCase().includes('LISKANI') || (input.brandId || '').toUpperCase().includes('LISCANI');
+      const isAkusha = (input.brandId || '').toUpperCase().includes('AKUSHA');
       const newProduct: Product = {
         id,
         sku: input.sku,
         name: input.name,
         brandId: input.brandId,
         conceptId: input.conceptId,
-        category: input.category || 'Боксеры',
+        category: input.category || (isLiskani ? 'Портьеры Блэкаут' : isAkusha ? 'Обувь' : 'Боксеры'),
         productType: input.productType || 'Базовая коллекция',
-        collection: input.collection || 'Базовая линия 2027',
+        collection: input.collection || `${input.brandId || 'BORNERS'} 2027`,
         priceSegment: input.priceSegment || 'Middle+',
         status: input.status || 'active',
         description: input.description || '',
         ownerId: input.ownerId || currentUser.id,
-        imageUrl:
-          input.imageUrl ||
-          (input.brandId === 'NA_TELE'
-            ? 'images/products/natele-milky-black.svg'
-            : 'images/products/borners-core-modal.svg'),
-        galleryUrls: [
-          input.imageUrl ||
-            (input.brandId === 'NA_TELE'
-              ? 'images/products/natele-milky-black.svg'
-              : 'images/products/borners-core-modal.svg'),
-        ],
-        colorCombinations: input.colorCombinations || ['чёрный + тёмно-синий'],
-        materials: input.materials || 'Микромодал + Эластан',
-        fabricComposition: input.fabricComposition || '92% модал / 8% эластан',
-        fabricDensityGsm: input.fabricDensityGsm || 180,
-        waistbandType: input.waistbandType || 'Жаккардовая резинка 38 мм',
-        fitType: input.fitType || 'Анатомическая посадка',
-        constructionDetails: input.constructionDetails || 'Плоские швы (4 иглы, 6 нитей)',
-        sizes: input.sizes || ['S', 'M', 'L', 'XL', 'XXL'],
-        supplierName: input.supplierName || 'Guangdong Apex Intimate Apparel Co., Ltd.',
-        supplierCountry: input.supplierCountry || 'Китай',
+        imageUrl: input.imageUrl || '',
+        galleryUrls: input.imageUrl ? [input.imageUrl] : [],
+        colorCombinations: input.colorCombinations || (isLiskani ? ['Базовый оттенок'] : ['чёрный + тёмно-синий']),
+        materials: input.materials || (isLiskani ? '100% полиэстер (интерьерный текстиль)' : isAkusha ? 'Натуральная кожа / текстиль' : 'Микромодал + Эластан'),
+        fabricComposition: input.fabricComposition || (isLiskani ? '100% полиэстер (блэкаут / софт-мрамор / рогожка)' : isAkusha ? 'Натуральная кожа / ЭВА' : '92% модал / 8% эластан'),
+        fabricDensityGsm: input.fabricDensityGsm || (isLiskani ? 260 : 180),
+        waistbandType: input.waistbandType || (isLiskani ? 'Шторная лента 6 см (крючки / труба)' : isAkusha ? 'Анатомическая колодка' : 'Жаккардовая резинка 38 мм'),
+        fitType: input.fitType || (isLiskani ? 'Комплект штор (2 полотна)' : isAkusha ? 'Полноразмерная колодка 36–41' : 'Анатомическая посадка'),
+        constructionDetails: input.constructionDetails || (isLiskani ? 'Европодгибка 2×2 см · плотная драпировка' : isAkusha ? 'Прошивная подошва' : 'Плоские швы (4 иглы, 6 нитей)'),
+        sizes: input.sizes || (isLiskani ? ['300×240', '300×250', '300×260', '300×270', '400×240', '400×250', '400×260', '400×270'] : isAkusha ? ['36', '37', '38', '39', '40', '41'] : ['S', 'M', 'L', 'XL', 'XXL']),
+        supplierName: input.supplierName || (isLiskani ? 'Швейное производство интерьерного текстиля LISKANI' : isAkusha ? 'Обувная фабрика AKUSHA' : 'Guangdong Apex Intimate Apparel Co., Ltd.'),
+        supplierCountry: input.supplierCountry || (isLiskani ? 'Россия / Турция' : 'Китай'),
         moq: input.moq || 2000,
         productionLeadDays: input.productionLeadDays || 30,
         deliveryLeadDays: input.deliveryLeadDays || 16,

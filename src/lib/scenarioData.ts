@@ -1001,6 +1001,7 @@ export function computeModelScenarioMetrics(
 ) {
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
       monthlyPacks: Array(12).fill(0),

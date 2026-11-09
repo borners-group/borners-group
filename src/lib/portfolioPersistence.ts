@@ -7,6 +7,7 @@ import {
 } from './actingAssortment2027.ts';
 import {
   LISKANI_2027_MODELS,
+  LISKANI_2027_SCENARIO_DEF,
   LISKANI_2027_SCENARIO_ID,
 } from './liskaniAssortment2027.ts';
 import {
@@ -27,6 +28,107 @@ export const STORAGE_KEY_ACTIVE_SCENARIO_ID = 'borners_active_scenario_id_v1';
 export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
+export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
+
+export function isLegacyPlaceholderLiskani(
+  m: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
+): boolean {
+  const titleU = (m.title || '').toUpperCase();
+  if (
+    titleU.includes('ВЕНЕЦИЯ') ||
+    titleU.includes('СКАНДИНАВИЯ') ||
+    titleU.includes('ВОЗДУШНЫЙ ШЁЛК') ||
+    titleU.includes('ВОЗДУШНЫЙ ШЕЛК')
+  ) {
+    return true;
+  }
+  const codeU = (m.code || '').trim().toUpperCase();
+  if (/^(BRN-)?LSK-00[1-9]$/.test(codeU)) {
+    return true;
+  }
+  if (
+    /^LSC-0(0[1-9]|[12]\d|3[0-3])$/.test(codeU) &&
+    (!m.liskaniSizeVariants || m.liskaniSizeVariants.length === 0)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function runLiskani269OfficialMigrationV3(): void {
+  const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_LISKANI_269_V3);
+  if (alreadyMigrated === '1') return;
+
+  // 1. Очищаем реестр удалённых карточек от официальных LSC-001..LSC-033 и старых заглушек LSK-001..003
+  const prevDeleted = getDeletedModelsRegistry();
+  if (prevDeleted.length > 0) {
+    const officialIdsAndCodes = new Set<string>();
+    for (const m of LISKANI_2027_MODELS) {
+      officialIdsAndCodes.add(m.id.toUpperCase());
+      officialIdsAndCodes.add(m.code.toUpperCase());
+    }
+    const cleanedDeleted = prevDeleted.filter(
+      (item) => !officialIdsAndCodes.has(item.toUpperCase())
+    );
+    if (cleanedDeleted.length !== prevDeleted.length) {
+      safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, cleanedDeleted);
+    }
+  }
+
+  // 2. Очищаем backup пользовательских планов от старых заглушек Liskani без liskaniSizeVariants
+  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
+    STORAGE_KEY_USER_PLANS_BACKUP
+  );
+  if (backup && typeof backup === 'object') {
+    let backupChanged = false;
+    const nextBackup: Record<string, UserSavedModelPlanBackup> = {};
+    for (const [k, entry] of Object.entries(backup)) {
+      if (entry && isLegacyPlaceholderLiskani(entry)) {
+        backupChanged = true;
+        continue;
+      }
+      nextBackup[k] = entry;
+    }
+    if (backupChanged) {
+      safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, nextBackup);
+    }
+  }
+
+  // 3. Гарантируем, что сценарий LISKANI 2027 (202705 · 500 млн ₽) выбран для бренда LISKANI
+  const savedByBrand =
+    safeGetStorageJson<Record<string, number | null>>(STORAGE_KEY_SCENARIO_BY_BRAND) || {};
+  if (savedByBrand.LISKANI !== LISKANI_2027_SCENARIO_ID) {
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, {
+      ...savedByBrand,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+    });
+  }
+
+  // 4. Добавляем сценарий LISKANI 2027 в сохранённый список сценариев, если его там ещё нет
+  const savedScenarios = safeGetStorageJson<Array<{ id: number }>>(STORAGE_KEY_SCENARIOS);
+  if (
+    Array.isArray(savedScenarios) &&
+    savedScenarios.length > 0 &&
+    !savedScenarios.some((s) => s.id === LISKANI_2027_SCENARIO_ID)
+  ) {
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, [
+      ...savedScenarios,
+      LISKANI_2027_SCENARIO_DEF,
+    ]);
+  }
+
+  // 5. Сбрасываем старый кэш групп товаров, если там пустая заглушка grp-liscani-curtains без 4 тканевых линеек
+  const savedGroups = safeGetStorageJson<Array<{ id: string }>>('borners_product_groups_v1');
+  if (
+    Array.isArray(savedGroups) &&
+    !savedGroups.some((g) => g.id === 'grp-liskani-blackout')
+  ) {
+    const filteredGroups = savedGroups.filter((g) => g.id !== 'grp-liscani-curtains');
+    safeSetStorageJson('borners_product_groups_v1', filteredGroups);
+  }
+
+  safeSetStorageJson(MIGRATION_KEY_LISKANI_269_V3, '1');
+}
 
 export interface UserSavedModelPlanBackup {
   id: string;
@@ -173,7 +275,9 @@ export function overlayBackupOntoModels(
       if (
         m.liskaniSizeVariants &&
         m.liskaniSizeVariants.length > 0 &&
-        (!saved.plansByScenario?.[LISKANI_2027_SCENARIO_ID] ||
+        (!saved.liskaniSizeVariants ||
+          saved.liskaniSizeVariants.length === 0 ||
+          !saved.plansByScenario?.[LISKANI_2027_SCENARIO_ID] ||
           (saved.title &&
             (saved.title.includes('Венеция') ||
               saved.title.includes('Скандинавия') ||
@@ -254,28 +358,9 @@ export function deleteModelFromPortfolio(
 }
 
 export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
+  runLiskani269OfficialMigrationV3();
   const deletedReg = getDeletedModelsRegistry();
   const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-
-  const isLegacyPlaceholderLiskani = (m: ScenarioModelSpec): boolean => {
-    const titleU = (m.title || '').toUpperCase();
-    if (
-      titleU.includes('ВЕНЕЦИЯ') ||
-      titleU.includes('СКАНДИНАВИЯ') ||
-      titleU.includes('ВОЗДУШНЫЙ ШЁЛК') ||
-      titleU.includes('ВОЗДУШНЫЙ ШЕЛК')
-    ) {
-      return true;
-    }
-    const codeU = (m.code || '').trim().toUpperCase();
-    if (
-      /^LSC-0(0[1-9]|[12]\d|3[0-3])$/.test(codeU) &&
-      (!m.liskaniSizeVariants || m.liskaniSizeVariants.length === 0)
-    ) {
-      return true;
-    }
-    return false;
-  };
 
   if (Array.isArray(parsedModels) && parsedModels.length > 0) {
     const filteredLegacy = parsedModels.filter(
@@ -341,7 +426,11 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       }
     }
 
-    return overlayBackupOntoModels(merged);
+    const hydrated = overlayBackupOntoModels(merged);
+    if (hydrated.length !== parsedModels.length) {
+      safeSetStorageJson(STORAGE_KEY_MODELS, hydrated);
+    }
+    return hydrated;
   }
 
   const defaultList = applyCategoryWbUnitEconomicsToPortfolio(
