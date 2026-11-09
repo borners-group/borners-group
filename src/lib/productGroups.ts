@@ -93,6 +93,21 @@ export function buildDefaultProductGroups(
   const liscaniModels = activeModels.filter((m) =>
     matchesBrandFilter(m, 'LISKANI')
   );
+  const liskaniBlackout = liscaniModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('блэкаут')
+  );
+  const liskaniMramor = liscaniModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('мрамор')
+  );
+  const liskaniRogozhka = liscaniModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('рогожк')
+  );
+  const liskaniTyul = liscaniModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('тюль')
+  );
+  const hasOfficialLiskaniFabrics = liscaniModels.some(
+    (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+  );
 
   const groups: ProductGroupDef[] = [
     {
@@ -163,8 +178,12 @@ export function buildDefaultProductGroups(
     },
     {
       id: 'grp-liscani-curtains',
-      title: 'Шторы и текстиль LISKANI',
-      subtitle: 'Портьеры, блэкаут и тюль LISKANI (комплекты штор и метраж ткани)',
+      title: hasOfficialLiskaniFabrics
+        ? 'Шторы и текстиль LISKANI · Полная матрица (33 цвета · 269 SKU)'
+        : 'Шторы и текстиль LISKANI',
+      subtitle: hasOfficialLiskaniFabrics
+        ? 'Все 4 линейки тканей: Блэкаут (350 млн ₽), Мрамор (75 млн ₽), Рогожка (60 млн ₽), Тюль Вуаль (15 млн ₽) — план 500 млн ₽ выкупов'
+        : 'Портьеры, блэкаут и тюль LISKANI (комплекты штор и метраж ткани)',
       brandCode: 'LISKANI',
       cabinetLabel: 'LISKANI · WB',
       modelIds: liscaniModels.map((m) => m.id),
@@ -172,6 +191,58 @@ export function buildDefaultProductGroups(
       isSystemDefault: true,
       createdAt: '2026-11-08',
     },
+    ...(hasOfficialLiskaniFabrics
+      ? ([
+          {
+            id: 'grp-liskani-blackout',
+            title: 'Портьеры Блэкаут LISKANI (13 цветов · 104 SKU)',
+            subtitle:
+              'Светонепроницаемые шторы Блэкаут 300×240..400×270 · План 2027: 350,00 млн ₽ выкупов (614,04 млн ₽ заказов)',
+            brandCode: 'LISKANI',
+            cabinetLabel: 'LISKANI · WB',
+            modelIds: liskaniBlackout.map((m) => m.id),
+            modelCodes: liskaniBlackout.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-09',
+          },
+          {
+            id: 'grp-liskani-mramor',
+            title: 'Портьеры Мрамор LISKANI (10 цветов · 80 SKU)',
+            subtitle:
+              'Фактурные шторы Софт-Мрамор 300×240..400×270 · План 2027: 75,00 млн ₽ выкупов (131,58 млн ₽ заказов)',
+            brandCode: 'LISKANI',
+            cabinetLabel: 'LISKANI · WB',
+            modelIds: liskaniMramor.map((m) => m.id),
+            modelCodes: liskaniMramor.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-09',
+          },
+          {
+            id: 'grp-liskani-rogozhka',
+            title: 'Портьеры Рогожка LISKANI (5 цветов · 40 SKU)',
+            subtitle:
+              'Интерьерные шторы Рогожка 300×240..400×270 · План 2027: 60,00 млн ₽ выкупов (105,26 млн ₽ заказов)',
+            brandCode: 'LISKANI',
+            cabinetLabel: 'LISKANI · WB',
+            modelIds: liskaniRogozhka.map((m) => m.id),
+            modelCodes: liskaniRogozhka.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-09',
+          },
+          {
+            id: 'grp-liskani-tyul',
+            title: 'Тюль Вуаль LISKANI (5 цветов · 45 SKU)',
+            subtitle:
+              'Воздушная вуаль с утяжелителем 400×250..600×270 · План 2027: 15,00 млн ₽ выкупов (26,32 млн ₽ заказов)',
+            brandCode: 'LISKANI',
+            cabinetLabel: 'LISKANI · WB',
+            modelIds: liskaniTyul.map((m) => m.id),
+            modelCodes: liskaniTyul.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-09',
+          },
+        ] as ProductGroupDef[])
+      : []),
   ];
 
   return groups;

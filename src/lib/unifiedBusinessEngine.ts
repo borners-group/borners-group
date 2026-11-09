@@ -1086,6 +1086,7 @@ export function computeProcurementPlan(
 
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
       monthlyPacks: Array(12).fill(0),
@@ -1935,6 +1936,7 @@ export function computeFinancialPnL(
 
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
       monthlyPacks: Array(12).fill(0),
@@ -1979,6 +1981,9 @@ export function computeFinancialPnL(
       const p = Math.max(0, plan.monthlyPacks[m] || 0);
       const rev = isUnmodifiedActingPlan
         ? actingSku.monthly[m]?.revenue_rub || 0
+        : plan.monthlyRevenuesRubOverride &&
+          plan.monthlyRevenuesRubOverride[m] !== undefined
+        ? plan.monthlyRevenuesRubOverride[m]
         : p * (plan.monthlyPricesRub[m] ?? model.retailPriceRub);
       monthlyEffectivePacks.push(p);
       monthlyEffectiveRevRub.push(rev);
@@ -2857,6 +2862,7 @@ export function computeScenarioInvestmentSummary(
     // 4. Помесячные потоки WB и оплат фабрикам по модели
     const plan =
       m.plansByScenario[scenario.id] ||
+      m.plansByScenario[202705] ||
       m.plansByScenario[1] || {
         monthlyPacks: Array(12).fill(0),
         monthlyPricesRub: Array(12).fill(m.retailPriceRub),
@@ -2889,6 +2895,9 @@ export function computeScenarioInvestmentSummary(
               : plan.monthlyPricesRub[idx] ?? m.retailPriceRub)
           : isUnmodifiedActing
           ? actingSku.monthly[idx]?.revenue_rub || 0
+          : plan.monthlyRevenuesRubOverride &&
+            plan.monthlyRevenuesRubOverride[idx] !== undefined
+          ? plan.monthlyRevenuesRubOverride[idx]
           : packsM * (plan.monthlyPricesRub[idx] ?? m.retailPriceRub);
 
       const deductionsM =
@@ -4673,6 +4682,21 @@ export function launchBrandStarterMatrix(
   }
 
   let addedCount = 0;
+  const hasOfficialLiskaniAssortment =
+    brandCode === 'LISKANI' &&
+    currentModels.some(
+      (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+    );
+
+  if (hasOfficialLiskaniAssortment) {
+    return {
+      models: currentModels,
+      scenarios: currentScenarios,
+      scenarioId: targetScenarioId,
+      addedCount: 0,
+    };
+  }
+
   for (const skuTpl of template.skus) {
     const existingIdx = currentModels.findIndex(
       (m) => m.code.toUpperCase() === skuTpl.code.toUpperCase()

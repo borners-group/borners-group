@@ -4,6 +4,7 @@ import {
   ACTING_2027_SCENARIO_MODELS,
   getActingSkuByWbOrVendor,
 } from './actingAssortment2027.ts';
+import type { LiskaniSizeSkuSpec } from './liskaniAssortment2027.ts';
 import {
   S1_100M_NEW_VARIANTS,
   S1_100M_SCENARIO_MODELS,
@@ -70,6 +71,10 @@ export interface ScenarioCommercialPlan {
   monthlyPacks: number[]; // 12 months (Jan..Dec)
   monthlyPricesRub: number[]; // 12 months (Jan..Dec)
   monthlyReceiptsPacks: number[]; // 12 months warehouse arrivals in packs
+  monthlyRevenuesRubOverride?: number[]; // Точная помесячная выручка выкупов (например, из матрицы 269 размерных SKU LISKANI)
+  monthlyOrdersRub?: number[]; // Заказы (до выкупа), ₽
+  monthlyOrdersPacks?: number[]; // Заказать, компл. (до выкупа)
+  buyoutRatePct?: number; // Процент выкупа (например 57% для штор LISKANI)
   initialStockPacks: number;
   firstOrderPacks: number;
   nextOrderDateLabel: string;
@@ -110,6 +115,7 @@ export interface ScenarioModelSpec {
   responsiblePerson: string;
   priority?: ModelPriorityLevel;
   hasActualSalesOrPurchases: boolean;
+  liskaniSizeVariants?: LiskaniSizeSkuSpec[];
   palettes: PalettePack[];
   gallery: GalleryMediaItem[];
   attachedPdfs?: AttachedModelPdf[];
@@ -1016,8 +1022,19 @@ export function computeModelScenarioMetrics(
       (pr, idx) => pr === actingSku.monthly[idx]?.realization_price_rub
     );
 
+  const hasExactRevenueOverride =
+    Array.isArray(plan.monthlyRevenuesRubOverride) &&
+    plan.monthlyRevenuesRubOverride.length === 12;
+
   const monthlyRevenuesRub = isUnmodifiedActingPlan
     ? actingSku.monthly.map((m) => m.revenue_rub)
+    : hasExactRevenueOverride
+    ? plan.monthlyRevenuesRubOverride!.map((rev, idx) =>
+        typeof rev === 'number' && rev >= 0
+          ? rev
+          : (plan.monthlyPacks[idx] || 0) *
+            (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
+      )
     : plan.monthlyPacks.map(
         (packs, idx) => packs * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
       );

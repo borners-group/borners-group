@@ -212,6 +212,7 @@ export function ScenarioModelCardScreen({
   const [financePeriodMode, setFinancePeriodMode] = useState<'month' | 'year'>('year');
   const [showDetailedFinanceCalc, setShowDetailedFinanceCalc] = useState(false);
   const [showProcurementCashDetails, setShowProcurementCashDetails] = useState(false);
+  const [liskaniSizeMonthFilter, setLiskaniSizeMonthFilter] = useState<'ALL' | number>('ALL');
 
   const [pdfUrlsById, setPdfUrlsById] = useState<Record<string, string>>({});
   const [previewPdfId, setPreviewPdfId] = useState<string | null>(null);
@@ -711,6 +712,7 @@ export function ScenarioModelCardScreen({
       ...plan,
       scenarioId: scenario.id,
       monthlyPricesRub: Array(12).fill(clean),
+      monthlyRevenuesRubOverride: undefined,
     };
     commitWithAudit(
       {
@@ -764,6 +766,7 @@ export function ScenarioModelCardScreen({
             ...plan,
             scenarioId: scenario.id,
             monthlyPacks: nextMonthlyPacks,
+            monthlyRevenuesRubOverride: undefined,
           },
         },
       },
@@ -771,6 +774,113 @@ export function ScenarioModelCardScreen({
       `Изменён план выкупов за ${MONTHS_SHORT_RU[monthIdx]} (${scenario.title})`,
       `${prev} компл.`,
       `${clean} компл.`
+    );
+  };
+
+  // Редактирование параметров конкретного размера внутри карточки LISKANI (269 SKU)
+  const handleUpdateLiskaniSizeVariant = (
+    skuIndex: number,
+    patch: Partial<{
+      wbNmId: string;
+      barcode: string;
+      unitCostRub: number;
+      retailPriceRub: number;
+      monthOrderUnitsChange: { monthIdx: number; nextOrdersUnits: number };
+    }>
+  ) => {
+    if (!model.liskaniSizeVariants) return;
+    const buyoutRatio = (plan.buyoutRatePct || 57) / 100;
+    const nextVariants = model.liskaniSizeVariants.map((sv) => {
+      if (sv.skuIndex !== skuIndex) return sv;
+      const nextCost =
+        patch.unitCostRub !== undefined
+          ? Math.max(0, Math.round(patch.unitCostRub))
+          : sv.unitCostRub;
+      const nextPrice =
+        patch.retailPriceRub !== undefined
+          ? Math.max(0, Math.round(patch.retailPriceRub))
+          : sv.retailPriceRub;
+      const nextMonthlyOrdersUnits = [...sv.monthlyOrdersUnits];
+      if (patch.monthOrderUnitsChange) {
+        const { monthIdx, nextOrdersUnits } = patch.monthOrderUnitsChange;
+        nextMonthlyOrdersUnits[monthIdx] = Math.max(0, Math.round(nextOrdersUnits));
+      }
+      const nextMonthlyOrdersRub = nextMonthlyOrdersUnits.map((q) => q * nextPrice);
+      const nextMonthlyBuyoutsUnits = nextMonthlyOrdersUnits.map((q) =>
+        Math.round(q * buyoutRatio)
+      );
+      const nextMonthlyBuyoutsRub = nextMonthlyOrdersRub.map((r) =>
+        Math.round(r * buyoutRatio)
+      );
+      return {
+        ...sv,
+        wbNmId: patch.wbNmId !== undefined ? patch.wbNmId : sv.wbNmId,
+        barcode: patch.barcode !== undefined ? patch.barcode : sv.barcode,
+        unitCostRub: nextCost,
+        retailPriceRub: nextPrice,
+        monthlyOrdersUnits: nextMonthlyOrdersUnits,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        monthlyBuyoutsUnits: nextMonthlyBuyoutsUnits,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+        annualOrdersUnits: nextMonthlyOrdersUnits.reduce((a, b) => a + b, 0),
+        annualOrdersRub: nextMonthlyOrdersRub.reduce((a, b) => a + b, 0),
+        annualBuyoutsUnits: nextMonthlyBuyoutsUnits.reduce((a, b) => a + b, 0),
+        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((a, b) => a + b, 0),
+      };
+    });
+
+    const aggMonthlyPacks = Array.from({ length: 12 }, (_, m) =>
+      nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsUnits[m] || 0), 0)
+    );
+    const aggMonthlyOrdersPacks = Array.from({ length: 12 }, (_, m) =>
+      nextVariants.reduce((s, v) => s + (v.monthlyOrdersUnits[m] || 0), 0)
+    );
+    const aggMonthlyOrdersRub = Array.from({ length: 12 }, (_, m) =>
+      nextVariants.reduce((s, v) => s + (v.monthlyOrdersRub[m] || 0), 0)
+    );
+    const aggMonthlyBuyoutsRub = Array.from({ length: 12 }, (_, m) =>
+      nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsRub[m] || 0), 0)
+    );
+    const aggMonthlyPrices = Array.from({ length: 12 }, (_, m) =>
+      aggMonthlyPacks[m] > 0
+        ? Math.round(aggMonthlyBuyoutsRub[m] / aggMonthlyPacks[m])
+        : model.retailPriceRub
+    );
+    const totalPacks = aggMonthlyPacks.reduce((a, b) => a + b, 0);
+    const totalRev = aggMonthlyBuyoutsRub.reduce((a, b) => a + b, 0);
+    const totalCogs = nextVariants.reduce(
+      (s, v) => s + v.annualBuyoutsUnits * v.unitCostRub,
+      0
+    );
+    const weightedPrice =
+      totalPacks > 0 ? Math.round(totalRev / totalPacks) : model.retailPriceRub;
+    const weightedCost =
+      totalPacks > 0 ? Math.round(totalCogs / totalPacks) : model.unitCostRub;
+
+    commitWithAudit(
+      {
+        ...model,
+        retailPriceRub: weightedPrice,
+        unitCostRub: weightedCost,
+        liskaniSizeVariants: nextVariants,
+        plansByScenario: {
+          ...model.plansByScenario,
+          [scenario.id]: {
+            ...plan,
+            scenarioId: scenario.id,
+            monthlyPacks: aggMonthlyPacks,
+            monthlyPricesRub: aggMonthlyPrices,
+            monthlyRevenuesRubOverride: aggMonthlyBuyoutsRub,
+            monthlyOrdersPacks: aggMonthlyOrdersPacks,
+            monthlyOrdersRub: aggMonthlyOrdersRub,
+          },
+        },
+      },
+      'product',
+      `Обновлён размерный SKU №${skuIndex} в матрице LISKANI`,
+      undefined,
+      `SKU #${skuIndex}`,
+      true
     );
   };
 
@@ -2041,56 +2151,348 @@ export function ScenarioModelCardScreen({
                     />
                   </label>
                   <div className="pt-0.5">
-                    <span className="text-[#5E5D58] text-[11px] font-semibold">
-                      Доли размеров / вариантов (%):
-                    </span>
-                    <div className="grid grid-cols-5 gap-1 mt-1">
-                      {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
-                        <label
-                          key={sz}
-                          className="rounded-[6px] bg-white border border-[#CECDC4] px-1.5 py-1 flex flex-col items-center"
-                        >
-                          <span className="text-[9.5px] font-bold text-[#5E5D58]">{sz}</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={shared.factoryParams.sizeSharesPct[sz]}
-                            onChange={(e) => {
-                              const nextVal = Math.max(
-                                0,
-                                Math.min(100, Math.round(Number(e.target.value) || 0))
-                              );
-                              commitWithAudit(
-                                {
-                                  ...model,
-                                  sharedSupplyAndFact: {
-                                    ...shared,
-                                    factoryParams: {
-                                      ...shared.factoryParams,
-                                      sizeSharesPct: {
-                                        ...shared.factoryParams.sizeSharesPct,
-                                        [sz]: nextVal,
+                    {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 ? (
+                      <>
+                        <span className="text-[#5E5D58] text-[11px] font-semibold">
+                          Размерная линейка полотен ({model.liskaniSizeVariants.length} SKU):
+                        </span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {model.liskaniSizeVariants.map((sv) => {
+                            const totalAnnual = Math.max(
+                              1,
+                              model.liskaniSizeVariants!.reduce(
+                                (s, x) => s + x.annualBuyoutsUnits,
+                                0
+                              )
+                            );
+                            const sharePct = Math.round(
+                              (sv.annualBuyoutsUnits / totalAnnual) * 100
+                            );
+                            return (
+                              <span
+                                key={sv.skuIndex}
+                                className="rounded-[6px] bg-white border border-[#CECDC4] px-2 py-0.5 text-[10.5px] font-mono font-bold text-[#141413]"
+                              >
+                                {sv.sizeCm}{' '}
+                                <span className="text-[#157347]">({sharePct}%)</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[#5E5D58] text-[11px] font-semibold">
+                          Доли размеров / вариантов (%):
+                        </span>
+                        <div className="grid grid-cols-5 gap-1 mt-1">
+                          {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
+                            <label
+                              key={sz}
+                              className="rounded-[6px] bg-white border border-[#CECDC4] px-1.5 py-1 flex flex-col items-center"
+                            >
+                              <span className="text-[9.5px] font-bold text-[#5E5D58]">
+                                {sz}
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={shared.factoryParams.sizeSharesPct[sz]}
+                                onChange={(e) => {
+                                  const nextVal = Math.max(
+                                    0,
+                                    Math.min(100, Math.round(Number(e.target.value) || 0))
+                                  );
+                                  commitWithAudit(
+                                    {
+                                      ...model,
+                                      sharedSupplyAndFact: {
+                                        ...shared,
+                                        factoryParams: {
+                                          ...shared.factoryParams,
+                                          sizeSharesPct: {
+                                            ...shared.factoryParams.sizeSharesPct,
+                                            [sz]: nextVal,
+                                          },
+                                        },
                                       },
                                     },
-                                  },
-                                },
-                                'product',
-                                `Изменена доля размера ${sz}`,
-                                `${shared.factoryParams.sizeSharesPct[sz]}%`,
-                                `${nextVal}%`,
-                                true
-                              );
-                            }}
-                            className="w-full text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none"
-                          />
-                        </label>
-                      ))}
-                    </div>
+                                    'product',
+                                    `Изменена доля размера ${sz}`,
+                                    `${shared.factoryParams.sizeSharesPct[sz]}%`,
+                                    `${nextVal}%`,
+                                    true
+                                  );
+                                }}
+                                className="w-full text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Матрица 8–9 размеров штор / тюля LISKANI (из утверждённого ассортимента 269 SKU и помесячного плана 2027) */}
+            {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 && (
+              <div className="rounded-[16px] border-[1.5px] border-[#CECDC4] bg-[#F7F7F4] p-4 md:p-5 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-[6px] bg-[#141413] text-white text-[10.5px] font-mono font-bold">
+                        УТВЕРЖДЁННЫЙ АССОРТИМЕНТ 2027 · {model.liskaniSizeVariants.length} РАЗМЕРОВ SKU
+                      </span>
+                      {effectiveWbArticle ? (
+                        <a
+                          href={`https://www.wildberries.ru/catalog/${effectiveWbArticle}/detail.aspx`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-0.5 rounded-[6px] bg-[#EDE9FE] border border-[#C4B5FD] text-[#5B21B6] text-[11px] font-mono font-bold hover:underline"
+                        >
+                          WB {effectiveWbArticle} ↗
+                        </a>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-[6px] bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] text-[11px] font-semibold">
+                          Новинка (запуск март 2027)
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-[15px] font-bold text-[#141413] mt-1">
+                      Размерная матрица полотен, штрихкодов, себестоимости и плана заказов ({model.title})
+                    </h3>
+                    <p className="text-[11.5px] text-[#5E5D58]">
+                      Все {model.liskaniSizeVariants.length} размерных SKU этого цвета из файла «Ассортимент 2027 (269 SKU)» и «План заказов 2027 (выкупы 57%)». Вы можете редактировать себестоимость, цену, артикул WB, баркод и объём заказа прямо в таблице.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11.5px] font-semibold text-[#5E5D58]">
+                      Период плана:
+                    </span>
+                    <select
+                      aria-label="Период размерной матрицы LISKANI"
+                      value={liskaniSizeMonthFilter}
+                      onChange={(e) =>
+                        setLiskaniSizeMonthFilter(
+                          e.target.value === 'ALL' ? 'ALL' : Number(e.target.value)
+                        )
+                      }
+                      className="h-8.5 px-3 rounded-[8px] bg-white border-[1.5px] border-[#141413] text-[12px] font-bold text-[#141413] cursor-pointer"
+                    >
+                      <option value="ALL">Весь 2027 год (12 мес.)</option>
+                      {MONTHS_SHORT_RU.map((mName, idx) => (
+                        <option key={mName} value={idx}>
+                          {mName} 2027
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-[12px] border border-[#CECDC4] bg-white">
+                  <table className="w-full text-left border-collapse text-[12px]">
+                    <thead>
+                      <tr className="bg-[#EFEFE9] border-b border-[#CECDC4] text-[10.5px] font-mono uppercase tracking-[0.04em] text-[#5E5D58]">
+                        <th className="py-2.5 px-3">№</th>
+                        <th className="py-2.5 px-3">Размер (Ш×В)</th>
+                        <th className="py-2.5 px-3">Артикул продавца</th>
+                        <th className="py-2.5 px-3">Артикул WB</th>
+                        <th className="py-2.5 px-3">Баркод</th>
+                        <th className="py-2.5 px-3 text-right">Себест., ₽</th>
+                        <th className="py-2.5 px-3 text-right">Цена реал., ₽</th>
+                        <th className="py-2.5 px-3 text-right">
+                          Заказать ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), компл.
+                        </th>
+                        <th className="py-2.5 px-3 text-right">
+                          Заказы ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), ₽
+                        </th>
+                        <th className="py-2.5 px-3 text-right">
+                          Выкупы 57% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), компл.
+                        </th>
+                        <th className="py-2.5 px-3 text-right">
+                          Выкупы 57% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), ₽
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E6E5DEC0]">
+                      {model.liskaniSizeVariants.map((sv) => {
+                        const ordPacks =
+                          liskaniSizeMonthFilter === 'ALL'
+                            ? sv.annualOrdersUnits
+                            : sv.monthlyOrdersUnits[liskaniSizeMonthFilter] || 0;
+                        const ordRub =
+                          liskaniSizeMonthFilter === 'ALL'
+                            ? sv.annualOrdersRub
+                            : sv.monthlyOrdersRub[liskaniSizeMonthFilter] || 0;
+                        const buyPacks =
+                          liskaniSizeMonthFilter === 'ALL'
+                            ? sv.annualBuyoutsUnits
+                            : sv.monthlyBuyoutsUnits[liskaniSizeMonthFilter] || 0;
+                        const buyRub =
+                          liskaniSizeMonthFilter === 'ALL'
+                            ? sv.annualBuyoutsRub
+                            : sv.monthlyBuyoutsRub[liskaniSizeMonthFilter] || 0;
+
+                        return (
+                          <tr
+                            key={sv.skuIndex}
+                            className="hover:bg-[#F7F7F4] transition-colors"
+                          >
+                            <td className="py-2 px-3 font-mono text-[11px] text-[#5E5D58]">
+                              {sv.skuIndex}
+                            </td>
+                            <td className="py-2 px-3 font-mono font-bold text-[#141413]">
+                              {sv.sizeCm}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[11.5px] font-semibold text-[#141413]">
+                              {sv.sellerSku}
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[11.5px]">
+                              <input
+                                type="text"
+                                value={sv.wbNmId}
+                                placeholder="Новый SKU"
+                                onChange={(e) =>
+                                  handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                    wbNmId: e.target.value,
+                                  })
+                                }
+                                className="h-7 w-28 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11.5px] text-[#141413]"
+                              />
+                            </td>
+                            <td className="py-2 px-3 font-mono text-[11.5px]">
+                              <input
+                                type="text"
+                                value={sv.barcode}
+                                placeholder="Штрихкод"
+                                onChange={(e) =>
+                                  handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                    barcode: e.target.value,
+                                  })
+                                }
+                                className="h-7 w-32 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11px] text-[#5E5D58]"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={10}
+                                value={sv.unitCostRub}
+                                onChange={(e) =>
+                                  handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                    unitCostRub: Number(e.target.value),
+                                  })
+                                }
+                                className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-semibold text-[#141413]"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={10}
+                                value={sv.retailPriceRub}
+                                onChange={(e) =>
+                                  handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                    retailPriceRub: Number(e.target.value),
+                                  })
+                                }
+                                className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-bold text-[#141413]"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-semibold text-[#141413]">
+                              {liskaniSizeMonthFilter === 'ALL' ? (
+                                ordPacks.toLocaleString('ru-RU')
+                              ) : (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={ordPacks}
+                                  onChange={(e) =>
+                                    handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                      monthOrderUnitsChange: {
+                                        monthIdx: liskaniSizeMonthFilter,
+                                        nextOrdersUnits: Number(e.target.value),
+                                      },
+                                    })
+                                  }
+                                  className="h-7 w-20 rounded-[6px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2 text-right font-mono font-bold text-[#141413]"
+                                />
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-[#5E5D58]">
+                              {ordRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
+                              {buyPacks.toLocaleString('ru-RU')}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
+                              {buyRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-[#EFEFE9] border-t-[1.5px] border-[#CECDC4] font-mono font-bold text-[#141413]">
+                        <td colSpan={7} className="py-2.5 px-3 text-right">
+                          ИТОГО ПО ЦВЕТУ ({model.liskaniSizeVariants.length} размеров):
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {model.liskaniSizeVariants
+                            .reduce(
+                              (s, v) =>
+                                s +
+                                (liskaniSizeMonthFilter === 'ALL'
+                                  ? v.annualOrdersUnits
+                                  : v.monthlyOrdersUnits[liskaniSizeMonthFilter] || 0),
+                              0
+                            )
+                            .toLocaleString('ru-RU')}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {model.liskaniSizeVariants
+                            .reduce(
+                              (s, v) =>
+                                s +
+                                (liskaniSizeMonthFilter === 'ALL'
+                                  ? v.annualOrdersRub
+                                  : v.monthlyOrdersRub[liskaniSizeMonthFilter] || 0),
+                              0
+                            )
+                            .toLocaleString('ru-RU')}{' '}
+                          ₽
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[#157347]">
+                          {model.liskaniSizeVariants
+                            .reduce(
+                              (s, v) =>
+                                s +
+                                (liskaniSizeMonthFilter === 'ALL'
+                                  ? v.annualBuyoutsUnits
+                                  : v.monthlyBuyoutsUnits[liskaniSizeMonthFilter] || 0),
+                              0
+                            )
+                            .toLocaleString('ru-RU')}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[#157347]">
+                          {(liskaniSizeMonthFilter === 'ALL'
+                            ? baseMetrics.annualRevenueRub
+                            : baseMetrics.monthlyRevenuesRub[liskaniSizeMonthFilter] || 0
+                          ).toLocaleString('ru-RU')}{' '}
+                          ₽
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Палитры, цвета и варианты модели (100% редактируемые заголовки, цвета, HEX и удаление/добавление) */}
             <div className="space-y-3">

@@ -6,6 +6,10 @@ import {
   ACTING_2027_SCENARIO_MODELS,
 } from './actingAssortment2027.ts';
 import {
+  LISKANI_2027_MODELS,
+  LISKANI_2027_SCENARIO_ID,
+} from './liskaniAssortment2027.ts';
+import {
   S1_100M_SCENARIO_MODELS,
   applyClientSavedS1SalesPlan,
 } from './scenarioS1_100M.ts';
@@ -51,6 +55,7 @@ export interface UserSavedModelPlanBackup {
   construction?: ScenarioModelSpec['construction'];
   waistband?: ScenarioModelSpec['waistband'];
   attachedPdfs?: ScenarioModelSpec['attachedPdfs'];
+  liskaniSizeVariants?: ScenarioModelSpec['liskaniSizeVariants'];
   plansByScenario: ScenarioModelSpec['plansByScenario'];
   sharedSupplyAndFact?: ScenarioModelSpec['sharedSupplyAndFact'];
 }
@@ -134,6 +139,7 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       construction: m.construction,
       waistband: m.waistband,
       attachedPdfs: m.attachedPdfs,
+      liskaniSizeVariants: m.liskaniSizeVariants,
       plansByScenario: m.plansByScenario,
       sharedSupplyAndFact: m.sharedSupplyAndFact,
     };
@@ -161,6 +167,20 @@ export function overlayBackupOntoModels(
           (b) => b.code && b.code.toUpperCase() === m.code.toUpperCase()
         );
       if (!saved) return m;
+
+      // Если это официальная карточка LISKANI 2027 (с матрицей размерных SKU),
+      // игнорируем старый черновой бэкап от тестовых заглушек без liskaniSizeVariants
+      if (
+        m.liskaniSizeVariants &&
+        m.liskaniSizeVariants.length > 0 &&
+        (!saved.plansByScenario?.[LISKANI_2027_SCENARIO_ID] ||
+          (saved.title &&
+            (saved.title.includes('Венеция') ||
+              saved.title.includes('Скандинавия') ||
+              saved.title.includes('Воздушный шёлк'))))
+      ) {
+        return m;
+      }
 
       const explicitEmptyGallery =
         Array.isArray(saved.gallery) && saved.gallery.length === 0;
@@ -194,6 +214,7 @@ export function overlayBackupOntoModels(
         construction: saved.construction || m.construction,
         waistband: saved.waistband || m.waistband,
         attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
+        liskaniSizeVariants: saved.liskaniSizeVariants || m.liskaniSizeVariants,
         plansByScenario: saved.plansByScenario || m.plansByScenario,
         sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
       };
@@ -236,6 +257,26 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
   const deletedReg = getDeletedModelsRegistry();
   const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
 
+  const isLegacyPlaceholderLiskani = (m: ScenarioModelSpec): boolean => {
+    const titleU = (m.title || '').toUpperCase();
+    if (
+      titleU.includes('ВЕНЕЦИЯ') ||
+      titleU.includes('СКАНДИНАВИЯ') ||
+      titleU.includes('ВОЗДУШНЫЙ ШЁЛК') ||
+      titleU.includes('ВОЗДУШНЫЙ ШЕЛК')
+    ) {
+      return true;
+    }
+    const codeU = (m.code || '').trim().toUpperCase();
+    if (
+      /^LSC-0(0[1-9]|[12]\d|3[0-3])$/.test(codeU) &&
+      (!m.liskaniSizeVariants || m.liskaniSizeVariants.length === 0)
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   if (Array.isArray(parsedModels) && parsedModels.length > 0) {
     const filteredLegacy = parsedModels.filter(
       (m) =>
@@ -243,6 +284,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
           m.id
         ) &&
         !['№001', '№002', '№003', '№004'].includes(m.code) &&
+        !isLegacyPlaceholderLiskani(m) &&
         !isModelMarkedDeleted(m, deletedReg)
     );
 
@@ -250,6 +292,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
     for (const itemMod of [
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
+      ...LISKANI_2027_MODELS,
     ]) {
       if (isModelMarkedDeleted(itemMod, deletedReg)) {
         continue;
@@ -271,6 +314,28 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
             attachedPdfs: itemMod.attachedPdfs,
           };
         }
+        if (
+          (!merged[idx].liskaniSizeVariants ||
+            merged[idx].liskaniSizeVariants!.length === 0) &&
+          itemMod.liskaniSizeVariants &&
+          itemMod.liskaniSizeVariants.length > 0
+        ) {
+          merged[idx] = {
+            ...itemMod,
+            ...merged[idx],
+            gallery:
+              itemMod.gallery && itemMod.gallery.length > 0
+                ? itemMod.gallery
+                : merged[idx].gallery,
+            liskaniSizeVariants: itemMod.liskaniSizeVariants,
+            plansByScenario: {
+              ...itemMod.plansByScenario,
+              ...merged[idx].plansByScenario,
+              [LISKANI_2027_SCENARIO_ID]:
+                itemMod.plansByScenario[LISKANI_2027_SCENARIO_ID],
+            },
+          };
+        }
       } else {
         merged.push(itemMod);
       }
@@ -283,6 +348,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
     applyClientSavedS1SalesPlan([
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
+      ...LISKANI_2027_MODELS,
     ])
   ).filter((m) => !isModelMarkedDeleted(m, deletedReg));
 

@@ -2569,9 +2569,9 @@ test('41. Реальная проверка сохранения, редакти
       saveProductGroups,
     } = await import('../src/lib/productGroups.ts');
 
-    // 1. Первичная загрузка (чистый старт): 23 базовых модели
+    // 1. Первичная загрузка (чистый старт): 23 базовых модели BORNERS/FUKAI + 33 модели LISKANI = 56 моделей
     const initialHydrated = hydratePortfolioModelsFromStorage();
-    assert.equal(initialHydrated.length, 23);
+    assert.equal(initialHydrated.length, 56);
 
     // 2. Создание новой карточки штор LISKANI с загруженным фото (data:image/jpeg) и сохранение в localStorage
     const customDataPhoto = 'data:image/jpeg;base64,' + 'A'.repeat(95_000); // > 70 КБ для проверки отсутствия подмены на SVG
@@ -2595,7 +2595,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем перезагрузку страницы (F5)
     const afterCreateReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterCreateReload.length, 24);
+    assert.equal(afterCreateReload.length, 57);
     const reloadedCurtain = afterCreateReload.find((m) => m.code === 'LSC-777')!;
     assert.ok(reloadedCurtain, 'Созданная карточка LSC-777 должна сохраняться после F5');
     assert.equal(reloadedCurtain.title, 'ШТОРЫ ДИМАУТ ПЕСОЧНЫЕ 400×270');
@@ -2651,7 +2651,7 @@ test('41. Реальная проверка сохранения, редакти
     );
     assert.equal(checkEdited.plansByScenario[1].monthlyPacks[0], 420);
 
-    // 4. Удаление как пользовательской карточки (LSC-777), так и одной из 23 базовых карточек (BRN-001-SC)
+    // 4. Удаление как пользовательской карточки (LSC-777), так и одной из базовых карточек (BRN-001-SC)
     const afterDeleteCustom = deleteModelFromPortfolio(afterEditReload, checkEdited);
     assert.equal(
       afterDeleteCustom.some((m) => m.code === 'LSC-777'),
@@ -2666,7 +2666,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем F5 — ни LSC-777, ни удалённая базовая карточка BRN-001-SC НЕ должны появиться снова!
     const afterDeleteReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterDeleteReload.length, 22);
+    assert.equal(afterDeleteReload.length, 55);
     assert.equal(
       afterDeleteReload.some((m) => m.code === 'LSC-777'),
       false,
@@ -2678,11 +2678,11 @@ test('41. Реальная проверка сохранения, редакти
       'Удалённая базовая модель не должна самопроизвольно возвращаться после F5'
     );
 
-    // 5. Явный сброс к эталону восстанавливает все 23 базовые карточки
+    // 5. Явный сброс к эталону восстанавливает все 56 базовых карточек
     clearDeletedModelsRegistry();
     persistPortfolioModels([...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS]);
     const afterResetReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterResetReload.length, 23);
+    assert.equal(afterResetReload.length, 56);
     assert.equal(
       afterResetReload.some((m) => m.code === 'BRN-001-SC'),
       true
@@ -2743,6 +2743,107 @@ test('41. Реальная проверка сохранения, редакти
     (globalThis as any).window = prevWindow;
   }
 });
+
+test('42. Утверждённый ассортимент LISKANI 2027 (269 SKU · 33 цветовые карточки · 500 млн ₽ выкупов / 877,19 млн ₽ заказов) и 33 реальных фото WB (.webp)', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+    LISKANI_269_SKUS,
+    LISKANI_PAGE1_MONTHLY_SUMMARY,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+  const {
+    computeFinancialPnL,
+    computeScenarioInvestmentSummary,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { buildDefaultProductGroups } = await import('../src/lib/productGroups.ts');
+
+  // 1. Проверка структуры: ровно 269 размерных SKU и 33 цветовые карточки
+  assert.equal(LISKANI_269_SKUS.length, 269, 'Должно быть ровно 269 размерных SKU LISKANI');
+  assert.equal(LISKANI_2027_MODELS.length, 33, 'Должно быть ровно 33 цветовые карточки LISKANI (LSC-001..LSC-033)');
+  const sumVariants = LISKANI_2027_MODELS.reduce(
+    (s, m) => s + (m.liskaniSizeVariants?.length || 0),
+    0
+  );
+  assert.equal(sumVariants, 269, 'Сумма размерных вариантов внутри 33 карточек равна 269 SKU');
+
+  // 2. Проверка наличия всех 33 реальных фотографий на диске (public/images/liskani/LSC-001.webp .. LSC-033.webp)
+  for (const mod of LISKANI_2027_MODELS) {
+    assert.ok(mod.gallery.length >= 1, `У карточки ${mod.code} должна быть фотография в галерее`);
+    const mainUrl = mod.gallery[0].url || '';
+    assert.ok(
+      mainUrl.startsWith('images/liskani/LSC-') && mainUrl.endsWith('.webp'),
+      `Фото карточки ${mod.code} должно ссылаться на images/liskani/LSC-*.webp, получено: ${mainUrl}`
+    );
+    const absPath = path.join(process.cwd(), 'public', mainUrl);
+    assert.equal(fs.existsSync(absPath), true, `Файл фото ${absPath} должен существовать на диске`);
+    const stat = fs.statSync(absPath);
+    assert.ok(stat.size > 1500, `Файл фото ${absPath} не должен быть пустым (${stat.size} байт)`);
+  }
+
+  // 3. Сверка контрольных сумм с PDF «План заказов 2027 · по месяцам и SKU» (стр. 1):
+  // Выкупы 2027 (57%): ровно 500 000 000 ₽ (Блэкаут: 350 млн ₽, Мрамор: 75 млн ₽, Рогожка: 60 млн ₽, Тюль Вуаль: 15 млн ₽)
+  // Заказы 2027: ровно 877 192 982 ₽ и 289 889 комплектов
+  assert.equal(LISKANI_PAGE1_MONTHLY_SUMMARY.annualBuyoutsRub, 500_000_000);
+  assert.equal(LISKANI_PAGE1_MONTHLY_SUMMARY.annualOrdersRub, 877_192_982);
+  assert.equal(LISKANI_PAGE1_MONTHLY_SUMMARY.annualOrdersSets, 289_889);
+
+  let totalBuyoutsRubFromMetrics = 0;
+  let totalBuyoutsRubFromPnL = 0;
+  let totalOrdersRubFromPlan = 0;
+  let totalOrdersPacksFromPlan = 0;
+  let totalBuyoutsPacksFromPlan = 0;
+
+  const byFabricRub: Record<string, number> = {
+    'Шторы Блэкаут': 0,
+    'Шторы Мрамор': 0,
+    'Шторы Рогожка': 0,
+    'Тюль Вуаль': 0,
+  };
+
+  for (const mod of LISKANI_2027_MODELS) {
+    const met = computeModelScenarioMetrics(mod, LISKANI_2027_SCENARIO_DEF);
+    const pnl = computeFinancialPnL(mod, LISKANI_2027_SCENARIO_DEF);
+    const plan = mod.plansByScenario[LISKANI_2027_SCENARIO_ID];
+    totalBuyoutsRubFromMetrics += met.annualRevenueRub;
+    totalBuyoutsRubFromPnL += pnl.annualRevenueRub;
+    totalBuyoutsPacksFromPlan += met.annualPacks;
+    totalOrdersRubFromPlan += (plan.monthlyOrdersRub || []).reduce((a, b) => a + b, 0);
+    totalOrdersPacksFromPlan += (plan.monthlyOrdersPacks || []).reduce((a, b) => a + b, 0);
+    byFabricRub[mod.categoryLabel || ''] =
+      (byFabricRub[mod.categoryLabel || ''] || 0) + met.annualRevenueRub;
+  }
+
+  assert.equal(totalBuyoutsRubFromMetrics, 500_000_000, 'Суммарные выкупы в метриках сценария равны 500 000 000 ₽');
+  assert.equal(totalBuyoutsRubFromPnL, 500_000_000, 'Суммарные выкупы в P&L равны 500 000 000 ₽');
+  assert.equal(totalOrdersRubFromPlan, 877_192_982, 'Суммарные заказы равны 877 192 982 ₽');
+  assert.equal(totalOrdersPacksFromPlan, 289_889, 'Суммарные заказы в комплектах равны 289 889 компл.');
+  assert.equal(totalBuyoutsPacksFromPlan, 165_268, 'Суммарные выкупы в комплектах (помесячно по 269 SKU при 57%) равны 165 268 компл.');
+
+  assert.equal(byFabricRub['Шторы Блэкаут'], 350_000_000);
+  assert.equal(byFabricRub['Шторы Мрамор'], 75_000_000);
+  assert.equal(byFabricRub['Шторы Рогожка'], 60_000_000);
+  assert.equal(byFabricRub['Тюль Вуаль'], 15_000_000);
+
+  // 4. Проверка инвестиционной сводки и 4 товарных групп по тканям LISKANI
+  const invSummary = computeScenarioInvestmentSummary(
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF
+  );
+  assert.equal(invSummary.annualRevenueRub, 500_000_000);
+  assert.ok(invSummary.annualEstimatedOperatingProfitRub > 100_000_000);
+
+  const liskaniGroups = buildDefaultProductGroups(LISKANI_2027_MODELS).filter(
+    (g) => g.brandCode === 'LISKANI'
+  );
+  assert.equal(
+    liskaniGroups.length,
+    5,
+    'Для LISKANI создаются общая матрица + 4 выделенные группы по тканям (Блэкаут, Мрамор, Рогожка, Тюль)'
+  );
+});
+
 
 
 

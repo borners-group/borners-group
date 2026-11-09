@@ -19,8 +19,24 @@ import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { formatCurrencyRub } from '@/lib/finance';
 import {
   ScenarioModelSpec,
+  MONTHS_SHORT_RU,
   computeModelScenarioMetrics,
 } from '@/lib/scenarioData';
+
+function resolveCatalogAssetUrl(url: string): string {
+  if (!url) return '';
+  if (
+    url.startsWith('data:') ||
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('blob:')
+  ) {
+    return url;
+  }
+  const clean = url.replace(/^\.?\//, '');
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+  return basePath ? `${basePath}/${clean}` : `/${clean}`;
+}
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
@@ -58,18 +74,20 @@ const BRAND_CREATE_PRESETS: Record<CanonicalBrandCode, BrandCreatePreset> = {
   LISKANI: {
     skuPrefix: 'LSC',
     categories: [
-      'Портьеры блэкаут',
+      'Портьеры Блэкаут',
+      'Портьеры Мрамор',
+      'Портьеры Рогожка',
+      'Тюль Вуаль',
       'Шторы димаут',
-      'Тюль и вуаль',
       'Римские шторы',
       'Покрывала и пледы',
       'Декоративный текстиль',
     ],
-    placeholderName: 'Например: Шторы блэкаут LISKANI Венеция 300×270',
+    placeholderName: 'Например: Шторы Блэкаут — Капучино (300×240..400×270)',
     defaultCollection: 'LISKANI Home 2027',
-    defaultComposition: '100% полиэстер премиум (портьерный блэкаут / димаут)',
-    defaultPrice: '3990',
-    defaultCost: '1350',
+    defaultComposition: '100% полиэстер премиум (портьерный блэкаут / мрамор / рогожка)',
+    defaultPrice: '3100',
+    defaultCost: '1150',
     defaultUnitsInPack: '2',
     unitHint: 'полотен / ед. в комплекте',
   },
@@ -172,7 +190,8 @@ export function ProductCatalogView() {
     notify,
   } = usePlatform();
 
-  const [viewMode, setViewMode] = useState<'grid' | 'groups' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'groups' | 'table' | 'liskani_269'>('grid');
+  const [liskani269MonthIdx, setLiskani269MonthIdx] = useState<'ALL' | number>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [stageFilter, setStageFilter] = useState<string>('ALL');
@@ -456,13 +475,21 @@ export function ProductCatalogView() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const brandLabel = detectModelBrandPortfolioLabel(m).toLowerCase();
+        const sizeMatch = (m.liskaniSizeVariants || []).some(
+          (sv) =>
+            sv.sellerSku.toLowerCase().includes(q) ||
+            sv.wbNmId.toLowerCase().includes(q) ||
+            sv.barcode.toLowerCase().includes(q) ||
+            sv.sizeCm.toLowerCase().includes(q)
+        );
         return (
           m.title.toLowerCase().includes(q) ||
           m.code.toLowerCase().includes(q) ||
           (m.wbArticle || '').toLowerCase().includes(q) ||
           m.subtitle.toLowerCase().includes(q) ||
           (m.fabric?.composition || '').toLowerCase().includes(q) ||
-          brandLabel.includes(q)
+          brandLabel.includes(q) ||
+          sizeMatch
         );
       }
       return true;
@@ -629,6 +656,22 @@ export function ProductCatalogView() {
                 <TableIcon className="h-3.5 w-3.5" />
                 <span>Таблица</span>
               </button>
+              {filteredModels.some(
+                (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+              ) && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('liskani_269')}
+                  className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                    viewMode === 'liskani_269'
+                      ? 'bg-[#0F172A] text-white shadow-2xs'
+                      : 'text-[#475569] hover:text-[#0F172A]'
+                  }`}
+                >
+                  <TableIcon className="h-3.5 w-3.5" />
+                  <span>Все 269 размеров SKU</span>
+                </button>
+              )}
             </div>
 
             <button
@@ -740,6 +783,59 @@ export function ProductCatalogView() {
             ))}
           </div>
         )}
+
+        {/* СВОДКА ОФИЦИАЛЬНОГО ПЛАНА LISKANI 2027 (500 МЛН ₽ ВЫКУПОВ · 877,19 МЛН ₽ ЗАКАЗОВ · 269 SKU) */}
+        {(normalizePortfolioBrandCode(brandFilter) === 'LISKANI' ||
+          viewMode === 'liskani_269') && (
+          <div className="rounded-[14px] bg-[#F8FAFC] border border-[#CBD5E1] p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-[6px] bg-[#0F172A] text-white font-mono text-[10.5px] font-bold">
+                    LISKANI · ПЛАН 2027 (ВЫКУП 57%)
+                  </span>
+                  <span className="text-[13.5px] font-extrabold text-[#0F172A]">
+                    500,00 млн ₽ выкупов · 877,19 млн ₽ заказов · 289 889 компл.
+                  </span>
+                </div>
+                <p className="text-[12px] text-[#475569] mt-0.5">
+                  33 цветовые карточки Wildberries с реальными студийными фото · 269 размерных SKU (Блэкаут: 350 млн ₽ / 104 SKU · Мрамор: 75 млн ₽ / 80 SKU · Рогожка: 60 млн ₽ / 40 SKU · Тюль Вуаль: 15 млн ₽ / 45 SKU)
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={resolveCatalogAssetUrl('/docs/liskani_assortment_2027_269_sku.xlsx')}
+                  download="Ассортимент_LISKANI_2027_269_SKU.xlsx"
+                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                >
+                  <span>↓ Ассортимент 269 SKU (.xlsx)</span>
+                </a>
+                <a
+                  href={resolveCatalogAssetUrl('/docs/liskani_plan_2027_269_sku.pdf')}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#0F172A] text-[#0F172A] hover:text-white border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                >
+                  <span>↗ План 2027 помесячно (.pdf)</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setViewMode(viewMode === 'liskani_269' ? 'grid' : 'liskani_269')
+                  }
+                  className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <span>
+                    {viewMode === 'liskani_269'
+                      ? 'Показать 33 карточки с фото'
+                      : 'Показать все 269 размеров SKU'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* РЕЖИМ 1: ВИТРИНА КАРТОЧЕК (ЕДИНАЯ БАЗА БЕЗ ДУБЛЕЙ И ЧУЖИХ ФОТО) */}
@@ -803,8 +899,18 @@ export function ProductCatalogView() {
                             {displayBrand}
                           </span>
                           <span className="font-mono text-[12px] font-bold text-[#334155] truncate">
-                            {actingMeta ? `WB ${actingMeta.wbSku}` : mod.code}
+                            {actingMeta
+                              ? `WB ${actingMeta.wbSku}`
+                              : mod.wbArticle
+                              ? `${mod.code} · WB ${mod.wbArticle}`
+                              : mod.code}
                           </span>
+                          {mod.liskaniSizeVariants &&
+                            mod.liskaniSizeVariants.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-[5px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold shrink-0">
+                                {mod.liskaniSizeVariants.length} разм.
+                              </span>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -1021,6 +1127,174 @@ export function ProductCatalogView() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* РЕЖИМ 4: ПОЛНЫЙ РЕЕСТР 269 РАЗМЕРНЫХ SKU LISKANI (ВСЕ РАЗМЕРЫ 300×240..600×270 И ПОМЕСЯЧНЫЙ ПЛАН 2027) */}
+      {viewMode === 'liskani_269' && (
+        <div className="bg-white rounded-2xl border border-[#CBD5E1] p-5 space-y-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[17px] font-extrabold text-[#0F172A]">
+                Полный реестр 269 размерных SKU · План заказов и выкупов 2027
+              </h2>
+              <p className="text-[12px] text-[#475569]">
+                Нажмите на любую строку размера, чтобы открыть карточку цвета с фотографиями WB и параметрами паспорта.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-semibold text-[#475569]">
+                Период:
+              </span>
+              <select
+                value={liskani269MonthIdx}
+                onChange={(e) =>
+                  setLiskani269MonthIdx(
+                    e.target.value === 'ALL' ? 'ALL' : Number(e.target.value)
+                  )
+                }
+                className="h-8.5 px-3 rounded-[8px] bg-[#F8FAFC] border border-[#0F172A] text-[12px] font-bold text-[#0F172A] cursor-pointer"
+              >
+                <option value="ALL">Весь 2027 год (12 мес.)</option>
+                {MONTHS_SHORT_RU.map((mName, idx) => (
+                  <option key={mName} value={idx}>
+                    {mName} 2027
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-[#CBD5E1]">
+            <table className="w-full text-left text-[12.5px]">
+              <thead className="border-b border-[#CBD5E1] text-[10.5px] font-bold uppercase tracking-wider text-[#475569] bg-[#F8FAFC]">
+                <tr>
+                  <th className="py-3 px-3">№</th>
+                  <th className="py-3 px-3">Фото и Цвет</th>
+                  <th className="py-3 px-3">Ткань</th>
+                  <th className="py-3 px-3">Размер</th>
+                  <th className="py-3 px-3">Артикул продавца</th>
+                  <th className="py-3 px-3">Артикул WB</th>
+                  <th className="py-3 px-3">Баркод</th>
+                  <th className="py-3 px-3 text-right">Себест.</th>
+                  <th className="py-3 px-3 text-right">Цена</th>
+                  <th className="py-3 px-3 text-right">
+                    Заказать ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), компл.
+                  </th>
+                  <th className="py-3 px-3 text-right">
+                    Заказы ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), ₽
+                  </th>
+                  <th className="py-3 px-3 text-right">
+                    Выкупы 57% ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), ₽
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {filteredModels
+                  .filter(
+                    (m) =>
+                      Array.isArray(m.liskaniSizeVariants) &&
+                      m.liskaniSizeVariants.length > 0
+                  )
+                  .flatMap((mod) => {
+                    const photoUrl = resolveCatalogAssetUrl(
+                      mod.gallery[0]?.url || mod.gallery[0]?.originalUrl || ''
+                    );
+                    const q = searchQuery.trim().toLowerCase();
+                    return (mod.liskaniSizeVariants || [])
+                      .filter((sv) => {
+                        if (!q) return true;
+                        return (
+                          mod.title.toLowerCase().includes(q) ||
+                          mod.code.toLowerCase().includes(q) ||
+                          sv.sellerSku.toLowerCase().includes(q) ||
+                          sv.wbNmId.toLowerCase().includes(q) ||
+                          sv.barcode.toLowerCase().includes(q) ||
+                          sv.sizeCm.toLowerCase().includes(q) ||
+                          sv.fabric.toLowerCase().includes(q) ||
+                          sv.color.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((sv) => {
+                        const ordPacks =
+                          liskani269MonthIdx === 'ALL'
+                            ? sv.annualOrdersUnits
+                            : sv.monthlyOrdersUnits[liskani269MonthIdx] || 0;
+                        const ordRub =
+                          liskani269MonthIdx === 'ALL'
+                            ? sv.annualOrdersRub
+                            : sv.monthlyOrdersRub[liskani269MonthIdx] || 0;
+                        const buyRub =
+                          liskani269MonthIdx === 'ALL'
+                            ? sv.annualBuyoutsRub
+                            : sv.monthlyBuyoutsRub[liskani269MonthIdx] || 0;
+
+                        return (
+                          <tr
+                            key={`${mod.id}-${sv.skuIndex}`}
+                            onClick={() => setActivePassportModelId(mod.id)}
+                            className="hover:bg-[#F8FAFC] transition cursor-pointer"
+                          >
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B]">
+                              {sv.skuIndex}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2.5">
+                                {photoUrl && (
+                                  <img
+                                    src={photoUrl}
+                                    alt={mod.title}
+                                    className="h-9 w-7 rounded object-cover border border-[#CBD5E1] shrink-0"
+                                  />
+                                )}
+                                <div>
+                                  <div className="font-bold text-[#0F172A]">
+                                    {sv.color}
+                                  </div>
+                                  <div className="font-mono text-[10.5px] text-[#64748B]">
+                                    {mod.code}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-[#334155]">
+                              {sv.fabric}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-bold text-[#0F172A]">
+                              {sv.sizeCm}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#0F172A]">
+                              {sv.sellerSku}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#475569]">
+                              {sv.wbNmId || 'Новинка 03.2027'}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B]">
+                              {sv.barcode || '—'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
+                              {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A]">
+                              {sv.retailPriceRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A]">
+                              {ordPacks.toLocaleString('ru-RU')}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
+                              {ordRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                              {buyRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                          </tr>
+                        );
+                      });
+                  })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

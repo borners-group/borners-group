@@ -16,6 +16,11 @@ import {
   getActingSkuByWbOrVendor,
 } from '@/lib/actingAssortment2027';
 import {
+  LISKANI_2027_MODELS,
+  LISKANI_2027_SCENARIO_DEF,
+  LISKANI_2027_SCENARIO_ID,
+} from '@/lib/liskaniAssortment2027';
+import {
   S1_100M_SCENARIO_MODELS,
   applyClientSavedS1SalesPlan,
   isUnverifiedActingSku,
@@ -73,6 +78,7 @@ export {
 const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
   ...ACTING_2027_SCENARIO_MODELS,
   ...S1_100M_SCENARIO_MODELS,
+  ...LISKANI_2027_MODELS,
 ]);
 
 export function filterModelsForScenario(
@@ -148,9 +154,15 @@ export function filterModelsForScenario(
   });
 }
 
+const DEFAULT_SCENARIOS_LIST: GrowthScenarioDef[] = [
+  ...INITIAL_SCENARIOS,
+  LISKANI_2027_SCENARIO_DEF,
+];
+
 export function useLiveScenarioPortfolio() {
   const { brandFilter } = usePlatform();
-  const [scenarios, setScenarios] = useState<GrowthScenarioDef[]>(INITIAL_SCENARIOS);
+  const [scenarios, setScenarios] =
+    useState<GrowthScenarioDef[]>(DEFAULT_SCENARIOS_LIST);
   const [models, setModels] = useState<ScenarioModelSpec[]>(DEFAULT_MODELS_LIST);
   const [selectedScenarioId, setSelectedScenarioIdState] = useState<number>(1);
   const [includeGroupPortfolioInS1, setIncludeGroupState] = useState<boolean>(false);
@@ -160,15 +172,21 @@ export function useLiveScenarioPortfolio() {
     BORNERS: 1,
     FUKAI: ACTING_2027_SCENARIO_ID,
     AKUSHA: null,
-    LISKANI: null,
+    LISKANI: LISKANI_2027_SCENARIO_ID,
     NA_TELE: 2,
   });
 
   const syncFromStorage = useCallback(() => {
     const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
     if (Array.isArray(parsedScen) && parsedScen.length > 0) {
-      const hasActing = parsedScen.some((s) => s.id === ACTING_2027_SCENARIO_ID);
-      setScenarios(hasActing ? parsedScen : [ACTING_2027_SCENARIO_DEF, ...parsedScen]);
+      let nextScen = [...parsedScen];
+      if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
+        nextScen = [ACTING_2027_SCENARIO_DEF, ...nextScen];
+      }
+      if (!nextScen.some((s) => s.id === LISKANI_2027_SCENARIO_ID)) {
+        nextScen = [...nextScen, LISKANI_2027_SCENARIO_DEF];
+      }
+      setScenarios(nextScen);
     }
 
     const hydratedModels = hydratePortfolioModelsFromStorage();
@@ -185,6 +203,9 @@ export function useLiveScenarioPortfolio() {
       const normalizedByBrand = { ...savedByBrand };
       if (normalizedByBrand.FUKAI === 1) {
         normalizedByBrand.FUKAI = ACTING_2027_SCENARIO_ID;
+      }
+      if (!normalizedByBrand.LISKANI) {
+        normalizedByBrand.LISKANI = LISKANI_2027_SCENARIO_ID;
       }
       setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedByBrand }));
     }
@@ -511,13 +532,20 @@ export function useLiveScenarioPortfolio() {
       scenarios,
       selectedScenarioByBrand
     );
+    const hasOfficialLiskani = res.models.some(
+      (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+    );
+    const nextByBrand = {
+      ...res.selectedScenarioByBrand,
+      ...(hasOfficialLiskani ? { LISKANI: LISKANI_2027_SCENARIO_ID } : {}),
+    };
     setModels(res.models);
     setScenarios(res.scenarios);
-    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    setSelectedScenarioByBrandState(nextByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     syncUserPlansBackup(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
-    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
