@@ -43529,3 +43529,145 @@ export const LISKANI_2027_MODELS: ScenarioModelSpec[] = RAW_LISKANI_COLORWAY_CAR
     },
   };
 });
+
+export interface LiskaniSizeVariantPatch {
+  wbNmId?: string;
+  barcode?: string;
+  unitCostRub?: number;
+  retailPriceRub?: number;
+  monthOrderUnitsChange?: {
+    monthIdx: number;
+    nextOrdersUnits: number;
+  };
+}
+
+/**
+ * Обновляет параметры размерного SKU внутри карточки LISKANI (269 SKU)
+ * и синхронно пересчитывает агрегированную выручку, выкупы (57%), средневзвешенную цену/себестоимость
+ * во всех связанных сценариях (включая LISKANI_2027_SCENARIO_ID = 202705).
+ */
+export function updateLiskaniModelSizeVariant(
+  model: ScenarioModelSpec,
+  skuIndex: number,
+  patch: LiskaniSizeVariantPatch,
+  activeScenarioId: number = LISKANI_2027_SCENARIO_ID
+): ScenarioModelSpec {
+  if (!model.liskaniSizeVariants || model.liskaniSizeVariants.length === 0) {
+    return model;
+  }
+
+  const basePlan =
+    model.plansByScenario[activeScenarioId] ||
+    model.plansByScenario[LISKANI_2027_SCENARIO_ID] ||
+    model.plansByScenario[1];
+  const buyoutRatio = ((basePlan?.buyoutRatePct ?? 57) || 57) / 100;
+
+  const nextVariants = model.liskaniSizeVariants.map((sv) => {
+    if (sv.skuIndex !== skuIndex) return sv;
+    const nextCost =
+      patch.unitCostRub !== undefined
+        ? Math.max(0, Math.round(patch.unitCostRub))
+        : sv.unitCostRub;
+    const nextPrice =
+      patch.retailPriceRub !== undefined
+        ? Math.max(0, Math.round(patch.retailPriceRub))
+        : sv.retailPriceRub;
+    const nextMonthlyOrdersUnits = [...sv.monthlyOrdersUnits];
+    if (patch.monthOrderUnitsChange) {
+      const { monthIdx, nextOrdersUnits } = patch.monthOrderUnitsChange;
+      if (monthIdx >= 0 && monthIdx < 12) {
+        nextMonthlyOrdersUnits[monthIdx] = Math.max(0, Math.round(nextOrdersUnits));
+      }
+    }
+    const nextMonthlyOrdersRub = nextMonthlyOrdersUnits.map((q) => q * nextPrice);
+    const nextMonthlyBuyoutsUnits = nextMonthlyOrdersUnits.map((q) =>
+      Math.round(q * buyoutRatio)
+    );
+    const nextMonthlyBuyoutsRub = nextMonthlyOrdersRub.map((r) =>
+      Math.round(r * buyoutRatio)
+    );
+    return {
+      ...sv,
+      wbNmId: patch.wbNmId !== undefined ? patch.wbNmId : sv.wbNmId,
+      barcode: patch.barcode !== undefined ? patch.barcode : sv.barcode,
+      unitCostRub: nextCost,
+      retailPriceRub: nextPrice,
+      monthlyOrdersUnits: nextMonthlyOrdersUnits,
+      monthlyOrdersRub: nextMonthlyOrdersRub,
+      monthlyBuyoutsUnits: nextMonthlyBuyoutsUnits,
+      monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+      annualOrdersUnits: nextMonthlyOrdersUnits.reduce((a, b) => a + b, 0),
+      annualOrdersRub: nextMonthlyOrdersRub.reduce((a, b) => a + b, 0),
+      annualBuyoutsUnits: nextMonthlyBuyoutsUnits.reduce((a, b) => a + b, 0),
+      annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((a, b) => a + b, 0),
+    };
+  });
+
+  const aggMonthlyPacks = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsUnits[m] || 0), 0)
+  );
+  const aggMonthlyOrdersPacks = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyOrdersUnits[m] || 0), 0)
+  );
+  const aggMonthlyOrdersRub = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyOrdersRub[m] || 0), 0)
+  );
+  const aggMonthlyBuyoutsRub = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsRub[m] || 0), 0)
+  );
+  const totalPacks = aggMonthlyPacks.reduce((a, b) => a + b, 0);
+  const totalRev = aggMonthlyBuyoutsRub.reduce((a, b) => a + b, 0);
+  const totalCogs = nextVariants.reduce(
+    (s, v) => s + v.annualBuyoutsUnits * v.unitCostRub,
+    0
+  );
+  const weightedPrice =
+    totalPacks > 0
+      ? Math.round(totalRev / totalPacks)
+      : Math.round(
+          nextVariants.reduce((s, v) => s + v.retailPriceRub, 0) /
+            Math.max(1, nextVariants.length)
+        );
+  const weightedCost =
+    totalPacks > 0
+      ? Math.round(totalCogs / totalPacks)
+      : Math.round(
+          nextVariants.reduce((s, v) => s + v.unitCostRub, 0) /
+            Math.max(1, nextVariants.length)
+        );
+
+  const aggMonthlyPrices = Array.from({ length: 12 }, (_, m) =>
+    aggMonthlyPacks[m] > 0
+      ? Math.round(aggMonthlyBuyoutsRub[m] / aggMonthlyPacks[m])
+      : weightedPrice
+  );
+
+  const scenarioIdsToSync = Array.from(
+    new Set([LISKANI_2027_SCENARIO_ID, activeScenarioId, 1, 2, 3])
+  );
+  const nextPlansByScenario = { ...model.plansByScenario };
+
+  for (const scId of scenarioIdsToSync) {
+    const prevScPlan = nextPlansByScenario[scId] || basePlan;
+    if (!prevScPlan) continue;
+    nextPlansByScenario[scId] = {
+      ...prevScPlan,
+      scenarioId: scId,
+      monthlyPacks: [...aggMonthlyPacks],
+      monthlyReceiptsPacks: [...aggMonthlyPacks],
+      monthlyPricesRub: [...aggMonthlyPrices],
+      monthlyRevenuesRubOverride: [...aggMonthlyBuyoutsRub],
+      monthlyOrdersPacks: [...aggMonthlyOrdersPacks],
+      monthlyOrdersRub: [...aggMonthlyOrdersRub],
+    };
+  }
+
+  return {
+    ...model,
+    retailPriceRub: weightedPrice,
+    unitCostRub: weightedCost,
+    liskaniSizeVariants: nextVariants,
+    plansByScenario: nextPlansByScenario,
+  };
+}
+

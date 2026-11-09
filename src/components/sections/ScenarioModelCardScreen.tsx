@@ -28,6 +28,11 @@ import {
 } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
+  LISKANI_2027_SCENARIO_ID,
+  updateLiskaniModelSizeVariant,
+  type LiskaniSizeVariantPatch,
+} from '@/lib/liskaniAssortment2027';
+import {
   VALUE_STATUS_LABELS_RU,
   applyCategoryWbUnitEconomics,
   computeFinancialPnL,
@@ -714,14 +719,26 @@ export function ScenarioModelCardScreen({
       monthlyPricesRub: Array(12).fill(clean),
       monthlyRevenuesRubOverride: undefined,
     };
+    const isLiskaniModel =
+      brandPortfolioLabel === 'LISKANI' ||
+      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
+    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
+      ...model.plansByScenario,
+      [scenario.id]: nextPlan,
+    };
+    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
+      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
+        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
+        scenarioId: LISKANI_2027_SCENARIO_ID,
+        monthlyPricesRub: Array(12).fill(clean),
+        monthlyRevenuesRubOverride: undefined,
+      };
+    }
     commitWithAudit(
       {
         ...model,
         retailPriceRub: clean,
-        plansByScenario: {
-          ...model.plansByScenario,
-          [scenario.id]: nextPlan,
-        },
+        plansByScenario: nextPlansByScenario,
       },
       'sales',
       `Изменена цена комплекта в ${scenario.title}`,
@@ -757,18 +774,30 @@ export function ScenarioModelCardScreen({
     const nextMonthlyPacks = plan.monthlyPacks.map((v, idx) =>
       idx === monthIdx ? clean : v
     );
+    const isLiskaniModel =
+      brandPortfolioLabel === 'LISKANI' ||
+      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
+    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
+      ...model.plansByScenario,
+      [scenario.id]: {
+        ...plan,
+        scenarioId: scenario.id,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyRevenuesRubOverride: undefined,
+      },
+    };
+    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
+      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
+        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
+        scenarioId: LISKANI_2027_SCENARIO_ID,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyRevenuesRubOverride: undefined,
+      };
+    }
     commitWithAudit(
       {
         ...model,
-        plansByScenario: {
-          ...model.plansByScenario,
-          [scenario.id]: {
-            ...plan,
-            scenarioId: scenario.id,
-            monthlyPacks: nextMonthlyPacks,
-            monthlyRevenuesRubOverride: undefined,
-          },
-        },
+        plansByScenario: nextPlansByScenario,
       },
       'sales',
       `Изменён план выкупов за ${MONTHS_SHORT_RU[monthIdx]} (${scenario.title})`,
@@ -780,102 +809,17 @@ export function ScenarioModelCardScreen({
   // Редактирование параметров конкретного размера внутри карточки LISKANI (269 SKU)
   const handleUpdateLiskaniSizeVariant = (
     skuIndex: number,
-    patch: Partial<{
-      wbNmId: string;
-      barcode: string;
-      unitCostRub: number;
-      retailPriceRub: number;
-      monthOrderUnitsChange: { monthIdx: number; nextOrdersUnits: number };
-    }>
+    patch: LiskaniSizeVariantPatch
   ) => {
     if (!model.liskaniSizeVariants) return;
-    const buyoutRatio = (plan.buyoutRatePct || 57) / 100;
-    const nextVariants = model.liskaniSizeVariants.map((sv) => {
-      if (sv.skuIndex !== skuIndex) return sv;
-      const nextCost =
-        patch.unitCostRub !== undefined
-          ? Math.max(0, Math.round(patch.unitCostRub))
-          : sv.unitCostRub;
-      const nextPrice =
-        patch.retailPriceRub !== undefined
-          ? Math.max(0, Math.round(patch.retailPriceRub))
-          : sv.retailPriceRub;
-      const nextMonthlyOrdersUnits = [...sv.monthlyOrdersUnits];
-      if (patch.monthOrderUnitsChange) {
-        const { monthIdx, nextOrdersUnits } = patch.monthOrderUnitsChange;
-        nextMonthlyOrdersUnits[monthIdx] = Math.max(0, Math.round(nextOrdersUnits));
-      }
-      const nextMonthlyOrdersRub = nextMonthlyOrdersUnits.map((q) => q * nextPrice);
-      const nextMonthlyBuyoutsUnits = nextMonthlyOrdersUnits.map((q) =>
-        Math.round(q * buyoutRatio)
-      );
-      const nextMonthlyBuyoutsRub = nextMonthlyOrdersRub.map((r) =>
-        Math.round(r * buyoutRatio)
-      );
-      return {
-        ...sv,
-        wbNmId: patch.wbNmId !== undefined ? patch.wbNmId : sv.wbNmId,
-        barcode: patch.barcode !== undefined ? patch.barcode : sv.barcode,
-        unitCostRub: nextCost,
-        retailPriceRub: nextPrice,
-        monthlyOrdersUnits: nextMonthlyOrdersUnits,
-        monthlyOrdersRub: nextMonthlyOrdersRub,
-        monthlyBuyoutsUnits: nextMonthlyBuyoutsUnits,
-        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
-        annualOrdersUnits: nextMonthlyOrdersUnits.reduce((a, b) => a + b, 0),
-        annualOrdersRub: nextMonthlyOrdersRub.reduce((a, b) => a + b, 0),
-        annualBuyoutsUnits: nextMonthlyBuyoutsUnits.reduce((a, b) => a + b, 0),
-        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((a, b) => a + b, 0),
-      };
-    });
-
-    const aggMonthlyPacks = Array.from({ length: 12 }, (_, m) =>
-      nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsUnits[m] || 0), 0)
+    const updatedModel = updateLiskaniModelSizeVariant(
+      model,
+      skuIndex,
+      patch,
+      scenario.id
     );
-    const aggMonthlyOrdersPacks = Array.from({ length: 12 }, (_, m) =>
-      nextVariants.reduce((s, v) => s + (v.monthlyOrdersUnits[m] || 0), 0)
-    );
-    const aggMonthlyOrdersRub = Array.from({ length: 12 }, (_, m) =>
-      nextVariants.reduce((s, v) => s + (v.monthlyOrdersRub[m] || 0), 0)
-    );
-    const aggMonthlyBuyoutsRub = Array.from({ length: 12 }, (_, m) =>
-      nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsRub[m] || 0), 0)
-    );
-    const aggMonthlyPrices = Array.from({ length: 12 }, (_, m) =>
-      aggMonthlyPacks[m] > 0
-        ? Math.round(aggMonthlyBuyoutsRub[m] / aggMonthlyPacks[m])
-        : model.retailPriceRub
-    );
-    const totalPacks = aggMonthlyPacks.reduce((a, b) => a + b, 0);
-    const totalRev = aggMonthlyBuyoutsRub.reduce((a, b) => a + b, 0);
-    const totalCogs = nextVariants.reduce(
-      (s, v) => s + v.annualBuyoutsUnits * v.unitCostRub,
-      0
-    );
-    const weightedPrice =
-      totalPacks > 0 ? Math.round(totalRev / totalPacks) : model.retailPriceRub;
-    const weightedCost =
-      totalPacks > 0 ? Math.round(totalCogs / totalPacks) : model.unitCostRub;
-
     commitWithAudit(
-      {
-        ...model,
-        retailPriceRub: weightedPrice,
-        unitCostRub: weightedCost,
-        liskaniSizeVariants: nextVariants,
-        plansByScenario: {
-          ...model.plansByScenario,
-          [scenario.id]: {
-            ...plan,
-            scenarioId: scenario.id,
-            monthlyPacks: aggMonthlyPacks,
-            monthlyPricesRub: aggMonthlyPrices,
-            monthlyRevenuesRubOverride: aggMonthlyBuyoutsRub,
-            monthlyOrdersPacks: aggMonthlyOrdersPacks,
-            monthlyOrdersRub: aggMonthlyOrdersRub,
-          },
-        },
-      },
+      updatedModel,
       'product',
       `Обновлён размерный SKU №${skuIndex} в матрице LISKANI`,
       undefined,

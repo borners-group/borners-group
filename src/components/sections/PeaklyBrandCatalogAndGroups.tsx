@@ -1028,14 +1028,14 @@ export function PeaklyMasterCabinetsSummary({
             </button>
           )}
 
-          {activeBrandsCount > 2 && onResetStarterCabinets && (
+          {activeBrandsCount > 3 && onResetStarterCabinets && (
             <button
               type="button"
               onClick={onResetStarterCabinets}
-              title="Вернуть эталонную сводку из 2 действующих кабинетов (BORNERS + FUKAI)"
+              title="Вернуть эталонную сводку из 3 действующих кабинетов (BORNERS + FUKAI + LISKANI)"
               className="h-9 px-2.5 rounded-xl bg-white dark:bg-[#121620] hover:bg-[#F8FAFC] border border-[#E2E6EE] dark:border-[#222938] text-[#64748B] text-[11.5px] font-medium transition cursor-pointer inline-flex items-center gap-1"
             >
-              <span>↺ 2 базовых</span>
+              <span>↺ 3 базовых</span>
             </button>
           )}
 

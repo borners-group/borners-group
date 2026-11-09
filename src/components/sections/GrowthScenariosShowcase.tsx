@@ -644,23 +644,27 @@ export function GrowthScenariosShowcase({
     );
   }, [models, scenarios, selectedScenarioByBrand, notify]);
 
-  // Возврат к 2 базовым кабинетам (BORNERS + FUKAI)
+  // Возврат к 3 базовым кабинетам (BORNERS + FUKAI + LISKANI)
   const handleResetStarterCabinets = useCallback(() => {
     const res = resetStarterCabinetsFromHolding(
       models,
       scenarios,
       selectedScenarioByBrand
     );
+    const hasOfficialLiskani = res.models.some((m) => m.id === 'scen-liskani-001');
+    const nextByBrand = {
+      ...res.selectedScenarioByBrand,
+      ...(hasOfficialLiskani ? { LISKANI: LISKANI_2027_SCENARIO_ID } : {}),
+    };
     setModels(res.models);
     setScenarios(res.scenarios);
-    setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    setSelectedScenarioByBrandState(nextByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     saveUserPlansBackup(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
-    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
     if (
       brandFilterLocal === 'AKUSHA' ||
-      brandFilterLocal === 'LISKANI' ||
       brandFilterLocal === 'NA_TELE'
     ) {
       setBrandFilterLocal('ALL');

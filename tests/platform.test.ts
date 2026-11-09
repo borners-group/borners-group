@@ -2987,6 +2987,507 @@ test('43. Авто-миграция браузерного кэша (localStorag
   }
 });
 
+test('44. Редактирование размерной матрицы LISKANI (269 SKU) — пересчёт выкупов 57%, цены, себестоимости, закупок, P&L, сводки холдинга и сохранение после F5', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+    updateLiskaniModelSizeVariant,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    const hydrated = hydratePortfolioModelsFromStorage();
+    const lsc002Before = hydrated.find((m) => m.code === 'LSC-002')!;
+    assert.ok(lsc002Before, 'Карточка LSC-002 (Блэкаут Серый) должна присутствовать');
+    assert.equal(lsc002Before.liskaniSizeVariants?.length, 8);
+
+    const metBefore = computeModelScenarioMetrics(lsc002Before, LISKANI_2027_SCENARIO_DEF);
+    const procBefore = computeProcurementPlan(lsc002Before, LISKANI_2027_SCENARIO_DEF);
+    const pnlBefore = computeFinancialPnL(lsc002Before, LISKANI_2027_SCENARIO_DEF, procBefore);
+
+    const targetSku = lsc002Before.liskaniSizeVariants![0];
+    const origDecOrders = targetSku.monthlyOrdersUnits[11];
+
+    // Редактируем первый размерный SKU внутри LSC-002: увеличиваем заказы декабря на +200 компл., меняем цену, себестоимость, артикул WB и баркод
+    const lsc002Edited = updateLiskaniModelSizeVariant(
+      lsc002Before,
+      targetSku.skuIndex,
+      {
+        wbNmId: '999888777',
+        barcode: '2049999999991',
+        unitCostRub: 1120,
+        retailPriceRub: 3450,
+        monthOrderUnitsChange: {
+          monthIdx: 11,
+          nextOrdersUnits: origDecOrders + 200,
+        },
+      },
+      LISKANI_2027_SCENARIO_ID
+    );
+
+    const editedSku = lsc002Edited.liskaniSizeVariants!.find(
+      (sv) => sv.skuIndex === targetSku.skuIndex
+    )!;
+    assert.equal(editedSku.wbNmId, '999888777');
+    assert.equal(editedSku.barcode, '2049999999991');
+    assert.equal(editedSku.unitCostRub, 1120);
+    assert.equal(editedSku.retailPriceRub, 3450);
+    assert.equal(editedSku.monthlyOrdersUnits[11], origDecOrders + 200);
+
+    // Проверяем пересчёт 02 · Продажи, 03 · Закупки и 04 · Финансы по карточке
+    const metAfter = computeModelScenarioMetrics(lsc002Edited, LISKANI_2027_SCENARIO_DEF);
+    const procAfter = computeProcurementPlan(lsc002Edited, LISKANI_2027_SCENARIO_DEF);
+    const pnlAfter = computeFinancialPnL(lsc002Edited, LISKANI_2027_SCENARIO_DEF, procAfter);
+
+    assert.ok(
+      metAfter.annualRevenueRub > metBefore.annualRevenueRub,
+      'Годовая выручка карточки должна вырасти после увеличения заказов и цены размера'
+    );
+    assert.ok(
+      metAfter.annualPacks > metBefore.annualPacks,
+      'Годовые выкупы (57%) в комплектах должны вырасти после увеличения заказов декабря'
+    );
+    assert.ok(
+      procAfter.annualDemandPacks > procBefore.annualDemandPacks,
+      'Потребность в закупке в контуре 03 · Закупки должна синхронно вырасти'
+    );
+    assert.equal(
+      pnlAfter.annualRevenueRub,
+      metAfter.annualRevenueRub,
+      'Выручка в 04 · Финансы (P&L) должна 1-в-1 совпадать с 02 · Продажи'
+    );
+
+    // Сохраняем обновлённый портфель в localStorage и проверяем чтение после F5
+    const nextPortfolio = hydrated.map((m) =>
+      m.id === lsc002Edited.id ? lsc002Edited : m
+    );
+    persistPortfolioModels(nextPortfolio);
+
+    const reloaded = hydratePortfolioModelsFromStorage();
+    const lsc002Reloaded = reloaded.find((m) => m.code === 'LSC-002')!;
+    const reloadedSku = lsc002Reloaded.liskaniSizeVariants!.find(
+      (sv) => sv.skuIndex === targetSku.skuIndex
+    )!;
+
+    assert.equal(reloadedSku.wbNmId, '999888777', 'Артикул WB размерного SKU должен сохраняться после F5');
+    assert.equal(reloadedSku.barcode, '2049999999991', 'Баркод размерного SKU должен сохраняться после F5');
+    assert.equal(reloadedSku.unitCostRub, 1120, 'Себестоимость размерного SKU должна сохраняться после F5');
+    assert.equal(reloadedSku.retailPriceRub, 3450, 'Цена размерного SKU должна сохраняться после F5');
+    assert.equal(
+      reloadedSku.monthlyOrdersUnits[11],
+      origDecOrders + 200,
+      'План заказов размерного SKU за декабрь должен сохраняться после F5'
+    );
+
+    const metReloaded = computeModelScenarioMetrics(lsc002Reloaded, LISKANI_2027_SCENARIO_DEF);
+    assert.equal(
+      metReloaded.annualRevenueRub,
+      metAfter.annualRevenueRub,
+      'Годовая выручка карточки после перезагрузки страницы должна совпадать с отредактированной'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('45. Сквозной E2E-путь пользователя по всем 5 этапам (Сводка → 01 Продукт → 02 Продажи → 03 Закупки → 04 Финансы): создание, редактирование паспорта/палитр/фото, PO и F5-сохранение', async () => {
+  const {
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    deleteModelFromPortfolio,
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const {
+    getBrandDefaultModelSpecs,
+    launchAllEmptyCabinetsInHolding,
+    resetStarterCabinetsFromHolding,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    let portfolio = hydratePortfolioModelsFromStorage();
+    const scenarios = [...INITIAL_SCENARIOS, LISKANI_2027_SCENARIO_DEF];
+
+    // ЭТАП 0: Сводка холдинга по умолчанию (3 действующих кабинета: BORNERS, FUKAI, LISKANI)
+    const initialByBrand: Record<string, number> = {
+      BORNERS: 1,
+      FUKAI: 100,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+    };
+    const summaryBefore = computeMultiBrandPortfolioSummary(
+      portfolio,
+      scenarios,
+      initialByBrand
+    );
+    const activeCabinetsBefore = summaryBefore.brands.filter((r) => r.annualRevenueRub > 0);
+    assert.equal(
+      activeCabinetsBefore.length,
+      3,
+      'По умолчанию в сводке активны ровно 3 действующих кабинета (BORNERS, FUKAI, LISKANI)'
+    );
+
+    // Подключение всех 5 кабинетов и возврат к 3 базовым
+    const allFiveLaunched = launchAllEmptyCabinetsInHolding(
+      portfolio,
+      scenarios,
+      initialByBrand
+    );
+    const summaryAllFive = computeMultiBrandPortfolioSummary(
+      allFiveLaunched.models,
+      allFiveLaunched.scenarios,
+      allFiveLaunched.selectedScenarioByBrand
+    );
+    assert.equal(
+      summaryAllFive.brands.filter((r) => r.annualRevenueRub > 0).length,
+      5,
+      'После подключения всех кабинетов все 5 брендов холдинга имеют активную выручку'
+    );
+
+    const resetThree = resetStarterCabinetsFromHolding(
+      allFiveLaunched.models,
+      allFiveLaunched.scenarios,
+      allFiveLaunched.selectedScenarioByBrand
+    );
+    const nextByBrandAfterReset = {
+      ...resetThree.selectedScenarioByBrand,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+    };
+    const summaryAfterReset = computeMultiBrandPortfolioSummary(
+      resetThree.models,
+      resetThree.scenarios,
+      nextByBrandAfterReset
+    );
+    assert.equal(
+      summaryAfterReset.brands.find((r) => r.brandCode === 'LISKANI')?.annualRevenueRub,
+      500_000_000,
+      'При сбросе тестовых кабинетов официальный план LISKANI 500 млн ₽ остаётся неприкосновенным'
+    );
+
+    // ЭТАП 1 (01 · Продукт): Создание новой карточки, редактирование всех полей паспорта, палитры и удаление единственного фото
+    const defaultSpecs = getBrandDefaultModelSpecs('LISKANI', 'Шторы Бархат Изумруд', 2);
+    const newModelRaw = ensureModelUnifiedV11({
+      id: 'scen-custom-lsk-999',
+      code: 'LSC-999',
+      title: 'Шторы Бархат Изумруд',
+      subtitle: 'Премиальный портьерный бархат · 2 полотна',
+      brandId: 'BORNERS',
+      customBrandLabel: 'LISKANI',
+      categoryLabel: 'Шторы Блэкаут',
+      primaryUnitLabel: 'компл. штор',
+      secondaryUnitLabel: 'полотен',
+      wbArticle: '888777666',
+      modelStageStatus: 'В разработке',
+      description: 'Новинка осени 2027',
+      launchStatus: 'В разработке',
+      unitsInPack: 2,
+      retailPriceRub: 3600,
+      unitCostRub: 1050,
+      marketplaceFeePct: 24,
+      logisticsRub: 135,
+      adsPct: 9,
+      responsiblePerson: 'Дирекция LISKANI',
+      priority: 'Высший',
+      hasActualSalesOrPurchases: false,
+      palettes: [defaultSpecs.palette],
+      gallery: [
+        {
+          id: 'gal-custom-1',
+          category: 'pack',
+          label: 'Главное фото',
+          url: 'images/liskani/LSC-001.webp',
+          originalUrl: 'images/liskani/LSC-001.webp',
+          isMain: true,
+        },
+      ],
+      construction: defaultSpecs.construction,
+      fabric: defaultSpecs.fabric,
+      waistband: defaultSpecs.waistband,
+      productionSteps: [],
+      plansByScenario: {
+        [LISKANI_2027_SCENARIO_ID]: {
+          scenarioId: LISKANI_2027_SCENARIO_ID,
+          monthlyPacks: Array(12).fill(500),
+          monthlyPricesRub: Array(12).fill(3600),
+          monthlyReceiptsPacks: Array(12).fill(500),
+          initialStockPacks: 0,
+          firstOrderPacks: 1500,
+          nextOrderDateLabel: '15 января 2027',
+          salesStartMonthIdx: 0,
+          warehouseArrivalMonthIdx: 0,
+          warehouseArrivalDateLabel: '10 января',
+        },
+        1: {
+          scenarioId: 1,
+          monthlyPacks: Array(12).fill(500),
+          monthlyPricesRub: Array(12).fill(3600),
+          monthlyReceiptsPacks: Array(12).fill(500),
+          initialStockPacks: 0,
+          firstOrderPacks: 1500,
+          nextOrderDateLabel: '15 января 2027',
+          salesStartMonthIdx: 0,
+          warehouseArrivalMonthIdx: 0,
+          warehouseArrivalDateLabel: '10 января',
+        },
+      },
+    });
+
+    // Проверяем, что новая карточка не содержит чужих дефолтов Borners2 и боксеров
+    assert.equal(
+      newModelRaw.palettes.some((p) => (p.title || '').includes('Borners2')),
+      false,
+      'Новая карточка не должна содержать чужую палитру Borners2'
+    );
+    assert.equal(
+      newModelRaw.construction.type.includes('Боксеры'),
+      false,
+      'Новая карточка LISKANI не должна содержать описание мужских боксеров'
+    );
+
+    // Редактируем характеристики паспорта, палитру и удаляем единственную фотографию (проверка кейса со скриншота 2)
+    const editedPassportModel = ensureModelUnifiedV11({
+      ...newModelRaw,
+      title: 'Шторы Бархат Изумруд Люкс',
+      wbArticle: '888777667',
+      fabric: {
+        ...newModelRaw.fabric,
+        composition: '100% плотный портьерный микробархат',
+        density: '310 г/м² · Защита от света 92%',
+      },
+      gallery: [], // Удалена единственная фотография!
+      palettes: [
+        {
+          id: 'pal-custom-emerald',
+          title: 'Палитра Бархат Изумруд',
+          subtitle: '2 полотна · 200×270 см',
+          statusLabel: 'Утверждено',
+          colors: [
+            {
+              nameRu: 'Глубокий изумруд',
+              hex: '#065F46',
+              bandHex: '#065F46',
+              textHex: '#FFFFFF',
+              pantone: 'WB 888777667 · #1',
+            },
+          ],
+        },
+      ],
+    });
+
+    portfolio = persistPortfolioModels([...portfolio, editedPassportModel]);
+    const afterPassportReload = hydratePortfolioModelsFromStorage();
+    const savedCustom = afterPassportReload.find((m) => m.id === 'scen-custom-lsk-999')!;
+    assert.ok(savedCustom, 'Созданная карточка должна сохраняться в localStorage после F5');
+    assert.equal(savedCustom.title, 'Шторы Бархат Изумруд Люкс');
+    assert.equal(savedCustom.wbArticle, '888777667');
+    assert.equal(savedCustom.fabric.composition, '100% плотный портьерный микробархат');
+    assert.equal(
+      savedCustom.gallery.length,
+      0,
+      'После удаления единственной фотографии галерея должна оставаться пустой после F5 (не подставляя чужое фото боксеров)'
+    );
+    assert.equal(savedCustom.palettes[0]?.title, 'Палитра Бархат Изумруд');
+    assert.equal(savedCustom.palettes[0]?.colors[0]?.hex, '#065F46');
+
+    // ЭТАП 2 (02 · Продажи): Изменение помесячных выкупов, цены и ввод фактических продаж
+    const nextMonthlyPacks = savedCustom.plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyPacks.map(
+      (v, idx) => (idx === 11 ? 1200 : v)
+    );
+    const salesEditedModel = ensureModelUnifiedV11({
+      ...savedCustom,
+      retailPriceRub: 3800,
+      plansByScenario: {
+        ...savedCustom.plansByScenario,
+        [LISKANI_2027_SCENARIO_ID]: {
+          ...savedCustom.plansByScenario[LISKANI_2027_SCENARIO_ID],
+          monthlyPacks: nextMonthlyPacks,
+          monthlyPricesRub: Array(12).fill(3800),
+          monthlyRevenuesRubOverride: undefined,
+        },
+      },
+      sharedSupplyAndFact: {
+        ...savedCustom.sharedSupplyAndFact!,
+        actualSalesByMonth: savedCustom.sharedSupplyAndFact!.actualSalesByMonth.map(
+          (r, idx) =>
+            idx === 0
+              ? { monthIdx: 0, actualBuyoutsPacks: 540, actualPriceRub: 3850 }
+              : r
+        ),
+      },
+    });
+
+    // ЭТАП 3 (03 · Закупки): Расчёт квартальных партий, утверждение партии в PO, изменение размеров PO, удаление PO
+    const procPlan = computeProcurementPlan(salesEditedModel, LISKANI_2027_SCENARIO_DEF);
+    assert.equal(
+      procPlan.annualDemandPacks,
+      500 * 11 + 1200,
+      'Годовая потребность в 03 · Закупки должна точно равняться сумме 12 месяцев продаж (6 700 компл.)'
+    );
+    assert.ok(procPlan.recommendedBatches.length >= 1, 'Должны быть сформированы квартальные партии к заказу');
+
+    const withApprovedPo = approveRecommendedBatch(
+      salesEditedModel,
+      procPlan.recommendedBatches[0],
+      'Владелец'
+    );
+    assert.equal(withApprovedPo.sharedSupplyAndFact?.approvedOrders.length, 1);
+    const firstPo = withApprovedPo.sharedSupplyAndFact!.approvedOrders[0];
+
+    const withUpdatedPo = updateApprovedPurchaseOrder(withApprovedPo, firstPo.id, {
+      packsQty: 2000,
+      lockedUnitCostRub: 1020,
+    });
+    assert.equal(withUpdatedPo.sharedSupplyAndFact!.approvedOrders[0].packsQty, 2000);
+    assert.equal(
+      withUpdatedPo.sharedSupplyAndFact!.approvedOrders[0].totalOrderRub,
+      2000 * 1020
+    );
+
+    const withCustomPo = createCustomPurchaseOrder(withUpdatedPo, {
+      packsQty: 800,
+      unitCostRub: 1020,
+      arrivalMonthIdx: 5,
+      orderPlacementDateIso: '2027-04-10',
+      note: 'Дополнительная летняя партия',
+    });
+    assert.equal(withCustomPo.sharedSupplyAndFact!.approvedOrders.length, 2);
+
+    // ЭТАП 4 (04 · Финансы): Проверка P&L и движения денег с учётом утверждённых PO и факта января
+    const procAfterPo = computeProcurementPlan(withCustomPo, LISKANI_2027_SCENARIO_DEF);
+    const pnlAfterPo = computeFinancialPnL(withCustomPo, LISKANI_2027_SCENARIO_DEF, procAfterPo);
+    assert.equal(pnlAfterPo.annualBuyoutsPacks, 540 + 500 * 10 + 1200);
+    assert.equal(pnlAfterPo.annualRevenueRub, 540 * 3850 + (500 * 10 + 1200) * 3800);
+    assert.ok((pnlAfterPo.annualOperatingProfitRub || 0) > 0, 'Операционная прибыль в P&L должна быть рассчитана и положительна');
+
+    // Сохраняем всё в localStorage и проверяем F5
+    portfolio = persistPortfolioModels(
+      afterPassportReload.map((m) => (m.id === withCustomPo.id ? withCustomPo : m))
+    );
+    const afterFullFlowReload = hydratePortfolioModelsFromStorage();
+    const reloadedFullModel = afterFullFlowReload.find((m) => m.id === 'scen-custom-lsk-999')!;
+    assert.equal(
+      reloadedFullModel.sharedSupplyAndFact?.approvedOrders.length,
+      2,
+      'Утверждённые заказы PO должны сохраняться после обновления страницы (F5)'
+    );
+    assert.equal(
+      reloadedFullModel.sharedSupplyAndFact?.actualSalesByMonth[0]?.actualBuyoutsPacks,
+      540,
+      'Фактические продажи января должны сохраняться после обновления страницы (F5)'
+    );
+
+    // Удаление одного PO и затем удаление карточки
+    const afterRemoveOnePo = removeApprovedPurchaseOrder(
+      reloadedFullModel,
+      withCustomPo.sharedSupplyAndFact!.approvedOrders[1].id
+    );
+    assert.equal(afterRemoveOnePo.sharedSupplyAndFact?.approvedOrders.length, 1);
+
+    const afterDeleteCard = deleteModelFromPortfolio(afterFullFlowReload, {
+      id: 'scen-custom-lsk-999',
+      code: 'LSC-999',
+    });
+    assert.equal(
+      afterDeleteCard.some((m) => m.code === 'LSC-999'),
+      false,
+      'Удалённая карточка должна исчезать из портфеля'
+    );
+    const reloadedAfterDelete = hydratePortfolioModelsFromStorage();
+    assert.equal(
+      reloadedAfterDelete.some((m) => m.code === 'LSC-999'),
+      false,
+      'Удалённая карточка не должна возвращаться после обновления страницы (F5)'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('46. Синхронизация сценариев бренда в «01 · Продукт» (Сетка / Таблица / Паспорт) и отсутствие тяжёлых чёрных заливок на кнопках навигации', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const productCatalogSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+  const modelCardSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/ScenarioModelCardScreen.tsx'),
+    'utf8'
+  );
+  const procurementWorkbenchSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/SkuProcurementMvpWorkbench.tsx'),
+    'utf8'
+  );
+
+  // 1. В 01 · Продукт кнопка «Назад в каталог» выполнена в спокойном сером цвете (без чёрной заливки)
+  assert.ok(
+    productCatalogSrc.includes('Назад в каталог (01 · Продукт)') &&
+      productCatalogSrc.includes('bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B]'),
+    'Кнопка «Назад в каталог (01 · Продукт)» должна быть серой (#F1F5F9), а не чёрной'
+  );
+
+  // 2. В 01 · Продукт табличный вид и открытый паспорт синхронизируют сценарий бренда (selectedScenarioByBrand)
+  assert.ok(
+    productCatalogSrc.includes('setSelectedScenarioForBrand(modBrandCode, id)'),
+    'Переключатель сценария внутри открытой карточки в 01 · Продукт должен синхронизировать сценарий бренда'
+  );
+  const activeScenMatches = productCatalogSrc.match(/computeModelScenarioMetrics\(mod,\s*activeScen\)/g) || [];
+  assert.ok(
+    activeScenMatches.length >= 2,
+    'И сетка карточек, и табличный вид в 01 · Продукт должны считать выручку по активному сценарию бренда (activeScen)'
+  );
+
+  // 3. В карточке модели разрешено удаление фотографии даже когда она одна, а вкладки не имеют чёрной заливки
+  assert.ok(
+    modelCardSrc.includes('filteredGallery.length >= 1') &&
+      modelCardSrc.includes('Удалить фото'),
+    'Удаление фотографии должно быть доступно в том числе когда фотография одна в карточке'
+  );
+
+  // 4. В закупках карточки LISKANI отображается количество размеров из матрицы полотен
+  assert.ok(
+    procurementWorkbenchSrc.includes('model.liskaniSizeVariants.length') &&
+      procurementWorkbenchSrc.includes('разм.'),
+    'В блоке параметров закупок для карточек LISKANI должно отображаться число размеров полотен'
+  );
+});
+
+
 
 
 

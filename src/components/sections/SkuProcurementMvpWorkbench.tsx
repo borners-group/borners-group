@@ -275,16 +275,29 @@ export function SkuProcurementMvpWorkbench({
       });
     }
 
+    const isLiskaniModel =
+      model.customBrandLabel === 'LISKANI' ||
+      Boolean(model.plansByScenario[202705]);
+    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
+      ...model.plansByScenario,
+      [currentScenario.id]: {
+        ...currentPlan,
+        scenarioId: currentScenario.id,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyRevenuesRubOverride: undefined,
+      },
+    };
+    if (isLiskaniModel && currentScenario.id !== 202705) {
+      nextPlansByScenario[202705] = {
+        ...(model.plansByScenario[202705] || currentPlan),
+        scenarioId: 202705,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyRevenuesRubOverride: undefined,
+      };
+    }
     onUpdateModel({
       ...model,
-      plansByScenario: {
-        ...model.plansByScenario,
-        [currentScenario.id]: {
-          ...currentPlan,
-          scenarioId: currentScenario.id,
-          monthlyPacks: nextMonthlyPacks,
-        },
-      },
+      plansByScenario: nextPlansByScenario,
       sharedSupplyAndFact: {
         ...shared,
         factoryParams: {
@@ -974,7 +987,10 @@ export function SkuProcurementMvpWorkbench({
             >
               <span>Параметры:</span>
               <span className="font-mono font-bold">
-                {model.unitCostRub || 0} ₽ · {proc.totalLeadDays} дн. · S–XXL
+                {model.unitCostRub || 0} ₽ · {proc.totalLeadDays} дн. ·{' '}
+                {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
+                  ? `${model.liskaniSizeVariants.length} разм.`
+                  : 'S–XXL'}
               </span>
               <span className="text-[10px] text-[#686762]">
                 {showAdvancedSettings ? '▴' : '▾'}

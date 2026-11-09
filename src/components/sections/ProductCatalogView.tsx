@@ -568,7 +568,12 @@ export function ProductCatalogView() {
           model={activePassportModel}
           scenario={effectiveScenario}
           allScenarios={scenarios}
-          onSelectScenario={(id) => setSelectedScenarioId(id)}
+          onSelectScenario={(id) => {
+            setSelectedScenarioId(id);
+            if (modBrandCode !== 'ALL') {
+              setSelectedScenarioForBrand(modBrandCode, id);
+            }
+          }}
           onBackToScenarios={() => setActivePassportModelId(null)}
           onOpenSalesPlan={() => navigateTo('launch-calendar')}
           onUpdateModel={updateModelSpec}
@@ -706,7 +711,15 @@ export function ProductCatalogView() {
                 <button
                   key={b.code}
                   type="button"
-                  onClick={() => setBrandFilter(b.code)}
+                  onClick={() => {
+                    setBrandFilter(b.code);
+                    if (b.code !== 'ALL') {
+                      const targetScenId = selectedScenarioByBrand[b.code];
+                      if (typeof targetScenId === 'number') {
+                        setSelectedScenarioId(targetScenId);
+                      }
+                    }
+                  }}
                   className={`h-8 px-3 rounded-[8px] text-[12px] font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
                     isAct
                       ? 'bg-[#E2E8F0] text-[#0F172A] border-[#94A3B8] shadow-2xs'
@@ -1057,8 +1070,15 @@ export function ProductCatalogView() {
             <tbody className="divide-y divide-[#E2E8F0]">
               {filteredModels.map((mod) => {
                 const displayBrand = detectModelBrandPortfolioLabel(mod);
+                const modBrandCode = normalizePortfolioBrandCode(displayBrand);
+                const activeBrandScenId =
+                  modBrandCode !== 'ALL' ? selectedScenarioByBrand[modBrandCode] : undefined;
+                const activeScen =
+                  (typeof activeBrandScenId === 'number'
+                    ? scenarios.find((s) => s.id === activeBrandScenId)
+                    : undefined) || currentScenario;
                 const unitCfg = getBrandUnitConfig(mod);
-                const met = computeModelScenarioMetrics(mod, currentScenario);
+                const met = computeModelScenarioMetrics(mod, activeScen);
                 const accent = getModelBrandAccentStyles(displayBrand);
                 return (
                   <tr
