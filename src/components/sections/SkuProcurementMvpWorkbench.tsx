@@ -1875,7 +1875,7 @@ export function SkuProcurementMvpWorkbench({
                             : 'bg-white hover:bg-[#FAF9F6]'
                         }`}
                       >
-                        {/* 1. Партия, период покрытия, прямое указание дат заказа и кнопка разбиения */}
+                        {/* 1. Партия, период покрытия и ключевые даты (чистое чтение без рамок инпутов в закрытой строке) */}
                         <td className="py-3.5 pl-4 pr-3">
                           <div className="flex items-center gap-3">
                             <span
@@ -1888,56 +1888,9 @@ export function SkuProcurementMvpWorkbench({
                               {bIdx + 1}
                             </span>
                             <div>
-                              <div className="flex flex-wrap items-center gap-1.5">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-[13.5px] font-bold text-[#141413]">
-                                  Партия №{bIdx + 1} ·
-                                </span>
-                                <span
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center gap-1 rounded-[6px] border border-[#E2E1D9] bg-[#FAF9F6] px-1.5 py-0.5 text-[12px] font-bold text-[#141413]"
-                                >
-                                  <select
-                                    aria-label={`Начало периода покрытия партии №${bIdx + 1}`}
-                                    value={batch.firstCoveredMonthIdx}
-                                    onChange={(e) => {
-                                      const nextStart = Number(e.target.value);
-                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                        ...prev,
-                                        startMonthIdx: nextStart,
-                                        endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
-                                      }));
-                                    }}
-                                    className="bg-transparent font-bold text-[#141413] focus:outline-none cursor-pointer"
-                                  >
-                                    {MONTHS_SHORT_RU.map((m, mIdx) => (
-                                      <option key={m} value={mIdx}>
-                                        {m}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <span className="text-[#8E8D85]">–</span>
-                                  <select
-                                    aria-label={`Конец периода покрытия партии №${bIdx + 1}`}
-                                    value={batch.endCoveredMonthIdx}
-                                    onChange={(e) => {
-                                      const nextEnd = Number(e.target.value);
-                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                        ...prev,
-                                        startMonthIdx: Math.min(prev.startMonthIdx, nextEnd),
-                                        endMonthIdx: nextEnd,
-                                      }));
-                                    }}
-                                    className="bg-transparent font-bold text-[#141413] focus:outline-none cursor-pointer"
-                                  >
-                                    {MONTHS_SHORT_RU.map((m, mIdx) => (
-                                      <option key={m} value={mIdx}>
-                                        {m}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <span className="text-[11px] font-semibold text-[#686762]">
-                                    {currentScenario.year || 2027}
-                                  </span>
+                                  Партия №{bIdx + 1} · {batch.coverageMonthsLabel}
                                 </span>
                                 {isFirstStartBatch ? (
                                   <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 text-[10px] font-bold text-[#146C43]">
@@ -1945,43 +1898,15 @@ export function SkuProcurementMvpWorkbench({
                                   </span>
                                 ) : (
                                   <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 text-[10px] font-medium text-[#686762]">
-                                    Из оборота
+                                    Из оборота WB
                                   </span>
                                 )}
                               </div>
-                              <div
-                                onClick={(e) => e.stopPropagation()}
-                                className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[#686762]"
-                              >
-                                <span>Приход к {formatHumanDateRu(batch.requiredArrivalDateIso)} · Заказ до:</span>
-                                <input
-                                  type="date"
-                                  aria-label={`Дата размещения заказа партии №${bIdx + 1}`}
-                                  value={batch.recommendedOrderDateIso}
-                                  onChange={(e) => {
-                                    const nextIso = e.target.value;
-                                    if (!nextIso) return;
-                                    updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                      ...prev,
-                                      customOrderDateIso: nextIso,
-                                    }));
-                                  }}
-                                  className="h-6 rounded-[6px] border border-[#D8D7CE] bg-white px-1.5 font-mono text-[11px] font-bold text-[#141413] focus:border-[#141413] focus:outline-none cursor-pointer"
-                                />
-                                {batch.hasCustomDateOverride && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateDraftPeriodDef(batch.periodId, (prev) => ({
-                                        ...prev,
-                                        customOrderDateIso: null,
-                                      }))
-                                    }
-                                    className="text-[10.5px] font-semibold text-amber-800 hover:underline cursor-pointer"
-                                  >
-                                    ↺ авто
-                                  </button>
-                                )}
+                              <div className="mt-0.5 text-[11.5px] text-[#686762]">
+                                Приход к {formatHumanDateRu(batch.requiredArrivalDateIso)} · Заказ до{' '}
+                                <span className="font-mono font-semibold text-[#141413]">
+                                  {formatHumanDateRu(batch.recommendedOrderDateIso)}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -2071,23 +1996,12 @@ export function SkuProcurementMvpWorkbench({
                           </div>
                         </td>
 
-                        {/* 5. Размеры S–XXL, разбиение партии и утверждение */}
+                        {/* 5. Размеры S–XXL и утверждение (разбиение и даты — внутри «Размеры и расчёт ▾») */}
                         <td
                           onClick={(e) => e.stopPropagation()}
                           className="py-3.5 pr-4 pl-3 text-right"
                         >
                           <div className="inline-flex items-center gap-1.5">
-                            {canSplit && (
-                              <button
-                                type="button"
-                                onClick={() => handleSplitPeriod(batch.periodId)}
-                                title="Разбить эту партию на 2 отдельные партии с выбором своих дат заказа"
-                                className="h-8 rounded-[7px] border border-[#D8D7CE] bg-[#FAF9F6] hover:bg-white hover:border-[#141413] px-2.5 text-[11px] font-bold text-[#141413] transition cursor-pointer"
-                              >
-                                ✂ Разбить
-                              </button>
-                            )}
-
                             <button
                               type="button"
                               onClick={() => setExpandedKey(isExpanded ? null : rowKey)}

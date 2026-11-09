@@ -512,8 +512,8 @@ export function PeaklyMasterCabinetsSummary({
 }: PeaklyMasterCabinetsSummaryProps) {
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
-  const [procurementWavesOpen, setProcurementWavesOpen] = useState(true);
-  const [whatIfOpen, setWhatIfOpen] = useState(true);
+  const [procurementWavesOpen, setProcurementWavesOpen] = useState(false);
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [whatIfPriceDelta, setWhatIfPriceDelta] = useState(0);
   const [whatIfCostDelta, setWhatIfCostDelta] = useState(0);
   const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState(0);

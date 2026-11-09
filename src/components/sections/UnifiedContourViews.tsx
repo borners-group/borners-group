@@ -707,7 +707,7 @@ export function ProcurementContourView() {
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
-  const [wavesCalendarOpen, setWavesCalendarOpen] = useState(true);
+  const [wavesCalendarOpen, setWavesCalendarOpen] = useState(false);
 
   const [subTab, setSubTab] = useState<'batches' | 'crm'>(() => {
     if (typeof window !== 'undefined') {
@@ -925,52 +925,108 @@ export function ProcurementContourView() {
 
   return (
     <div className="space-y-4 pb-16">
-      {/* ЕДИНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ НАВИГАЦИИ РАЗДЕЛА 03 · ЗАКУПКИ (В стиле Peakly — без переноса на 2-ю строку) */}
-      <div className="rounded-[14px] bg-white border border-[#D8D7CF] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
-        {/* Левая часть: Вкладки Закупки / Задачи CRM + Сценарии */}
+      {/* ЕДИНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ НАВИГАЦИИ РАЗДЕЛА 03 · ЗАКУПКИ (В стиле Peakly — строго один фокус внимания на экране) */}
+      <div className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+        {/* Левая часть: 4 взаимоисключающих режима (По товару / Все SKU / 4 волны и сводка / Задачи CRM) */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-[9px] bg-[#F2F1EC] border border-[#E2E1D9] p-0.5 text-[12px] font-bold">
+          <div className="inline-flex flex-wrap rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] p-1 text-xs font-medium gap-0.5">
             <button
               type="button"
-              onClick={() => setSubTab('batches')}
-              className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
-                subTab === 'batches'
-                  ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
-                  : 'text-[#686762] hover:text-[#141413] border border-transparent'
+              onClick={() => {
+                setSubTab('batches');
+                setWavesCalendarOpen(false);
+                setScenarioDrawerTab('none');
+              }}
+              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                subTab === 'batches' && !wavesCalendarOpen && scenarioDrawerTab === 'none'
+                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
               }`}
             >
-              03 · Закупки ({eligibleModels.length})
+              По товару ({filteredSkus.length > 0 ? `${activeSkuIndex + 1}/${filteredSkus.length}` : eligibleModels.length})
             </button>
+
             <button
               type="button"
-              onClick={() => setSubTab('crm')}
-              className={`h-8 px-3 rounded-[7px] transition cursor-pointer ${
+              onClick={() => {
+                setSubTab('batches');
+                setWavesCalendarOpen(false);
+                setScenarioDrawerTab('skus');
+              }}
+              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                subTab === 'batches' && scenarioDrawerTab === 'skus'
+                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+              }`}
+            >
+              Все SKU ({procData.perSku.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSubTab('batches');
+                setWavesCalendarOpen(true);
+                setScenarioDrawerTab('investment');
+              }}
+              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                subTab === 'batches' && (wavesCalendarOpen || scenarioDrawerTab === 'investment' || scenarioDrawerTab === 'brands')
+                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+              }`}
+            >
+              4 волны и сводка ({formatMln(investmentSummary.totalProcurementBudgetRub)})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSubTab('crm');
+                setWavesCalendarOpen(false);
+                setScenarioDrawerTab('none');
+              }}
+              className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
                 subTab === 'crm'
-                  ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
-                  : 'text-[#686762] hover:text-[#141413] border border-transparent'
+                  ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
               }`}
             >
               Задачи CRM ({openTasksCount})
             </button>
           </div>
+        </div>
+
+        {/* Правая часть: Сценарии + Фильтр бренда + Экспорт */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {brandFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setBrandFilter('ALL')}
+              className="h-7.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer inline-flex items-center gap-1.5"
+              title="Сбросить фильтр бренда и показать все модели сценария"
+            >
+              <span>{brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}</span>
+              <span className="font-bold">×</span>
+            </button>
+          )}
 
           {subTab === 'batches' && (
-            <div className="inline-flex flex-wrap items-center gap-0.5 rounded-[9px] bg-[#F2F1EC] border border-[#E2E1D9] p-0.5">
+            <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] p-1">
               {orderedScenarios.map((sc) => {
                 const active = sc.id === selectedScenarioId;
                 const shortTitle =
                   sc.id === 100 || sc.id === 4
-                    ? 'Исходный план'
-                    : `Сценарий №${sc.id} · ${sc.monthlyTargetMln} млн`;
+                    ? 'Исходный'
+                    : `№${sc.id} · ${sc.monthlyTargetMln} млн`;
                 return (
                   <button
                     key={sc.id}
                     type="button"
                     onClick={() => setSelectedScenarioId(sc.id)}
-                    className={`h-8 px-2.5 rounded-[7px] text-[11.5px] font-bold transition cursor-pointer ${
+                    className={`h-7 px-2.5 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
                       active
-                        ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
-                        : 'text-[#686762] hover:text-[#141413] border border-transparent'
+                        ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                        : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
                     }`}
                   >
                     {shortTitle}
@@ -979,84 +1035,16 @@ export function ProcurementContourView() {
               })}
             </div>
           )}
-        </div>
 
-        {/* Правая часть: Фильтр бренда + Единая сводка сценария (Peakly progressive disclosure) + Все SKU + Экспорт */}
-        <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#52514C]">
-          {brandFilter !== 'ALL' && (
+          {subTab === 'batches' && eligibleModels.length > 0 && (
             <button
               type="button"
-              onClick={() => setBrandFilter('ALL')}
-              className="h-8 rounded-[8px] border border-amber-300 bg-amber-50 px-2.5 text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer inline-flex items-center gap-1.5"
-              title="Сбросить фильтр бренда и показать все модели сценария"
+              onClick={() => handleExportFactoryOrderCsv('all')}
+              className="h-8 rounded-lg border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] px-3 text-[11.5px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] hover:bg-[#F8FAFC] cursor-pointer"
+              title="Скачать таблицу заказа фабрике в Excel/CSV с размерами S–XXL, суммами, авансами и датами"
             >
-              <span>{brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}</span>
-              <span className="font-bold">×</span>
+              Экспорт CSV
             </button>
-          )}
-          {subTab === 'batches' && eligibleModels.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() =>
-                  setScenarioDrawerTab((prev) =>
-                    prev === 'investment' || prev === 'brands' ? 'none' : 'investment'
-                  )
-                }
-                className={`h-8 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 ${
-                  scenarioDrawerTab === 'investment' || scenarioDrawerTab === 'brands'
-                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
-                    : 'border-[#E2E1D9] bg-[#FAF9F6] text-[#141413] hover:bg-[#F2F1EC]'
-                }`}
-              >
-                <span className="text-[#686762]">Сводка сценария:</span>
-                <span className="font-mono font-bold text-[#146C43]">
-                  Старт {formatMln(investmentSummary.firstWaveStartBudgetRub)}
-                </span>
-                <span className="text-[#C8C7BE]">·</span>
-                <span className="font-mono font-bold text-[#141413]">
-                  Год {formatMln(investmentSummary.totalProcurementBudgetRub)}
-                </span>
-                <span className="text-[10px] text-[#686762]">
-                  {scenarioDrawerTab === 'investment' || scenarioDrawerTab === 'brands' ? '▴' : '▾'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWavesCalendarOpen((v) => !v)}
-                className={`h-8 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer ${
-                  wavesCalendarOpen
-                    ? 'border-indigo-500/35 bg-indigo-500/10 text-indigo-700'
-                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
-                }`}
-              >
-                📦 4 волны закупок {wavesCalendarOpen ? '▴' : '▾'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setScenarioDrawerTab((prev) => (prev === 'skus' ? 'none' : 'skus'))
-                }
-                className={`h-8 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer ${
-                  scenarioDrawerTab === 'skus'
-                    ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
-                    : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
-                }`}
-              >
-                Все SKU ({procData.perSku.length}) {scenarioDrawerTab === 'skus' ? '▴' : '▾'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleExportFactoryOrderCsv('all')}
-                className="h-8 rounded-[8px] border border-[#D8D7CE] bg-white px-2.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] cursor-pointer"
-                title="Скачать таблицу заказа фабрике в Excel/CSV с размерами S–XXL, суммами, авансами и датами"
-              >
-                Экспорт CSV
-              </button>
-            </>
           )}
         </div>
       </div>
@@ -1333,10 +1321,13 @@ export function ProcurementContourView() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setScenarioDrawerTab('none')}
+                    onClick={() => {
+                      setWavesCalendarOpen(false);
+                      setScenarioDrawerTab('none');
+                    }}
                     className="h-7.5 rounded-[7px] px-2.5 text-[12px] font-semibold text-[#686762] hover:text-[#141413] cursor-pointer"
                   >
-                    Скрыть ▴
+                    ← К выбранному товару
                   </button>
                 </div>
               </div>
@@ -1723,11 +1714,12 @@ export function ProcurementContourView() {
                                 type="button"
                                 onClick={() => {
                                   setSelectedSkuId(m.id);
+                                  setWavesCalendarOpen(false);
                                   setScenarioDrawerTab('none');
                                 }}
                                 className="rounded-[7px] border border-[#CFCEC6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#141413] hover:bg-[#141413] hover:text-white cursor-pointer"
                               >
-                                Выбрать
+                                Открыть партии →
                               </button>
                             </td>
                           </tr>
@@ -1740,8 +1732,8 @@ export function ProcurementContourView() {
             </div>
           )}
 
-          {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ (переключатель модели встроен прямо в шапку!) */}
-          {activeSkuModel && (
+          {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ (отображается только в режиме «По товару», без наложения сводных блоков сверху) */}
+          {activeSkuModel && !wavesCalendarOpen && scenarioDrawerTab === 'none' && (
             <SkuProcurementMvpWorkbench
               model={activeSkuModel}
               currentScenario={currentScenario}
@@ -1822,6 +1814,7 @@ export function FinanceContourView() {
   );
   const [initialCashMln, setInitialCashMln] = useState<number>(0);
   const [wbLagMonths, setWbLagMonths] = useState<number>(0);
+  const [whatIfOpen, setWhatIfOpen] = useState<boolean>(false);
   const [whatIfPriceDelta, setWhatIfPriceDelta] = useState<number>(0);
   const [whatIfCostDelta, setWhatIfCostDelta] = useState<number>(0);
   const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState<number>(0);
@@ -2139,20 +2132,27 @@ export function FinanceContourView() {
               whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
 
             return (
-              <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-5 py-3.5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
-                      Симулятор чувствительности · Что если?
-                    </div>
-                    <h2 className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                      Стресс-тест и точки роста прибыли сценария «{currentScenario.title}»
-                    </h2>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWhatIfOpen((v) => !v)}
+                      className="text-left cursor-pointer group"
+                    >
+                      <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
+                        🎛️ Симулятор чувствительности · Что если?
+                      </div>
+                      <h2 className="text-[14.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7] group-hover:text-emerald-600 transition">
+                        Стресс-тест и точки роста прибыли сценария «{currentScenario.title}» {whatIfOpen ? '▴' : '▾'}
+                      </h2>
+                    </button>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <button
                       type="button"
                       onClick={() => {
+                        setWhatIfOpen(true);
                         setWhatIfPriceDelta(7);
                         setWhatIfCostDelta(-5);
                         setWhatIfMpAdsDelta(0);
@@ -2164,6 +2164,7 @@ export function FinanceContourView() {
                     <button
                       type="button"
                       onClick={() => {
+                        setWhatIfOpen(true);
                         setWhatIfPriceDelta(0);
                         setWhatIfCostDelta(10);
                         setWhatIfMpAdsDelta(4);
@@ -2185,10 +2186,18 @@ export function FinanceContourView() {
                         ↺ Сбросить
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setWhatIfOpen((v) => !v)}
+                      className="h-8 px-3 rounded-lg border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC] dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7] font-semibold cursor-pointer"
+                    >
+                      {whatIfOpen ? 'Свернуть ▴' : 'Ползунки ▾'}
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                {whatIfOpen && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-1 border-t border-[#E2E6EE] dark:border-[#222938]">
                   <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
                       <div className="flex justify-between font-medium">
@@ -2278,12 +2287,13 @@ export function FinanceContourView() {
                     </div>
                   </div>
                 </div>
+                )}
               </section>
             );
           })()}
 
           {/* 01 · СВОДНАЯ ТАБЛИЦА ИНВЕСТИЦИЙ И ПРИБЫЛИ ПО БРЕНДАМ ГРУППЫ (РАЗДЕЛ 09.2 ТЗ) */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
+          <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
