@@ -1356,6 +1356,8 @@ export function ProcurementContourView() {
                     ? 'Исходный'
                     : sc.id === 105 || sc.ownerBrandCode === 'LISKANI'
                     ? 'LISKANI · 500 млн'
+                    : sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA'
+                    ? 'AKUSHA · 105,8 млн'
                     : `№${sc.id} · ${sc.monthlyTargetMln} млн`;
                 return (
                   <button
@@ -1366,6 +1368,8 @@ export function ProcurementContourView() {
                       setSelectedCategoryFilter('ALL');
                       if (sc.id === 105 || sc.ownerBrandCode === 'LISKANI') {
                         setBrandFilter('LISKANI');
+                      } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
+                        setBrandFilter('AKUSHA');
                       }
                       setSelectedScenarioId(sc.id);
                     }}

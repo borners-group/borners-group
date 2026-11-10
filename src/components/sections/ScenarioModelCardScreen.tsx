@@ -25,6 +25,7 @@ import {
   ModelPassportStageStatus,
   ScenarioModelSpec,
   computeModelScenarioMetrics,
+  resolvePublicAssetUrl,
 } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
@@ -49,6 +50,10 @@ import {
   serializeStructuredPlanToCsv,
   toggleModelProcurementByOrders,
   updateModelBuyoutRatePct,
+  updateModelScenarioMonthBuyouts,
+  updateModelScenarioMonthOrders,
+  updateModelScenarioPrice,
+  updateModelUnitCostWithVariants,
   type ModelAuditEntry,
   type ModelScalingStage,
   type ValueStatusCode,
@@ -114,8 +119,7 @@ function formatMln(valRub: number): string {
 }
 
 function normalizeAssetUrl(url?: string): string {
-  if (!url) return '';
-  return url.replace(/^\/(images|docs)\//, '$1/');
+  return resolvePublicAssetUrl(url);
 }
 
 function deriveModelStageStatus(model: ScenarioModelSpec): ModelPassportStageStatus {
@@ -262,7 +266,7 @@ export function ScenarioModelCardScreen({
       const nextMap: Record<string, string> = {};
       for (const item of list) {
         if (item.staticUrl) {
-          nextMap[item.id] = item.staticUrl;
+          nextMap[item.id] = resolvePublicAssetUrl(item.staticUrl);
         } else {
           const blobUrl = await loadPdfBlobUrlFromIdb(item.id);
           if (blobUrl) nextMap[item.id] = blobUrl;
@@ -728,33 +732,9 @@ export function ScenarioModelCardScreen({
   const handleScenarioPriceChange = (nextPriceRub: number) => {
     const clean = Math.max(0, Math.round(nextPriceRub));
     const prevPrice = plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub;
-    const nextPlan = {
-      ...plan,
-      scenarioId: scenario.id,
-      monthlyPricesRub: Array(12).fill(clean),
-      monthlyRevenuesRubOverride: undefined,
-    };
-    const isLiskaniModel =
-      brandPortfolioLabel === 'LISKANI' ||
-      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
-    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
-      ...model.plansByScenario,
-      [scenario.id]: nextPlan,
-    };
-    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
-      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
-        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
-        scenarioId: LISKANI_2027_SCENARIO_ID,
-        monthlyPricesRub: Array(12).fill(clean),
-        monthlyRevenuesRubOverride: undefined,
-      };
-    }
+    const updatedModel = updateModelScenarioPrice(model, scenario.id, clean);
     commitWithAudit(
-      {
-        ...model,
-        retailPriceRub: clean,
-        plansByScenario: nextPlansByScenario,
-      },
+      updatedModel,
       'sales',
       `Изменена цена комплекта в ${scenario.title}`,
       `${prevPrice} ₽`,
@@ -766,15 +746,9 @@ export function ScenarioModelCardScreen({
   const handleUnitCostChange = (nextCostRub: number) => {
     const clean = Math.max(0, Math.round(nextCostRub));
     const prev = model.unitCostRub;
+    const updatedModel = updateModelUnitCostWithVariants(model, clean);
     commitWithAudit(
-      {
-        ...model,
-        unitCostRub: clean,
-        sharedSupplyAndFact: {
-          ...shared,
-          costStatus: clean > 0 ? 'plan' : 'not_filled',
-        },
-      },
+      updatedModel,
       'finance',
       'Изменена закупочная себестоимость комплекта (выкупы неизменны)',
       `${prev} ₽`,
@@ -786,49 +760,14 @@ export function ScenarioModelCardScreen({
   const handleMonthBuyoutsChange = (monthIdx: number, nextPacks: number) => {
     const clean = Math.max(0, Math.round(nextPacks));
     const prev = plan.monthlyPacks[monthIdx] || 0;
-    const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenario.id);
-    const nextMonthlyPacks = plan.monthlyPacks.map((v, idx) =>
-      idx === monthIdx ? clean : v
+    const updatedModel = updateModelScenarioMonthBuyouts(
+      model,
+      scenario.id,
+      monthIdx,
+      clean
     );
-    const nextMonthlyOrdersPacks = nextMonthlyPacks.map((p) =>
-      effBuyoutPct >= 100
-        ? Math.max(0, Math.round(p || 0))
-        : Math.round((Math.max(0, Math.round(p || 0)) * 100) / effBuyoutPct)
-    );
-    const nextMonthlyOrdersRub = nextMonthlyOrdersPacks.map(
-      (op, idx) => op * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
-    );
-    const isLiskaniModel =
-      brandPortfolioLabel === 'LISKANI' ||
-      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
-    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
-      ...model.plansByScenario,
-      [scenario.id]: {
-        ...plan,
-        scenarioId: scenario.id,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyOrdersPacks: nextMonthlyOrdersPacks,
-        monthlyOrdersRub: nextMonthlyOrdersRub,
-        buyoutRatePct: effBuyoutPct,
-        monthlyRevenuesRubOverride: undefined,
-      },
-    };
-    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
-      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
-        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
-        scenarioId: LISKANI_2027_SCENARIO_ID,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyOrdersPacks: nextMonthlyOrdersPacks,
-        monthlyOrdersRub: nextMonthlyOrdersRub,
-        buyoutRatePct: effBuyoutPct,
-        monthlyRevenuesRubOverride: undefined,
-      };
-    }
     commitWithAudit(
-      {
-        ...model,
-        plansByScenario: nextPlansByScenario,
-      },
+      updatedModel,
       'sales',
       `Изменён план выкупов за ${MONTHS_SHORT_RU[monthIdx]} (${scenario.title})`,
       `${prev} компл.`,
@@ -840,51 +779,17 @@ export function ScenarioModelCardScreen({
   const handleMonthOrdersChange = (monthIdx: number, nextOrdersPacks: number) => {
     const cleanOrders = Math.max(0, Math.round(nextOrdersPacks));
     const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenario.id);
-    const nextBuyouts =
-      effBuyoutPct >= 100
-        ? cleanOrders
-        : Math.round((cleanOrders * effBuyoutPct) / 100);
     const prevOrders = baseMetrics.monthlyOrdersPacks[monthIdx] || 0;
-    const nextMonthlyPacks = plan.monthlyPacks.map((v, idx) =>
-      idx === monthIdx ? nextBuyouts : v
+    const updatedModel = updateModelScenarioMonthOrders(
+      model,
+      scenario.id,
+      monthIdx,
+      cleanOrders
     );
-    const nextMonthlyOrdersPacks = baseMetrics.monthlyOrdersPacks.map((v, idx) =>
-      idx === monthIdx ? cleanOrders : v
-    );
-    const nextMonthlyOrdersRub = nextMonthlyOrdersPacks.map(
-      (op, idx) => op * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
-    );
-    const isLiskaniModel =
-      brandPortfolioLabel === 'LISKANI' ||
-      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
-    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
-      ...model.plansByScenario,
-      [scenario.id]: {
-        ...plan,
-        scenarioId: scenario.id,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyOrdersPacks: nextMonthlyOrdersPacks,
-        monthlyOrdersRub: nextMonthlyOrdersRub,
-        buyoutRatePct: effBuyoutPct,
-        monthlyRevenuesRubOverride: undefined,
-      },
-    };
-    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
-      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
-        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
-        scenarioId: LISKANI_2027_SCENARIO_ID,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyOrdersPacks: nextMonthlyOrdersPacks,
-        monthlyOrdersRub: nextMonthlyOrdersRub,
-        buyoutRatePct: effBuyoutPct,
-        monthlyRevenuesRubOverride: undefined,
-      };
-    }
+    const nextBuyouts =
+      updatedModel.plansByScenario[scenario.id]?.monthlyPacks?.[monthIdx] ?? 0;
     commitWithAudit(
-      {
-        ...model,
-        plansByScenario: nextPlansByScenario,
-      },
+      updatedModel,
       'sales',
       `Изменён план заказов за ${MONTHS_SHORT_RU[monthIdx]} (при ${effBuyoutPct}% выкупа → ${nextBuyouts} выкупов)`,
       `${prevOrders} зак.`,

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { PackColor } from '@/lib/scenarioData';
+import { PackColor, resolvePublicAssetUrl } from '@/lib/scenarioData';
 
 export function BoxerPackStackSvg({
   colors,
@@ -41,7 +41,7 @@ export function BoxerPackStackSvg({
         }`}
       >
         <img
-          src={safePhotoUrl}
+          src={resolvePublicAssetUrl(safePhotoUrl)}
           alt={brandLabel}
           className="h-full w-full object-contain"
         />

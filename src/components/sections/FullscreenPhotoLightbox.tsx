@@ -12,7 +12,10 @@ import {
   ExternalLink,
   Move,
 } from 'lucide-react';
-import type { GalleryMediaItem } from '@/lib/scenarioData';
+import {
+  type GalleryMediaItem,
+  resolvePublicAssetUrl,
+} from '@/lib/scenarioData';
 
 interface FullscreenPhotoLightboxProps {
   open: boolean;
@@ -25,8 +28,7 @@ interface FullscreenPhotoLightboxProps {
 }
 
 function normalizePublicAssetUrl(url?: string): string {
-  if (!url) return '';
-  return url.replace(/^\/(images|docs)\//, '$1/');
+  return resolvePublicAssetUrl(url);
 }
 
 export function FullscreenPhotoLightbox({

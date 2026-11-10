@@ -43,6 +43,32 @@ export interface AttachedModelPdf {
   staticUrl?: string;
 }
 
+export function resolvePublicAssetUrl(
+  url?: string,
+  basePathOverride?: string
+): string {
+  if (!url) return '';
+  if (
+    url.startsWith('data:') ||
+    url.startsWith('blob:') ||
+    url.startsWith('http://') ||
+    url.startsWith('https://')
+  ) {
+    return url;
+  }
+  const basePath =
+    basePathOverride !== undefined
+      ? basePathOverride.replace(/\/+$/, '')
+      : typeof process !== 'undefined'
+      ? (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '')
+      : '';
+  if (basePath && url.startsWith(`${basePath}/`)) {
+    return url;
+  }
+  const clean = url.replace(/^\.?\/+/, '');
+  return basePath ? `${basePath}/${clean}` : `/${clean}`;
+}
+
 export interface ProductionStep {
   id: string;
   stepNum: number;

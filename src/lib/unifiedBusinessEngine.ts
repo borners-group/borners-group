@@ -4740,6 +4740,15 @@ export function launchBrandStarterMatrix(
   let currentScenarios = [...scenarios];
   let currentModels = [...models];
 
+  const hasOfficialLiskaniAssortment =
+    brandCode === 'LISKANI' &&
+    currentModels.some(
+      (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+    );
+  const hasOfficialAkushaAssortment =
+    brandCode === 'AKUSHA' &&
+    currentModels.some((m) => Boolean(m.plansByScenario?.[202706]));
+
   // Проверяем, есть ли уже сценарий у этого бренда
   const existingBrandScenarios = getScenariosForBrand(currentScenarios, brandCode, {
     onlyExplicitForNewBrands: brandCode !== 'NA_TELE',
@@ -4754,7 +4763,7 @@ export function launchBrandStarterMatrix(
       brandCode,
       year: 2027,
       monthlyTargetMln: template.monthlyTargetMln,
-      copyFromScenarioId: null,
+      copyFromScenarioId: hasOfficialAkushaAssortment ? 202706 : null,
     });
     currentScenarios = created.scenarios;
     currentModels = created.models;
@@ -4762,13 +4771,8 @@ export function launchBrandStarterMatrix(
   }
 
   let addedCount = 0;
-  const hasOfficialLiskaniAssortment =
-    brandCode === 'LISKANI' &&
-    currentModels.some(
-      (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
-    );
 
-  if (hasOfficialLiskaniAssortment) {
+  if (hasOfficialLiskaniAssortment || hasOfficialAkushaAssortment) {
     return {
       models: currentModels,
       scenarios: currentScenarios,
@@ -4904,7 +4908,12 @@ export function resetStarterCabinetsFromHolding(
     ].map((s) => s.code.toUpperCase())
   );
 
-  const nextModels = models.filter((m) => !starterCodes.has(m.code.toUpperCase()));
+  const nextModels = models.filter(
+    (m) =>
+      !starterCodes.has(m.code.toUpperCase()) ||
+      Boolean(m.plansByScenario?.[202706]) ||
+      Boolean(m.liskaniSizeVariants?.length)
+  );
   const starterTitles = new Set([
     STARTER_BRAND_MATRICES.AKUSHA.scenarioTitle,
     STARTER_BRAND_MATRICES.LISKANI.scenarioTitle,
@@ -5050,13 +5059,29 @@ export function updateModelUnitCostWithVariants(
     }));
   }
 
+  const hasExplicitWbRates =
+    (model.marketplaceFeePct || 0) > 0 ||
+    (model.logisticsRub || 0) > 0 ||
+    (model.adsPct || 0) > 0;
+
   return {
     ...model,
     unitCostRub: clean,
     liskaniSizeVariants: nextLiskaniVariants,
     sharedSupplyAndFact: {
       ...shared,
-      costStatus: clean > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
+      costStatus:
+        clean > 0
+          ? shared.costStatus === 'not_filled'
+            ? 'plan'
+            : shared.costStatus
+          : 'not_filled',
+      expensesFilled:
+        clean > 0 && hasExplicitWbRates ? true : shared.expensesFilled,
+      allocatedFixedOpexRubPerPack:
+        clean > 0 && hasExplicitWbRates && shared.allocatedFixedOpexRubPerPack === null
+          ? 55
+          : shared.allocatedFixedOpexRubPerPack,
     },
   };
 }
@@ -5232,12 +5257,20 @@ export function updateModelBuyoutRatePct(
       : model.procureByOrdersVolume !== undefined
         ? model.procureByOrdersVolume
         : true;
+  const isAkushaModel =
+    normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model)) === 'AKUSHA';
+  const isOfficialAkushaPlan = Boolean(model.plansByScenario?.[202706]);
 
   const nextPlans: ScenarioModelSpec['plansByScenario'] = {};
   for (const [scKey, pl] of Object.entries(model.plansByScenario || {})) {
     const scId = Number(scKey);
+    const isBrandPrimaryPlan =
+      (isAkushaModel && (scId === 202706 || scId === 1)) ||
+      (Boolean(model.liskaniSizeVariants?.length) && (scId === 202705 || scId === 1));
     const shouldUpdatePlan =
-      options?.scenarioId === undefined || scId === options.scenarioId;
+      options?.scenarioId === undefined ||
+      scId === options.scenarioId ||
+      isBrandPrimaryPlan;
     if (!shouldUpdatePlan && pl.buyoutRatePct) {
       nextPlans[scId] = pl;
       continue;
@@ -5246,6 +5279,8 @@ export function updateModelBuyoutRatePct(
       const cleanPacks = Math.max(0, Math.round(packs || 0));
       return cleanPct >= 100
         ? cleanPacks
+        : isOfficialAkushaPlan
+        ? Math.ceil((cleanPacks * 100) / cleanPct)
         : Math.round((cleanPacks * 100) / cleanPct);
     });
     const monthlyOrdersRub = monthlyOrdersPacks.map((ordPacks, idx) => {
@@ -5302,6 +5337,386 @@ export function updateModelBuyoutRatePct(
         ...(shared.auditHistory || []),
       ],
     },
+  };
+}
+
+/**
+ * Обновляет цену реализации 1 комплекта / пары (retailPriceRub и monthlyPricesRub)
+ * с синхронизацией основного сценария бренда (AKUSHA 202706 / LISKANI 202705)
+ * и пересчётом monthlyOrdersRub и monthlyRevenuesRubOverride.
+ */
+export function updateModelScenarioPrice(
+  rawModel: ScenarioModelSpec,
+  scenarioId: number,
+  nextPriceRub: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const clean = Math.max(0, Math.round(Number(nextPriceRub) || 0));
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const isAkusha = brandCode === 'AKUSHA';
+  const isLiskani =
+    brandCode === 'LISKANI' ||
+    (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+
+  const basePlan =
+    model.plansByScenario[scenarioId] ||
+    (isAkusha ? model.plansByScenario[202706] : undefined) ||
+    (isLiskani ? model.plansByScenario[202705] : undefined) ||
+    model.plansByScenario[1] || {
+      scenarioId,
+      monthlyPacks: Array(12).fill(0),
+      monthlyPricesRub: Array(12).fill(clean),
+      monthlyReceiptsPacks: Array(12).fill(0),
+      initialStockPacks: 0,
+      firstOrderPacks: 0,
+      nextOrderDateLabel: '15 января 2027',
+      salesStartMonthIdx: 0,
+      warehouseArrivalMonthIdx: 0,
+      warehouseArrivalDateLabel: '10 января',
+    };
+
+  const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
+  const monthlyOrdersPacks =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : (basePlan.monthlyPacks || Array(12).fill(0)).map((packs, idx) => {
+          const cleanPacks = Math.max(0, Math.round(packs || 0));
+          if (effBuyoutPct >= 100) return cleanPacks;
+          const storedOrd = basePlan.monthlyOrdersPacks?.[idx];
+          if (
+            typeof storedOrd === 'number' &&
+            storedOrd >= 0 &&
+            (storedOrd === Math.ceil((cleanPacks * 100) / effBuyoutPct) ||
+              Math.round((storedOrd * effBuyoutPct) / 100) === cleanPacks)
+          ) {
+            return Math.round(storedOrd);
+          }
+          return isAkusha
+            ? Math.ceil((cleanPacks * 100) / effBuyoutPct)
+            : Math.round((cleanPacks * 100) / effBuyoutPct);
+        });
+
+  const monthlyOrdersRub =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : monthlyOrdersPacks.map((ord) => ord * clean);
+
+  const updatedPlanBase = {
+    ...basePlan,
+    monthlyPricesRub: Array(12).fill(clean),
+    monthlyRevenuesRubOverride: undefined,
+    monthlyOrdersPacks,
+    monthlyOrdersRub,
+  };
+
+  const nextPlans: ScenarioModelSpec['plansByScenario'] = {
+    ...model.plansByScenario,
+    [scenarioId]: {
+      ...updatedPlanBase,
+      scenarioId,
+    },
+  };
+
+  if (isAkusha) {
+    nextPlans[202706] = {
+      ...(model.plansByScenario[202706] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202706,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+  if (isLiskani) {
+    nextPlans[202705] = {
+      ...(model.plansByScenario[202705] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202705,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+
+  let nextLiskaniVariants = model.liskaniSizeVariants;
+  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+    const prevPrice = Math.max(0, model.retailPriceRub || 0);
+    nextLiskaniVariants = model.liskaniSizeVariants.map((sv) => {
+      const nextSvPrice =
+        prevPrice > 0
+          ? Math.max(0, Math.round((sv.retailPriceRub * clean) / prevPrice))
+          : clean;
+      return {
+        ...sv,
+        retailPriceRub: nextSvPrice,
+        annualBuyoutsRub: sv.annualBuyoutsUnits * nextSvPrice,
+        annualOrdersRub: sv.annualOrdersUnits * nextSvPrice,
+      };
+    });
+  }
+
+  return {
+    ...model,
+    retailPriceRub: clean,
+    liskaniSizeVariants: nextLiskaniVariants,
+    plansByScenario: nextPlans,
+  };
+}
+
+/**
+ * Безопасное изменение помесячных Выкупов (monthlyPacks[monthIdx]) без деления на 0,
+ * когда % выкупа ещё не задан (buyoutRatePct === 0, как у Дыхабельных мокасин AKU-028..031),
+ * с синхронизацией сценариев бренда (AKUSHA 202706 / LISKANI 202705).
+ */
+export function updateModelScenarioMonthBuyouts(
+  rawModel: ScenarioModelSpec,
+  scenarioId: number,
+  monthIdx: number,
+  nextBuyoutsPacks: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const clean = Math.max(0, Math.round(Number(nextBuyoutsPacks) || 0));
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const isAkusha = brandCode === 'AKUSHA';
+  const isLiskani =
+    brandCode === 'LISKANI' ||
+    (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+
+  const basePlan =
+    model.plansByScenario[scenarioId] ||
+    (isAkusha ? model.plansByScenario[202706] : undefined) ||
+    (isLiskani ? model.plansByScenario[202705] : undefined) ||
+    model.plansByScenario[1];
+  if (!basePlan) return model;
+
+  const prevMonthPacks = Math.max(0, Math.round(basePlan.monthlyPacks[monthIdx] || 0));
+  const nextMonthlyPacks = basePlan.monthlyPacks.map((v, idx) =>
+    idx === monthIdx ? clean : v
+  );
+
+  const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
+  const nextMonthlyOrdersPacks =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : nextMonthlyPacks.map((p, idx) => {
+          const cleanPacks = Math.max(0, Math.round(p || 0));
+          if (effBuyoutPct >= 100) return cleanPacks;
+          if (idx !== monthIdx) {
+            const storedOrd = basePlan.monthlyOrdersPacks?.[idx];
+            if (
+              typeof storedOrd === 'number' &&
+              storedOrd >= 0 &&
+              (storedOrd === Math.ceil((cleanPacks * 100) / effBuyoutPct) ||
+                Math.round((storedOrd * effBuyoutPct) / 100) === cleanPacks)
+            ) {
+              return Math.round(storedOrd);
+            }
+          }
+          return isAkusha
+            ? Math.ceil((cleanPacks * 100) / effBuyoutPct)
+            : Math.round((cleanPacks * 100) / effBuyoutPct);
+        });
+
+  const nextMonthlyOrdersRub =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : nextMonthlyOrdersPacks.map(
+          (ord, idx) => ord * (basePlan.monthlyPricesRub[idx] ?? model.retailPriceRub)
+        );
+
+  let nextLiskaniVariants = model.liskaniSizeVariants;
+  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+    const varCount = model.liskaniSizeVariants.length;
+    nextLiskaniVariants = model.liskaniSizeVariants.map((sv, svIdx) => {
+      const nextBuyoutsUnits = sv.monthlyBuyoutsUnits.map((val, idx) => {
+        if (idx !== monthIdx) return val;
+        if (prevMonthPacks > 0) {
+          return Math.max(0, Math.round((val * clean) / prevMonthPacks));
+        }
+        const baseShare = Math.floor(clean / varCount);
+        const rem = clean - baseShare * varCount;
+        return baseShare + (svIdx < rem ? 1 : 0);
+      });
+      const nextOrdersUnits = nextBuyoutsUnits.map((b, idx) =>
+        idx === monthIdx
+          ? effBuyoutPct <= 0
+            ? 0
+            : effBuyoutPct >= 100
+            ? b
+            : Math.round((b * 100) / effBuyoutPct)
+          : sv.monthlyOrdersUnits[idx] || 0
+      );
+      const annualBuyoutsUnits = nextBuyoutsUnits.reduce((s, v) => s + v, 0);
+      const annualOrdersUnits = nextOrdersUnits.reduce((s, v) => s + v, 0);
+      const price = sv.retailPriceRub || model.retailPriceRub;
+      return {
+        ...sv,
+        monthlyBuyoutsUnits: nextBuyoutsUnits,
+        monthlyOrdersUnits: nextOrdersUnits,
+        annualBuyoutsUnits,
+        annualOrdersUnits,
+        annualBuyoutsRub: annualBuyoutsUnits * price,
+        annualOrdersRub: annualOrdersUnits * price,
+      };
+    });
+  }
+
+  const updatedPlanBase = {
+    ...basePlan,
+    monthlyPacks: nextMonthlyPacks,
+    monthlyOrdersPacks: nextMonthlyOrdersPacks,
+    monthlyOrdersRub: nextMonthlyOrdersRub,
+    monthlyRevenuesRubOverride: undefined,
+  };
+
+  const nextPlans: ScenarioModelSpec['plansByScenario'] = {
+    ...model.plansByScenario,
+    [scenarioId]: {
+      ...updatedPlanBase,
+      scenarioId,
+    },
+  };
+
+  if (isAkusha) {
+    nextPlans[202706] = {
+      ...(model.plansByScenario[202706] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202706,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+  if (isLiskani) {
+    nextPlans[202705] = {
+      ...(model.plansByScenario[202705] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202705,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+
+  return {
+    ...model,
+    liskaniSizeVariants: nextLiskaniVariants,
+    plansByScenario: nextPlans,
+  };
+}
+
+/**
+ * Безопасное изменение помесячных Заказов клиентов (monthlyOrdersPacks[monthIdx])
+ * с автоматическим пересчётом Выкупов (monthlyPacks[monthIdx]) и синхронизацией сценариев бренда.
+ */
+export function updateModelScenarioMonthOrders(
+  rawModel: ScenarioModelSpec,
+  scenarioId: number,
+  monthIdx: number,
+  nextOrdersPacks: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const cleanOrders = Math.max(0, Math.round(Number(nextOrdersPacks) || 0));
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const isAkusha = brandCode === 'AKUSHA';
+  const isLiskani =
+    brandCode === 'LISKANI' ||
+    (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+
+  const basePlan =
+    model.plansByScenario[scenarioId] ||
+    (isAkusha ? model.plansByScenario[202706] : undefined) ||
+    (isLiskani ? model.plansByScenario[202705] : undefined) ||
+    model.plansByScenario[1];
+  if (!basePlan) return model;
+
+  const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
+  const nextBuyoutsForMonth =
+    effBuyoutPct <= 0
+      ? basePlan.monthlyPacks[monthIdx] || 0
+      : effBuyoutPct >= 100
+      ? cleanOrders
+      : Math.round((cleanOrders * effBuyoutPct) / 100);
+
+  const nextMonthlyPacks = basePlan.monthlyPacks.map((v, idx) =>
+    idx === monthIdx ? nextBuyoutsForMonth : v
+  );
+
+  const nextMonthlyOrdersPacks = nextMonthlyPacks.map((p, idx) => {
+    if (idx === monthIdx) return cleanOrders;
+    if (effBuyoutPct <= 0) return 0;
+    const cleanPacks = Math.max(0, Math.round(p || 0));
+    if (effBuyoutPct >= 100) return cleanPacks;
+    const storedOrd = basePlan.monthlyOrdersPacks?.[idx];
+    if (
+      typeof storedOrd === 'number' &&
+      storedOrd >= 0 &&
+      (storedOrd === Math.ceil((cleanPacks * 100) / effBuyoutPct) ||
+        Math.round((storedOrd * effBuyoutPct) / 100) === cleanPacks)
+    ) {
+      return Math.round(storedOrd);
+    }
+    return isAkusha
+      ? Math.ceil((cleanPacks * 100) / effBuyoutPct)
+      : Math.round((cleanPacks * 100) / effBuyoutPct);
+  });
+
+  const nextMonthlyOrdersRub = nextMonthlyOrdersPacks.map(
+    (ord, idx) => ord * (basePlan.monthlyPricesRub[idx] ?? model.retailPriceRub)
+  );
+
+  const updatedPlanBase = {
+    ...basePlan,
+    monthlyPacks: nextMonthlyPacks,
+    monthlyOrdersPacks: nextMonthlyOrdersPacks,
+    monthlyOrdersRub: nextMonthlyOrdersRub,
+    monthlyRevenuesRubOverride: undefined,
+  };
+
+  const nextPlans: ScenarioModelSpec['plansByScenario'] = {
+    ...model.plansByScenario,
+    [scenarioId]: {
+      ...updatedPlanBase,
+      scenarioId,
+    },
+  };
+
+  if (isAkusha) {
+    nextPlans[202706] = {
+      ...(model.plansByScenario[202706] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202706,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+  if (isLiskani) {
+    nextPlans[202705] = {
+      ...(model.plansByScenario[202705] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202705,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+
+  return {
+    ...model,
+    plansByScenario: nextPlans,
   };
 }
 

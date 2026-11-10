@@ -4301,6 +4301,298 @@ test('54. Официальный план продаж AKUSHA 2027 из PDF (31 
   }
 });
 
+test('55. Уточнение параметров «уточнить» у моделей AKUSHA (AKU-028 Мокасины и AKU-017 Топсайдеры): защита от деления на ноль (Infinity/NaN) и полный пересчёт заказов, выручки, закупок и P&L', async () => {
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_ID,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    updateModelBuyoutRatePct,
+    updateModelScenarioMonthBuyouts,
+    updateModelScenarioPrice,
+    updateModelUnitCostWithVariants,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const rawAku028 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-028')!;
+  assert.equal(rawAku028.retailPriceRub, 0);
+  assert.equal(rawAku028.unitCostRub, 0);
+  assert.equal(rawAku028.buyoutRatePct, 0);
+
+  // 1. Редактирование выкупов при buyoutRatePct === 0 не должно порождать Infinity или NaN
+  const editedWhileZeroPct = updateModelScenarioMonthBuyouts(
+    rawAku028,
+    AKUSHA_2027_SCENARIO_ID,
+    4, // Май
+    150
+  );
+  const planZeroPct = editedWhileZeroPct.plansByScenario[AKUSHA_2027_SCENARIO_ID];
+  assert.equal(planZeroPct.monthlyPacks[4], 150);
+  assert.equal(
+    planZeroPct.monthlyOrdersPacks?.every((v) => Number.isFinite(v) && v === 0),
+    true,
+    'При buyoutRatePct = 0 заказы должны оставаться конечными нулями без Infinity/NaN'
+  );
+  assert.equal(
+    planZeroPct.monthlyOrdersRub?.every((v) => Number.isFinite(v) && v === 0),
+    true,
+    'При buyoutRatePct = 0 сумма заказов в рублях не должна содержать NaN/Infinity'
+  );
+
+  // 2. Уточняем % выкупа (40%), розничную цену (5 990 ₽) и себестоимость (2 100 ₽) для AKU-028
+  let clarifiedAku028 = updateModelBuyoutRatePct(rawAku028, 40, {
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    syncProcurementToOrders: true,
+  });
+  clarifiedAku028 = updateModelScenarioPrice(
+    clarifiedAku028,
+    AKUSHA_2027_SCENARIO_ID,
+    5990
+  );
+  clarifiedAku028 = updateModelUnitCostWithVariants(clarifiedAku028, 2100);
+
+  const met028 = computeModelScenarioMetrics(clarifiedAku028, AKUSHA_2027_SCENARIO_DEF);
+  const pnl028 = computeFinancialPnL(clarifiedAku028, AKUSHA_2027_SCENARIO_DEF);
+  const proc028 = computeProcurementPlan(clarifiedAku028, AKUSHA_2027_SCENARIO_DEF);
+
+  assert.equal(met028.annualPacks, 387, 'Годовые выкупы AKU-028 равны 387 пар');
+  assert.equal(
+    met028.annualOrdersPacks,
+    970,
+    'При 40% выкупа заказы AKU-028 пересчитываются по помесячному ceil в 970 пар'
+  );
+  assert.equal(met028.annualRevenueRub, 387 * 5990, 'Годовая выручка AKU-028 = 2 318 130 ₽');
+  assert.equal(
+    clarifiedAku028.sharedSupplyAndFact?.expensesFilled,
+    true,
+    'После ввода себестоимости > 0 у модели с заполненными ставками WB флаг expensesFilled становится true'
+  );
+  assert.equal(clarifiedAku028.sharedSupplyAndFact?.costStatus, 'plan');
+  assert.equal(
+    pnl028.operatingProfitStatus,
+    'plan',
+    'P&L модели AKU-028 после уточнения цены и себестоимости полностью активен'
+  );
+  assert.ok(
+    pnl028.annualOperatingProfitRub !== null && pnl028.annualOperatingProfitRub > 300_000,
+    'Операционная прибыль AKU-028 за год должна быть положительной (> 300 тыс. ₽)'
+  );
+  assert.ok(
+    proc028.totalRecommendedBudgetRub !== null && proc028.totalRecommendedBudgetRub > 0,
+    'План закупок AKU-028 в рублях пересчитан'
+  );
+
+  // 3. Проверяем уточнение цены и себестоимости у Топсайдеров AKU-017 (где % выкупа 33% и заказы уже заданы)
+  const rawAku017 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+  let clarifiedAku017 = updateModelScenarioPrice(
+    rawAku017,
+    AKUSHA_2027_SCENARIO_ID,
+    6490
+  );
+  clarifiedAku017 = updateModelUnitCostWithVariants(clarifiedAku017, 2300);
+  const met017 = computeModelScenarioMetrics(clarifiedAku017, AKUSHA_2027_SCENARIO_DEF);
+  const pnl017 = computeFinancialPnL(clarifiedAku017, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(met017.annualPacks, 986);
+  assert.equal(met017.annualOrdersPacks, 2468);
+  assert.equal(met017.annualRevenueRub, 986 * 6490);
+  assert.equal(
+    clarifiedAku017.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyOrdersRub?.reduce(
+      (a, b) => a + b,
+      0
+    ),
+    2468 * 6490,
+    'При установке цены на AKU-017 помесячные заказы в рублях (monthlyOrdersRub) автоматически пересчитываются'
+  );
+  assert.equal(pnl017.operatingProfitStatus, 'plan');
+
+  // 4. Проверяем сохранение уточнённых карточек в localStorage и восстановление после F5
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    const initialHydrated = hydratePortfolioModelsFromStorage();
+    const updatedList = initialHydrated.map((m) =>
+      m.code === 'AKU-028'
+        ? clarifiedAku028
+        : m.code === 'AKU-017'
+        ? clarifiedAku017
+        : m
+    );
+    persistPortfolioModels(updatedList);
+
+    const afterF5 = hydratePortfolioModelsFromStorage();
+    const f5Aku028 = afterF5.find((m) => m.code === 'AKU-028')!;
+    const f5Aku017 = afterF5.find((m) => m.code === 'AKU-017')!;
+    assert.equal(f5Aku028.retailPriceRub, 5990);
+    assert.equal(f5Aku028.unitCostRub, 2100);
+    assert.equal(f5Aku028.buyoutRatePct, 40);
+    assert.equal(f5Aku017.retailPriceRub, 6490);
+    assert.equal(f5Aku017.unitCostRub, 2300);
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('56. Сквозная синхронизация сценариев AKUSHA (202706) / LISKANI (202705) и защита эталонных карточек AKU-001..003 от перезаписи демо-шаблонами', async () => {
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_ID,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    launchBrandStarterMatrix,
+    resetStarterCabinetsFromHolding,
+    updateModelScenarioMonthBuyouts,
+    updateModelScenarioMonthOrders,
+    updateModelScenarioPrice,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const aku001 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-001')!;
+
+  // 1. Изменение цены в сценарии №1 синхронизирует сценарий 202706 и сбрасывает старый override выручки
+  const priceUpdated = updateModelScenarioPrice(aku001, 1, 7900);
+  assert.equal(priceUpdated.retailPriceRub, 7900);
+  assert.equal(
+    priceUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPricesRub[0],
+    7900
+  );
+  assert.equal(
+    priceUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyRevenuesRubOverride,
+    undefined
+  );
+  const metPrice = computeModelScenarioMetrics(priceUpdated, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(metPrice.annualRevenueRub, 1330 * 7900);
+
+  // 2. Изменение выкупов месяца и заказов месяца синхронизирует оба сценария (1 и 202706)
+  const buyoutsUpdated = updateModelScenarioMonthBuyouts(
+    priceUpdated,
+    AKUSHA_2027_SCENARIO_ID,
+    0, // Январь (было 80)
+    100
+  );
+  assert.equal(buyoutsUpdated.plansByScenario[1].monthlyPacks[0], 100);
+  assert.equal(
+    buyoutsUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[0],
+    100
+  );
+  assert.equal(
+    buyoutsUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyOrdersPacks?.[0],
+    200 // 200 заказов при 50% выкупа у зимних ботинок AKU-001
+  );
+
+  const ordersUpdated = updateModelScenarioMonthOrders(
+    buyoutsUpdated,
+    AKUSHA_2027_SCENARIO_ID,
+    0,
+    330
+  );
+  assert.equal(
+    ordersUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyOrdersPacks?.[0],
+    330
+  );
+  assert.equal(
+    ordersUpdated.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[0],
+    Math.round((330 * 50) / 100) // 165 выкупов при 50%
+  );
+  assert.equal(ordersUpdated.plansByScenario[1].monthlyPacks[0], 165);
+
+  // 3. Вызов launchBrandStarterMatrix и resetStarterCabinetsFromHolding НЕ должен затирать или удалять официальные карточки AKU-001..003
+  const allScenarios = [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF];
+  const launched = launchBrandStarterMatrix(
+    AKUSHA_2027_MODELS,
+    allScenarios,
+    'AKUSHA'
+  );
+  assert.equal(
+    launched.models.length,
+    24,
+    'launchBrandStarterMatrix не должен добавлять дубли к 24 официальным карточкам AKUSHA'
+  );
+  assert.equal(
+    launched.models.find((m) => m.code === 'AKU-001')?.title,
+    'Зимние ботинки · Модель №01 (Тёмно-коричневый нубук)',
+    'Официальная карточка AKU-001 не должна перезаписываться демо-шаблоном Cloud Walk'
+  );
+  assert.equal(
+    launched.scenarioId,
+    AKUSHA_2027_SCENARIO_ID,
+    'Активным сценарием AKUSHA должен назначаться 202706 (105,79 млн ₽)'
+  );
+
+  const afterReset = resetStarterCabinetsFromHolding(
+    AKUSHA_2027_MODELS,
+    allScenarios,
+    { BORNERS: 1, AKUSHA: AKUSHA_2027_SCENARIO_ID }
+  );
+  assert.equal(
+    afterReset.models.length,
+    24,
+    'resetStarterCabinetsFromHolding не должен удалять официальные карточки AKU-001..003'
+  );
+});
+
+test('57. Корректная резолюция публичных URL ресурсов (resolvePublicAssetUrl) для корневого домена и подпутей GitHub Pages (/borners-group, /borners-platform)', async () => {
+  const { resolvePublicAssetUrl } = await import('../src/lib/scenarioData.ts');
+
+  // 1. Корневой деплой (basePath = "")
+  assert.equal(
+    resolvePublicAssetUrl('/models/akusha/AKU-001.jpg', ''),
+    '/models/akusha/AKU-001.jpg'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('images/liskani/LSC-001.webp', ''),
+    '/images/liskani/LSC-001.webp'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('/docs/akusha_plan_2027_31_models.pdf', ''),
+    '/docs/akusha_plan_2027_31_models.pdf'
+  );
+
+  // 2. Деплой в подпапку (/borners-group и /borners-platform)
+  assert.equal(
+    resolvePublicAssetUrl('/models/akusha/AKU-009.jpg', '/borners-group'),
+    '/borners-group/models/akusha/AKU-009.jpg'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('images/liskani/LSC-014.webp', '/borners-platform'),
+    '/borners-platform/images/liskani/LSC-014.webp'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('/docs/akusha_plan_2027_31_models.pdf', '/borners-group'),
+    '/borners-group/docs/akusha_plan_2027_31_models.pdf'
+  );
+
+  // 3. Отсутствие задвоения префикса при повторном вызове и сохранность data:/http(s): URL
+  assert.equal(
+    resolvePublicAssetUrl('/borners-group/models/akusha/AKU-001.jpg', '/borners-group'),
+    '/borners-group/models/akusha/AKU-001.jpg'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('data:image/jpeg;base64,AAAA', '/borners-group'),
+    'data:image/jpeg;base64,AAAA'
+  );
+  assert.equal(
+    resolvePublicAssetUrl('https://borners-group.github.io/test.jpg', '/borners-group'),
+    'https://borners-group.github.io/test.jpg'
+  );
+});
+
+
 
 
 

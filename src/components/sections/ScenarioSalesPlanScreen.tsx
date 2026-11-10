@@ -20,6 +20,11 @@ import {
   ScenarioModelSpec,
   computeModelScenarioMetrics,
 } from '@/lib/scenarioData';
+import {
+  detectModelBrandPortfolioLabel,
+  updateModelScenarioMonthBuyouts,
+  updateModelScenarioPrice,
+} from '@/lib/unifiedBusinessEngine';
 
 interface ScenarioSalesPlanScreenProps {
   model: ScenarioModelSpec;
@@ -58,14 +63,22 @@ export function ScenarioSalesPlanScreen({
     value: number
   ) => {
     const cleanVal = Math.max(0, Math.round(value || 0));
+    if (field === 'packs') {
+      onUpdateModel(
+        updateModelScenarioMonthBuyouts(model, scenario.id, monthIdx, cleanVal)
+      );
+      return;
+    }
+    if (field === 'price') {
+      onUpdateModel(updateModelScenarioPrice(model, scenario.id, cleanVal));
+      return;
+    }
     const nextPlan = {
       ...plan,
       monthlyPacks: [...plan.monthlyPacks],
       monthlyPricesRub: [...plan.monthlyPricesRub],
       monthlyReceiptsPacks: [...plan.monthlyReceiptsPacks],
     };
-    if (field === 'packs') nextPlan.monthlyPacks[monthIdx] = cleanVal;
-    if (field === 'price') nextPlan.monthlyPricesRub[monthIdx] = cleanVal;
     if (field === 'receipts') nextPlan.monthlyReceiptsPacks[monthIdx] = cleanVal;
 
     onUpdateModel({
@@ -172,7 +185,7 @@ export function ScenarioSalesPlanScreen({
               ← Карточка модели
             </button>
             <h2 className="text-[20px] md:text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
-              {model.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} {model.code} — План продаж
+              {detectModelBrandPortfolioLabel(model)} {model.code} — План продаж
             </h2>
           </div>
           <p className="text-[12.5px] text-[#5E5D58]">
@@ -245,7 +258,7 @@ export function ScenarioSalesPlanScreen({
               notify(
                 'success',
                 '✓ План продаж и карточка сохранены',
-                `${model.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} ${model.code} · Сценарий №${scenario.id}`
+                `${detectModelBrandPortfolioLabel(model)} ${model.code} · Сценарий №${scenario.id}`
               );
             }}
             className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
@@ -559,6 +572,9 @@ export function ScenarioSalesPlanScreen({
                         [scenario.id]: {
                           ...plan,
                           monthlyPacks: Array(12).fill(0),
+                          monthlyOrdersPacks: Array(12).fill(0),
+                          monthlyOrdersRub: Array(12).fill(0),
+                          monthlyRevenuesRubOverride: undefined,
                         },
                       },
                     });

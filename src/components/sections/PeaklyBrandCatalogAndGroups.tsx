@@ -2679,6 +2679,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
     'grp-natele-womens-base': true,
     'grp-fukai-wb': true,
     'grp-akusha-shoes': true,
+    'grp-akusha-loafers': true,
     'grp-liscani-curtains': false,
     'grp-liskani-blackout': true,
     'grp-liskani-mramor': false,

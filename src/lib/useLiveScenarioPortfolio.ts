@@ -690,9 +690,13 @@ export function useLiveScenarioPortfolio() {
     const hasOfficialLiskani = res.models.some(
       (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
     );
+    const hasOfficialAkusha = res.models.some((m) =>
+      Boolean(m.plansByScenario?.[AKUSHA_2027_SCENARIO_ID])
+    );
     const nextByBrand = {
       ...res.selectedScenarioByBrand,
       ...(hasOfficialLiskani ? { LISKANI: LISKANI_2027_SCENARIO_ID } : {}),
+      ...(hasOfficialAkusha ? { AKUSHA: AKUSHA_2027_SCENARIO_ID } : {}),
     };
     setModels(res.models);
     setScenarios(res.scenarios);

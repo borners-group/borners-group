@@ -21,21 +21,11 @@ import {
   ScenarioModelSpec,
   MONTHS_SHORT_RU,
   computeModelScenarioMetrics,
+  resolvePublicAssetUrl,
 } from '@/lib/scenarioData';
 
 function resolveCatalogAssetUrl(url: string): string {
-  if (!url) return '';
-  if (
-    url.startsWith('data:') ||
-    url.startsWith('http://') ||
-    url.startsWith('https://') ||
-    url.startsWith('blob:')
-  ) {
-    return url;
-  }
-  const clean = url.replace(/^\.?\//, '');
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
-  return basePath ? `${basePath}/${clean}` : `/${clean}`;
+  return resolvePublicAssetUrl(url);
 }
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
@@ -1223,16 +1213,24 @@ export function ProductCatalogView() {
                       </div>
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
-                      {formatCurrencyRub(met.avgRetailPriceRub)}
+                      {met.avgRetailPriceRub > 0
+                        ? formatCurrencyRub(met.avgRetailPriceRub)
+                        : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono text-[#334155]">
-                      {formatCurrencyRub(mod.unitCostRub)}
+                      {mod.unitCostRub > 0
+                        ? formatCurrencyRub(mod.unitCostRub)
+                        : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
-                      {met.unitMarginPct.toFixed(1)}%
+                      {met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
+                        ? `${met.unitMarginPct.toFixed(1)}%`
+                        : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
-                      {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                      {met.annualRevenueRub > 0
+                        ? `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                        : `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`}
                     </td>
                     <td className="py-3.5 px-5 text-right">
                       <div className="inline-flex items-center justify-end gap-2">
