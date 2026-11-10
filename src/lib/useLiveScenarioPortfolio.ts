@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
+  GalleryMediaItem,
   GrowthScenarioDef,
   INITIAL_SCENARIOS,
   ModelPriorityLevel,
@@ -38,7 +39,12 @@ import {
   normalizePortfolioBrandCode,
   resetStarterCabinetsFromHolding,
 } from '@/lib/unifiedBusinessEngine';
-import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import {
+  loadAllModelGalleriesFromIdb,
+  safeGetStorageJson,
+  safeSetStorageJson,
+  saveModelGalleryToIdb,
+} from '@/lib/safeStorage';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
@@ -176,7 +182,19 @@ export function useLiveScenarioPortfolio() {
     NA_TELE: 2,
   });
 
+  const ignoreSelfEventsRef = useRef(0);
+  const dispatchCrossHookEvent = useCallback((eventName: string) => {
+    if (typeof window === 'undefined') return;
+    ignoreSelfEventsRef.current += 1;
+    try {
+      window.dispatchEvent(new CustomEvent(eventName));
+    } finally {
+      ignoreSelfEventsRef.current = Math.max(0, ignoreSelfEventsRef.current - 1);
+    }
+  }, []);
+
   const syncFromStorage = useCallback(() => {
+    if (ignoreSelfEventsRef.current > 0) return;
     const hydratedModels = hydratePortfolioModelsFromStorage();
     setModels(hydratedModels);
 
@@ -228,6 +246,34 @@ export function useLiveScenarioPortfolio() {
 
   useEffect(() => {
     syncFromStorage();
+    // Подгружаем сохранённые фотогалереи из IndexedDB, если они были вытеснены из localStorage
+    void loadAllModelGalleriesFromIdb().then((idbGalleries) => {
+      const keys = Object.keys(idbGalleries);
+      if (keys.length === 0) return;
+      setModels((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
+            | GalleryMediaItem[]
+            | undefined;
+          if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
+          const hasValidLocalPhoto =
+            Array.isArray(m.gallery) &&
+            m.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0);
+          if (!hasValidLocalPhoto) {
+            changed = true;
+            return { ...m, gallery: idbGal };
+          }
+          return m;
+        });
+        if (changed) {
+          safeSetStorageJson(STORAGE_KEY_MODELS, next);
+          syncUserPlansBackup(next);
+        }
+        return changed ? next : prev;
+      });
+    });
+
     window.addEventListener('borners-scenario-models-changed', syncFromStorage);
     window.addEventListener('borners-scenarios-changed', syncFromStorage);
     window.addEventListener('borners-active-scenario-changed', syncFromStorage);
@@ -254,20 +300,19 @@ export function useLiveScenarioPortfolio() {
           });
         }
       }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
-      }
+      dispatchCrossHookEvent('borners-active-scenario-changed');
     },
-    [brandFilter]
+    [brandFilter, dispatchCrossHookEvent]
   );
 
-  const setIncludeGroupPortfolioInS1 = useCallback((nextVal: boolean) => {
-    setIncludeGroupState(nextVal);
-    safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, nextVal);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
-    }
-  }, []);
+  const setIncludeGroupPortfolioInS1 = useCallback(
+    (nextVal: boolean) => {
+      setIncludeGroupState(nextVal);
+      safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, nextVal);
+      dispatchCrossHookEvent('borners-active-scenario-changed');
+    },
+    [dispatchCrossHookEvent]
+  );
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenarioId: number | null) => {
@@ -278,13 +323,13 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+            dispatchCrossHookEvent('borners-active-scenario-changed');
           }, 0);
         }
         return next;
       });
     },
-    []
+    [dispatchCrossHookEvent]
   );
 
   const updateScenariosBatch = useCallback(
@@ -294,44 +339,58 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
+            dispatchCrossHookEvent('borners-scenarios-changed');
           }, 0);
         }
         return next;
       });
     },
-    []
+    [dispatchCrossHookEvent]
   );
 
-  const updateModelSpec = useCallback((updated: ScenarioModelSpec) => {
-    setModels((prev) => {
-      const next = prev.map((m) => (m.id === updated.id ? updated : m));
-      safeSetStorageJson(STORAGE_KEY_MODELS, next);
-      syncUserPlansBackup(next);
-      if (typeof window !== 'undefined') {
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
-        }, 0);
+  const updateModelSpec = useCallback(
+    (updated: ScenarioModelSpec) => {
+      if (Array.isArray(updated.gallery) && updated.gallery.length > 0) {
+        void saveModelGalleryToIdb(updated.id, updated.gallery);
       }
-      return next;
-    });
-  }, []);
+      setModels((prev) => {
+        const next = prev.map((m) => (m.id === updated.id ? updated : m));
+        safeSetStorageJson(STORAGE_KEY_MODELS, next);
+        syncUserPlansBackup(next);
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            dispatchCrossHookEvent('borners-scenario-models-changed');
+          }, 0);
+        }
+        return next;
+      });
+    },
+    [dispatchCrossHookEvent]
+  );
 
   const updateModelsBatch = useCallback(
     (updater: (prev: ScenarioModelSpec[]) => ScenarioModelSpec[]) => {
       setModels((prev) => {
         const next = updater(prev);
+        for (const m of next) {
+          if (
+            Array.isArray(m.gallery) &&
+            m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+          ) {
+            void saveModelGalleryToIdb(m.id, m.gallery);
+          }
+        }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+            dispatchCrossHookEvent('borners-scenario-models-changed');
           }, 0);
         }
         return next;
       });
     },
-    []
+    [dispatchCrossHookEvent]
   );
 
   const currentScenario = useMemo(() => {
@@ -434,8 +493,14 @@ export function useLiveScenarioPortfolio() {
     let decRevenueRub = 0;
     let annualPacks = 0;
     let decPacks = 0;
+    let annualOrdersRub = 0;
+    let annualOrdersPacks = 0;
+    let decOrdersRub = 0;
+    let decOrdersPacks = 0;
     const monthlyRevRub = Array(12).fill(0) as number[];
     const monthlyPacks = Array(12).fill(0) as number[];
+    const monthlyOrdersRub = Array(12).fill(0) as number[];
+    const monthlyOrdersPacks = Array(12).fill(0) as number[];
 
     for (const m of eligibleModels) {
       const met = computeModelScenarioMetrics(m, currentScenario);
@@ -443,9 +508,15 @@ export function useLiveScenarioPortfolio() {
       decRevenueRub += met.targetMonthRevenueRub;
       annualPacks += met.annualPacks;
       decPacks += met.targetMonthPacks;
+      annualOrdersRub += met.annualOrdersRub;
+      annualOrdersPacks += met.annualOrdersPacks;
+      decOrdersRub += met.targetMonthOrdersRub;
+      decOrdersPacks += met.targetMonthOrdersPacks;
       for (let i = 0; i < 12; i++) {
         monthlyRevRub[i] += met.monthlyRevenuesRub[i] || 0;
         monthlyPacks[i] += met.plan.monthlyPacks[i] || 0;
+        monthlyOrdersRub[i] += met.monthlyOrdersRub[i] || 0;
+        monthlyOrdersPacks[i] += met.monthlyOrdersPacks[i] || 0;
       }
     }
 
@@ -454,8 +525,14 @@ export function useLiveScenarioPortfolio() {
       decRevenueRub,
       annualPacks,
       decPacks,
+      annualOrdersRub,
+      annualOrdersPacks,
+      decOrdersRub,
+      decOrdersPacks,
       monthlyRevRub,
       monthlyPacks,
+      monthlyOrdersRub,
+      monthlyOrdersPacks,
     };
   }, [eligibleModels, currentScenario]);
 

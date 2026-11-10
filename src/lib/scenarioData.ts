@@ -112,6 +112,8 @@ export interface ScenarioModelSpec {
   marketplaceFeePct: number; // комиссия площадки %
   logisticsRub: number; // логистика ₽ / комплект
   adsPct: number; // реклама %
+  buyoutRatePct?: number; // процент выкупа заказов на маркетплейсе (например 33% для обуви AKUSHA, 57% для штор LISKANI)
+  procureByOrdersVolume?: boolean; // считать потребность в закупках от объёма заказов с учётом % выкупа (по умолчанию true для AKUSHA)
   responsiblePerson: string;
   priority?: ModelPriorityLevel;
   hasActualSalesOrPurchases: boolean;
@@ -995,6 +997,33 @@ export const INITIAL_SCENARIO_MODELS: ScenarioModelSpec[] = [
 ];
 
 // Расчёт экономики одного комплекта и модели в выбранном сценарии (снизу вверх по ТЗ п. 8)
+export function inferDefaultBuyoutRatePctForModel(
+  model: Pick<
+    ScenarioModelSpec,
+    'brandId' | 'customBrandLabel' | 'categoryLabel' | 'buyoutRatePct'
+  >,
+  planBuyoutRatePct?: number
+): number {
+  if (typeof model.buyoutRatePct === 'number' && Number.isFinite(model.buyoutRatePct) && model.buyoutRatePct > 0) {
+    return Math.min(100, Math.max(5, Math.round(model.buyoutRatePct)));
+  }
+  if (typeof planBuyoutRatePct === 'number' && Number.isFinite(planBuyoutRatePct) && planBuyoutRatePct > 0) {
+    return Math.min(100, Math.max(5, Math.round(planBuyoutRatePct)));
+  }
+  const brandU = (model.customBrandLabel || model.brandId || '').toUpperCase();
+  const catL = (model.categoryLabel || '').toLowerCase();
+  if (brandU.includes('AKUSHA') || catL.includes('обув') || catL.includes('кроссов') || catL.includes('ботин') || catL.includes('кед') || catL.includes('челси')) {
+    return 33;
+  }
+  if (brandU.includes('LISKANI') || brandU.includes('LISCANI') || catL.includes('штор') || catL.includes('тюль')) {
+    return 57;
+  }
+  if (brandU.includes('NA_TELE') || brandU.includes('НА ТЕЛЕ')) {
+    return 75;
+  }
+  return 88;
+}
+
 export function computeModelScenarioMetrics(
   model: ScenarioModelSpec,
   scenario: GrowthScenarioDef
@@ -1014,6 +1043,10 @@ export function computeModelScenarioMetrics(
       warehouseArrivalMonthIdx: 2,
       warehouseArrivalDateLabel: '18 марта',
     };
+
+  const buyoutRatePct = inferDefaultBuyoutRatePctForModel(model, plan.buyoutRatePct);
+  const orderMultiplier =
+    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 1;
 
   const actingSku = getActingSkuByWbOrVendor(model.code, model.title);
   const isUnmodifiedActingPlan =
@@ -1040,10 +1073,50 @@ export function computeModelScenarioMetrics(
         (packs, idx) => packs * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
       );
 
+  const isExactPresetOrders =
+    hasExactRevenueOverride &&
+    Array.isArray(plan.monthlyOrdersPacks) &&
+    plan.monthlyOrdersPacks.length === 12 &&
+    Array.isArray(plan.monthlyOrdersRub) &&
+    plan.monthlyOrdersRub.length === 12 &&
+    (model.buyoutRatePct === undefined || model.buyoutRatePct === (plan.buyoutRatePct ?? 57));
+
+  const monthlyOrdersPacks = isExactPresetOrders
+    ? plan.monthlyOrdersPacks!.map((v) => Math.max(0, Math.round(v || 0)))
+    : plan.monthlyPacks.map((packs, idx) => {
+        const cleanPacks = Math.max(0, Math.round(packs || 0));
+        if (buyoutRatePct >= 100) return cleanPacks;
+        const storedOrder = plan.monthlyOrdersPacks?.[idx];
+        if (
+          typeof storedOrder === 'number' &&
+          storedOrder >= 0 &&
+          Math.round((storedOrder * buyoutRatePct) / 100) === cleanPacks
+        ) {
+          return Math.round(storedOrder);
+        }
+        return Math.round((cleanPacks * 100) / buyoutRatePct);
+      });
+
+  const monthlyOrdersRub = isExactPresetOrders
+    ? plan.monthlyOrdersRub!.map((v) => Math.max(0, Math.round(v || 0)))
+    : monthlyOrdersPacks.map((ordPacks, idx) => {
+        if (hasExactRevenueOverride && plan.monthlyPacks[idx] > 0) {
+          return buyoutRatePct >= 100
+            ? monthlyRevenuesRub[idx]
+            : Math.round((monthlyRevenuesRub[idx] * 100) / buyoutRatePct);
+        }
+        const price = plan.monthlyPricesRub[idx] ?? model.retailPriceRub;
+        return ordPacks * price;
+      });
+
   const annualRevenueRub = monthlyRevenuesRub.reduce((acc, v) => acc + v, 0);
   const annualPacks = plan.monthlyPacks.reduce((acc, v) => acc + v, 0);
   const annualUnits = annualPacks * model.unitsInPack;
   const avgMonthlyPacks = Math.round(annualPacks / 12);
+
+  const annualOrdersPacks = monthlyOrdersPacks.reduce((acc, v) => acc + v, 0);
+  const annualOrdersUnits = annualOrdersPacks * model.unitsInPack;
+  const annualOrdersRub = monthlyOrdersRub.reduce((acc, v) => acc + v, 0);
 
   const targetMonthIdx = scenario.targetMonthIdx ?? 11;
   const fallbackScenarioPriceRub =
@@ -1071,6 +1144,8 @@ export function computeModelScenarioMetrics(
   // Выручка в целевом месяце (декабрь = индекс 11)
   const targetMonthRevenueRub = monthlyRevenuesRub[targetMonthIdx] || 0;
   const targetMonthPacks = plan.monthlyPacks[targetMonthIdx] || 0;
+  const targetMonthOrdersPacks = monthlyOrdersPacks[targetMonthIdx] || 0;
+  const targetMonthOrdersRub = monthlyOrdersRub[targetMonthIdx] || 0;
   const scenarioTargetRub =
     scenario.id === ACTING_2027_SCENARIO_ID
       ? 22_729_352
@@ -1139,10 +1214,17 @@ export function computeModelScenarioMetrics(
 
   return {
     plan,
+    buyoutRatePct,
+    orderMultiplier,
     monthlyRevenuesRub,
+    monthlyOrdersPacks,
+    monthlyOrdersRub,
     annualRevenueRub,
     annualPacks,
     annualUnits,
+    annualOrdersPacks,
+    annualOrdersUnits,
+    annualOrdersRub,
     avgMonthlyPacks,
     avgRetailPriceRub,
     feeRub,
@@ -1151,6 +1233,8 @@ export function computeModelScenarioMetrics(
     unitMarginPct,
     targetMonthRevenueRub,
     targetMonthPacks,
+    targetMonthOrdersPacks,
+    targetMonthOrdersRub,
     goalSharePct,
     totalPurchaseNeedRub,
     annualProfitRub,

@@ -53,9 +53,11 @@ import {
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   getBrandUnitConfig,
+  getDefaultBuyoutRatePctForBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
+import { saveModelGalleryToIdb } from '@/lib/safeStorage';
 import { getModelBrandAccentStyles } from '@/lib/productGroups';
 
 interface BrandCreatePreset {
@@ -242,6 +244,7 @@ export function ProductCatalogView() {
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
       unitCostPrice: preset.defaultCost,
+      buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(initialModalBrand)),
       imageUrl: '',
     };
   });
@@ -263,6 +266,7 @@ export function ProductCatalogView() {
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
       unitCostPrice: preset.defaultCost,
+      buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
       imageUrl: '',
     });
     setCreateModalOpen(true);
@@ -283,6 +287,7 @@ export function ProductCatalogView() {
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
       unitCostPrice: preset.defaultCost,
+      buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
     }));
   };
 
@@ -330,7 +335,7 @@ export function ProductCatalogView() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressedUrl = await compressImageFileToDataUrl(file, 920, 0.82);
+      const compressedUrl = await compressImageFileToDataUrl(file, 760, 0.76);
       if (!compressedUrl) return;
       const cleanExisting = mod.gallery.filter((g) => {
         const u = (g.url || g.originalUrl || '').trim();
@@ -346,15 +351,29 @@ export function ProductCatalogView() {
           category: 'pack',
           label: file.name.replace(/\.[^.]+$/, ''),
           url: compressedUrl,
-          originalUrl: compressedUrl,
+          originalUrl: '',
           isMain: true,
         },
-        ...cleanExisting.map((g) => ({ ...g, isMain: false })),
+        ...cleanExisting.map((g) => ({
+          ...g,
+          originalUrl:
+            typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/')
+              ? ''
+              : g.originalUrl,
+          isMain: false,
+        })),
       ];
-      updateModelSpec({
-        ...mod,
-        gallery: updatedGallery,
-      });
+      void saveModelGalleryToIdb(mod.id, updatedGallery);
+      updateModelsBatch((prev) =>
+        prev.map((m) =>
+          m.id === mod.id
+            ? {
+                ...m,
+                gallery: updatedGallery,
+              }
+            : m
+        )
+      );
       notify('success', `Фотография для ${mod.code} загружена и сохранена`);
     } catch {
       notify('error', 'Не удалось загрузить фотографию');
@@ -376,6 +395,15 @@ export function ProductCatalogView() {
     const units = Math.max(
       1,
       Number(newSkuForm.unitsInPack) || unitCfg.secondaryPerPrimaryDefault
+    );
+    const buyoutPct = Math.min(
+      100,
+      Math.max(
+        5,
+        Math.round(
+          Number(newSkuForm.buyoutRatePct) || getDefaultBuyoutRatePctForBrand(bCode)
+        )
+      )
     );
 
     // Если у бренда ещё нет активного сценария (например, AKUSHA или LISKANI) — создаём / подключаем его автоматически
@@ -425,10 +453,18 @@ export function ProductCatalogView() {
         retailPriceRub: retail,
         unitCostRub: cost,
         unitsInPack: units,
+        buyoutRatePct: buyoutPct,
         composition: newSkuForm.materials.trim() || undefined,
         imageUrl: newSkuForm.imageUrl || undefined,
       }
     );
+
+    if (createdScenarioModel.gallery.length > 0) {
+      void saveModelGalleryToIdb(
+        createdScenarioModel.id,
+        createdScenarioModel.gallery
+      );
+    }
 
     unmarkModelAsDeletedInStorage(createdScenarioModel);
     updateModelsBatch(() => [...workingModels, createdScenarioModel]);
@@ -436,7 +472,7 @@ export function ProductCatalogView() {
     notify(
       'success',
       `✓ Карточка ${createdScenarioModel.code} · ${createdScenarioModel.title} создана`,
-      `Бренд: ${unitCfg.displayCode} · Категория: ${resolvedCategory}`
+      `Бренд: ${unitCfg.displayCode} · Выкуп: ${buyoutPct}% (×${(100 / buyoutPct).toFixed(2).replace('.', ',')})`
     );
 
     if (openPassportAfterCreate) {
@@ -1004,6 +1040,21 @@ export function ProductCatalogView() {
                         </div>
                       </div>
 
+                      <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#64748B]">
+                        <span>
+                          Выкуп WB:{' '}
+                          <strong className="font-mono text-[#0F172A]">
+                            {met.buyoutRatePct}%
+                          </strong>{' '}
+                          (×{met.orderMultiplier.toFixed(2).replace('.', ',')})
+                        </span>
+                        {met.annualOrdersPacks > 0 && (
+                          <span className="font-mono text-[#475569]">
+                            Заказы: {met.annualOrdersPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
+                          </span>
+                        )}
+                      </div>
+
                       <div className="flex items-center justify-between pt-1 text-[12px] font-bold text-[#0F172A] group-hover:text-emerald-700">
                         <span className="inline-flex items-center gap-1.5">
                           <Edit3 className="h-3.5 w-3.5" />
@@ -1493,6 +1544,75 @@ export function ProductCatalogView() {
                 />
               </div>
 
+              <div className="sm:col-span-2 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] p-3.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="block font-bold text-[#0F172A] text-[13px]">
+                      Процент выкупа WB (%) — расчёт заказов и закупок
+                    </label>
+                    <p className="text-[11.5px] text-[#475569]">
+                      В обуви из 100 заказов выкупаются в среднем 30–35% (коэффициент к заказам и закупкам ~×3,0)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {[30, 33, 35, 57, 75, 88].map((pctPreset) => (
+                      <button
+                        key={pctPreset}
+                        type="button"
+                        onClick={() =>
+                          setNewSkuForm((prev) => ({
+                            ...prev,
+                            buyoutRatePct: String(pctPreset),
+                          }))
+                        }
+                        className={`h-7 px-2 rounded-md font-mono text-[11px] font-bold border cursor-pointer transition ${
+                          Number(newSkuForm.buyoutRatePct) === pctPreset
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                        }`}
+                      >
+                        {pctPreset}%
+                      </button>
+                    ))}
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        min={5}
+                        max={100}
+                        step={1}
+                        value={newSkuForm.buyoutRatePct}
+                        onChange={(e) =>
+                          setNewSkuForm({
+                            ...newSkuForm,
+                            buyoutRatePct: e.target.value,
+                          })
+                        }
+                        className="w-18 h-8 rounded-lg border border-[#0F172A] bg-white px-2 pr-5 font-mono font-extrabold text-[13px] text-right text-[#0F172A]"
+                      />
+                      <span className="absolute right-2 text-[11px] font-bold text-[#64748B] pointer-events-none">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const pct = Math.min(
+                    100,
+                    Math.max(5, Math.round(Number(newSkuForm.buyoutRatePct) || 33))
+                  );
+                  const mult = (100 / pct).toFixed(2).replace('.', ',');
+                  const ordersFor100 = Math.round(10000 / pct);
+                  return (
+                    <div className="text-[11.5px] font-medium text-emerald-800 bg-emerald-50/80 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                      При выкупе <strong>{pct}%</strong>: чтобы получить{' '}
+                      <strong>100</strong> выкупов (продаж), потребуется{' '}
+                      <strong>~{ordersFor100}</strong> заказов и оборотный запас{' '}
+                      <strong>×{mult}</strong> в закупках.
+                    </div>
+                  );
+                })()}
+              </div>
+
               <div className="sm:col-span-2 space-y-2">
                 <label className="block font-bold text-[#0F172A]">
                   Фото модели (опционально — чужие заглушки не подставляются)
@@ -1528,7 +1648,7 @@ export function ProductCatalogView() {
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (!f) return;
-                        compressImageFileToDataUrl(f, 920, 0.82).then((url) => {
+                        compressImageFileToDataUrl(f, 760, 0.76).then((url) => {
                           if (url) {
                             setNewSkuForm((prev) => ({ ...prev, imageUrl: url }));
                           }

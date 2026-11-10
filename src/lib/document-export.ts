@@ -566,8 +566,8 @@ export interface EditorialPdfDocumentSpec {
 
 export async function compressImageFileToDataUrl(
   file: File,
-  maxDim = 840,
-  quality = 0.8
+  maxDim = 760,
+  quality = 0.76
 ): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -595,11 +595,11 @@ export async function compressImageFileToDataUrl(
         };
 
         let encoded = renderAt(maxDim, quality);
-        if (encoded.length > 170_000) {
-          encoded = renderAt(680, 0.72);
+        if (encoded.length > 90_000) {
+          encoded = renderAt(600, 0.7);
         }
-        if (encoded.length > 170_000) {
-          encoded = renderAt(520, 0.65);
+        if (encoded.length > 80_000) {
+          encoded = renderAt(480, 0.64);
         }
         resolve(encoded);
       };

@@ -50,7 +50,9 @@ import {
   recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
   serializeSingleBatchFactoryOrderDocumentCsv,
+  toggleModelProcurementByOrders,
   updateApprovedPurchaseOrder,
+  updateModelBuyoutRatePct,
   updateModelSizeVariantUnitCost,
   updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
@@ -356,6 +358,23 @@ export function SkuProcurementMvpWorkbench({
       updateModelSizeVariantUnitCost(model, skuIndexOrSellerSku, nextCostRub)
     );
     triggerSavedIndicator('Себест. размера сохранена');
+  };
+
+  const handleUpdateBuyoutRatePct = (nextPct: number) => {
+    const updated = updateModelBuyoutRatePct(model, nextPct, {
+      scenarioId: currentScenario.id,
+      syncProcurementToOrders: true,
+    });
+    onUpdateModel(updated);
+    triggerSavedIndicator(`% выкупа: ${updated.buyoutRatePct}%`);
+  };
+
+  const handleToggleProcureByOrders = (enabled: boolean) => {
+    const updated = toggleModelProcurementByOrders(model, enabled);
+    onUpdateModel(updated);
+    triggerSavedIndicator(
+      enabled ? 'Закупки под заказы' : 'Закупки под выкупы'
+    );
   };
 
   const handleUpdateTotalLeadDays = (nextTotalDays: number) => {
@@ -1010,11 +1029,11 @@ export function SkuProcurementMvpWorkbench({
 
         {/* 4 ПОКАЗАТЕЛЯ МОДЕЛИ В ЕДИНОЙ PEAKLY-ПОЛОСЕ (Чистый белый фон с тонкими разделителями divide-x без рамок в рамках) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white">
-          {/* 1. План продаж (год) */}
+          {/* 1. План продаж (год) + % выкупа */}
           <div className="px-5 py-4 flex flex-col justify-between">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
-                План продаж (год)
+                План продаж (выкупы)
               </span>
               {onOpenSalesMatrix && (
                 <button
@@ -1031,16 +1050,16 @@ export function SkuProcurementMvpWorkbench({
                 <button
                   type="button"
                   onClick={() =>
-                    handleUpdateAnnualSalesPacks(Math.max(0, proc.annualDemandPacks - 500))
+                    handleUpdateAnnualSalesPacks(Math.max(0, proc.annualBuyoutsPacks - 500))
                   }
                   className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#686762] hover:bg-white hover:text-[#141413] cursor-pointer"
-                  title="Уменьшить годовой план продаж на 500 компл."
+                  title="Уменьшить годовой план выкупов на 500 компл."
                 >
                   −
                 </button>
                 <NumericInput
                   ariaLabel="Годовой план продаж модели, комплектов"
-                  value={proc.annualDemandPacks}
+                  value={proc.annualBuyoutsPacks}
                   min={0}
                   step={500}
                   onChangeValue={handleUpdateAnnualSalesPacks}
@@ -1048,21 +1067,28 @@ export function SkuProcurementMvpWorkbench({
                 />
                 <button
                   type="button"
-                  onClick={() => handleUpdateAnnualSalesPacks(proc.annualDemandPacks + 500)}
+                  onClick={() => handleUpdateAnnualSalesPacks(proc.annualBuyoutsPacks + 500)}
                   className="h-7 w-6 rounded-[6px] text-[14px] font-bold text-[#686762] hover:bg-white hover:text-[#141413] cursor-pointer"
-                  title="Увеличить годовой план продаж на 500 компл."
+                  title="Увеличить годовой план выкупов на 500 компл."
                 >
                   +
                 </button>
               </div>
-              <span className="text-[12px] font-semibold text-[#686762]">компл.</span>
+              <span className="text-[12px] font-semibold text-[#686762]">
+                {model.primaryUnitLabel || 'компл.'}
+              </span>
             </div>
-            <div className="mt-1.5 text-[11.5px] text-[#686762]">
-              Выручка: <strong className="text-[#141413]">{formatRubMillions(modelAnnualRevenueRub)}</strong> · {proc.annualDemandUnits.toLocaleString('ru-RU')} изд.
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11.5px] text-[#686762]">
+              <span>
+                Выручка: <strong className="text-[#141413]">{formatRubMillions(modelAnnualRevenueRub)}</strong>
+              </span>
+              <span className="font-mono text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                Заказы ({proc.buyoutRatePct}%): {proc.annualOrdersPacks.toLocaleString('ru-RU')} (×{proc.orderMultiplier.toFixed(2).replace('.', ',')})
+              </span>
             </div>
           </div>
 
-          {/* 2. К заказу на фабрике */}
+          {/* 2. К заказу на фабрике (с учётом % выкупа) */}
           <div className="px-5 py-4 flex flex-col justify-between">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
@@ -1087,13 +1113,36 @@ export function SkuProcurementMvpWorkbench({
               )}
             </div>
             <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#141413]">
-              {totalModelSupplyPacks.toLocaleString('ru-RU')} компл.
+              {totalModelSupplyPacks.toLocaleString('ru-RU')} {model.primaryUnitLabel || 'компл.'}
             </div>
-            <div className="mt-1.5 text-[11.5px] text-[#686762]">
-              {totalModelSupplyUnits.toLocaleString('ru-RU')} изд. · {proc.recommendedBatches.length} план. парт.
-              {proc.totalApprovedReceiptsPacks > 0
-                ? ` · Утв.: ${proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')}`
-                : ''}
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[#686762]">
+              <div className="inline-flex items-center gap-1">
+                <span>% выкупа:</span>
+                <NumericInput
+                  ariaLabel="Процент выкупа WB"
+                  value={proc.buyoutRatePct}
+                  min={5}
+                  max={100}
+                  step={1}
+                  onChangeValue={handleUpdateBuyoutRatePct}
+                  className="h-5.5 w-11 rounded border border-[#C8C7BE] bg-[#FAF9F6] px-1 text-center font-mono text-[11px] font-bold text-[#141413]"
+                />
+                <span>%</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggleProcureByOrders(!proc.procureByOrdersVolume)}
+                className={`rounded px-2 py-0.5 font-mono text-[10.5px] font-bold border cursor-pointer transition ${
+                  proc.procureByOrdersVolume
+                    ? 'bg-emerald-600 text-white border-emerald-700'
+                    : 'bg-[#F2F1EC] text-[#52514C] border-[#D8D7CE] hover:bg-[#E6E5DE]'
+                }`}
+                title="Переключить расчёт партий закупки: под объём заказов с учётом % выкупа (например ×3,03 для обуви при 33% выкупа) или под чистые выкупы"
+              >
+                {proc.procureByOrdersVolume
+                  ? `✓ Под заказы ×${proc.orderMultiplier.toFixed(2).replace('.', ',')}`
+                  : 'Под выкупы ×1,00'}
+              </button>
             </div>
           </div>
 

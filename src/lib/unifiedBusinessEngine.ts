@@ -213,6 +213,11 @@ export interface ProcurementComputationResult {
   unitsInPack: number;
   totalLeadDays: number;
   scalingStage: ModelScalingStage;
+  buyoutRatePct: number;
+  procureByOrdersVolume: boolean;
+  orderMultiplier: number;
+  annualBuyoutsPacks: number;
+  annualOrdersPacks: number;
   actualOpeningStockPacks: number;
   reservedStockPacks: number;
   netOpeningAvailablePacks: number;
@@ -1100,6 +1105,39 @@ export function computeProcurementPlan(
       warehouseArrivalDateLabel: '',
     };
 
+  const buyoutRatePct = getEffectiveModelBuyoutRatePct(model, scenario.id);
+  const procureByOrdersVolume = isModelProcurementByOrdersActive(model);
+  const orderMultiplier =
+    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 1;
+
+  const getMonthOrdersPacks = (mIdx: number): number => {
+    const buyouts = Math.max(0, Math.round(plan.monthlyPacks[mIdx] || 0));
+    if (buyoutRatePct >= 100) return buyouts;
+    const storedOrd = plan.monthlyOrdersPacks?.[mIdx];
+    if (
+      typeof storedOrd === 'number' &&
+      storedOrd >= 0 &&
+      Math.round((storedOrd * buyoutRatePct) / 100) === buyouts
+    ) {
+      return Math.round(storedOrd);
+    }
+    return Math.round((buyouts * 100) / buyoutRatePct);
+  };
+
+  const getMonthProcurementDemandPacks = (mIdx: number): number => {
+    const buyouts = Math.max(0, Math.round(plan.monthlyPacks[mIdx] || 0));
+    if (!procureByOrdersVolume || buyoutRatePct >= 100) return buyouts;
+    return getMonthOrdersPacks(mIdx);
+  };
+
+  const annualBuyoutsPacks = plan.monthlyPacks.reduce(
+    (s, v) => s + Math.max(0, Math.round(v || 0)),
+    0
+  );
+  const annualOrdersPacks = Array.from({ length: 12 }, (_, i) =>
+    getMonthOrdersPacks(i)
+  ).reduce((s, v) => s + v, 0);
+
   const totalLeadDays =
     Math.max(0, fp.productionLeadDays) +
     Math.max(0, fp.qcDays) +
@@ -1154,7 +1192,7 @@ export function computeProcurementPlan(
   let totalDeficitPacks = 0;
 
   for (let m = 0; m < 12; m++) {
-    const demandPacks = Math.max(0, plan.monthlyPacks[m] || 0);
+    const demandPacks = getMonthProcurementDemandPacks(m);
     const demandUnits = demandPacks * unitsInPack;
     const approvedReceiptsPacks = approvedByMonth[m] || 0;
     const approvedReceiptsUnits = approvedReceiptsPacks * unitsInPack;
@@ -1212,7 +1250,7 @@ export function computeProcurementPlan(
 
     // Прокручиваем месяцы до начала периода, если между периодами был зазор
     while (currentCursorM < startM) {
-      const d = Math.max(0, plan.monthlyPacks[currentCursorM] || 0);
+      const d = getMonthProcurementDemandPacks(currentCursorM);
       const r = approvedByMonth[currentCursorM] || 0;
       const netStep = simStock + r - d;
       if (netStep < 0) {
@@ -1231,7 +1269,7 @@ export function computeProcurementPlan(
     let maxIntraPeriodShortfall = Math.max(0, unmetPriorDemandPacks - openingAvailableAtStartPacks);
 
     for (let k = startM; k <= endM; k++) {
-      const d = Math.max(0, plan.monthlyPacks[k] || 0);
+      const d = getMonthProcurementDemandPacks(k);
       const r = approvedByMonth[k] || 0;
       periodDemandPacks += d;
       confirmedReceiptsInPeriodPacks += r;
@@ -1241,7 +1279,7 @@ export function computeProcurementPlan(
       }
     }
 
-    const endMonthDemand = Math.max(0, plan.monthlyPacks[endM] || 0);
+    const endMonthDemand = getMonthProcurementDemandPacks(endM);
     const targetSafety =
       periodDemandPacks > 0
         ? Math.ceil((endMonthDemand * Math.max(0, fp.safetyStockDays)) / 30)
@@ -1483,6 +1521,11 @@ export function computeProcurementPlan(
     unitsInPack,
     totalLeadDays,
     scalingStage,
+    buyoutRatePct,
+    procureByOrdersVolume,
+    orderMultiplier,
+    annualBuyoutsPacks,
+    annualOrdersPacks,
     actualOpeningStockPacks: shared.actualOpeningStockPacks,
     reservedStockPacks: shared.reservedStockPacks,
     netOpeningAvailablePacks,
@@ -3660,6 +3703,8 @@ export function createBrandProductModel(
     retailPriceRub: number;
     unitCostRub: number;
     unitsInPack?: number;
+    buyoutRatePct?: number;
+    procureByOrdersVolume?: boolean;
     factoryName?: string;
     composition?: string;
     imageUrl?: string;
@@ -3710,6 +3755,18 @@ export function createBrandProductModel(
   const category = input.categoryLabel?.trim() || unitCfg.categoryDefault;
   const cleanTitle = input.title.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
 
+  const cleanBuyoutRatePct =
+    typeof input.buyoutRatePct === 'number' &&
+    Number.isFinite(input.buyoutRatePct) &&
+    input.buyoutRatePct > 0
+      ? Math.min(100, Math.max(5, Math.round(input.buyoutRatePct)))
+      : getDefaultBuyoutRatePctForBrand(effectiveBrand);
+
+  const procureByOrdersVolume =
+    input.procureByOrdersVolume !== undefined
+      ? input.procureByOrdersVolume
+      : effectiveBrand === 'AKUSHA' || typeof input.buyoutRatePct === 'number';
+
   const customBrandLabel =
     effectiveBrand === 'AKUSHA'
       ? 'AKUSHA'
@@ -3728,6 +3785,13 @@ export function createBrandProductModel(
       ? [...input.initialMonthlyPacks]
       : Array(12).fill(0);
 
+  const monthlyOrdersPacks = monthlyPacks.map((p) =>
+    cleanBuyoutRatePct >= 100
+      ? Math.max(0, Math.round(p || 0))
+      : Math.round((Math.max(0, Math.round(p || 0)) * 100) / cleanBuyoutRatePct)
+  );
+  const monthlyOrdersRub = monthlyOrdersPacks.map((op) => op * cleanPrice);
+
   const plansByScenario: ScenarioModelSpec['plansByScenario'] = {};
   for (const sc of scenarios) {
     if (sc.id === 100) continue;
@@ -3736,6 +3800,9 @@ export function createBrandProductModel(
       monthlyPacks: [...monthlyPacks],
       monthlyPricesRub: Array(12).fill(cleanPrice),
       monthlyReceiptsPacks: Array(12).fill(0),
+      monthlyOrdersPacks: [...monthlyOrdersPacks],
+      monthlyOrdersRub: [...monthlyOrdersRub],
+      buyoutRatePct: cleanBuyoutRatePct,
       initialStockPacks: 0,
       firstOrderPacks: 0,
       nextOrderDateLabel: `15 января ${sc.year || 2027}`,
@@ -3771,6 +3838,8 @@ export function createBrandProductModel(
     marketplaceFeePct: 22,
     logisticsRub: 95,
     adsPct: 10,
+    buyoutRatePct: cleanBuyoutRatePct,
+    procureByOrdersVolume,
     responsiblePerson: 'Владелец бренда',
     priority: 'Высокий',
     hasActualSalesOrPurchases: false,
@@ -3790,7 +3859,7 @@ export function createBrandProductModel(
             category: 'pack',
             label: cleanTitle,
             url: cleanImageUrl,
-            originalUrl: cleanImageUrl,
+            originalUrl: cleanImageUrl.startsWith('data:image/') ? '' : cleanImageUrl,
             isMain: true,
           },
         ]
@@ -5030,6 +5099,224 @@ export function updateModelSizeVariantUnitCost(
       ...shared,
       costStatus:
         weightedCost > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
+    },
+  };
+}
+
+/**
+ * Отраслевой процент выкупа WB по умолчанию для бренда / категории:
+ * - AKUSHA (Обувь): 33% (в среднем 30–35% выкупается из 100 заказов -> коэфф. к заказам и закупкам ×3,03)
+ * - LISKANI (Шторы и интерьерный текстиль): 57% (×1,75)
+ * - НА ТЕЛЕ (Женское и базовое бельё): 75% (×1,33)
+ * - BORNERS / FUKAI (Мужское базовое бельё, комплекты): 88% (×1,14)
+ */
+export function getDefaultBuyoutRatePctForBrand(
+  brandOrModel:
+    | string
+    | Pick<ScenarioModelSpec, 'brandId' | 'customBrandLabel' | 'categoryLabel'>
+): number {
+  if (typeof brandOrModel === 'string') {
+    const code = normalizePortfolioBrandCode(brandOrModel);
+    if (code === 'AKUSHA') return 33;
+    if (code === 'LISKANI') return 57;
+    if (code === 'NA_TELE') return 75;
+    return 88;
+  }
+  const code = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(brandOrModel as ScenarioModelSpec));
+  const catL = (brandOrModel.categoryLabel || '').toLowerCase();
+  if (
+    code === 'AKUSHA' ||
+    catL.includes('обув') ||
+    catL.includes('кроссов') ||
+    catL.includes('ботин') ||
+    catL.includes('кед') ||
+    catL.includes('челси')
+  ) {
+    return 33;
+  }
+  if (code === 'LISKANI' || catL.includes('штор') || catL.includes('тюль')) {
+    return 57;
+  }
+  if (code === 'NA_TELE') {
+    return 75;
+  }
+  return 88;
+}
+
+export function getEffectiveModelBuyoutRatePct(
+  model: ScenarioModelSpec,
+  scenarioId?: number
+): number {
+  if (
+    typeof model.buyoutRatePct === 'number' &&
+    Number.isFinite(model.buyoutRatePct) &&
+    model.buyoutRatePct > 0
+  ) {
+    return Math.min(100, Math.max(5, Math.round(model.buyoutRatePct)));
+  }
+  const plan =
+    (typeof scenarioId === 'number' ? model.plansByScenario?.[scenarioId] : undefined) ||
+    model.plansByScenario?.[202705] ||
+    model.plansByScenario?.[1];
+  if (
+    typeof plan?.buyoutRatePct === 'number' &&
+    Number.isFinite(plan.buyoutRatePct) &&
+    plan.buyoutRatePct > 0
+  ) {
+    return Math.min(100, Math.max(5, Math.round(plan.buyoutRatePct)));
+  }
+  return getDefaultBuyoutRatePctForBrand(model);
+}
+
+/**
+ * Определяет, учитывается ли процент выкупа в расчёте объёма закупок у фабрики.
+ * По умолчанию ВКЛЮЧЕНО для обуви AKUSHA (где выкуп 30–35% требует ~3× оборотного стока в заказах)
+ * и для любой модели, где пользователь явно включил учёт % выкупа или задал свой % выкупа.
+ */
+export function isModelProcurementByOrdersActive(model: ScenarioModelSpec): boolean {
+  if (typeof model.procureByOrdersVolume === 'boolean') {
+    return model.procureByOrdersVolume;
+  }
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const catL = (model.categoryLabel || '').toLowerCase();
+  return (
+    brandCode === 'AKUSHA' ||
+    catL.includes('обув') ||
+    catL.includes('кроссов') ||
+    catL.includes('ботин') ||
+    catL.includes('кед') ||
+    catL.includes('челси')
+  );
+}
+
+/**
+ * Обновляет процент выкупа модели (% выкупа), синхронно пересчитывает помесячные Заказы (в компл./парах и ₽)
+ * во всех сценариях и активирует учёт % выкупа в закупках.
+ */
+export function updateModelBuyoutRatePct(
+  rawModel: ScenarioModelSpec,
+  nextBuyoutRatePct: number,
+  options?: {
+    scenarioId?: number;
+    syncProcurementToOrders?: boolean;
+    author?: string;
+  }
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const prevPct = getEffectiveModelBuyoutRatePct(model, options?.scenarioId);
+  const cleanPct = Math.min(
+    100,
+    Math.max(5, Math.round(Number(nextBuyoutRatePct) || prevPct || 33))
+  );
+  const nextProcureByOrders =
+    options?.syncProcurementToOrders !== undefined
+      ? options.syncProcurementToOrders
+      : model.procureByOrdersVolume !== undefined
+        ? model.procureByOrdersVolume
+        : true;
+
+  const nextPlans: ScenarioModelSpec['plansByScenario'] = {};
+  for (const [scKey, pl] of Object.entries(model.plansByScenario || {})) {
+    const scId = Number(scKey);
+    const shouldUpdatePlan =
+      options?.scenarioId === undefined || scId === options.scenarioId;
+    if (!shouldUpdatePlan && pl.buyoutRatePct) {
+      nextPlans[scId] = pl;
+      continue;
+    }
+    const monthlyOrdersPacks = (pl.monthlyPacks || []).map((packs) => {
+      const cleanPacks = Math.max(0, Math.round(packs || 0));
+      return cleanPct >= 100
+        ? cleanPacks
+        : Math.round((cleanPacks * 100) / cleanPct);
+    });
+    const monthlyOrdersRub = monthlyOrdersPacks.map((ordPacks, idx) => {
+      const price = pl.monthlyPricesRub?.[idx] ?? model.retailPriceRub;
+      return ordPacks * price;
+    });
+    nextPlans[scId] = {
+      ...pl,
+      buyoutRatePct: cleanPct,
+      monthlyOrdersPacks,
+      monthlyOrdersRub,
+    };
+  }
+
+  let nextVariants = model.liskaniSizeVariants;
+  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+    nextVariants = model.liskaniSizeVariants.map((sv) => {
+      const nextMonthlyOrders = (sv.monthlyBuyoutsUnits || []).map((b) =>
+        cleanPct >= 100 ? b : Math.round((b * 100) / cleanPct)
+      );
+      const nextAnnualOrdersUnits = nextMonthlyOrders.reduce((s, v) => s + v, 0);
+      return {
+        ...sv,
+        monthlyOrdersUnits: nextMonthlyOrders,
+        annualOrdersUnits: nextAnnualOrdersUnits,
+        annualOrdersRub: nextAnnualOrdersUnits * (sv.retailPriceRub || model.retailPriceRub),
+      };
+    });
+  }
+
+  const shared = model.sharedSupplyAndFact!;
+  const multStr = (100 / cleanPct).toFixed(2).replace('.', ',');
+
+  return {
+    ...model,
+    buyoutRatePct: cleanPct,
+    procureByOrdersVolume: nextProcureByOrders,
+    plansByScenario: nextPlans,
+    liskaniSizeVariants: nextVariants,
+    sharedSupplyAndFact: {
+      ...shared,
+      passportVersion: (shared.passportVersion || 1) + 1,
+      auditHistory: [
+        {
+          id: `aud-buyout-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          author: options?.author || 'Владелец',
+          category: 'sales',
+          summary: `Процент выкупа установлен ${cleanPct}% (коэффициент заказов ×${multStr})`,
+          beforeValue: `${prevPct}%`,
+          afterValue: `${cleanPct}%`,
+          passportVersion: (shared.passportVersion || 1) + 1,
+        },
+        ...(shared.auditHistory || []),
+      ],
+    },
+  };
+}
+
+export function toggleModelProcurementByOrders(
+  rawModel: ScenarioModelSpec,
+  enabled: boolean,
+  author = 'Владелец'
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const pct = getEffectiveModelBuyoutRatePct(model);
+  return {
+    ...model,
+    buyoutRatePct: model.buyoutRatePct ?? pct,
+    procureByOrdersVolume: enabled,
+    sharedSupplyAndFact: {
+      ...shared,
+      passportVersion: (shared.passportVersion || 1) + 1,
+      auditHistory: [
+        {
+          id: `aud-proc-buyout-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          author,
+          category: 'procurement',
+          summary: enabled
+            ? `Включён расчёт закупок от объёма заказов с учётом ${pct}% выкупа`
+            : `Расчёт закупок переключён на чистый объём выкупов (без множителя заказов)`,
+          beforeValue: String(Boolean(model.procureByOrdersVolume)),
+          afterValue: String(enabled),
+          passportVersion: (shared.passportVersion || 1) + 1,
+        },
+        ...(shared.auditHistory || []),
+      ],
     },
   };
 }

@@ -41,10 +41,14 @@ import {
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
   getCategoryWbNormsForBrand,
+  getEffectiveModelBuyoutRatePct,
   getModelChannelSplit,
   importStructuredScenarioPlan,
+  isModelProcurementByOrdersActive,
   parseStructuredPlanCsvOrJson,
   serializeStructuredPlanToCsv,
+  toggleModelProcurementByOrders,
+  updateModelBuyoutRatePct,
   type ModelAuditEntry,
   type ModelScalingStage,
   type ValueStatusCode,
@@ -56,6 +60,7 @@ import {
   savePdfBlobToIdb,
   loadPdfBlobUrlFromIdb,
   deletePdfBlobFromIdb,
+  saveModelGalleryToIdb,
 } from '@/lib/safeStorage';
 
 interface ScenarioModelCardScreenProps {
@@ -543,7 +548,7 @@ export function ScenarioModelCardScreen({
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const compressedUrl = await compressImageFileToDataUrl(file, 920, 0.82);
+        const compressedUrl = await compressImageFileToDataUrl(file, 760, 0.76);
         if (!compressedUrl) continue;
 
         const newItemId = `gal-${Date.now()}-${i}`;
@@ -555,7 +560,7 @@ export function ScenarioModelCardScreen({
           category: 'pack' as const,
           label: file.name.replace(/\.[^.]+$/, ''),
           url: compressedUrl,
-          originalUrl: compressedUrl,
+          originalUrl: '',
           isMain: makeMain,
         });
       }
@@ -566,7 +571,17 @@ export function ScenarioModelCardScreen({
         return;
       }
 
-      const nextGallery = [...cleanExisting, ...addedItems];
+      const nextGallery = [
+        ...cleanExisting.map((g) => ({
+          ...g,
+          originalUrl:
+            typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/')
+              ? ''
+              : g.originalUrl,
+        })),
+        ...addedItems,
+      ];
+      void saveModelGalleryToIdb(model.id, nextGallery);
       commitWithAudit(
         { ...model, gallery: nextGallery },
         'product',
@@ -771,8 +786,17 @@ export function ScenarioModelCardScreen({
   const handleMonthBuyoutsChange = (monthIdx: number, nextPacks: number) => {
     const clean = Math.max(0, Math.round(nextPacks));
     const prev = plan.monthlyPacks[monthIdx] || 0;
+    const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenario.id);
     const nextMonthlyPacks = plan.monthlyPacks.map((v, idx) =>
       idx === monthIdx ? clean : v
+    );
+    const nextMonthlyOrdersPacks = nextMonthlyPacks.map((p) =>
+      effBuyoutPct >= 100
+        ? Math.max(0, Math.round(p || 0))
+        : Math.round((Math.max(0, Math.round(p || 0)) * 100) / effBuyoutPct)
+    );
+    const nextMonthlyOrdersRub = nextMonthlyOrdersPacks.map(
+      (op, idx) => op * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
     );
     const isLiskaniModel =
       brandPortfolioLabel === 'LISKANI' ||
@@ -783,6 +807,9 @@ export function ScenarioModelCardScreen({
         ...plan,
         scenarioId: scenario.id,
         monthlyPacks: nextMonthlyPacks,
+        monthlyOrdersPacks: nextMonthlyOrdersPacks,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        buyoutRatePct: effBuyoutPct,
         monthlyRevenuesRubOverride: undefined,
       },
     };
@@ -791,6 +818,9 @@ export function ScenarioModelCardScreen({
         ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
         scenarioId: LISKANI_2027_SCENARIO_ID,
         monthlyPacks: nextMonthlyPacks,
+        monthlyOrdersPacks: nextMonthlyOrdersPacks,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        buyoutRatePct: effBuyoutPct,
         monthlyRevenuesRubOverride: undefined,
       };
     }
@@ -803,6 +833,83 @@ export function ScenarioModelCardScreen({
       `Изменён план выкупов за ${MONTHS_SHORT_RU[monthIdx]} (${scenario.title})`,
       `${prev} компл.`,
       `${clean} компл.`
+    );
+  };
+
+  // Обновление плановых заказов (до выкупа) конкретного месяца — автоматически пересчитывает выкупы по текущему % выкупа
+  const handleMonthOrdersChange = (monthIdx: number, nextOrdersPacks: number) => {
+    const cleanOrders = Math.max(0, Math.round(nextOrdersPacks));
+    const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenario.id);
+    const nextBuyouts =
+      effBuyoutPct >= 100
+        ? cleanOrders
+        : Math.round((cleanOrders * effBuyoutPct) / 100);
+    const prevOrders = baseMetrics.monthlyOrdersPacks[monthIdx] || 0;
+    const nextMonthlyPacks = plan.monthlyPacks.map((v, idx) =>
+      idx === monthIdx ? nextBuyouts : v
+    );
+    const nextMonthlyOrdersPacks = baseMetrics.monthlyOrdersPacks.map((v, idx) =>
+      idx === monthIdx ? cleanOrders : v
+    );
+    const nextMonthlyOrdersRub = nextMonthlyOrdersPacks.map(
+      (op, idx) => op * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
+    );
+    const isLiskaniModel =
+      brandPortfolioLabel === 'LISKANI' ||
+      Boolean(model.plansByScenario[LISKANI_2027_SCENARIO_ID]);
+    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
+      ...model.plansByScenario,
+      [scenario.id]: {
+        ...plan,
+        scenarioId: scenario.id,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyOrdersPacks: nextMonthlyOrdersPacks,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        buyoutRatePct: effBuyoutPct,
+        monthlyRevenuesRubOverride: undefined,
+      },
+    };
+    if (isLiskaniModel && scenario.id !== LISKANI_2027_SCENARIO_ID) {
+      nextPlansByScenario[LISKANI_2027_SCENARIO_ID] = {
+        ...(model.plansByScenario[LISKANI_2027_SCENARIO_ID] || plan),
+        scenarioId: LISKANI_2027_SCENARIO_ID,
+        monthlyPacks: nextMonthlyPacks,
+        monthlyOrdersPacks: nextMonthlyOrdersPacks,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        buyoutRatePct: effBuyoutPct,
+        monthlyRevenuesRubOverride: undefined,
+      };
+    }
+    commitWithAudit(
+      {
+        ...model,
+        plansByScenario: nextPlansByScenario,
+      },
+      'sales',
+      `Изменён план заказов за ${MONTHS_SHORT_RU[monthIdx]} (при ${effBuyoutPct}% выкупа → ${nextBuyouts} выкупов)`,
+      `${prevOrders} зак.`,
+      `${cleanOrders} зак.`
+    );
+  };
+
+  // Изменение процента выкупа модели (% выкупа)
+  const handleBuyoutRateChange = (nextPct: number) => {
+    const updated = updateModelBuyoutRatePct(model, nextPct, {
+      scenarioId: scenario.id,
+      syncProcurementToOrders: true,
+    });
+    onUpdateModel(updated);
+  };
+
+  // Переключение учёта % выкупа в закупках
+  const handleToggleProcurementByOrders = (enabled: boolean) => {
+    const updated = toggleModelProcurementByOrders(model, enabled);
+    onUpdateModel(updated);
+    notify(
+      'success',
+      enabled
+        ? `Закупки рассчитываются под объём заказов (${baseMetrics.buyoutRatePct}% выкупа · ×${baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})`
+        : 'Закупки переключены на чистый объём выкупов (×1,00)'
     );
   };
 
@@ -2898,6 +3005,108 @@ export function ScenarioModelCardScreen({
               </div>
             </div>
 
+            {/* БЛОК УПРАВЛЕНИЯ ПРОЦЕНТОМ ВЫКУПА (% ВЫКУПА WB -> ЗАКАЗЫ И ЗАКУПКИ) */}
+            <div className="rounded-[14px] bg-[#F8FAFC] border border-[#CBD5E1] p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13.5px] font-extrabold text-[#0F172A]">
+                      Процент выкупа WB (%) — расчёт заказов и оборотного стока в закупках
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 font-mono text-[11px] font-bold">
+                      Коэффициент к заказам ×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[#475569] mt-0.5">
+                    При выкупе {baseMetrics.buyoutRatePct}% из 100 заказов выкупаются {baseMetrics.buyoutRatePct} {model.primaryUnitLabel || 'компл.'} — система автоматически считает нужный объём заказов и партий закупки.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[30, 33, 35, 57, 75, 88, 100].map((pctPreset) => (
+                    <button
+                      key={pctPreset}
+                      type="button"
+                      onClick={() => handleBuyoutRateChange(pctPreset)}
+                      className={`h-8 px-2.5 rounded-[7px] font-mono text-[11.5px] font-bold border cursor-pointer transition ${
+                        baseMetrics.buyoutRatePct === pctPreset
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                          : 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
+                      }`}
+                    >
+                      {pctPreset}%
+                    </button>
+                  ))}
+                  <div className="relative flex items-center ml-1">
+                    <input
+                      type="number"
+                      min={5}
+                      max={100}
+                      step={1}
+                      value={baseMetrics.buyoutRatePct}
+                      onChange={(e) => handleBuyoutRateChange(Number(e.target.value))}
+                      className="h-8 w-20 rounded-[7px] border border-[#0F172A] bg-white px-2.5 pr-6 font-mono text-[13px] font-extrabold text-right text-[#0F172A]"
+                    />
+                    <span className="absolute right-2 text-[11px] font-bold text-[#64748B] pointer-events-none">
+                      %
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+                <div className="rounded-[10px] bg-white border border-[#CBD5E1] px-3.5 py-2.5">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
+                    1. План выкупов (продажи)
+                  </div>
+                  <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
+                    {baseMetrics.annualPacks.toLocaleString('ru-RU')}{' '}
+                    {model.primaryUnitLabel || 'компл.'} · {formatMln(baseMetrics.annualRevenueRub)}
+                  </div>
+                </div>
+
+                <div className="rounded-[10px] bg-white border border-emerald-500/40 px-3.5 py-2.5">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-800">
+                    2. План заказов (при {baseMetrics.buyoutRatePct}% выкупа · ×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})
+                  </div>
+                  <div className="font-mono text-[15px] font-extrabold text-emerald-700 mt-0.5">
+                    {baseMetrics.annualOrdersPacks.toLocaleString('ru-RU')}{' '}
+                    {model.primaryUnitLabel || 'компл.'} · {formatMln(baseMetrics.annualOrdersRub)}
+                  </div>
+                </div>
+
+                <div className="rounded-[10px] bg-white border border-[#CBD5E1] px-3.5 py-2.5 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
+                      3. Потребность в закупках (03 · Закупки)
+                    </div>
+                    <div className="text-[12px] font-bold text-[#0F172A] mt-0.5">
+                      {isModelProcurementByOrdersActive(model)
+                        ? `Под заказы ×${baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')} (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${model.primaryUnitLabel || 'компл.'})`
+                        : `Под выкупы ×1,00 (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${model.primaryUnitLabel || 'компл.'})`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleToggleProcurementByOrders(
+                        !isModelProcurementByOrdersActive(model)
+                      )
+                    }
+                    className={`h-8 px-3 rounded-[8px] text-[11.5px] font-bold border cursor-pointer transition shrink-0 ${
+                      isModelProcurementByOrdersActive(model)
+                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        : 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1] hover:bg-[#E2E8F0]'
+                    }`}
+                  >
+                    {isModelProcurementByOrdersActive(model)
+                      ? `✓ С учётом ${baseMetrics.buyoutRatePct}%`
+                      : 'Включить × выкупа'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Дополнительные инструменты (свёрнуты по умолчанию, чтобы таблица 12 месяцев была максимально чистой) */}
             {showSalesExtraTools && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] bg-[#FAF8F4] border border-[#E6E0D4] p-3">
@@ -3008,7 +3217,7 @@ export function ScenarioModelCardScreen({
                 </div>
               </div>
             ) : (
-              /* ЧИСТАЯ ТАБЛИЦА 12 МЕСЯЦЕВ (Стр. 4 ТЗ): Месяц · Цена, ₽ · Выкупы, комплектов · Выручка, ₽ + Итоги за год */
+              /* ЧИСТАЯ ТАБЛИЦА 12 МЕСЯЦЕВ (Стр. 4 ТЗ): Месяц · Цена, ₽ · Выкупы · Заказы (с учётом % выкупа) · Выручка выкупов, ₽ + Итоги за год */
               <div className="overflow-x-auto rounded-[16px] border-[1.5px] border-[#C8C7BE]">
                 <table className="w-full text-left border-collapse text-[13px]">
                   <thead>
@@ -3016,6 +3225,10 @@ export function ScenarioModelCardScreen({
                       <th className="py-2.5 px-4">Месяц</th>
                       <th className="py-2.5 px-4">Цена, ₽</th>
                       <th className="py-2.5 px-4">Выкупы, комплектов</th>
+                      <th className="py-2.5 px-4">
+                        Заказы (при {baseMetrics.buyoutRatePct}% выкупа)
+                      </th>
+                      <th className="py-2.5 px-4">Сумма заказов, ₽</th>
                       <th className="py-2.5 px-4">Выручка, ₽</th>
                       {showSalesExtraTools && (
                         <>
@@ -3029,6 +3242,8 @@ export function ScenarioModelCardScreen({
                     {MONTHS_SHORT_RU.map((mLabel, mIdx) => {
                       const planPacks = plan.monthlyPacks[mIdx] || 0;
                       const planUnits = planPacks * model.unitsInPack;
+                      const planOrdersPacks = baseMetrics.monthlyOrdersPacks[mIdx] || 0;
+                      const planOrdersRub = baseMetrics.monthlyOrdersRub[mIdx] || 0;
                       const planPrice =
                         plan.monthlyPricesRub[mIdx] ?? model.retailPriceRub;
                       const planRev = baseMetrics.monthlyRevenuesRub[mIdx] || 0;
@@ -3093,9 +3308,29 @@ export function ScenarioModelCardScreen({
                                 className="h-7.5 w-28 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-bold text-[#141413]"
                               />
                               <span className="text-[11.5px] text-[#5E5D58]">
-                                компл. ({planUnits.toLocaleString('ru-RU')} изд.)
+                                {model.primaryUnitLabel || 'компл.'} ({planUnits.toLocaleString('ru-RU')} изд.)
                               </span>
                             </div>
+                          </td>
+                          <td className="py-2 px-4">
+                            <div className="inline-flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                step={50}
+                                value={planOrdersPacks}
+                                onChange={(e) =>
+                                  handleMonthOrdersChange(mIdx, Number(e.target.value))
+                                }
+                                className="h-7.5 w-28 rounded-[7px] border border-emerald-600/40 bg-emerald-50/40 px-2 font-mono font-bold text-emerald-800"
+                              />
+                              <span className="text-[11.5px] text-[#5E5D58]">
+                                {model.primaryUnitLabel || 'компл.'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-4 font-mono font-semibold text-[#475569]">
+                            {formatRub(planOrdersRub)}
                           </td>
                           <td className="py-2 px-4 font-mono font-bold text-[#141413]">
                             {formatRub(planRev)}
@@ -3131,6 +3366,13 @@ export function ScenarioModelCardScreen({
                       </td>
                       <td className="py-3 px-4 font-mono">
                         {baseMetrics.annualPacks.toLocaleString('ru-RU')} компл. ({baseMetrics.annualUnits.toLocaleString('ru-RU')} изд.)
+                      </td>
+                      <td className="py-3 px-4 font-mono text-emerald-700">
+                        {baseMetrics.annualOrdersPacks.toLocaleString('ru-RU')}{' '}
+                        {model.primaryUnitLabel || 'компл.'} (×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})
+                      </td>
+                      <td className="py-3 px-4 font-mono text-[#334155]">
+                        {formatRub(baseMetrics.annualOrdersRub)} ({formatMln(baseMetrics.annualOrdersRub)})
                       </td>
                       <td className="py-3 px-4 font-mono text-[14px]">
                         {formatRub(baseMetrics.annualRevenueRub)} ({formatMln(baseMetrics.annualRevenueRub)})

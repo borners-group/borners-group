@@ -30,7 +30,9 @@ import {
   serializePurchaseOrdersToCsv,
   serializeScenarioFactoryOrdersToCsv,
   serializeStructuredPlanToCsv,
+  toggleModelProcurementByOrders,
   updateApprovedPurchaseOrder,
+  updateModelBuyoutRatePct,
   updateModelSizeVariantUnitCost,
   updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
@@ -525,13 +527,17 @@ export function SalesMatrixContourView() {
 
         <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-            Выкупы за 2027 год
+            Выкупы и заказы за 2027 год
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {totals.annualPacks.toLocaleString('ru-RU')} компл.
+            {totals.annualPacks.toLocaleString('ru-RU')} вык.
           </div>
           <div className="text-[11.5px] text-[#64748B]">
-            В декабре: {totals.decPacks.toLocaleString('ru-RU')} компл.
+            Заказы (до выкупа):{' '}
+            <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+              {totals.annualOrdersPacks.toLocaleString('ru-RU')}
+            </strong>{' '}
+            · {formatMln(totals.annualOrdersRub)}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
         </div>
@@ -592,6 +598,7 @@ export function SalesMatrixContourView() {
                   Артикул / Модель
                 </th>
                 <th className="py-2.5 px-2 font-bold text-right">Цена</th>
+                <th className="py-2.5 px-2 font-bold text-right">% выкупа</th>
                 {MONTHS_SHORT_RU.map((m, idx) => (
                   <th
                     key={m}
@@ -632,6 +639,37 @@ export function SalesMatrixContourView() {
                     <td className="py-2.5 px-2 text-right font-mono text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
                       {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                     </td>
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      className="py-2 px-2 text-right font-mono whitespace-nowrap"
+                    >
+                      <div className="inline-flex items-center justify-end gap-0.5 rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#1E2536] px-1.5 py-0.5">
+                        <input
+                          type="number"
+                          min={5}
+                          max={100}
+                          step={1}
+                          aria-label={`Процент выкупа ${mod.code}`}
+                          value={met.buyoutRatePct}
+                          onChange={(e) => {
+                            const updated = updateModelBuyoutRatePct(
+                              mod,
+                              Number(e.target.value),
+                              {
+                                scenarioId: currentScenario.id,
+                                syncProcurementToOrders: true,
+                              }
+                            );
+                            updateModelSpec(updated);
+                          }}
+                          className="w-10 text-right font-mono text-[11.5px] font-bold text-[#0F172A] dark:text-[#F8FAFC] bg-transparent focus:outline-none"
+                        />
+                        <span className="text-[10px] font-bold text-[#64748B]">%</span>
+                      </div>
+                      <div className="text-[9.5px] text-emerald-700 dark:text-emerald-400">
+                        ×{met.orderMultiplier.toFixed(2).replace('.', ',')}
+                      </div>
+                    </td>
                     {MONTHS_SHORT_RU.map((_, mIdx) => {
                       const valRub = met.monthlyRevenuesRub[mIdx] || 0;
                       const valPacks = met.plan.monthlyPacks[mIdx] || 0;
@@ -657,9 +695,17 @@ export function SalesMatrixContourView() {
                       );
                     })}
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] bg-[#F8FAFC] dark:bg-[#161C28] whitespace-nowrap">
-                      {unitMode === 'rub'
-                        ? (met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
-                        : met.annualPacks.toLocaleString('ru-RU')}
+                      <div>
+                        {unitMode === 'rub'
+                          ? (met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
+                          : met.annualPacks.toLocaleString('ru-RU')}
+                      </div>
+                      <div className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                        Зак:{' '}
+                        {unitMode === 'rub'
+                          ? `${(met.annualOrdersRub / 1_000_000).toFixed(2).replace('.', ',')} м`
+                          : met.annualOrdersPacks.toLocaleString('ru-RU')}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -671,6 +717,11 @@ export function SalesMatrixContourView() {
                   ИТОГО ({eligibleModels.length} SKU)
                 </td>
                 <td className="py-3 px-2 text-right">—</td>
+                <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
+                  {totals.annualOrdersPacks > 0
+                    ? `${Math.round((totals.annualPacks / totals.annualOrdersPacks) * 100)}%`
+                    : '—'}
+                </td>
                 {MONTHS_SHORT_RU.map((_, mIdx) => (
                   <td
                     key={mIdx}
@@ -1113,7 +1164,7 @@ export function ProcurementContourView() {
               (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
               0
             )
-          : plan.annualDemandPacks * (m.unitCostRub || 0);
+          : plan.annualBuyoutsPacks * (m.unitCostRub || 0);
 
       const firstDraft = plan.recommendedBatches[0];
       const earliestPo = [...confirmedPos].sort(
@@ -2295,7 +2346,7 @@ export function ProcurementContourView() {
                                   (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
                                   0
                                 )
-                              : plan.annualDemandPacks * (m.unitCostRub || 0);
+                              : plan.annualBuyoutsPacks * (m.unitCostRub || 0);
 
                             const firstDraft = plan.recommendedBatches[0];
                             const earliestPo = [...confirmedPos].sort(
@@ -2376,10 +2427,30 @@ export function ProcurementContourView() {
                                     )}
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
-                                    <div>{plan.annualDemandPacks.toLocaleString('ru-RU')} компл.</div>
-                                    <div className="text-[10px] text-[#64748B]">
-                                      {plan.annualDemandUnits.toLocaleString('ru-RU')} изд.
+                                  <td
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2.5 py-2.5 text-right font-mono text-[#334155]"
+                                  >
+                                    <div>{plan.annualBuyoutsPacks.toLocaleString('ru-RU')} выкуп</div>
+                                    <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 font-semibold">
+                                      <span>Зак: {plan.annualOrdersPacks.toLocaleString('ru-RU')}</span>
+                                      <span className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50/70 px-1 py-0.5">
+                                        <input
+                                          type="number"
+                                          min={5}
+                                          max={100}
+                                          step={1}
+                                          aria-label={`Процент выкупа ${m.code}`}
+                                          value={plan.buyoutRatePct}
+                                          onChange={(e) => {
+                                            const nextPct = Math.max(5, Math.min(100, Number(e.target.value) || 33));
+                                            const activeScn = scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0];
+                                            updateModelSpec(updateModelBuyoutRatePct(m, nextPct, { scenarioId: activeScn?.id }));
+                                          }}
+                                          className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 focus:outline-none"
+                                        />
+                                        <span>%</span>
+                                      </span>
                                     </div>
                                   </td>
 
@@ -2393,7 +2464,9 @@ export function ProcurementContourView() {
                                   <td className="px-2.5 py-2.5 text-right font-mono font-bold text-[#0F172A]">
                                     <div>{totalModelPacks.toLocaleString('ru-RU')} компл.</div>
                                     <div className="text-[10px] font-normal text-[#64748B]">
-                                      {totalModelUnits.toLocaleString('ru-RU')} изд.
+                                      {plan.procureByOrdersVolume
+                                        ? `×${plan.orderMultiplier.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} под заказы (${plan.buyoutRatePct}%)`
+                                        : `${totalModelUnits.toLocaleString('ru-RU')} изд.`}
                                     </div>
                                   </td>
 

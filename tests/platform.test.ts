@@ -3791,6 +3791,264 @@ test('50. Прямое редактирование закупочной себ�
   }
 });
 
+test('51. Надёжное сохранение фотографий всех карточек при ручном добавлении 4+ моделей подряд (AKUSHA и др.) без потери фото из-за лимита localStorage 5 МБ и гонки self-events', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const {
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { compactGalleryDataUrls } = await import('../src/lib/safeStorage.ts');
+
+  // 1. Проверяем, что в хуке useLiveScenarioPortfolio устранена гонка отложенных self-events и подключено дублирование фотогалерей в IndexedDB
+  const hookSrc = fs.readFileSync(
+    path.join(root, 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+  assert.ok(
+    hookSrc.includes('ignoreSelfEventsRef') &&
+      hookSrc.includes('saveModelGalleryToIdb') &&
+      hookSrc.includes('loadAllModelGalleriesFromIdb'),
+    'useLiveScenarioPortfolio должен блокировать перезапись свежего стейта собственными отложенными событиями и сохранять фото в IndexedDB'
+  );
+
+  // 2. Проверяем, что compactGalleryDataUrls убирает дублирование base64 в originalUrl (экономия памяти в 2 раза)
+  const sampleBase64 = `data:image/jpeg;base64,${'A'.repeat(65_000)}`;
+  const compacted = compactGalleryDataUrls({
+    photoUrl: sampleBase64,
+    photoGallery: [
+      {
+        id: 'ph-1',
+        title: 'Фото 1',
+        url: sampleBase64,
+        originalUrl: sampleBase64,
+        isPrimary: true,
+      },
+    ],
+  });
+  assert.equal(compacted.photoGallery[0].url, sampleBase64);
+  assert.equal(
+    compacted.photoGallery[0].originalUrl,
+    '',
+    'compactGalleryDataUrls должен очищать дублирующийся base64 originalUrl для экономии памяти localStorage'
+  );
+
+  // 3. Симулируем localStorage с жёстким браузерным лимитом 5 МБ и добавляем подряд 4 карточки обуви AKUSHA с фото по ~65 КБ (как на скриншоте пользователя)
+  const store = new Map<string, string>();
+  const MAX_LOCAL_STORAGE_CHARS = 5_000_000;
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        const str = String(v);
+        let totalChars = str.length;
+        for (const [ek, ev] of store.entries()) {
+          if (ek !== k) totalChars += ev.length;
+        }
+        if (totalChars > MAX_LOCAL_STORAGE_CHARS) {
+          throw new Error('QuotaExceededError: localStorage 5MB limit exceeded');
+        }
+        store.set(k, str);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    let models = hydratePortfolioModelsFromStorage();
+    let scenarios = [...INITIAL_SCENARIOS];
+
+    const akushaInputs = [
+      {
+        code: 'Ботинки01Бот01 · WB 1842230194',
+        title: 'Ботинки зимние из натуральной кожи с мехом',
+        categoryLabel: 'Кроссовки и кеды',
+        retailPriceRub: 7500,
+        unitCostRub: 2700,
+        photoDataUrl: `data:image/jpeg;base64,PHOTO_AKUSHA_1_${'B'.repeat(62_000)}`,
+      },
+      {
+        code: '1842230193',
+        title: 'Ботинки Зима',
+        categoryLabel: 'Ботинки и челси',
+        retailPriceRub: 7451,
+        unitCostRub: 2700,
+        photoDataUrl: `data:image/jpeg;base64,PHOTO_AKUSHA_2_${'C'.repeat(64_000)}`,
+      },
+      {
+        code: 'AKU-003',
+        title: 'AKUSHA НОВАЯ МОДЕЛЬ',
+        categoryLabel: 'Кроссовки и кеды',
+        retailPriceRub: 7500,
+        unitCostRub: 2800,
+        photoDataUrl: `data:image/jpeg;base64,PHOTO_AKUSHA_3_${'D'.repeat(66_000)}`,
+      },
+      {
+        code: 'AKU-004',
+        title: 'Кеды Зима',
+        categoryLabel: 'Кроссовки и кеды',
+        retailPriceRub: 7500,
+        unitCostRub: 2800,
+        photoDataUrl: `data:image/jpeg;base64,PHOTO_AKUSHA_4_${'E'.repeat(63_000)}`,
+      },
+    ];
+
+    for (const item of akushaInputs) {
+      const res = createBrandProductModel(models, scenarios, {
+        title: item.title,
+        brandCode: 'AKUSHA',
+        code: item.code,
+        categoryLabel: item.categoryLabel,
+        unitsInPack: 1,
+        retailPriceRub: item.retailPriceRub,
+        unitCostRub: item.unitCostRub,
+        imageUrl: item.photoDataUrl,
+      });
+      models = persistPortfolioModels(res.models);
+    }
+
+    // Симулируем F5 и проверяем, что все 4 карточки AKUSHA сохранили свои загруженные фотографии (4 из 4!)
+    const afterF5 = hydratePortfolioModelsFromStorage();
+    for (let i = 0; i < akushaInputs.length; i++) {
+      const expected = akushaInputs[i];
+      const found = afterF5.find((m) => m.code === expected.code);
+      assert.ok(found, `Карточка ${expected.code} должна существовать после F5`);
+      assert.equal(
+        found!.gallery?.[0]?.url,
+        expected.photoDataUrl,
+        `Фотография карточки ${expected.code} не должна теряться или затираться после сохранения 4 моделей подряд`
+      );
+      assert.equal(
+        found!.gallery?.[0]?.originalUrl,
+        '',
+        `Дубликат base64 в originalUrl карточки ${expected.code} должен быть очищен для экономии памяти`
+      );
+    }
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('52. Процент выкупа WB (%) в продажах, заказах и закупках (обувь AKUSHA 30–35% → кратный объём заказов и бюджета закупок + сохранение после F5)', async () => {
+  const {
+    updateModelBuyoutRatePct,
+    toggleModelProcurementByOrders,
+    getEffectiveModelBuyoutRatePct,
+    isModelProcurementByOrdersActive,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    const baseModels = hydratePortfolioModelsFromStorage();
+    const res = createBrandProductModel(baseModels, INITIAL_SCENARIOS, {
+      title: 'Ботинки зимние AKUSHA из натуральной кожи',
+      brandCode: 'AKUSHA',
+      code: 'AKU-BUYOUT-01',
+      categoryLabel: 'Ботинки и челси',
+      unitsInPack: 1,
+      retailPriceRub: 7500,
+      unitCostRub: 2700,
+      initialMonthlyPacks: Array(12).fill(100), // 1 200 выкупов в год
+    });
+
+    const akushaScen = INITIAL_SCENARIOS[0];
+    // Переводим в режим масштабирования (4 волны), чтобы проверить годовой объём закупок по волнам Q1–Q4
+    const akushaModel = {
+      ...res.model,
+      sharedSupplyAndFact: {
+        ...res.model.sharedSupplyAndFact!,
+        scalingStage: 'scaling' as const,
+      },
+    };
+
+    // 1. По умолчанию для обуви AKUSHA процент выкупа = 33% и включён расчёт закупок от объёма заказов
+    assert.equal(getEffectiveModelBuyoutRatePct(akushaModel, akushaScen.id), 33);
+    assert.equal(isModelProcurementByOrdersActive(akushaModel), true);
+
+    const salesMetrics33 = computeModelScenarioMetrics(akushaModel, akushaScen);
+    assert.equal(salesMetrics33.buyoutRatePct, 33);
+    assert.equal(salesMetrics33.annualPacks, 1200); // 1 200 выкупов
+    // При 33% выкупа из 100 выкупов нужно ceil/round(100 / 0.33) = 303 заказа в месяц -> 3 636 заказов в год (~3.03x)
+    assert.equal(salesMetrics33.annualOrdersPacks, 303 * 12);
+    assert.equal(salesMetrics33.annualRevenueRub, 1200 * 7500);
+    assert.equal(salesMetrics33.annualOrdersRub, 303 * 12 * 7500);
+
+    // 2. Проверяем, что 03 · Закупки считает потребность в партиях у фабрики от объёма ЗАКАЗОВ (3 636 пар), а не только от выкупов (1 200 пар)
+    const proc33 = computeProcurementPlan(akushaModel, akushaScen);
+    assert.equal(proc33.buyoutRatePct, 33);
+    assert.equal(proc33.procureByOrdersVolume, true);
+    assert.equal(proc33.annualBuyoutsPacks, 1200);
+    assert.equal(proc33.annualOrdersPacks, 3636);
+    assert.equal(
+      proc33.annualDemandPacks,
+      3636,
+      'Годовая потребность к заказу для обуви при 33% выкупа должна масштабироваться до объёма заказов (3 636 пар против 1 200 выкупов)'
+    );
+
+    // При этом в P&L себестоимость реализованных (выкупленных) товаров считается строго по 1 200 выкупам
+    const pnl33 = computeFinancialPnL(akushaModel, akushaScen, proc33);
+    assert.equal(
+      pnl33.annualCogsRub,
+      1200 * 2700,
+      'Себестоимость выкупов в P&L должна считаться по фактическим выкупам (1 200 пар), а не по невыкупленным покатушкам'
+    );
+
+    // 3. Меняем процент выкупа на 30% (ровно в 3.33 раза больше заказов) и проверяем пересчёт + сохранение после F5
+    const updated30 = updateModelBuyoutRatePct(akushaModel, 30, { scenarioId: akushaScen.id });
+    const salesMetrics30 = computeModelScenarioMetrics(updated30, akushaScen);
+    assert.equal(salesMetrics30.buyoutRatePct, 30);
+    assert.equal(salesMetrics30.annualOrdersPacks, 333 * 12); // 3 996 заказов
+
+    const proc30 = computeProcurementPlan(updated30, akushaScen);
+    assert.equal(proc30.annualDemandPacks, 3996);
+    assert.ok(
+      (proc30.totalRecommendedBudgetRub ?? 0) > (proc33.totalRecommendedBudgetRub ?? 0),
+      'При снижении процента выкупа с 33% до 30% бюджет закупок под оборот заказов должен увеличиваться'
+    );
+
+    // Проверяем переключатель «Считать закупки только под выкупы (×1.00)»
+    const buyoutOnlyModel = toggleModelProcurementByOrders(updated30, false);
+    const procBuyoutOnly = computeProcurementPlan(buyoutOnlyModel, akushaScen);
+    assert.equal(procBuyoutOnly.procureByOrdersVolume, false);
+    assert.equal(procBuyoutOnly.annualDemandPacks, 1200);
+
+    // Возвращаем режим под заказы (30%) и проверяем сохранение после F5
+    const finalModel = toggleModelProcurementByOrders(buyoutOnlyModel, true);
+    persistPortfolioModels([...baseModels, finalModel]);
+
+    const afterF5 = hydratePortfolioModelsFromStorage();
+    const restored = afterF5.find((m) => m.code === 'AKU-BUYOUT-01')!;
+    assert.ok(restored, 'Модель AKU-BUYOUT-01 должна сохраниться после F5');
+    assert.equal(getEffectiveModelBuyoutRatePct(restored, akushaScen.id), 30);
+    assert.equal(isModelProcurementByOrdersActive(restored), true);
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+
 
 
 

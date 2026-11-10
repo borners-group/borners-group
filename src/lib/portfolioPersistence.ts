@@ -149,6 +149,8 @@ export interface UserSavedModelPlanBackup {
   marketplaceFeePct?: number;
   logisticsRub?: number;
   adsPct?: number;
+  buyoutRatePct?: number;
+  procureByOrdersVolume?: boolean;
   priority?: ModelPriorityLevel;
   launchStatus: ScenarioModelSpec['launchStatus'];
   gallery?: ScenarioModelSpec['gallery'];
@@ -233,6 +235,8 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       marketplaceFeePct: m.marketplaceFeePct,
       logisticsRub: m.logisticsRub,
       adsPct: m.adsPct,
+      buyoutRatePct: m.buyoutRatePct,
+      procureByOrdersVolume: m.procureByOrdersVolume,
       priority: m.priority,
       launchStatus: m.launchStatus,
       gallery: Array.isArray(raw.gallery) && raw.gallery.length === 0 ? [] : m.gallery,
@@ -310,6 +314,11 @@ export function overlayBackupOntoModels(
         marketplaceFeePct: saved.marketplaceFeePct ?? m.marketplaceFeePct,
         logisticsRub: saved.logisticsRub ?? m.logisticsRub,
         adsPct: saved.adsPct ?? m.adsPct,
+        buyoutRatePct: saved.buyoutRatePct ?? m.buyoutRatePct,
+        procureByOrdersVolume:
+          saved.procureByOrdersVolume !== undefined
+            ? saved.procureByOrdersVolume
+            : m.procureByOrdersVolume,
         priority: saved.priority ?? m.priority,
         launchStatus: saved.launchStatus ?? m.launchStatus,
         gallery: Array.isArray(saved.gallery) ? saved.gallery : m.gallery,
