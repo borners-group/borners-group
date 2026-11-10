@@ -89,6 +89,36 @@ export function buildDefaultProductGroups(
   const akushaModels = activeModels.filter((m) =>
     matchesBrandFilter(m, 'AKUSHA')
   );
+  const hasOfficialAkusha2027 = akushaModels.some((m) =>
+    Boolean(m.plansByScenario?.[202706])
+  );
+  const akushaWinterBoots = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('зимние ботинки')
+  );
+  const akushaSuedeSneakers = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('замшевые кеды')
+  );
+  const akushaLeatherSneakers = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('кроссовки из кожи')
+  );
+  const akushaSuedeLoafers = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('замшевые лоферы')
+  );
+  const akushaTopsiders = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('топсайдеры')
+  );
+  const akushaFeltItaly = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('войлок италия')
+  );
+  const akushaPremiumSneakers = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('премиальные кроссовки')
+  );
+  const akushaTomoriMule = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('tomori walk mule')
+  );
+  const akushaMoccasins = akushaModels.filter((m) =>
+    (m.categoryLabel || m.title).toLowerCase().includes('дыхабельные мокасины')
+  );
 
   const liscaniModels = activeModels.filter((m) =>
     matchesBrandFilter(m, 'LISKANI')
@@ -167,8 +197,12 @@ export function buildDefaultProductGroups(
     },
     {
       id: 'grp-akusha-shoes',
-      title: 'Обувная коллекция AKUSHA',
-      subtitle: 'Основная линейка обуви бренда AKUSHA (учёт в парах)',
+      title: hasOfficialAkusha2027
+        ? 'Обувная коллекция AKUSHA · Полный план 2027 (31 модель · 24 карточки · 9 групп)'
+        : 'Обувная коллекция AKUSHA',
+      subtitle: hasOfficialAkusha2027
+        ? 'Все 9 товарных групп AKUSHA: 20 377 выкупленных пар · 47 808 заказов · 105,79 млн ₽ плановой выручки'
+        : 'Основная линейка обуви бренда AKUSHA (учёт в парах)',
       brandCode: 'AKUSHA',
       cabinetLabel: 'AKUSHA · WB',
       modelIds: akushaModels.map((m) => m.id),
@@ -176,6 +210,118 @@ export function buildDefaultProductGroups(
       isSystemDefault: true,
       createdAt: '2026-11-08',
     },
+    ...(hasOfficialAkusha2027
+      ? ([
+          {
+            id: 'grp-akusha-winter-boots',
+            title: 'Зимние ботинки AKUSHA (№01–04 · 4 модели)',
+            subtitle:
+              'Цена 7 500 ₽ · Себестоимость 2 800 ₽ · Выкуп 50% · План 2027: 4 557 выкупленных пар (9 114 заказов · 34,18 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaWinterBoots.map((m) => m.id),
+            modelCodes: akushaWinterBoots.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-suede-sneakers',
+            title: 'Замшевые кеды AKUSHA (№05–06 · 2 цвета)',
+            subtitle:
+              'Цена 5 990 ₽ · Себестоимость 2 200 ₽ · Выкуп 35% · План 2027: 1 985 выкупленных пар (5 678 заказов · 11,89 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaSuedeSneakers.map((m) => m.id),
+            modelCodes: akushaSuedeSneakers.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-leather-sneakers',
+            title: 'Кроссовки из кожи AKUSHA (№07–08 · 2 модели)',
+            subtitle:
+              'Цена 5 990 ₽ · Себестоимость 2 200 ₽ · Выкуп 35% · План 2027: 2 175 выкупленных пар (6 222 заказа · 13,03 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaLeatherSneakers.map((m) => m.id),
+            modelCodes: akushaLeatherSneakers.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-suede-loafers',
+            title: 'Замшевые лоферы AKUSHA · 8 цветов (№09–16 · Общая карточка)',
+            subtitle:
+              'Цена 5 990 ₽ · Себестоимость 1 900 ₽ · Выкуп 33% · План 2027: 4 920 выкупленных пар (14 915 заказов · 29,47 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaSuedeLoafers.map((m) => m.id),
+            modelCodes: akushaSuedeLoafers.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-topsiders',
+            title: 'Топсайдеры AKUSHA (№17–20 · 4 модели)',
+            subtitle:
+              'Выкуп 40% · План 2027: 2 668 выкупленных пар (6 681 заказ · цену и себестоимость уточнить)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaTopsiders.map((m) => m.id),
+            modelCodes: akushaTopsiders.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-felt-italy',
+            title: 'Войлок Италия AKUSHA (№21–22 · 2 модели)',
+            subtitle:
+              'Цена 6 990 ₽ · Себестоимость 2 400 ₽ · Выкуп 45% · План 2027: 1 294 выкупленные пары (2 886 заказов · 9,05 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaFeltItaly.map((m) => m.id),
+            modelCodes: akushaFeltItaly.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-premium-sneakers',
+            title: 'Премиальные кроссовки AKUSHA (№23 · 1 модель · 3 фото ракурса)',
+            subtitle:
+              'Цена 9 900 ₽ · Себестоимость 3 500 ₽ · Выкуп 50% · План 2027: 418 выкупленных пар (836 заказов · 4,14 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaPremiumSneakers.map((m) => m.id),
+            modelCodes: akushaPremiumSneakers.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-tomori-mule',
+            title: 'Tomori Walk Mule AKUSHA (№24–27 · 4 цвета)',
+            subtitle:
+              'Цена 5 990 ₽ · Себестоимость 2 400 ₽ · Выкуп 46% · План 2027: 675 выкупленных пар (1 476 заказов · 4,04 млн ₽)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaTomoriMule.map((m) => m.id),
+            modelCodes: akushaTomoriMule.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+          {
+            id: 'grp-akusha-moccasins',
+            title: 'Дыхабельные мокасины AKUSHA (№28–31 · 4 цвета)',
+            subtitle:
+              'План 2027: 1 685 выкупленных пар (цену, себестоимость и % выкупа уточнить)',
+            brandCode: 'AKUSHA',
+            cabinetLabel: 'AKUSHA · WB',
+            modelIds: akushaMoccasins.map((m) => m.id),
+            modelCodes: akushaMoccasins.map((m) => m.code),
+            isSystemDefault: true,
+            createdAt: '2026-11-10',
+          },
+        ] as ProductGroupDef[])
+      : []),
     {
       id: 'grp-liscani-curtains',
       title: hasOfficialLiskaniFabrics

@@ -6,6 +6,11 @@ import {
   ACTING_2027_SCENARIO_MODELS,
 } from './actingAssortment2027.ts';
 import {
+  AKUSHA_2027_MODELS,
+  AKUSHA_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_ID,
+} from './akushaAssortment2027.ts';
+import {
   LISKANI_2027_MODELS,
   LISKANI_2027_SCENARIO_DEF,
   LISKANI_2027_SCENARIO_ID,
@@ -29,6 +34,123 @@ export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
+export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
+
+export function isLegacyPlaceholderAkusha(
+  m: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
+): boolean {
+  const titleU = (m.title || '').toUpperCase();
+  if (
+    titleU.includes('CLOUD WALK') ||
+    titleU.includes('SOFT SUEDE') ||
+    titleU.includes('AKUSHA EVERYDAY')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function runAkusha2027OfficialMigrationV1(): void {
+  const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_AKUSHA_2027_V1);
+  if (alreadyMigrated === '1') return;
+
+  const officialIdsAndCodes = new Set<string>();
+  for (const m of AKUSHA_2027_MODELS) {
+    officialIdsAndCodes.add(m.id.toUpperCase());
+    officialIdsAndCodes.add(m.code.toUpperCase());
+  }
+
+  // 1. Очищаем реестр удалённых карточек от официальных AKU-001..AKU-031
+  const prevDeleted = getDeletedModelsRegistry();
+  if (prevDeleted.length > 0) {
+    const cleanedDeleted = prevDeleted.filter(
+      (item) => !officialIdsAndCodes.has(item.toUpperCase())
+    );
+    if (cleanedDeleted.length !== prevDeleted.length) {
+      safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, cleanedDeleted);
+    }
+  }
+
+  const isOldDraftAkushaEntry = (
+    entry: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
+  ): boolean => {
+    if (isLegacyPlaceholderAkusha(entry)) return true;
+    const brandU = (entry.customBrandLabel || '').toUpperCase();
+    const codeU = (entry.code || '').trim().toUpperCase();
+    const idU = (entry.id || '').trim().toUpperCase();
+    const isAkusha =
+      brandU === 'AKUSHA' ||
+      codeU.startsWith('AKU-') ||
+      idU.startsWith('SCEN-AKUSHA-') ||
+      officialIdsAndCodes.has(codeU) ||
+      officialIdsAndCodes.has(idU);
+    if (!isAkusha) return false;
+    return !entry.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
+  };
+
+  // 2. Очищаем backup пользовательских планов от старых черновых карточек AKUSHA, чтобы не было дублей
+  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
+    STORAGE_KEY_USER_PLANS_BACKUP
+  );
+  if (backup && typeof backup === 'object') {
+    let backupChanged = false;
+    const nextBackup: Record<string, UserSavedModelPlanBackup> = {};
+    for (const [k, entry] of Object.entries(backup)) {
+      if (entry && isOldDraftAkushaEntry(entry)) {
+        backupChanged = true;
+        continue;
+      }
+      nextBackup[k] = entry;
+    }
+    if (backupChanged) {
+      safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, nextBackup);
+    }
+  }
+
+  // 3. Очищаем сохранённый список моделей от старых черновиков AKUSHA
+  const savedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
+  if (Array.isArray(savedModels) && savedModels.length > 0) {
+    const cleanedModels = savedModels.filter((m) => !isOldDraftAkushaEntry(m));
+    if (cleanedModels.length !== savedModels.length) {
+      safeSetStorageJson(STORAGE_KEY_MODELS, cleanedModels);
+    }
+  }
+
+  // 4. Выбираем сценарий AKUSHA 2027 (202706 · 105,79 млн ₽ · 20 377 пар) для бренда AKUSHA
+  const savedByBrand =
+    safeGetStorageJson<Record<string, number | null>>(STORAGE_KEY_SCENARIO_BY_BRAND) || {};
+  if (savedByBrand.AKUSHA !== AKUSHA_2027_SCENARIO_ID) {
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, {
+      ...savedByBrand,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+    });
+  }
+
+  // 5. Добавляем сценарий AKUSHA 2027 в сохранённый список сценариев, если его там ещё нет
+  const savedScenarios = safeGetStorageJson<Array<{ id: number }>>(STORAGE_KEY_SCENARIOS);
+  if (
+    Array.isArray(savedScenarios) &&
+    savedScenarios.length > 0 &&
+    !savedScenarios.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)
+  ) {
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, [
+      ...savedScenarios,
+      AKUSHA_2027_SCENARIO_DEF,
+    ]);
+  }
+
+  // 6. Обновляем кэш товарных групп для AKUSHA (9 официальных групп)
+  const savedGroups = safeGetStorageJson<Array<{ id: string }>>('borners_product_groups_v1');
+  if (
+    Array.isArray(savedGroups) &&
+    !savedGroups.some((g) => g.id === 'grp-akusha-winter-boots')
+  ) {
+    const filteredGroups = savedGroups.filter((g) => g.id !== 'grp-akusha-shoes');
+    safeSetStorageJson('borners_product_groups_v1', filteredGroups);
+  }
+
+  safeSetStorageJson(MIGRATION_KEY_AKUSHA_2027_V1, '1');
+}
 
 export function isLegacyPlaceholderLiskani(
   m: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
@@ -227,6 +349,7 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       entry.id &&
       entry.code &&
       !isLegacyPlaceholderLiskani(entry) &&
+      !isLegacyPlaceholderAkusha(entry) &&
       !isModelMarkedDeleted(entry, deletedReg)
     ) {
       backup[k] = entry;
@@ -375,7 +498,7 @@ export function overlayBackupOntoModels(
       ) {
         continue;
       }
-      if (isLegacyPlaceholderLiskani(saved)) continue;
+      if (isLegacyPlaceholderLiskani(saved) || isLegacyPlaceholderAkusha(saved)) continue;
       if (isModelMarkedDeleted(saved, deletedReg)) continue;
 
       const alreadyInList = overlaid.some(
@@ -405,8 +528,8 @@ export function overlayBackupOntoModels(
         description: saved.description || '',
         launchStatus: saved.launchStatus || 'В плане',
         unitsInPack: saved.unitsInPack || 1,
-        retailPriceRub: saved.retailPriceRub || 1990,
-        unitCostRub: saved.unitCostRub || 650,
+        retailPriceRub: saved.retailPriceRub ?? 1990,
+        unitCostRub: saved.unitCostRub ?? 650,
         marketplaceFeePct: saved.marketplaceFeePct ?? 22,
         logisticsRub: saved.logisticsRub ?? 95,
         adsPct: saved.adsPct ?? 10,
@@ -487,6 +610,7 @@ export function deleteModelFromPortfolio(
 
 export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
   runLiskani269OfficialMigrationV3();
+  runAkusha2027OfficialMigrationV1();
   const deletedReg = getDeletedModelsRegistry();
   const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
 
@@ -498,6 +622,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
         ) &&
         !['№001', '№002', '№003', '№004'].includes(m.code) &&
         !isLegacyPlaceholderLiskani(m) &&
+        !isLegacyPlaceholderAkusha(m) &&
         !isModelMarkedDeleted(m, deletedReg)
     );
 
@@ -506,6 +631,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
       ...LISKANI_2027_MODELS,
+      ...AKUSHA_2027_MODELS,
     ]) {
       if (isModelMarkedDeleted(itemMod, deletedReg)) {
         continue;
@@ -566,6 +692,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
       ...LISKANI_2027_MODELS,
+      ...AKUSHA_2027_MODELS,
     ])
   ).filter((m) => !isModelMarkedDeleted(m, deletedReg));
 

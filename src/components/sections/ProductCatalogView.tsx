@@ -833,6 +833,51 @@ export function ProductCatalogView() {
           </div>
         )}
 
+        {/* СВОДКА ОФИЦИАЛЬНОГО ПЛАНА AKUSHA 2027 (31 МОДЕЛЬ · 24 КАРТОЧКИ · 20 377 ПАР · 47 808 ЗАКАЗОВ · 105,79 МЛН ₽) */}
+        {normalizePortfolioBrandCode(brandFilter) === 'AKUSHA' && (
+          <div className="rounded-[14px] bg-[#F8FAFC] border border-[#CBD5E1] p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-[6px] bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] font-mono text-[10.5px] font-bold">
+                    AKUSHA · ПЛАН 2027 (31 МОДЕЛЬ · 9 ГРУПП)
+                  </span>
+                  <span className="text-[13.5px] font-extrabold text-[#0F172A]">
+                    20 377 выкупленных пар · 47 808 заказов · 105,79 млн ₽ выручки · 37,45 млн ₽ себестоимость
+                  </span>
+                </div>
+                <p className="text-[12px] text-[#475569] mt-0.5">
+                  24 карточки в каталоге (включая общую карточку №09–16 «Замшевые лоферы · 8 цветов» на 4 920 пар / 14 915 заказов) · 26 оригинальных фотографий из утверждённого документа · для Топсайдеров (№17–20) и Мокасин (№28–31) цена и себестоимость помечены «уточнить» без искусственных допущений.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={resolveCatalogAssetUrl('/docs/akusha_plan_2027_31_models.pdf')}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                >
+                  <span>↗ План продаж AKUSHA 2027 · 31 модель (.pdf)</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setViewMode(viewMode === 'groups' ? 'grid' : 'groups')
+                  }
+                  className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <span>
+                    {viewMode === 'groups'
+                      ? 'Показать 24 карточки с фото'
+                      : 'Показать 9 товарных групп'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* СВОДКА ОФИЦИАЛЬНОГО ПЛАНА LISKANI 2027 (500 МЛН ₽ ВЫКУПОВ · 877,19 МЛН ₽ ЗАКАЗОВ · 269 SKU) */}
         {(normalizePortfolioBrandCode(brandFilter) === 'LISKANI' ||
           viewMode === 'liskani_269') && (
@@ -1023,19 +1068,27 @@ export function ProductCatalogView() {
                         <div>
                           <div className="text-[11px] font-medium text-[#64748B]">РРЦ</div>
                           <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
-                            {formatCurrencyRub(met.avgRetailPriceRub)}
+                            {met.avgRetailPriceRub > 0
+                              ? formatCurrencyRub(met.avgRetailPriceRub)
+                              : 'уточнить'}
                           </div>
                         </div>
                         <div>
                           <div className="text-[11px] font-medium text-[#64748B]">Себестоимость</div>
                           <div className="font-mono text-[15px] font-bold text-[#334155] mt-0.5">
-                            {formatCurrencyRub(mod.unitCostRub)}
+                            {mod.unitCostRub > 0
+                              ? formatCurrencyRub(mod.unitCostRub)
+                              : 'уточнить'}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-[11px] font-medium text-[#64748B]">Маржа / Год</div>
+                          <div className="text-[11px] font-medium text-[#64748B]">
+                            {met.annualRevenueRub > 0 ? 'Маржа / Год' : 'План продаж / Год'}
+                          </div>
                           <div className="font-mono text-[14px] font-extrabold text-emerald-600 mt-0.5">
-                            {met.unitMarginPct.toFixed(0)}% · {(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+                            {met.annualRevenueRub > 0
+                              ? `${met.unitMarginPct.toFixed(0)}% · ${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                              : `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`}
                           </div>
                         </div>
                       </div>
@@ -1043,14 +1096,24 @@ export function ProductCatalogView() {
                       <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#64748B]">
                         <span>
                           Выкуп WB:{' '}
-                          <strong className="font-mono text-[#0F172A]">
-                            {met.buyoutRatePct}%
-                          </strong>{' '}
-                          (×{met.orderMultiplier.toFixed(2).replace('.', ',')})
+                          {met.buyoutRatePct > 0 ? (
+                            <>
+                              <strong className="font-mono text-[#0F172A]">
+                                {met.buyoutRatePct}%
+                              </strong>{' '}
+                              (×{met.orderMultiplier.toFixed(2).replace('.', ',')})
+                            </>
+                          ) : (
+                            <strong className="font-mono text-amber-700">уточнить</strong>
+                          )}
                         </span>
-                        {met.annualOrdersPacks > 0 && (
+                        {met.annualOrdersPacks > 0 ? (
                           <span className="font-mono text-[#475569]">
                             Заказы: {met.annualOrdersPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[#475569]">
+                            Выкупы: {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
                           </span>
                         )}
                       </div>

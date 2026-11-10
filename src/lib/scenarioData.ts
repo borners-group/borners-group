@@ -4,6 +4,9 @@ import {
   ACTING_2027_SCENARIO_MODELS,
   getActingSkuByWbOrVendor,
 } from './actingAssortment2027.ts';
+import {
+  AKUSHA_2027_SCENARIO_ID,
+} from './akushaAssortment2027.ts';
 import type { LiskaniSizeSkuSpec } from './liskaniAssortment2027.ts';
 import {
   S1_100M_NEW_VARIANTS,
@@ -1004,6 +1007,9 @@ export function inferDefaultBuyoutRatePctForModel(
   >,
   planBuyoutRatePct?: number
 ): number {
+  if (model.buyoutRatePct === 0 || planBuyoutRatePct === 0) {
+    return 0;
+  }
   if (typeof model.buyoutRatePct === 'number' && Number.isFinite(model.buyoutRatePct) && model.buyoutRatePct > 0) {
     return Math.min(100, Math.max(5, Math.round(model.buyoutRatePct)));
   }
@@ -1030,6 +1036,7 @@ export function computeModelScenarioMetrics(
 ) {
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[AKUSHA_2027_SCENARIO_ID] ||
     model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
@@ -1046,7 +1053,8 @@ export function computeModelScenarioMetrics(
 
   const buyoutRatePct = inferDefaultBuyoutRatePctForModel(model, plan.buyoutRatePct);
   const orderMultiplier =
-    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 1;
+    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 0;
+  const isAkushaModel = (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
 
   const actingSku = getActingSkuByWbOrVendor(model.code, model.title);
   const isUnmodifiedActingPlan =
@@ -1079,35 +1087,43 @@ export function computeModelScenarioMetrics(
     plan.monthlyOrdersPacks.length === 12 &&
     Array.isArray(plan.monthlyOrdersRub) &&
     plan.monthlyOrdersRub.length === 12 &&
-    (model.buyoutRatePct === undefined || model.buyoutRatePct === (plan.buyoutRatePct ?? 57));
+    (model.buyoutRatePct === undefined ||
+      model.buyoutRatePct === (plan.buyoutRatePct ?? model.buyoutRatePct ?? 57));
 
-  const monthlyOrdersPacks = isExactPresetOrders
-    ? plan.monthlyOrdersPacks!.map((v) => Math.max(0, Math.round(v || 0)))
-    : plan.monthlyPacks.map((packs, idx) => {
-        const cleanPacks = Math.max(0, Math.round(packs || 0));
-        if (buyoutRatePct >= 100) return cleanPacks;
-        const storedOrder = plan.monthlyOrdersPacks?.[idx];
-        if (
-          typeof storedOrder === 'number' &&
-          storedOrder >= 0 &&
-          Math.round((storedOrder * buyoutRatePct) / 100) === cleanPacks
-        ) {
-          return Math.round(storedOrder);
-        }
-        return Math.round((cleanPacks * 100) / buyoutRatePct);
-      });
+  const monthlyOrdersPacks =
+    buyoutRatePct <= 0
+      ? Array(12).fill(0)
+      : isExactPresetOrders
+      ? plan.monthlyOrdersPacks!.map((v) => Math.max(0, Math.round(v || 0)))
+      : plan.monthlyPacks.map((packs, idx) => {
+          const cleanPacks = Math.max(0, Math.round(packs || 0));
+          if (buyoutRatePct >= 100) return cleanPacks;
+          const storedOrder = plan.monthlyOrdersPacks?.[idx];
+          if (
+            typeof storedOrder === 'number' &&
+            storedOrder >= 0 &&
+            (storedOrder === Math.ceil((cleanPacks * 100) / buyoutRatePct) ||
+              Math.round((storedOrder * buyoutRatePct) / 100) === cleanPacks)
+          ) {
+            return Math.round(storedOrder);
+          }
+          return Math.round((cleanPacks * 100) / buyoutRatePct);
+        });
 
-  const monthlyOrdersRub = isExactPresetOrders
-    ? plan.monthlyOrdersRub!.map((v) => Math.max(0, Math.round(v || 0)))
-    : monthlyOrdersPacks.map((ordPacks, idx) => {
-        if (hasExactRevenueOverride && plan.monthlyPacks[idx] > 0) {
-          return buyoutRatePct >= 100
-            ? monthlyRevenuesRub[idx]
-            : Math.round((monthlyRevenuesRub[idx] * 100) / buyoutRatePct);
-        }
-        const price = plan.monthlyPricesRub[idx] ?? model.retailPriceRub;
-        return ordPacks * price;
-      });
+  const monthlyOrdersRub =
+    buyoutRatePct <= 0
+      ? Array(12).fill(0)
+      : isExactPresetOrders
+      ? plan.monthlyOrdersRub!.map((v) => Math.max(0, Math.round(v || 0)))
+      : monthlyOrdersPacks.map((ordPacks, idx) => {
+          if (hasExactRevenueOverride && plan.monthlyPacks[idx] > 0 && !isAkushaModel) {
+            return buyoutRatePct >= 100
+              ? monthlyRevenuesRub[idx]
+              : Math.round((monthlyRevenuesRub[idx] * 100) / buyoutRatePct);
+          }
+          const price = plan.monthlyPricesRub[idx] ?? model.retailPriceRub;
+          return ordPacks * price;
+        });
 
   const annualRevenueRub = monthlyRevenuesRub.reduce((acc, v) => acc + v, 0);
   const annualPacks = plan.monthlyPacks.reduce((acc, v) => acc + v, 0);

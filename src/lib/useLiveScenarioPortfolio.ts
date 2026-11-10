@@ -17,6 +17,11 @@ import {
   getActingSkuByWbOrVendor,
 } from '@/lib/actingAssortment2027';
 import {
+  AKUSHA_2027_MODELS,
+  AKUSHA_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_ID,
+} from '@/lib/akushaAssortment2027';
+import {
   LISKANI_2027_MODELS,
   LISKANI_2027_SCENARIO_DEF,
   LISKANI_2027_SCENARIO_ID,
@@ -93,6 +98,7 @@ const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
   ...ACTING_2027_SCENARIO_MODELS,
   ...S1_100M_SCENARIO_MODELS,
   ...LISKANI_2027_MODELS,
+  ...AKUSHA_2027_MODELS,
 ]);
 
 export function filterModelsForScenario(
@@ -171,6 +177,7 @@ export function filterModelsForScenario(
 const DEFAULT_SCENARIOS_LIST: GrowthScenarioDef[] = [
   ...INITIAL_SCENARIOS,
   LISKANI_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_DEF,
 ];
 
 export function useLiveScenarioPortfolio() {
@@ -185,7 +192,7 @@ export function useLiveScenarioPortfolio() {
   >({
     BORNERS: 1,
     FUKAI: ACTING_2027_SCENARIO_ID,
-    AKUSHA: null,
+    AKUSHA: AKUSHA_2027_SCENARIO_ID,
     LISKANI: LISKANI_2027_SCENARIO_ID,
     NA_TELE: 2,
   });
@@ -215,6 +222,9 @@ export function useLiveScenarioPortfolio() {
       if (!nextScen.some((s) => s.id === LISKANI_2027_SCENARIO_ID)) {
         nextScen = [...nextScen, LISKANI_2027_SCENARIO_DEF];
       }
+      if (!nextScen.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)) {
+        nextScen = [...nextScen, AKUSHA_2027_SCENARIO_DEF];
+      }
       setScenarios(nextScen);
     }
 
@@ -232,6 +242,9 @@ export function useLiveScenarioPortfolio() {
       }
       if (!normalizedByBrand.LISKANI) {
         normalizedByBrand.LISKANI = LISKANI_2027_SCENARIO_ID;
+      }
+      if (!normalizedByBrand.AKUSHA) {
+        normalizedByBrand.AKUSHA = AKUSHA_2027_SCENARIO_ID;
       }
       setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedByBrand }));
     }
@@ -263,11 +276,17 @@ export function useLiveScenarioPortfolio() {
         let changed = false;
         let next = [...prev];
 
-        // А) Если в IndexedDB-слепке есть модели, которых нет в localStorage — восстанавливаем их
+        // А) Если в IndexedDB-слепке есть модели, которых нет в localStorage — восстанавливаем их (кроме старых черновиков AKUSHA без официального плана 202706)
         if (Array.isArray(idbSnapshot) && idbSnapshot.length > 0) {
           for (const snapMod of idbSnapshot) {
             if (!snapMod || !snapMod.id || !snapMod.code) continue;
             if (isModelMarkedDeleted(snapMod)) continue;
+            const isOldAkushaDraft =
+              ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
+                snapMod.code.toUpperCase().startsWith('AKU-') ||
+                snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
+              !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
+            if (isOldAkushaDraft) continue;
             const exists = next.some(
               (m) =>
                 m.id === snapMod.id ||
@@ -297,50 +316,6 @@ export function useLiveScenarioPortfolio() {
             }
             return m;
           });
-
-          // В) Если в IndexedDB (model_photo_galleries) остались фото карточек (например scen-akusha-...),
-          // которых нет ни в localStorage, ни в слепке — автоматически реконструируем карточки с их фото и названием!
-          for (const modelKey of galleryKeys) {
-            const idbGal = idbGalleries[modelKey] as GalleryMediaItem[] | undefined;
-            if (!Array.isArray(idbGal) || idbGal.length === 0) continue;
-            const alreadyPresent = next.some(
-              (m) => m.id === modelKey || m.code === modelKey
-            );
-            if (alreadyPresent) continue;
-            if (isModelMarkedDeleted({ id: modelKey, code: modelKey })) continue;
-
-            const keyLower = modelKey.toLowerCase();
-            const inferredBrand: CanonicalBrandCode = keyLower.includes('akusha')
-              ? 'AKUSHA'
-              : keyLower.includes('liskani')
-                ? 'LISKANI'
-                : keyLower.includes('na_tele')
-                  ? 'NA_TELE'
-                  : keyLower.includes('fukai')
-                    ? 'FUKAI'
-                    : 'AKUSHA';
-            const primaryItem = idbGal.find((g) => g.isMain) || idbGal[0];
-            const recoveredTitle =
-              (primaryItem?.label || '').trim() || `Модель ${inferredBrand}`;
-            const defaultPrice = inferredBrand === 'AKUSHA' ? 7500 : 2390;
-            const defaultCost = inferredBrand === 'AKUSHA' ? 2700 : 620;
-
-            const created = createBrandProductModel(next, INITIAL_SCENARIOS, {
-              title: recoveredTitle,
-              brandCode: inferredBrand,
-              retailPriceRub: defaultPrice,
-              unitCostRub: defaultCost,
-              unitsInPack: inferredBrand === 'AKUSHA' ? 1 : 4,
-              imageUrl: primaryItem?.url || primaryItem?.originalUrl || '',
-            });
-            const restoredCard: ScenarioModelSpec = {
-              ...created.model,
-              id: modelKey,
-              gallery: idbGal,
-            };
-            next.push(restoredCard);
-            changed = true;
-          }
         }
 
         if (changed) {

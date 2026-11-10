@@ -2569,9 +2569,9 @@ test('41. Реальная проверка сохранения, редакти
       saveProductGroups,
     } = await import('../src/lib/productGroups.ts');
 
-    // 1. Первичная загрузка (чистый старт): 23 базовых модели BORNERS/FUKAI + 33 модели LISKANI = 56 моделей
+    // 1. Первичная загрузка (чистый старт): 23 базовых модели BORNERS/FUKAI + 33 модели LISKANI + 24 модели AKUSHA = 80 моделей
     const initialHydrated = hydratePortfolioModelsFromStorage();
-    assert.equal(initialHydrated.length, 56);
+    assert.equal(initialHydrated.length, 80);
 
     // 2. Создание новой карточки штор LISKANI с загруженным фото (data:image/jpeg) и сохранение в localStorage
     const customDataPhoto = 'data:image/jpeg;base64,' + 'A'.repeat(95_000); // > 70 КБ для проверки отсутствия подмены на SVG
@@ -2595,7 +2595,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем перезагрузку страницы (F5)
     const afterCreateReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterCreateReload.length, 57);
+    assert.equal(afterCreateReload.length, 81);
     const reloadedCurtain = afterCreateReload.find((m) => m.code === 'LSC-777')!;
     assert.ok(reloadedCurtain, 'Созданная карточка LSC-777 должна сохраняться после F5');
     assert.equal(reloadedCurtain.title, 'ШТОРЫ ДИМАУТ ПЕСОЧНЫЕ 400×270');
@@ -2666,7 +2666,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем F5 — ни LSC-777, ни удалённая базовая карточка BRN-001-SC НЕ должны появиться снова!
     const afterDeleteReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterDeleteReload.length, 55);
+    assert.equal(afterDeleteReload.length, 79);
     assert.equal(
       afterDeleteReload.some((m) => m.code === 'LSC-777'),
       false,
@@ -2678,11 +2678,11 @@ test('41. Реальная проверка сохранения, редакти
       'Удалённая базовая модель не должна самопроизвольно возвращаться после F5'
     );
 
-    // 5. Явный сброс к эталону восстанавливает все 56 базовых карточек
+    // 5. Явный сброс к эталону восстанавливает все 80 базовых карточек
     clearDeletedModelsRegistry();
     persistPortfolioModels([...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS]);
     const afterResetReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterResetReload.length, 56);
+    assert.equal(afterResetReload.length, 80);
     assert.equal(
       afterResetReload.some((m) => m.code === 'BRN-001-SC'),
       true
@@ -4121,6 +4121,180 @@ test('53. Авто-восстановление всех добавленных 
       store.has(STORAGE_KEY_MODELS),
       true,
       'После авто-восстановления основной ключ borners_tz_models_v1 должен быть автоматически записан заново'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('54. Официальный план продаж AKUSHA 2027 из PDF (31 модель · 24 карточки в 9 группах, общая карточка лоферов №09–16, 20 377 выкупленных пар, 47 808 заказов, 105 793 210 ₽ выручки, 37 448 200 ₽ себестоимости, 26 фото без дублей)', async () => {
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_ID,
+    AKUSHA_2027_SUMMARY,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    STORAGE_KEY_MODELS,
+    STORAGE_KEY_USER_PLANS_BACKUP,
+    hydratePortfolioModelsFromStorage,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { buildDefaultProductGroups } = await import('../src/lib/productGroups.ts');
+
+  // 1. Проверяем структуру 24 карточек (31 цветомодель в 9 группах, где №09–16 Замшевые лоферы — общая карточка из 8 цветов)
+  assert.equal(AKUSHA_2027_MODELS.length, 24, 'В каталоге AKUSHA 2027 должно быть ровно 24 карточки (31 модель с общей карточкой лоферов №09–16)');
+  assert.equal(AKUSHA_2027_SUMMARY.totalModelVariants, 31);
+  assert.equal(AKUSHA_2027_SUMMARY.totalGroups, 9);
+
+  const loafersCard = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-009')!;
+  assert.ok(loafersCard, 'Общая карточка Замшевых лоферов (№09–16 · AKU-009) должна существовать');
+  assert.equal(
+    loafersCard.palettes[0]?.colors.length,
+    8,
+    'В общей карточке Замшевых лоферов №09–16 должно быть ровно 8 цветов в палитре'
+  );
+
+  // 2. Проверяем наличие всех 26 оригинальных фотографий и PDF-документа на диске в public/
+  let totalPhotoFilesChecked = 0;
+  for (const m of AKUSHA_2027_MODELS) {
+    assert.ok(m.gallery.length >= 1, `У карточки ${m.code} должна быть хотя бы 1 фотография`);
+    for (const g of m.gallery) {
+      const relPath = (g.url || '').replace(/^\//, '');
+      const fullPath = path.join(process.cwd(), 'public', relPath);
+      assert.equal(
+        fs.existsSync(fullPath),
+        true,
+        `Файл оригинальной фотографии ${fullPath} для карточки ${m.code} должен существовать на диске`
+      );
+      totalPhotoFilesChecked += 1;
+    }
+  }
+  assert.equal(totalPhotoFilesChecked, 26, 'Всего во всех 24 карточках AKUSHA должно быть проверено 26 оригинальных фотографий из PDF (включая 3 ракурса у AKU-023)');
+  assert.equal(
+    fs.existsSync(path.join(process.cwd(), 'public/docs/akusha_plan_2027_31_models.pdf')),
+    true,
+    'Оригинальный PDF-документ плана продаж AKUSHA 2027 должен быть доступен в public/docs/'
+  );
+
+  // 3. Проверяем 100% совпадение контрольных сумм с PDF-документом:
+  // - Выкупленные пары за 2027 год: 20 377 пар
+  // - Заказы покупателей (по моделям с заданным % выкупа): 47 808 пар
+  // - Плановая выручка (по моделям с заданной ценой): 105 793 210 ₽
+  // - Себестоимость выкупленных пар: 37 448 200 ₽
+  let totalBuyoutsPairs = 0;
+  let totalOrdersPairs = 0;
+  let totalRevenueRub = 0;
+  let totalCogsRub = 0;
+  const monthlyBuyoutsSum = Array(12).fill(0);
+
+  for (const m of AKUSHA_2027_MODELS) {
+    const met = computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF);
+    totalBuyoutsPairs += met.annualPacks;
+    totalOrdersPairs += met.annualOrdersPacks;
+    totalRevenueRub += met.annualRevenueRub;
+    totalCogsRub += met.totalPurchaseNeedRub;
+    met.plan.monthlyPacks.forEach((p, idx) => {
+      monthlyBuyoutsSum[idx] += p;
+    });
+  }
+
+  assert.equal(totalBuyoutsPairs, 20_377, 'Суммарные продажи (выкупленные пары) AKUSHA за 2027 год должны быть ровно 20 377 пар');
+  assert.equal(totalOrdersPairs, 47_808, 'Суммарные заказы покупателей AKUSHA за 2027 год должны быть ровно 47 808 пар');
+  assert.equal(totalRevenueRub, 105_793_210, 'Суммарная выручка AKUSHA по моделям с заданной ценой должна быть ровно 105 793 210 ₽');
+  assert.equal(totalCogsRub, 37_448_200, 'Суммарная себестоимость выкупленных пар AKUSHA должна быть ровно 37 448 200 ₽');
+  assert.deepEqual(
+    monthlyBuyoutsSum,
+    [573, 808, 628, 849, 1298, 1740, 2218, 3056, 2265, 2282, 2656, 2004],
+    'Помесячный итог выкупленных пар по всем 9 группам должен 100% совпадать со сводной таблицей PDF (стр. 3)'
+  );
+
+  // 4. Проверяем, что для Топсайдеров (AKU-017..020) и Мокасин (AKU-028..031) цена и себестоимость строго 0 ₽ (уточнить), без искусственных допущений
+  for (const code of ['AKU-017', 'AKU-018', 'AKU-019', 'AKU-020', 'AKU-028', 'AKU-029', 'AKU-030', 'AKU-031']) {
+    const card = AKUSHA_2027_MODELS.find((m) => m.code === code)!;
+    assert.equal(card.retailPriceRub, 0, `У ${code} цена должна оставаться 0 ₽ (уточнить)`);
+    assert.equal(card.unitCostRub, 0, `У ${code} себестоимость должна оставаться 0 ₽ (уточнить)`);
+  }
+  for (const code of ['AKU-028', 'AKU-029', 'AKU-030', 'AKU-031']) {
+    const card = AKUSHA_2027_MODELS.find((m) => m.code === code)!;
+    const met = computeModelScenarioMetrics(card, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(met.buyoutRatePct, 0, `У мокасин ${code} процент выкупа не задан (0%)`);
+    assert.equal(met.annualOrdersPacks, 0, `У мокасин ${code} заказы = 0 до уточнения % выкупа`);
+  }
+
+  // 5. Проверяем миграцию без дублей: если в localStorage были старые черновики AKUSHA, они заменяются ровно на 24 официальные карточки
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    // Записываем старые черновые карточки AKUSHA в кэш до миграции
+    store.set(
+      STORAGE_KEY_MODELS,
+      JSON.stringify([
+        {
+          id: 'scen-akusha-old-draft-1',
+          code: 'AKU-001',
+          title: 'Ботинки01Бот01',
+          brandId: 'BORNERS',
+          customBrandLabel: 'AKUSHA',
+          retailPriceRub: 7500,
+          unitCostRub: 2700,
+          unitsInPack: 1,
+          launchStatus: 'В плане',
+          palettes: [],
+          gallery: [],
+          plansByScenario: {},
+        },
+      ])
+    );
+    store.set(
+      STORAGE_KEY_USER_PLANS_BACKUP,
+      JSON.stringify({
+        'scen-akusha-old-draft-1': {
+          id: 'scen-akusha-old-draft-1',
+          code: 'AKU-001',
+          title: 'Ботинки01Бот01',
+          customBrandLabel: 'AKUSHA',
+          retailPriceRub: 7500,
+          unitCostRub: 2700,
+          launchStatus: 'В плане',
+          plansByScenario: {},
+        },
+      })
+    );
+
+    const hydrated = hydratePortfolioModelsFromStorage();
+    const akushaInHydrated = hydrated.filter(
+      (m) => (m.customBrandLabel || '').toUpperCase() === 'AKUSHA'
+    );
+    assert.equal(
+      akushaInHydrated.length,
+      24,
+      'После миграции в каталоге AKUSHA должно быть ровно 24 официальные карточки без единого дубля'
+    );
+    const aku001 = akushaInHydrated.find((m) => m.code === 'AKU-001')!;
+    assert.equal(
+      aku001.title,
+      'Зимние ботинки · Модель №01 (Тёмно-коричневый нубук)',
+      'Старый черновик AKU-001 должен быть чисто заменён официальной карточкой №01 из PDF'
+    );
+
+    const groups = buildDefaultProductGroups(hydrated);
+    const akushaGroups = groups.filter((g) => g.brandCode === 'AKUSHA');
+    assert.equal(
+      akushaGroups.length,
+      10,
+      'Для AKUSHA должны формироваться общая сводная группа + 9 предметных групп из PDF'
     );
   } finally {
     (globalThis as any).window = prevWindow;

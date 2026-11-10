@@ -1091,6 +1091,7 @@ export function computeProcurementPlan(
 
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[202706] ||
     model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
@@ -1108,16 +1109,19 @@ export function computeProcurementPlan(
   const buyoutRatePct = getEffectiveModelBuyoutRatePct(model, scenario.id);
   const procureByOrdersVolume = isModelProcurementByOrdersActive(model);
   const orderMultiplier =
-    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 1;
+    buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 0;
+  const isAkushaModel = (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
 
   const getMonthOrdersPacks = (mIdx: number): number => {
+    if (buyoutRatePct <= 0) return 0;
     const buyouts = Math.max(0, Math.round(plan.monthlyPacks[mIdx] || 0));
     if (buyoutRatePct >= 100) return buyouts;
     const storedOrd = plan.monthlyOrdersPacks?.[mIdx];
     if (
       typeof storedOrd === 'number' &&
       storedOrd >= 0 &&
-      Math.round((storedOrd * buyoutRatePct) / 100) === buyouts
+      (storedOrd === Math.ceil((buyouts * 100) / buyoutRatePct) ||
+        Math.round((storedOrd * buyoutRatePct) / 100) === buyouts)
     ) {
       return Math.round(storedOrd);
     }
@@ -1126,7 +1130,7 @@ export function computeProcurementPlan(
 
   const getMonthProcurementDemandPacks = (mIdx: number): number => {
     const buyouts = Math.max(0, Math.round(plan.monthlyPacks[mIdx] || 0));
-    if (!procureByOrdersVolume || buyoutRatePct >= 100) return buyouts;
+    if (!procureByOrdersVolume || buyoutRatePct <= 0 || buyoutRatePct >= 100) return buyouts;
     return getMonthOrdersPacks(mIdx);
   };
 
@@ -1979,6 +1983,7 @@ export function computeFinancialPnL(
 
   const plan =
     model.plansByScenario[scenario.id] ||
+    model.plansByScenario[202706] ||
     model.plansByScenario[202705] ||
     model.plansByScenario[1] || {
       scenarioId: scenario.id,
@@ -2905,6 +2910,7 @@ export function computeScenarioInvestmentSummary(
     // 4. Помесячные потоки WB и оплат фабрикам по модели
     const plan =
       m.plansByScenario[scenario.id] ||
+      m.plansByScenario[202706] ||
       m.plansByScenario[202705] ||
       m.plansByScenario[1] || {
         monthlyPacks: Array(12).fill(0),
@@ -3889,7 +3895,12 @@ export function createBrandProductModel(
 
   return {
     model: withDefaultMatrix,
-    models: [...existingModels, withDefaultMatrix],
+    models: [
+      ...existingModels.filter(
+        (m) => m.code.trim().toUpperCase() !== generatedCode.trim().toUpperCase()
+      ),
+      withDefaultMatrix,
+    ],
   };
 }
 
@@ -5147,6 +5158,9 @@ export function getEffectiveModelBuyoutRatePct(
   model: ScenarioModelSpec,
   scenarioId?: number
 ): number {
+  if (model.buyoutRatePct === 0) {
+    return 0;
+  }
   if (
     typeof model.buyoutRatePct === 'number' &&
     Number.isFinite(model.buyoutRatePct) &&
@@ -5156,8 +5170,12 @@ export function getEffectiveModelBuyoutRatePct(
   }
   const plan =
     (typeof scenarioId === 'number' ? model.plansByScenario?.[scenarioId] : undefined) ||
+    model.plansByScenario?.[202706] ||
     model.plansByScenario?.[202705] ||
     model.plansByScenario?.[1];
+  if (plan?.buyoutRatePct === 0) {
+    return 0;
+  }
   if (
     typeof plan?.buyoutRatePct === 'number' &&
     Number.isFinite(plan.buyoutRatePct) &&
