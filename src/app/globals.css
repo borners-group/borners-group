@@ -168,10 +168,17 @@ html.dark .bg-\[\#EAF8F0\],
 html.dark .bg-\[\#EBF5F0\],
 html.dark .bg-\[\#ECF6F1\],
 html.dark .bg-\[\#ECFDF5\],
+html.dark .bg-\[\#ECFDF5\]\/95,
 html.dark .bg-\[\#E6F4EE\],
 html.dark .bg-\[\#E6F7EE\],
 html.dark .bg-\[\#E9F7EF\],
+html.dark .bg-\[\#E8F5E9\],
+html.dark .bg-\[\#E8F5E9\]\/30,
+html.dark .bg-\[\#E8F5E9\]\/60,
+html.dark .bg-\[\#E8F5E9\]\/70,
 html.dark .bg-\[\#F0F9F4\],
+html.dark .bg-\[\#F0FDF4\],
+html.dark .bg-\[\#F0FDFA\],
 html.dark .bg-\[\#F2FBF6\],
 html.dark .bg-\[\#F2FBF6\]\/70,
 html.dark .bg-\[\#F2FBF6\]\/60,
@@ -181,8 +188,172 @@ html.dark .bg-\[\#F4FAF6\],
 html.dark .bg-\[\#F4FBF7\],
 html.dark .bg-\[\#D1EBD5\],
 html.dark .bg-\[\#D1FAE5\],
-html.dark .bg-\[\#D2ECDF\] {
+html.dark .bg-\[\#D2ECDF\],
+html.dark .bg-emerald-50 {
   background-color: rgba(16, 185, 129, 0.14) !important;
+}
+
+html.dark .bg-\[\#F5EFEA\],
+html.dark .bg-\[\#F8F3EE\],
+html.dark .bg-\[\#FBF3E8\],
+html.dark .bg-\[\#FCF6EE\],
+html.dark .bg-\[\#FEF3C7\],
+html.dark .bg-\[\#FDF8EE\],
+html.dark .bg-\[\#FAF4EC\],
+html.dark .bg-\[\#FAF6EE\],
+html.dark .bg-\[\#F2EBDC\],
+html.dark .bg-\[\#F3ECE0\],
+html.dark .bg-amber-50,
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+html.dark .bg-\[\#FEF2F2\],
+html.dark .bg-\[\#FEE2E2\],
+html.dark .bg-\[\#FFF2F2\],
+html.dark .bg-\[\#FFF4F2\],
+html.dark .bg-\[\#FCE8E5\],
+html.dark .bg-\[\#FCE8DF\],
+html.dark .bg-\[\#FBEAEA\],
+html.dark .bg-rose-50,
+html.dark .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+}
+
+html.dark .bg-\[\#E6E5DE\],
+html.dark .bg-\[\#E8E7E1\],
+html.dark .bg-\[\#EAE4D8\],
+html.dark .bg-\[\#EAE5DC\],
+html.dark .bg-\[\#EFECE8\],
+html.dark .bg-\[\#F2EFE9\],
+html.dark .bg-\[\#F2EFE9\]\/60,
+html.dark .bg-\[\#F3EFE8\],
+html.dark .bg-\[\#F3F0E8\],
+html.dark .bg-\[\#F4F1EA\],
+html.dark .bg-\[\#F5F2EB\],
+html.dark .bg-\[\#F5F3EE\],
+html.dark .bg-\[\#F6F3EC\],
+html.dark .bg-\[\#F6F3ED\],
+html.dark .bg-\[\#F7E8DE\],
+html.dark .bg-\[\#F7F5F0\],
+html.dark .bg-\[\#FAF4F0\],
+html.dark .bg-\[\#FBF3EE\],
+html.dark .bg-\[\#FDF3EB\],
+html.dark .bg-\[\#FDF3EB\]\/40,
+html.dark .bg-\[\#FDF3EB\]\/50,
+html.dark .bg-\[\#FDF5EF\] {
+  background-color: #181D2A !important;
+}
+
+/* Hover & Focus состояния в тёмной теме (.dark) — убираем белые/серые засветы и сохраняем 100% читаемость текста */
+html.dark .hover\:bg-white:hover,
+html.dark .hover\:bg-white\/60:hover,
+html.dark .hover\:bg-white\/70:hover,
+html.dark .hover\:bg-white\/80:hover,
+html.dark .focus\:bg-white:focus,
+html.dark .hover\:bg-\[\#F8FAFC\]:hover,
+html.dark .hover\:bg-\[\#F8FAFC\]\/80:hover,
+html.dark .hover\:bg-\[\#F4F6F9\]:hover,
+html.dark .hover\:bg-\[\#F1F5F9\]:hover,
+html.dark .hover\:bg-\[\#EEF1F6\]:hover,
+html.dark .hover\:bg-\[\#E9EDF4\]:hover,
+html.dark .hover\:bg-\[\#E2E8F0\]:hover,
+html.dark .hover\:bg-\[\#E2E8F0\]\/70:hover,
+html.dark .hover\:bg-\[\#FAF9F6\]:hover,
+html.dark .hover\:bg-\[\#FAF8F5\]:hover,
+html.dark .hover\:bg-\[\#FAF8F4\]:hover,
+html.dark .hover\:bg-\[\#FAFAF7\]:hover,
+html.dark .hover\:bg-\[\#F7F7F5\]:hover,
+html.dark .hover\:bg-\[\#F7F7F5\]\/60:hover,
+html.dark .hover\:bg-\[\#F7F7F5\]\/40:hover,
+html.dark .hover\:bg-\[\#F7F7F4\]:hover,
+html.dark .hover\:bg-\[\#F7F7F4\]\/70:hover,
+html.dark .hover\:bg-\[\#F7F7F3\]:hover,
+html.dark .hover\:bg-\[\#F6F6F4\]:hover,
+html.dark .hover\:bg-\[\#F5F5F1\]:hover,
+html.dark .hover\:bg-\[\#F4F3EE\]:hover,
+html.dark .hover\:bg-\[\#F3EFE8\]:hover,
+html.dark .hover\:bg-\[\#F3ECE0\]:hover,
+html.dark .hover\:bg-\[\#F2EFE9\]:hover,
+html.dark .hover\:bg-\[\#F2EBDC\]:hover,
+html.dark .hover\:bg-\[\#F0F0EC\]:hover,
+html.dark .hover\:bg-\[\#F0EFE9\]:hover,
+html.dark .hover\:bg-\[\#EFEFE9\]:hover,
+html.dark .hover\:bg-\[\#EFECE6\]:hover,
+html.dark .hover\:bg-\[\#EFECE4\]:hover,
+html.dark .hover\:bg-\[\#EAEAE4\]:hover,
+html.dark .hover\:bg-\[\#EAE9E2\]:hover,
+html.dark .hover\:bg-\[\#E5E0D5\]:hover,
+html.dark .hover\:bg-\[\#DFDED6\]:hover,
+html.dark .group:hover .group-hover\:bg-\[\#F8FAFC\],
+html.dark .group:hover .group-hover\:bg-\[\#EAE9E2\] {
+  background-color: #1E2536 !important;
+}
+
+html.dark .hover\:bg-\[\#EAF6F0\]:hover,
+html.dark .hover\:bg-\[\#EAF8F0\]:hover,
+html.dark .hover\:bg-\[\#D1EBD5\]:hover,
+html.dark .hover\:bg-\[\#D1FAE5\]:hover,
+html.dark .hover\:bg-\[\#D2ECDF\]:hover {
+  background-color: rgba(16, 185, 129, 0.22) !important;
+}
+
+html.dark .hover\:bg-\[\#FEF2F2\]:hover,
+html.dark .hover\:bg-\[\#FEE2E2\]:hover,
+html.dark .hover\:bg-\[\#FFF2F2\]:hover,
+html.dark .hover\:bg-\[\#FCE8E5\]:hover,
+html.dark .hover\:bg-\[\#F7E8DE\]:hover,
+html.dark .hover\:bg-rose-50:hover,
+html.dark .hover\:bg-rose-100:hover {
+  background-color: rgba(244, 63, 94, 0.20) !important;
+}
+
+html.dark .hover\:bg-amber-100:hover {
+  background-color: rgba(245, 158, 11, 0.22) !important;
+}
+
+html.dark .hover\:text-\[\#111827\]:hover,
+html.dark .hover\:text-\[\#0F172A\]:hover,
+html.dark .hover\:text-\[\#0F141C\]:hover,
+html.dark .hover\:text-\[\#1E293B\]:hover,
+html.dark .hover\:text-\[\#141413\]:hover,
+html.dark .hover\:text-\[\#161615\]:hover,
+html.dark .hover\:text-\[\#171717\]:hover,
+html.dark .hover\:text-\[\#181715\]:hover,
+html.dark .hover\:text-\[\#1D1D1F\]:hover,
+html.dark .group:hover .group-hover\:text-\[\#1D1D1F\] {
+  color: #F8FAFC !important;
+}
+
+html.dark .group:hover .group-hover\:text-emerald-700,
+html.dark .group:hover .group-hover\:text-emerald-600 {
+  color: #34D399 !important;
+}
+
+html.dark .text-\[\#115E59\],
+html.dark .text-\[\#0D9488\] {
+  color: #5EEAD4 !important;
+}
+
+html.dark .text-\[\#6D452A\],
+html.dark .text-\[\#7A4B2A\],
+html.dark .text-\[\#854D0E\],
+html.dark .text-\[\#9A5B13\],
+html.dark .text-amber-900,
+html.dark .text-amber-950 {
+  color: #FCD34D !important;
+}
+
+html.dark .hover\:border-\[\#0F172A\]:hover,
+html.dark .hover\:border-\[\#141413\]:hover,
+html.dark .hover\:border-\[\#161615\]:hover,
+html.dark .hover\:border-\[\#171717\]:hover,
+html.dark .hover\:border-\[\#181715\]:hover,
+html.dark .hover\:border-\[\#1D1D1F\]:hover,
+html.dark .focus\:border-\[\#0F172A\]:focus,
+html.dark .focus\:border-\[\#141413\]:focus,
+html.dark .focus\:border-\[\#171717\]:focus {
+  border-color: #3B4761 !important;
 }
 
 html.dark .text-\[\#111827\],
@@ -422,6 +593,31 @@ html.dark ::-webkit-scrollbar-thumb {
   animation: shimmer-sweep 1.6s ease-in-out infinite;
 }
 
+html.dark .card-shimmer::after {
+  display: none !important;
+}
+
+html.dark .border-\[\#A7F3D0\],
+html.dark .border-\[\#BBF7D0\],
+html.dark .border-\[\#BCE3CF\],
+html.dark .border-\[\#C6E7D6\],
+html.dark .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.32) !important;
+}
+
+html.dark .border-\[\#99F6E4\],
+html.dark .border-\[\#CCFBF1\] {
+  border-color: rgba(20, 184, 166, 0.32) !important;
+}
+
+html.dark .border-\[\#DFCBB9\],
+html.dark .border-\[\#E4D4C5\],
+html.dark .border-\[\#E8D2B0\],
+html.dark .border-\[\#EAD8BC\],
+html.dark .border-amber-300 {
+  border-color: rgba(245, 158, 11, 0.32) !important;
+}
+
 .hover-lift {
   box-shadow: 0 2px 10px -3px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04);
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
@@ -437,7 +633,7 @@ html.dark .hover-lift {
 }
 
 html.dark .hover-lift:hover {
-  box-shadow: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 2px 10px -1px rgba(16, 185, 129, 0.12);
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.65);
 }
 
 .btn-shine-effect {

@@ -1251,12 +1251,12 @@ export function AppShell() {
             <nav
               aria-label="Цепочка контуров BORNERS"
               data-tour="sidebar-nav"
-              className="hidden xl:flex items-center rounded-[11px] bg-[#EEF1F6] border border-[#D8DEE8] p-0.5 gap-0.5"
+              className="hidden xl:flex items-center rounded-[11px] bg-[#EEF1F6] dark:bg-[#151A26] border border-[#D8DEE8] dark:border-[#222938] p-0.5 gap-0.5"
             >
               {pipelineSteps.map((item, idx) => (
                 <React.Fragment key={item.key}>
                   {idx > 0 && (
-                    <div className="h-3.5 w-[1px] bg-[#D8DEE8] mx-0.5 shrink-0" />
+                    <div className="h-3.5 w-[1px] bg-[#D8DEE8] dark:bg-[#222938] mx-0.5 shrink-0" />
                   )}
                   <button
                     type="button"
@@ -1275,14 +1275,16 @@ export function AppShell() {
                     }}
                     className={`h-7.5 px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1.5 transition cursor-pointer ${
                       item.isActive
-                        ? 'bg-white text-[#111827] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.1)] border border-[#CBD5E1]'
-                        : 'text-[#475569] hover:text-[#111827] hover:bg-white/60 font-semibold'
+                        ? 'bg-white dark:bg-[#222A3D] text-[#111827] dark:text-[#F8FAFC] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.1)] border border-[#CBD5E1] dark:border-[#334155]'
+                        : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC] hover:bg-white/60 dark:hover:bg-[#1E2536] font-semibold'
                     }`}
                   >
                     {item.step && (
                       <span
                         className={`font-mono text-[10.5px] ${
-                          item.isActive ? 'text-[#111827]' : 'text-[#64748B]'
+                          item.isActive
+                            ? 'text-[#111827] dark:text-[#34D399]'
+                            : 'text-[#64748B] dark:text-[#64748B]'
                         }`}
                       >
                         {item.step}
@@ -1293,8 +1295,8 @@ export function AppShell() {
                       <span
                         className={`font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
                           item.isActive
-                            ? 'bg-[#F1F5F9] text-[#111827] border border-[#CBD5E1]'
-                            : 'bg-white text-[#475569] border border-[#E2E8F0]'
+                            ? 'bg-[#F1F5F9] dark:bg-[#151A26] text-[#111827] dark:text-[#F8FAFC] border border-[#CBD5E1] dark:border-[#334155]'
+                            : 'bg-white dark:bg-[#121620] text-[#475569] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938]'
                         }`}
                       >
                         {item.badge}

@@ -2291,7 +2291,15 @@ export function PeaklyMasterCabinetsSummary({
               </div>
               <button
                 type="button"
-                onClick={() => onNavigateSection('roadmap-tasks')}
+                onClick={() => {
+                  try {
+                    window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+                    window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+                  } catch {
+                    // ignore
+                  }
+                  onNavigateSection('roadmap-tasks');
+                }}
                 className="h-7.5 px-3 rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] hover:bg-[#E2E8F0] text-xs font-medium text-[#0F172A] dark:text-[#EDF0F7] transition cursor-pointer"
               >
                 Открыть 03 · Закупки →
@@ -2304,7 +2312,15 @@ export function PeaklyMasterCabinetsSummary({
                 return (
                   <div
                     key={wave.id}
-                    onClick={() => onNavigateSection('roadmap-tasks')}
+                    onClick={() => {
+                      try {
+                        window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+                        window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+                      } catch {
+                        // ignore
+                      }
+                      onNavigateSection('roadmap-tasks');
+                    }}
                     className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/70 dark:bg-[#181D2A] p-4 flex flex-col justify-between gap-3 cursor-pointer hover-lift"
                   >
                     <div className="space-y-1.5">
@@ -2545,7 +2561,15 @@ export function PeaklyMasterCabinetsSummary({
 
             <button
               type="button"
-              onClick={() => onNavigateSection('roadmap-tasks')}
+              onClick={() => {
+                try {
+                  window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
+                  window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
+                } catch {
+                  // ignore
+                }
+                onNavigateSection('roadmap-tasks');
+              }}
               className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 text-left cursor-pointer hover-lift flex flex-col justify-between gap-2 transition"
             >
               <div>

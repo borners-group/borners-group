@@ -3601,6 +3601,47 @@ test('48. Сводная ведомость и детализация закуп
   );
 });
 
+test('49. Контрастность наведения (hover) в тёмной теме (.dark) и единая сводка холдинга в 03 · Закупки', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const globalsCss = fs.readFileSync(path.join(root, 'src/app/globals.css'), 'utf8');
+  const appShellSrc = fs.readFileSync(
+    path.join(root, 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  const contourSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+
+  // 1. В globals.css все светлые hover-фоны (.hover:bg-white, .hover:bg-white/60, .hover:bg-[#F8FAFC] и др.) адаптированы под .dark (#1E2536) без белых засветов
+  assert.ok(
+    globalsCss.includes('html.dark .hover\\:bg-white:hover') &&
+      globalsCss.includes('html.dark .hover\\:bg-white\\/60:hover') &&
+      globalsCss.includes('html.dark .hover\\:bg-\\[\\#F8FAFC\\]:hover') &&
+      globalsCss.includes('html.dark .hover\\:text-\\[\\#111827\\]:hover') &&
+      globalsCss.includes('color: #F8FAFC !important'),
+    'В тёмной теме (.dark) наведение не должно создавать белый/светло-серый фон с нечитаемым текстом'
+  );
+
+  // 2. В верхней панели навигации AppShell вкладки имеют явные dark:hover стили без засвета
+  assert.ok(
+    appShellSrc.includes('dark:hover:bg-[#1E2536]') &&
+      appShellSrc.includes('dark:hover:text-[#F8FAFC]'),
+    'Вкладки верхней навигации в тёмной теме должны сохранять чёткую читаемость названия при наведении'
+  );
+
+  // 3. В 03 · Закупки при выборе «Все бренды» доступна полная сводка холдинга (Все бренды холдинга)
+  assert.ok(
+    contourSrc.includes('isHoldingAllBrandsActive') &&
+      contourSrc.includes('Все бренды холдинга'),
+    'В 03 · Закупки при фильтре Все бренды должна отображаться полная сводка всех активных брендов холдинга'
+  );
+});
+
+
 
 
 

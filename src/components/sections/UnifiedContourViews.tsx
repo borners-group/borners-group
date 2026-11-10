@@ -16,6 +16,7 @@ import {
   approveRecommendedBatch,
   computeFinancialPnL,
   computeGroupBrandsInvestmentReport,
+  computeMultiBrandPortfolioSummary,
   computeProcurementPlan,
   computeScenarioInvestmentSummary,
   computeWhatIfSensitivitySimulation,
@@ -24,6 +25,7 @@ import {
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
+  matchesBrandFilter,
   removeApprovedPurchaseOrder,
   serializePurchaseOrdersToCsv,
   serializeScenarioFactoryOrdersToCsv,
@@ -701,10 +703,13 @@ export function SalesMatrixContourView() {
 export function ProcurementContourView() {
   const { tasks, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
+    models,
+    scenarios,
     orderedScenarios,
     currentScenario,
     selectedScenarioId,
     setSelectedScenarioId,
+    selectedScenarioByBrand,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
     scenarioAllEligibleModels,
@@ -715,6 +720,7 @@ export function ProcurementContourView() {
   } = useLiveScenarioPortfolio();
 
   const [wavesCalendarOpen, setWavesCalendarOpen] = useState(false);
+  const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
 
   const [subTab, setSubTab] = useState<'batches' | 'crm'>(() => {
     if (typeof window !== 'undefined') {
@@ -755,6 +761,7 @@ export function ProcurementContourView() {
         setSubTab('batches');
         setWavesCalendarOpen(false);
         setScenarioDrawerTab('skus');
+        setHoldingScopeMode(true);
         window.sessionStorage.removeItem('borners_open_procurement_view_mode');
       }
     } catch {
@@ -764,6 +771,7 @@ export function ProcurementContourView() {
       setSubTab('batches');
       setWavesCalendarOpen(false);
       setScenarioDrawerTab('skus');
+      setHoldingScopeMode(true);
     };
     window.addEventListener('borners-open-procurement-summary', onOpenSummary);
     return () => window.removeEventListener('borners-open-procurement-summary', onOpenSummary);
@@ -784,6 +792,50 @@ export function ProcurementContourView() {
     () => tasks.filter((t) => !t.isArchived && t.status !== 'Done').length,
     [tasks]
   );
+
+  const isHoldingAllBrandsActive = brandFilter === 'ALL' && holdingScopeMode;
+
+  const multiBrandSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(models, scenarios, selectedScenarioByBrand, {
+        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+        wbPayoutScheduleSpecified: wbLagMonths >= 0,
+      }),
+    [models, scenarios, selectedScenarioByBrand, initialCashMln, wbLagMonths]
+  );
+
+  const scopedModelEntries = useMemo(() => {
+    if (!isHoldingAllBrandsActive) {
+      return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+    }
+    const seen = new Set<string>();
+    const list: { model: ScenarioModelSpec; scenario: typeof currentScenario }[] = [];
+    for (const bRow of multiBrandSummary.brands) {
+      if (!bRow.hasScenario || !bRow.hasModels || bRow.selectedScenarioId === null) continue;
+      const bScen =
+        scenarios.find((s) => s.id === bRow.selectedScenarioId && !s.isArchived) ||
+        currentScenario;
+      for (const rm of models) {
+        if (!rm || rm.launchStatus === 'В архиве') continue;
+        if (!matchesBrandFilter(rm, bRow.brandCode)) continue;
+        const key = rm.id || rm.code;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        list.push({ model: rm, scenario: bScen });
+      }
+    }
+    return list.length > 0
+      ? list
+      : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+  }, [
+    isHoldingAllBrandsActive,
+    eligibleModels,
+    currentScenario,
+    multiBrandSummary.brands,
+    scenarios,
+    models,
+  ]);
 
   const procData = useMemo(() => {
     let approvedCount = 0;
@@ -806,9 +858,9 @@ export function ProcurementContourView() {
       po: ApprovedPurchaseOrder;
     }[] = [];
 
-    const perSku = eligibleModels.map((rawM) => {
+    const perSku = scopedModelEntries.map(({ model: rawM, scenario: modelScen }) => {
       const m = ensureModelUnifiedV11(rawM);
-      const plan = computeProcurementPlan(m, currentScenario);
+      const plan = computeProcurementPlan(m, modelScen);
       const confirmedPos = plan.approvedOrders.filter(
         (o) => o.confirmedByFactory !== false
       );
@@ -872,9 +924,9 @@ export function ProcurementContourView() {
       totalScenarioBudgetRub,
       perSku,
     };
-  }, [eligibleModels, currentScenario]);
+  }, [scopedModelEntries]);
 
-  const investmentSummary = useMemo(
+  const singleScenarioInvestmentSummary = useMemo(
     () =>
       computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
         initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
@@ -883,6 +935,38 @@ export function ProcurementContourView() {
       }),
     [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
   );
+
+  const investmentSummary = useMemo(() => {
+    if (!isHoldingAllBrandsActive) return singleScenarioInvestmentSummary;
+    const gt = multiBrandSummary.groupTotal;
+    return {
+      ...singleScenarioInvestmentSummary,
+      modelsCount: gt.modelsCount,
+      annualRevenueRub: gt.annualRevenueRub,
+      decemberRevenueRub: gt.decemberRevenueRub,
+      annualDemandPacks: procData.annualDemandPacks,
+      annualDemandUnits: procData.annualDemandUnits,
+      totalProcurementPacks: procData.totalScenarioPacks,
+      totalProcurementUnits: procData.totalScenarioUnits,
+      totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
+      annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
+      annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
+      firstWavePacks: procData.firstWavePacks,
+      firstWaveUnits: procData.firstWaveUnits,
+      firstWaveStartBudgetRub: gt.firstWaveStartBudgetRub,
+      firstWavePrepaymentRub: gt.firstWavePrepaymentRub,
+      firstWaveBalanceRub: Math.max(0, gt.firstWaveStartBudgetRub - gt.firstWavePrepaymentRub),
+      peakWorkingCapitalRub: gt.peakWorkingCapitalRub,
+      netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
+      verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+      monthlyRows: gt.monthlyRows,
+    };
+  }, [
+    isHoldingAllBrandsActive,
+    singleScenarioInvestmentSummary,
+    multiBrandSummary.groupTotal,
+    procData,
+  ]);
 
   const brandsReport = useMemo(
     () =>
@@ -898,12 +982,13 @@ export function ProcurementContourView() {
   );
 
   const activeSkuModel = useMemo(() => {
+    const pool = scopedModelEntries.map((e) => e.model);
     const found =
-      eligibleModels.find((m) => m.id === selectedSkuId) ||
-      eligibleModels.find((m) => m.code.toUpperCase() === 'BRN-001-SC') ||
-      eligibleModels[0];
+      pool.find((m) => m.id === selectedSkuId) ||
+      pool.find((m) => m.code.toUpperCase() === 'BRN-001-SC') ||
+      pool[0];
     return found ? ensureModelUnifiedV11(found) : null;
-  }, [eligibleModels, selectedSkuId]);
+  }, [scopedModelEntries, selectedSkuId]);
 
   const filteredSkus = useMemo(() => {
     const q = skuSearch.trim().toLowerCase();
@@ -1137,17 +1222,41 @@ export function ProcurementContourView() {
 
           {subTab === 'batches' && (
             <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setBrandFilter('ALL');
+                  setHoldingScopeMode(true);
+                  setSelectedCategoryFilter('ALL');
+                }}
+                className={`h-7 px-2.5 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
+                  isHoldingAllBrandsActive
+                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+                }`}
+              >
+                Все бренды ({multiBrandSummary.groupTotal.modelsCount})
+              </button>
               {orderedScenarios.map((sc) => {
-                const active = sc.id === selectedScenarioId;
+                const active = !isHoldingAllBrandsActive && sc.id === selectedScenarioId;
                 const shortTitle =
                   sc.id === 100 || sc.id === 4
                     ? 'Исходный'
+                    : sc.id === 105 || sc.ownerBrandCode === 'LISKANI'
+                    ? 'LISKANI · 500 млн'
                     : `№${sc.id} · ${sc.monthlyTargetMln} млн`;
                 return (
                   <button
                     key={sc.id}
                     type="button"
-                    onClick={() => setSelectedScenarioId(sc.id)}
+                    onClick={() => {
+                      setHoldingScopeMode(false);
+                      setSelectedCategoryFilter('ALL');
+                      if (sc.id === 105 || sc.ownerBrandCode === 'LISKANI') {
+                        setBrandFilter('LISKANI');
+                      }
+                      setSelectedScenarioId(sc.id);
+                    }}
                     className={`h-7 px-2.5 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
                       active
                         ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-xs'
@@ -1161,12 +1270,12 @@ export function ProcurementContourView() {
             </div>
           )}
 
-          {subTab === 'batches' && eligibleModels.length > 0 && (
+          {subTab === 'batches' && scopedModelEntries.length > 0 && (
             <button
               type="button"
               onClick={() => handleExportFactoryOrderCsv('all')}
               className="h-8 rounded-lg border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] px-3 text-[11.5px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] hover:bg-[#F8FAFC] cursor-pointer"
-              title="Скачать таблицу заказа фабрике в Excel/CSV с размерами S–XXL, суммами, авансами и датами"
+              title="Скачать таблицу заказа фабрике в Excel/CSV с размерами, суммами, авансами и датами"
             >
               Экспорт CSV
             </button>
@@ -1176,7 +1285,7 @@ export function ProcurementContourView() {
 
       {subTab === 'crm' ? (
         <RoadmapTasksView />
-      ) : eligibleModels.length === 0 ? (
+      ) : scopedModelEntries.length === 0 ? (
         /* ПУСТОЕ СОСТОЯНИЕ, ЕСЛИ В ВЫБРАННОМ СЦЕНАРИИ НЕТ МОДЕЛЕЙ ТЕКУЩЕГО БРЕНДА (например, выбран НА ТЕЛЕ в Исходном плане) */
         <div className="rounded-[16px] border border-[#D8D7CF] bg-white p-6 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
           <div className="max-w-2xl space-y-3">
@@ -1790,6 +1899,59 @@ export function ProcurementContourView() {
               {/* ВКЛАДКА 3: СВОДНАЯ ВЕДОМОСТЬ И ДЕТАЛИЗАЦИЯ ЗАКУПОК (ПО КАТЕГОРИЯМ, КАРТОЧКАМ, 4 ВОЛНАМ Q1–Q4 И РАЗМЕРАМ) */}
               {scenarioDrawerTab === 'skus' && (
                 <div className="p-4 sm:p-5 space-y-5 bg-[#FAF9F6]/50">
+                  {/* ПЕРЕКЛЮЧАТЕЛЬ ОБЛАСТИ ЗАКУПОК: ВСЕ БРЕНДЫ ХОЛДИНГА ИЛИ ОТДЕЛЬНЫЙ КАБИНЕТ (LISKANI / BORNERS / FUKAI) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-[#E2E6EE] bg-white px-4 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                        Кабинет / бренд закупки:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBrandFilter('ALL');
+                          setHoldingScopeMode(true);
+                          setSelectedCategoryFilter('ALL');
+                        }}
+                        className={`h-7.5 px-3 rounded-lg text-[11.5px] font-semibold transition cursor-pointer ${
+                          isHoldingAllBrandsActive
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'bg-[#F1F5F9] text-[#334155] hover:bg-[#E2E8F0]'
+                        }`}
+                      >
+                        Все бренды холдинга ({multiBrandSummary.groupTotal.modelsCount} мод. ·{' '}
+                        {formatMln(multiBrandSummary.groupTotal.totalProcurementBudgetRub)})
+                      </button>
+                      {multiBrandSummary.brands
+                        .filter((b) => b.hasScenario && b.hasModels && b.modelsCount > 0)
+                        .map((b) => {
+                          const isBrActive = !isHoldingAllBrandsActive && brandFilter === b.brandCode;
+                          return (
+                            <button
+                              key={b.brandCode}
+                              type="button"
+                              onClick={() => {
+                                setHoldingScopeMode(false);
+                                setSelectedCategoryFilter('ALL');
+                                setBrandFilter(b.brandCode);
+                                if (b.selectedScenarioId !== null) {
+                                  setSelectedScenarioId(b.selectedScenarioId);
+                                }
+                              }}
+                              className={`h-7.5 px-3 rounded-lg text-[11.5px] font-semibold transition cursor-pointer ${
+                                isBrActive
+                                  ? 'bg-emerald-600 text-white shadow-2xs'
+                                  : 'bg-[#F1F5F9] text-[#334155] hover:bg-[#E2E8F0]'
+                              }`}
+                            >
+                              {b.displayCode} ({b.modelsCount} мод.
+                              {b.brandCode === 'LISKANI' ? ' · 269 разм.' : ''} ·{' '}
+                              {formatMln(b.totalProcurementBudgetRub)})
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+
                   {/* 1. ФОРМУЛА СВОДНОЙ ЗАКУПКИ: ОТКУДА БЕРЁТСЯ ОБЩАЯ СУММА В СВОДКЕ */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                     <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">

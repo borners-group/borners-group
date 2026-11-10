@@ -1136,12 +1136,14 @@ export function SkuProcurementMvpWorkbench({
           </div>
         </div>
 
-        {/* РАСКРЫВАЮЩИЙСЯ БЛОК ПАРАМЕТРОВ МОДЕЛИ И РАЗМЕРОВ S–XXL (Упакован по кнопке «Параметры ▾», чтобы не засорять экран!) */}
+        {/* РАСКРЫВАЮЩИЙСЯ БЛОК ПАРАМЕТРОВ МОДЕЛИ И РАЗМЕРОВ (Упакован по кнопке «Параметры ▾», чтобы не засорять экран!) */}
         {showAdvancedSettings && (
           <div className="border-t border-[#EAE9E2] bg-[#FAF9F6] px-5 py-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[12.5px] font-bold text-[#141413]">
-                Параметры закупки, производства и размерная сетка S–XXL
+                {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
+                  ? `Параметры закупки, производства и размерная сетка полотен (${model.liskaniSizeVariants.length} разм.)`
+                  : 'Параметры закупки, производства и размерная сетка S–XXL'}
               </span>
               <button
                 type="button"
@@ -1277,74 +1279,116 @@ export function SkuProcurementMvpWorkbench({
               </label>
             </div>
 
-            {/* Пропорция размеров S-XXL */}
-            <div className="rounded-[10px] border border-[#E4E3DC] bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11.5px] font-semibold text-[#141413]">
-                  Базовая пропорция размеров S–XXL (применяется ко всем партиям модели, сумма = 100%)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onUpdateModel({
-                        ...model,
-                        sharedSupplyAndFact: {
-                          ...shared,
-                          factoryParams: {
-                            ...fp,
-                            sizeSharesPct: { S: 12, M: 26, L: 30, XL: 20, XXL: 12 },
-                          },
-                        },
-                      });
-                      triggerSavedIndicator('Матрица 12/26/30/20/12%');
-                    }}
-                    className="rounded border border-[#CFCEC6] bg-[#FAF9F6] px-2 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
-                  >
-                    Эталон 12/26/30/20/12%
-                  </button>
-                  <span
-                    className={`rounded px-2 py-0.5 font-mono text-[11px] font-bold ${
-                      sizeShareSum === 100
-                        ? 'bg-[#EAF6F0] text-[#146C43]'
-                        : 'bg-amber-100 text-amber-900'
-                    }`}
-                  >
-                    Сумма: {sizeShareSum}%
+            {/* Пропорция размеров */}
+            {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 ? (
+              <div className="rounded-[10px] border border-[#E4E3DC] bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11.5px] font-semibold text-[#141413]">
+                    Размерная матрица полотен ({model.liskaniSizeVariants.length} разм. SKU · доли выкупов и себестоимость по размеру)
                   </span>
-                  {sizeShareSum !== 100 && (
-                    <button
-                      type="button"
-                      onClick={handleNormalizeSizeSharesTo100}
-                      className="rounded bg-[#EAE9E2] border border-[#CECDC4] px-2.5 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#DFDED6] cursor-pointer"
-                    >
-                      Выровнять до 100%
-                    </button>
-                  )}
+                  <span className="rounded px-2 py-0.5 font-mono text-[11px] font-bold bg-[#EAF6F0] text-[#146C43]">
+                    Сумма: 100%
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(() => {
+                    const totBuy = Math.max(
+                      1,
+                      model.liskaniSizeVariants.reduce((s, v) => s + v.annualBuyoutsUnits, 0)
+                    );
+                    return model.liskaniSizeVariants.map((sv) => {
+                      const pct = ((sv.annualBuyoutsUnits / totBuy) * 100).toFixed(1).replace('.', ',');
+                      return (
+                        <div
+                          key={sv.sellerSku}
+                          className="flex items-center justify-between rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-3 py-1.5"
+                        >
+                          <div>
+                            <div className="font-mono text-[11.5px] font-bold text-[#141413]">
+                              {sv.sizeCm} см
+                            </div>
+                            <div className="font-mono text-[10px] text-[#686762]">
+                              {sv.unitCostRub.toLocaleString('ru-RU')} ₽/компл.
+                            </div>
+                          </div>
+                          <span className="font-mono text-[12px] font-bold text-[#146C43]">
+                            {pct}%
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
-              <div className="mt-2 grid grid-cols-5 gap-2">
-                {SIZES_LIST.map((sz) => (
-                  <label
-                    key={sz}
-                    className="flex items-center justify-between rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-3 py-1.5"
-                  >
-                    <span className="text-[11.5px] font-bold text-[#141413]">{sz}</span>
-                    <div className="inline-flex items-center gap-1">
-                      <NumericInput
-                        ariaLabel={`Доля размера ${sz}, %`}
-                        value={fp.sizeSharesPct[sz] ?? 20}
-                        min={0}
-                        max={100}
-                        onChangeValue={(val) => handleUpdateModelSizeShare(sz, val)}
-                        className="w-12 text-right font-mono text-[13.5px] font-bold text-[#141413] bg-transparent focus:outline-none"
-                      />
-                      <span className="text-[11px] text-[#686762]">%</span>
-                    </div>
-                  </label>
-                ))}
+            ) : (
+              <div className="rounded-[10px] border border-[#E4E3DC] bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11.5px] font-semibold text-[#141413]">
+                    Базовая пропорция размеров S–XXL (применяется ко всем партиям модели, сумма = 100%)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateModel({
+                          ...model,
+                          sharedSupplyAndFact: {
+                            ...shared,
+                            factoryParams: {
+                              ...fp,
+                              sizeSharesPct: { S: 12, M: 26, L: 30, XL: 20, XXL: 12 },
+                            },
+                          },
+                        });
+                        triggerSavedIndicator('Матрица 12/26/30/20/12%');
+                      }}
+                      className="rounded border border-[#CFCEC6] bg-[#FAF9F6] px-2 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#EFEFE9] cursor-pointer"
+                    >
+                      Эталон 12/26/30/20/12%
+                    </button>
+                    <span
+                      className={`rounded px-2 py-0.5 font-mono text-[11px] font-bold ${
+                        sizeShareSum === 100
+                          ? 'bg-[#EAF6F0] text-[#146C43]'
+                          : 'bg-amber-100 text-amber-900'
+                      }`}
+                    >
+                      Сумма: {sizeShareSum}%
+                    </span>
+                    {sizeShareSum !== 100 && (
+                      <button
+                        type="button"
+                        onClick={handleNormalizeSizeSharesTo100}
+                        className="rounded bg-[#EAE9E2] border border-[#CECDC4] px-2.5 py-0.5 text-[10.5px] font-semibold text-[#141413] hover:bg-[#DFDED6] cursor-pointer"
+                      >
+                        Выровнять до 100%
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-5 gap-2">
+                  {SIZES_LIST.map((sz) => (
+                    <label
+                      key={sz}
+                      className="flex items-center justify-between rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-3 py-1.5"
+                    >
+                      <span className="text-[11.5px] font-bold text-[#141413]">{sz}</span>
+                      <div className="inline-flex items-center gap-1">
+                        <NumericInput
+                          ariaLabel={`Доля размера ${sz}, %`}
+                          value={fp.sizeSharesPct[sz] ?? 20}
+                          min={0}
+                          max={100}
+                          onChangeValue={(val) => handleUpdateModelSizeShare(sz, val)}
+                          className="w-12 text-right font-mono text-[13.5px] font-bold text-[#141413] bg-transparent focus:outline-none"
+                        />
+                        <span className="text-[11px] text-[#686762]">%</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
