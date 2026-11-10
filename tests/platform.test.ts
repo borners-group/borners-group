@@ -4048,6 +4048,86 @@ test('52. Процент выкупа WB (%) в продажах, заказах
   }
 });
 
+test('53. Авто-восстановление всех добавленных вручную карточек AKUSHA из резервного слепка borners_user_saved_plans_v1 при сбросе borners_tz_models_v1 и при добавлении 20+ карточек с фото', async () => {
+  const {
+    STORAGE_KEY_MODELS,
+    STORAGE_KEY_USER_PLANS_BACKUP,
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const store = new Map<string, string>();
+  const MAX_LOCAL_STORAGE_CHARS = 5_000_000;
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        const str = String(v);
+        let totalChars = str.length;
+        for (const [ek, ev] of store.entries()) {
+          if (ek !== k) totalChars += ev.length;
+        }
+        if (totalChars > MAX_LOCAL_STORAGE_CHARS) {
+          throw new Error('QuotaExceededError: localStorage 5MB limit exceeded');
+        }
+        store.set(k, str);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    let models = hydratePortfolioModelsFromStorage();
+    const addedCodes: string[] = [];
+
+    // 1. Добавляем 20 карточек AKUSHA подряд с тяжёлыми base64-фотографиями по 85 КБ каждая
+    // (в сумме > 3.4 МБ только в двух ключах — проверяем, что safeSetStorageJson не роняет сохранение)
+    for (let i = 1; i <= 20; i++) {
+      const code = `AKU-RECOVERY-${String(i).padStart(2, '0')}`;
+      addedCodes.push(code);
+      const res = createBrandProductModel(models, INITIAL_SCENARIOS, {
+        title: `Топсайдеры и ботинки AKUSHA #${i}`,
+        brandCode: 'AKUSHA',
+        code,
+        categoryLabel: 'Кроссовки и кеды',
+        unitsInPack: 1,
+        retailPriceRub: 7500 + i * 50,
+        unitCostRub: 2700 + i * 20,
+        imageUrl: `data:image/jpeg;base64,PHOTO_${i}_${'X'.repeat(85_000)}`,
+        initialMonthlyPacks: Array(12).fill(50 + i),
+      });
+      models = persistPortfolioModels(res.models);
+    }
+
+    // 2. Симулируем аварийную ситуацию со скриншота пользователя:
+    // основной ключ borners_tz_models_v1 исчез/сбросился в localStorage, остался только borners_user_saved_plans_v1
+    store.delete(STORAGE_KEY_MODELS);
+    assert.equal(store.has(STORAGE_KEY_MODELS), false);
+    assert.equal(store.has(STORAGE_KEY_USER_PLANS_BACKUP), true);
+
+    // 3. При перезагрузке страницы (hydratePortfolioModelsFromStorage) все 20 карточек AKUSHA автоматически восстанавливаются из borners_user_saved_plans_v1!
+    const recoveredAfterRefresh = hydratePortfolioModelsFromStorage();
+    for (const code of addedCodes) {
+      const found = recoveredAfterRefresh.find((m) => m.code === code);
+      assert.ok(
+        found,
+        `Добавленная карточка ${code} должна автоматически восстанавливаться из borners_user_saved_plans_v1 даже если borners_tz_models_v1 был пуст`
+      );
+    }
+    assert.equal(
+      store.has(STORAGE_KEY_MODELS),
+      true,
+      'После авто-восстановления основной ключ borners_tz_models_v1 должен быть автоматически записан заново'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+
 
 
 

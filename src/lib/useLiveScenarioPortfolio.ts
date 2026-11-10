@@ -30,6 +30,7 @@ import {
   CanonicalBrandCode,
   applyCategoryWbUnitEconomics,
   applyCategoryWbUnitEconomicsToPortfolio,
+  createBrandProductModel,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
@@ -41,10 +42,17 @@ import {
 } from '@/lib/unifiedBusinessEngine';
 import {
   loadAllModelGalleriesFromIdb,
+  loadPortfolioSnapshotFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
+  savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
+import {
+  pullPortfolioFromSupabase,
+  pushModelGalleryToSupabase,
+  pushPortfolioCoreToSupabase,
+} from '@/lib/supabaseCloudSync';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
@@ -246,32 +254,121 @@ export function useLiveScenarioPortfolio() {
 
   useEffect(() => {
     syncFromStorage();
-    // Подгружаем сохранённые фотогалереи из IndexedDB, если они были вытеснены из localStorage
-    void loadAllModelGalleriesFromIdb().then((idbGalleries) => {
-      const keys = Object.keys(idbGalleries);
-      if (keys.length === 0) return;
+    // 1. Восстанавливаем полный слепок моделей и фотогалерей из IndexedDB, если localStorage был переполнен
+    void Promise.all([
+      loadPortfolioSnapshotFromIdb<ScenarioModelSpec>(),
+      loadAllModelGalleriesFromIdb(),
+    ]).then(([idbSnapshot, idbGalleries]) => {
       setModels((prev) => {
         let changed = false;
-        const next = prev.map((m) => {
-          const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
-            | GalleryMediaItem[]
-            | undefined;
-          if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
-          const hasValidLocalPhoto =
-            Array.isArray(m.gallery) &&
-            m.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0);
-          if (!hasValidLocalPhoto) {
-            changed = true;
-            return { ...m, gallery: idbGal };
+        let next = [...prev];
+
+        // А) Если в IndexedDB-слепке есть модели, которых нет в localStorage — восстанавливаем их
+        if (Array.isArray(idbSnapshot) && idbSnapshot.length > 0) {
+          for (const snapMod of idbSnapshot) {
+            if (!snapMod || !snapMod.id || !snapMod.code) continue;
+            if (isModelMarkedDeleted(snapMod)) continue;
+            const exists = next.some(
+              (m) =>
+                m.id === snapMod.id ||
+                m.code.trim().toUpperCase() === snapMod.code.trim().toUpperCase()
+            );
+            if (!exists) {
+              next.push(ensureModelUnifiedV11(applyCategoryWbUnitEconomics(snapMod)));
+              changed = true;
+            }
           }
-          return m;
-        });
+        }
+
+        // Б) Подтягиваем фотогалереи из IndexedDB для всех моделей
+        const galleryKeys = Object.keys(idbGalleries || {});
+        if (galleryKeys.length > 0) {
+          next = next.map((m) => {
+            const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
+              | GalleryMediaItem[]
+              | undefined;
+            if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
+            const hasValidLocalPhoto =
+              Array.isArray(m.gallery) &&
+              m.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0);
+            if (!hasValidLocalPhoto) {
+              changed = true;
+              return { ...m, gallery: idbGal };
+            }
+            return m;
+          });
+
+          // В) Если в IndexedDB (model_photo_galleries) остались фото карточек (например scen-akusha-...),
+          // которых нет ни в localStorage, ни в слепке — автоматически реконструируем карточки с их фото и названием!
+          for (const modelKey of galleryKeys) {
+            const idbGal = idbGalleries[modelKey] as GalleryMediaItem[] | undefined;
+            if (!Array.isArray(idbGal) || idbGal.length === 0) continue;
+            const alreadyPresent = next.some(
+              (m) => m.id === modelKey || m.code === modelKey
+            );
+            if (alreadyPresent) continue;
+            if (isModelMarkedDeleted({ id: modelKey, code: modelKey })) continue;
+
+            const keyLower = modelKey.toLowerCase();
+            const inferredBrand: CanonicalBrandCode = keyLower.includes('akusha')
+              ? 'AKUSHA'
+              : keyLower.includes('liskani')
+                ? 'LISKANI'
+                : keyLower.includes('na_tele')
+                  ? 'NA_TELE'
+                  : keyLower.includes('fukai')
+                    ? 'FUKAI'
+                    : 'AKUSHA';
+            const primaryItem = idbGal.find((g) => g.isMain) || idbGal[0];
+            const recoveredTitle =
+              (primaryItem?.label || '').trim() || `Модель ${inferredBrand}`;
+            const defaultPrice = inferredBrand === 'AKUSHA' ? 7500 : 2390;
+            const defaultCost = inferredBrand === 'AKUSHA' ? 2700 : 620;
+
+            const created = createBrandProductModel(next, INITIAL_SCENARIOS, {
+              title: recoveredTitle,
+              brandCode: inferredBrand,
+              retailPriceRub: defaultPrice,
+              unitCostRub: defaultCost,
+              unitsInPack: inferredBrand === 'AKUSHA' ? 1 : 4,
+              imageUrl: primaryItem?.url || primaryItem?.originalUrl || '',
+            });
+            const restoredCard: ScenarioModelSpec = {
+              ...created.model,
+              id: modelKey,
+              gallery: idbGal,
+            };
+            next.push(restoredCard);
+            changed = true;
+          }
+        }
+
         if (changed) {
           safeSetStorageJson(STORAGE_KEY_MODELS, next);
           syncUserPlansBackup(next);
+          void savePortfolioSnapshotToIdb(next);
         }
         return changed ? next : prev;
       });
+    });
+
+    void pullPortfolioFromSupabase().then((cloud) => {
+      if (!cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) return;
+      for (const m of cloud.models) {
+        if (
+          Array.isArray(m.gallery) &&
+          m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+        ) {
+          void saveModelGalleryToIdb(m.id, m.gallery);
+        }
+      }
+      safeSetStorageJson(STORAGE_KEY_MODELS, cloud.models);
+      syncUserPlansBackup(cloud.models);
+      setModels(cloud.models);
+      if (Array.isArray(cloud.scenarios) && cloud.scenarios.length > 0) {
+        safeSetStorageJson(STORAGE_KEY_SCENARIOS, cloud.scenarios);
+        setScenarios(cloud.scenarios);
+      }
     });
 
     window.addEventListener('borners-scenario-models-changed', syncFromStorage);
@@ -352,11 +449,14 @@ export function useLiveScenarioPortfolio() {
     (updated: ScenarioModelSpec) => {
       if (Array.isArray(updated.gallery) && updated.gallery.length > 0) {
         void saveModelGalleryToIdb(updated.id, updated.gallery);
+        void pushModelGalleryToSupabase(updated.id, updated.gallery);
       }
       setModels((prev) => {
         const next = prev.map((m) => (m.id === updated.id ? updated : m));
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
+        void savePortfolioSnapshotToIdb(next);
+        void pushPortfolioCoreToSupabase({ models: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenario-models-changed');
@@ -378,10 +478,13 @@ export function useLiveScenarioPortfolio() {
             m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
           ) {
             void saveModelGalleryToIdb(m.id, m.gallery);
+            void pushModelGalleryToSupabase(m.id, m.gallery);
           }
         }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
+        void savePortfolioSnapshotToIdb(next);
+        void pushPortfolioCoreToSupabase({ models: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenario-models-changed');

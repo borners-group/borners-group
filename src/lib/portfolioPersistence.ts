@@ -213,8 +213,28 @@ export function clearDeletedModelsRegistry(): void {
 }
 
 export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
+  const deletedReg = getDeletedModelsRegistry();
+  const prevBackup =
+    safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
+      STORAGE_KEY_USER_PLANS_BACKUP
+    ) || {};
+
   const backup: Record<string, UserSavedModelPlanBackup> = {};
+  // Сохраняем все ранее созданные пользователем модели из prevBackup, если они не помечены удалёнными
+  for (const [k, entry] of Object.entries(prevBackup)) {
+    if (
+      entry &&
+      entry.id &&
+      entry.code &&
+      !isLegacyPlaceholderLiskani(entry) &&
+      !isModelMarkedDeleted(entry, deletedReg)
+    ) {
+      backup[k] = entry;
+    }
+  }
+
   for (const raw of modelsList) {
+    if (isModelMarkedDeleted(raw, deletedReg)) continue;
     const m = ensureModelUnifiedV11(raw);
     backup[m.id] = {
       id: m.id,
@@ -261,7 +281,7 @@ export function overlayBackupOntoModels(
   );
   const deletedReg = getDeletedModelsRegistry();
 
-  return modelsList
+  const overlaid = modelsList
     .filter((m) => !isModelMarkedDeleted(m, deletedReg))
     .map((rawM) => {
       const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
@@ -341,6 +361,105 @@ export function overlayBackupOntoModels(
         palettes: explicitEmptyPalettes ? [] : normalized.palettes,
       };
     });
+
+  // Авто-восстановление любых пользовательских моделей (AKUSHA и др.) из borners_user_saved_plans_v1,
+  // если основной ключ borners_tz_models_v1 был потерян или сброшен при переполнении квоты
+  if (backup && typeof backup === 'object') {
+    for (const saved of Object.values(backup)) {
+      if (!saved || !saved.id || !saved.code) continue;
+      if (
+        ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
+          saved.id
+        ) ||
+        ['№001', '№002', '№003', '№004'].includes(saved.code)
+      ) {
+        continue;
+      }
+      if (isLegacyPlaceholderLiskani(saved)) continue;
+      if (isModelMarkedDeleted(saved, deletedReg)) continue;
+
+      const alreadyInList = overlaid.some(
+        (m) =>
+          m.id === saved.id ||
+          m.code.trim().toUpperCase() === saved.code.trim().toUpperCase()
+      );
+      if (alreadyInList) continue;
+
+      const explicitEmptyGallery =
+        Array.isArray(saved.gallery) && saved.gallery.length === 0;
+      const explicitEmptyPalettes =
+        Array.isArray(saved.palettes) && saved.palettes.length === 0;
+
+      const reconstructedRaw: ScenarioModelSpec = {
+        id: saved.id,
+        code: saved.code,
+        title: saved.title || saved.code,
+        subtitle: saved.subtitle || `${saved.categoryLabel || 'Модель'} · ${saved.unitsInPack || 1} ед.`,
+        brandId: saved.brandId || 'BORNERS',
+        customBrandLabel: saved.customBrandLabel,
+        categoryLabel: saved.categoryLabel,
+        primaryUnitLabel: saved.primaryUnitLabel,
+        secondaryUnitLabel: saved.secondaryUnitLabel,
+        wbArticle: saved.wbArticle || '',
+        modelStageStatus: saved.modelStageStatus || 'Идея',
+        description: saved.description || '',
+        launchStatus: saved.launchStatus || 'В плане',
+        unitsInPack: saved.unitsInPack || 1,
+        retailPriceRub: saved.retailPriceRub || 1990,
+        unitCostRub: saved.unitCostRub || 650,
+        marketplaceFeePct: saved.marketplaceFeePct ?? 22,
+        logisticsRub: saved.logisticsRub ?? 95,
+        adsPct: saved.adsPct ?? 10,
+        buyoutRatePct: saved.buyoutRatePct,
+        procureByOrdersVolume: saved.procureByOrdersVolume,
+        responsiblePerson: 'Владелец бренда',
+        priority: saved.priority || 'Высокий',
+        hasActualSalesOrPurchases: false,
+        liskaniSizeVariants: saved.liskaniSizeVariants,
+        palettes: Array.isArray(saved.palettes) ? saved.palettes : [],
+        gallery: Array.isArray(saved.gallery) ? saved.gallery : [],
+        attachedPdfs: Array.isArray(saved.attachedPdfs) ? saved.attachedPdfs : [],
+        sharedSupplyAndFact: saved.sharedSupplyAndFact,
+        construction: saved.construction || {
+          type: 'Базовая конструкция',
+          fit: 'Стандартная посадка',
+          sideSeam: 'Стандартный шов',
+          frontPanel: 'Базовая деталь',
+          gusset: 'Стандарт',
+          seams: 'Усиленные швы',
+        },
+        waistband: saved.waistband || {
+          width: 'Стандарт',
+          type: 'Фирменное исполнение',
+          colorRule: 'В тон изделия',
+          logoRepeat: 'Фирменная маркировка',
+          elasticity: 'Стабильная фиксация',
+          bandBgHex: '#1E293B',
+          bandTextHex: '#F8FAFC',
+        },
+        fabric: saved.fabric || {
+          composition: 'Премиальные материалы',
+          density: 'Стандарт',
+          knitType: 'Базовое исполнение',
+          touchFeel: 'Комфортная фактура',
+          swatchHex: '#1E293B',
+        },
+        productionSteps: [],
+        plansByScenario: saved.plansByScenario || {},
+      };
+
+      const normalized = ensureModelUnifiedV11(
+        applyCategoryWbUnitEconomics(reconstructedRaw)
+      );
+      overlaid.push({
+        ...normalized,
+        gallery: explicitEmptyGallery ? [] : normalized.gallery,
+        palettes: explicitEmptyPalettes ? [] : normalized.palettes,
+      });
+    }
+  }
+
+  return overlaid;
 }
 
 export function persistPortfolioModels(modelsList: ScenarioModelSpec[]): ScenarioModelSpec[] {
@@ -450,5 +569,9 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
     ])
   ).filter((m) => !isModelMarkedDeleted(m, deletedReg));
 
-  return overlayBackupOntoModels(defaultList);
+  const recovered = overlayBackupOntoModels(defaultList);
+  if (recovered.length > defaultList.length) {
+    safeSetStorageJson(STORAGE_KEY_MODELS, recovered);
+  }
+  return recovered;
 }

@@ -96,40 +96,54 @@ export function stripOversizedDataUrls<T>(value: T, maxDataUrlLen = 650_000): T 
  * 3) При переполнении квоты (QuotaExceededError) автоматически поджимает только сверхтяжёлые base64-вложения, сохраняя все сжатые фото карточек
  */
 export function safeSetStorageJson<T>(key: string, data: T): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined' || !window.localStorage) return false;
   cleanupLegacyStorageKeys();
 
   const compacted = compactGalleryDataUrls(data);
+  let prevRaw: string | null = null;
+  try {
+    prevRaw = window.localStorage.getItem(key);
+  } catch {
+    prevRaw = null;
+  }
+
+  const restorePrevIfMissing = () => {
+    if (prevRaw !== null) {
+      try {
+        if (window.localStorage.getItem(key) === null) {
+          window.localStorage.setItem(key, prevRaw);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   try {
     const raw = JSON.stringify(compacted);
-    // Облегчаем только если общий размер одного ключа превышает 4.4 МБ
+    // Если один ключ превышает 2.3 МБ, два ключа (models + backup) превысят 5 МБ лимит localStorage —
+    // поэтому заранее облегчаем гигантские data: URL, оставляя полные копии фото в IndexedDB
     const payload =
-      raw.length > 4_400_000
-        ? JSON.stringify(stripOversizedDataUrls(compacted, 450_000))
+      raw.length > 2_300_000
+        ? JSON.stringify(stripOversizedDataUrls(compacted, 45_000))
         : raw;
 
-    window.localStorage.removeItem(key);
     window.localStorage.setItem(key, payload);
     return true;
   } catch {
-    try {
-      // Экстренный фоллбэк 1: убираем только несжатые data: URL (> 250 КБ), гарантированно сохраняя фото карточек (<= 180 КБ)
-      const slim = stripOversizedDataUrls(compacted, 250_000);
-      window.localStorage.removeItem(key);
-      window.localStorage.setItem(key, JSON.stringify(slim));
-      return true;
-    } catch {
+    const thresholds = [180_000, 90_000, 45_000, 15_000, 0];
+    for (const maxLen of thresholds) {
       try {
-        const ultraSlim = stripOversizedDataUrls(compacted, 120_000);
+        const slim = JSON.stringify(stripOversizedDataUrls(compacted, maxLen));
         window.localStorage.removeItem(key);
-        window.localStorage.setItem(key, JSON.stringify(ultraSlim));
+        window.localStorage.setItem(key, slim);
         return true;
-      } catch (err3) {
-        console.error(`safeSetStorageJson failed for key "${key}":`, err3);
-        return false;
+      } catch {
+        // пробуем следующий порог вплоть до 0 (все карточки и планы сохраняются на 100%, а фото живут в IndexedDB)
       }
     }
+    restorePrevIfMissing();
+    return false;
   }
 }
 
@@ -210,6 +224,52 @@ export async function saveModelGalleryToIdb(
   }
 }
 
+const IDB_FULL_PORTFOLIO_KEY = '__FULL_PORTFOLIO_SNAPSHOT_V1__';
+
+export async function savePortfolioSnapshotToIdb(models: unknown[]): Promise<boolean> {
+  if (!Array.isArray(models) || models.length === 0) return false;
+  try {
+    const db = await openFilesDb();
+    return await new Promise<boolean>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_PHOTO_STORE);
+      store.put(compactGalleryDataUrls(models), IDB_FULL_PORTFOLIO_KEY);
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function loadPortfolioSnapshotFromIdb<T = unknown>(): Promise<T[] | null> {
+  try {
+    const db = await openFilesDb();
+    return await new Promise<T[] | null>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readonly');
+      const store = tx.objectStore(IDB_PHOTO_STORE);
+      const req = store.get(IDB_FULL_PORTFOLIO_KEY);
+      req.onsuccess = () => {
+        db.close();
+        const res = req.result;
+        resolve(Array.isArray(res) && res.length > 0 ? (res as T[]) : null);
+      };
+      req.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function loadAllModelGalleriesFromIdb(): Promise<Record<string, unknown[]>> {
   try {
     const db = await openFilesDb();
@@ -221,7 +281,11 @@ export async function loadAllModelGalleriesFromIdb(): Promise<Record<string, unk
       cursorReq.onsuccess = () => {
         const cursor = cursorReq.result;
         if (cursor) {
-          if (typeof cursor.key === 'string' && Array.isArray(cursor.value)) {
+          if (
+            typeof cursor.key === 'string' &&
+            cursor.key !== IDB_FULL_PORTFOLIO_KEY &&
+            Array.isArray(cursor.value)
+          ) {
             out[cursor.key] = cursor.value;
           }
           cursor.continue();
