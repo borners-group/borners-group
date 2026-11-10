@@ -31,6 +31,8 @@ import {
   serializeScenarioFactoryOrdersToCsv,
   serializeStructuredPlanToCsv,
   updateApprovedPurchaseOrder,
+  updateModelSizeVariantUnitCost,
+  updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
@@ -968,18 +970,67 @@ export function ProcurementContourView() {
     procData,
   ]);
 
-  const brandsReport = useMemo(
-    () =>
-      computeGroupBrandsInvestmentReport(
-        scenarioAllEligibleModels,
-        currentScenario,
-        {
-          initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-          settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
-        }
-      ),
-    [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
-  );
+  const brandsReport = useMemo(() => {
+    const baseReport = computeGroupBrandsInvestmentReport(
+      scenarioAllEligibleModels,
+      currentScenario,
+      {
+        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
+      }
+    );
+    if (!isHoldingAllBrandsActive) return baseReport;
+    return {
+      brands: multiBrandSummary.brands.map((mb) => ({
+        brandCode: mb.brandCode,
+        brandTitle: mb.displayCode,
+        modelsCount: mb.modelsCount,
+        decemberRevenueRub: mb.decemberRevenueRub,
+        annualRevenueRub: mb.annualRevenueRub,
+        annualDemandPacks: mb.totalProcurementQuantity,
+        totalProcurementPacks: mb.totalProcurementQuantity,
+        totalProcurementUnits: mb.totalProcurementSecondaryQuantity,
+        firstWaveStartBudgetRub: mb.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: mb.firstWavePrepaymentRub,
+        peakWorkingCapitalRub: mb.peakWorkingCapitalRub,
+        totalProcurementBudgetRub: mb.totalProcurementBudgetRub,
+        annualSoldGoodsCostRub: mb.annualSoldGoodsCostRub,
+        annualEstimatedOperatingProfitRub: mb.annualEstimatedOperatingProfitRub,
+        operatingMarginPct:
+          mb.annualRevenueRub > 0
+            ? Math.round((mb.annualEstimatedOperatingProfitRub / mb.annualRevenueRub) * 1000) / 10
+            : 0,
+      })),
+      groupTotal: {
+        ...baseReport.groupTotal,
+        modelsCount: multiBrandSummary.groupTotal.modelsCount,
+        annualRevenueRub: multiBrandSummary.groupTotal.annualRevenueRub,
+        decemberRevenueRub: multiBrandSummary.groupTotal.decemberRevenueRub,
+        annualDemandPacks: procData.annualDemandPacks,
+        annualDemandUnits: procData.annualDemandUnits,
+        totalProcurementPacks: procData.totalScenarioPacks,
+        totalProcurementUnits: procData.totalScenarioUnits,
+        totalProcurementBudgetRub: multiBrandSummary.groupTotal.totalProcurementBudgetRub,
+        annualSoldGoodsCostRub: multiBrandSummary.groupTotal.annualSoldGoodsCostRub,
+        annualEstimatedOperatingProfitRub:
+          multiBrandSummary.groupTotal.annualEstimatedOperatingProfitRub,
+        firstWavePacks: procData.firstWavePacks,
+        firstWaveUnits: procData.firstWaveUnits,
+        firstWaveStartBudgetRub: multiBrandSummary.groupTotal.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: multiBrandSummary.groupTotal.firstWavePrepaymentRub,
+        peakWorkingCapitalRub: multiBrandSummary.groupTotal.peakWorkingCapitalRub,
+        netOwnMoneyRequiredRub: multiBrandSummary.groupTotal.netOwnMoneyRequiredRub,
+      },
+    };
+  }, [
+    isHoldingAllBrandsActive,
+    multiBrandSummary,
+    procData,
+    scenarioAllEligibleModels,
+    currentScenario,
+    initialCashMln,
+    wbLagMonths,
+  ]);
 
   const activeSkuModel = useMemo(() => {
     const pool = scopedModelEntries.map((e) => e.model);
@@ -1003,6 +1054,15 @@ export function ProcurementContourView() {
     });
   }, [procData.perSku, skuSearch]);
 
+  const getNormalizedProcurementCategoryLabel = (m: ScenarioModelSpec): string => {
+    if (m.categoryLabel && m.categoryLabel.trim().length > 0) {
+      return m.categoryLabel.trim();
+    }
+    const brand = detectModelBrandPortfolioLabel(m);
+    if (brand === 'Подтвердить бренд') return 'FUKAI';
+    return brand || 'Основная линейка';
+  };
+
   const categoryGroups = useMemo(() => {
     const map = new Map<
       string,
@@ -1022,7 +1082,7 @@ export function ProcurementContourView() {
     >();
 
     for (const { model: m, plan } of procData.perSku) {
-      const cat = m.categoryLabel || detectModelBrandPortfolioLabel(m) || 'Основная линейка';
+      const cat = getNormalizedProcurementCategoryLabel(m);
       const cur = map.get(cat) || {
         categoryLabel: cat,
         modelsCount: 0,
@@ -1092,14 +1152,15 @@ export function ProcurementContourView() {
   const filteredSummarySkus = useMemo(() => {
     if (selectedCategoryFilter === 'ALL') return filteredSkus;
     return filteredSkus.filter(({ model: m }) => {
-      const cat = m.categoryLabel || detectModelBrandPortfolioLabel(m) || 'Основная линейка';
+      const cat = getNormalizedProcurementCategoryLabel(m);
       return cat === selectedCategoryFilter;
     });
   }, [filteredSkus, selectedCategoryFilter]);
 
   const handleExportFactoryOrderCsv = (mode: 'all' | 'first_wave' = 'all') => {
+    const modelsToExport = scopedModelEntries.map((e) => e.model);
     const csv = serializeScenarioFactoryOrdersToCsv(
-      eligibleModels,
+      modelsToExport,
       currentScenario,
       mode
     );
@@ -1116,8 +1177,8 @@ export function ProcurementContourView() {
     notify(
       'success',
       mode === 'first_wave'
-        ? 'Выгружен заказ фабрике на 1-ю волну (Q1) с размерами S–XXL'
-        : `Выгружена спецификация заказа фабрике (${eligibleModels.length} мод., размеры S–XXL)`
+        ? `Выгружен заказ фабрике на 1-ю волну (Q1) (${modelsToExport.length} мод.)`
+        : `Выгружена спецификация заказа фабрике (${modelsToExport.length} мод.)`
     );
   };
 
@@ -1584,10 +1645,10 @@ export function ProcurementContourView() {
                         </button>
                       </div>
                       <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
-                        {formatMln(totals.annualRevenueRub)}
+                        {formatMln(investmentSummary.annualRevenueRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Дек: <strong className="text-[#141413]">{formatMln(totals.decRevenueRub)}</strong> · {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                        Дек: <strong className="text-[#141413]">{formatMln(investmentSummary.decemberRevenueRub)}</strong> · {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
                       </div>
                     </div>
 
@@ -1954,7 +2015,14 @@ export function ProcurementContourView() {
 
                   {/* 1. ФОРМУЛА СВОДНОЙ ЗАКУПКИ: ОТКУДА БЕРЁТСЯ ОБЩАЯ СУММА В СВОДКЕ */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = document.getElementById('procurement-summary-table-anchor');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           1. Себестоимость выкупов (Сводка)
@@ -1976,11 +2044,18 @@ export function ProcurementContourView() {
                             : 0}{' '}
                           ₽/компл.
                         </strong>{' '}
-                        · {investmentSummary.annualSoldGoodsCostRub.toLocaleString('ru-RU')} ₽
+                        · нажмите для правки в таблице ↓
                       </div>
-                    </div>
+                    </button>
 
-                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const el = document.getElementById('procurement-summary-table-anchor');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           2. Бюджет закупок у фабрик (Год)
@@ -1995,9 +2070,13 @@ export function ProcurementContourView() {
                       <div className="text-[11.5px] text-[#64748B]">
                         {procData.totalScenarioUnits.toLocaleString('ru-RU')} изд. · включает 4 квартальные волны и переходящий запас
                       </div>
-                    </div>
+                    </button>
 
-                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setWavesCalendarOpen((v) => !v)}
+                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           3. Старт · Волна №1 (Q1 · Янв–Мар)
@@ -2016,9 +2095,13 @@ export function ProcurementContourView() {
                         </strong>{' '}
                         · {procData.firstWavePacks.toLocaleString('ru-RU')} компл.
                       </div>
-                    </div>
+                    </button>
 
-                    <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-1 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setWavesCalendarOpen((v) => !v)}
+                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           4. Волны №2–№4 (Q2–Q4 с оборота WB)
@@ -2038,7 +2121,7 @@ export function ProcurementContourView() {
                         )}{' '}
                         компл. · оплата из поступлений с WB
                       </div>
-                    </div>
+                    </button>
                   </div>
 
                   {/* 2. ГРУППИРОВКА ЗАКУПОК ПО КАТЕГОРИЯМ / ЛИНЕЙКАМ (БЛЭКАУТ, МРАМОР, РОГОЖКА, ТЮЛЬ И ДР.) */}
@@ -2116,14 +2199,14 @@ export function ProcurementContourView() {
                   )}
 
                   {/* 3. ПОАРТИКУЛЬНАЯ И ПОРАЗМЕРНАЯ ВЕДОМОСТЬ ЗАКУПОК (С РАСКРЫТИЕМ РАЗМЕРОВ И 4 КВАРТАЛЬНЫХ ВОЛН Q1–Q4) */}
-                  <div className="space-y-3">
+                  <div id="procurement-summary-table-anchor" className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-[14.5px] font-bold text-[#0F172A]">
                           Поартикульная и поразмерная детализация закупок ({filteredSummarySkus.length} карточек)
                         </div>
                         <p className="text-[11.5px] text-[#64748B]">
-                          Нажмите на любую строку или кнопку «Размеры ▾», чтобы раскрыть все размеры полотен / сетку S–XXL, их себестоимость и партии Q1–Q4 прямо в таблице
+                          Нажмите прямо на число в колонке «Себест. 1 компл.» для мгновенной правки себестоимости, или на «Размеры ▾» для раскрытия сетки и партий Q1–Q4
                         </p>
                       </div>
 
@@ -2262,18 +2345,33 @@ export function ProcurementContourView() {
                                       </span>
                                     </div>
                                     <div className="font-mono text-[10.5px] text-[#64748B]">
-                                      {m.code} · {m.categoryLabel || detectModelBrandPortfolioLabel(m)} ·{' '}
+                                      {m.code} · {getNormalizedProcurementCategoryLabel(m)} ·{' '}
                                       {m.unitsInPack} изд./компл.
                                     </div>
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono">
-                                    <div className="font-bold text-[#0F172A]">
-                                      {(m.unitCostRub || 0).toLocaleString('ru-RU')} ₽
+                                  <td
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2.5 py-2.5 text-right font-mono"
+                                  >
+                                    <div className="inline-flex items-center justify-end gap-1 rounded-lg border border-[#CBD5E1] bg-white px-2 py-1 hover:border-emerald-500 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={10}
+                                        aria-label={`Себестоимость 1 компл. ${m.code}`}
+                                        value={Math.round(m.unitCostRub || 0)}
+                                        onChange={(e) => {
+                                          const nextVal = Math.max(0, Math.round(Number(e.target.value) || 0));
+                                          updateModelSpec(updateModelUnitCostWithVariants(m, nextVal));
+                                        }}
+                                        className="w-16 text-right font-mono text-[12px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
+                                      />
+                                      <span className="text-[11px] font-semibold text-[#64748B]">₽</span>
                                     </div>
                                     {hasLiskaniSizes && minSizeCost !== maxSizeCost && (
-                                      <div className="text-[10px] text-[#64748B]">
-                                        {minSizeCost}–{maxSizeCost} ₽
+                                      <div className="mt-0.5 text-[10px] text-[#64748B]">
+                                        {Math.round(minSizeCost)}–{Math.round(maxSizeCost)} ₽
                                       </div>
                                     )}
                                   </td>
@@ -2446,7 +2544,32 @@ export function ProcurementContourView() {
                                                         </span>
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
-                                                        {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                                                        <div className="inline-flex items-center justify-end gap-1 rounded-md border border-[#CBD5E1] bg-white px-2 py-0.5 hover:border-emerald-500 focus-within:border-emerald-600">
+                                                          <input
+                                                            type="number"
+                                                            min={0}
+                                                            step={10}
+                                                            aria-label={`Себестоимость размера ${sv.sizeCm} (${sv.sellerSku})`}
+                                                            value={Math.round(sv.unitCostRub || 0)}
+                                                            onChange={(e) => {
+                                                              const nextVal = Math.max(
+                                                                0,
+                                                                Math.round(Number(e.target.value) || 0)
+                                                              );
+                                                              updateModelSpec(
+                                                                updateModelSizeVariantUnitCost(
+                                                                  m,
+                                                                  sv.skuIndex,
+                                                                  nextVal
+                                                                )
+                                                              );
+                                                            }}
+                                                            className="w-15 text-right font-mono text-[11.5px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
+                                                          />
+                                                          <span className="text-[10px] font-semibold text-[#64748B]">
+                                                            ₽
+                                                          </span>
+                                                        </div>
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
                                                         {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} компл.

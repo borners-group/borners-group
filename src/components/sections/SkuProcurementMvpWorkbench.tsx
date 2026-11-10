@@ -51,6 +51,8 @@ import {
   removeApprovedPurchaseOrder,
   serializeSingleBatchFactoryOrderDocumentCsv,
   updateApprovedPurchaseOrder,
+  updateModelSizeVariantUnitCost,
+  updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
 
 const SIZES_LIST: ('S' | 'M' | 'L' | 'XL' | 'XXL')[] = ['S', 'M', 'L', 'XL', 'XXL'];
@@ -342,16 +344,18 @@ export function SkuProcurementMvpWorkbench({
   };
 
   const handleUpdateUnitCost = (nextCostRub: number) => {
-    const clean = Math.max(0, Math.round(nextCostRub));
-    onUpdateModel({
-      ...model,
-      unitCostRub: clean,
-      sharedSupplyAndFact: {
-        ...shared,
-        costStatus: clean > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
-      },
-    });
+    onUpdateModel(updateModelUnitCostWithVariants(model, nextCostRub));
     triggerSavedIndicator('Сохранено');
+  };
+
+  const handleUpdateSizeVariantUnitCost = (
+    skuIndexOrSellerSku: number | string,
+    nextCostRub: number
+  ) => {
+    onUpdateModel(
+      updateModelSizeVariantUnitCost(model, skuIndexOrSellerSku, nextCostRub)
+    );
+    triggerSavedIndicator('Себест. размера сохранена');
   };
 
   const handleUpdateTotalLeadDays = (nextTotalDays: number) => {
@@ -1301,17 +1305,27 @@ export function SkuProcurementMvpWorkbench({
                       return (
                         <div
                           key={sv.sellerSku}
-                          className="flex items-center justify-between rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-3 py-1.5"
+                          className="flex items-center justify-between gap-2 rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-2.5 py-1.5"
                         >
-                          <div>
+                          <div className="min-w-0">
                             <div className="font-mono text-[11.5px] font-bold text-[#141413]">
                               {sv.sizeCm} см
                             </div>
-                            <div className="font-mono text-[10px] text-[#686762]">
-                              {sv.unitCostRub.toLocaleString('ru-RU')} ₽/компл.
+                            <div className="mt-0.5 inline-flex items-center gap-1 rounded border border-[#D8D7CE] bg-white px-1.5 py-0.5">
+                              <NumericInput
+                                ariaLabel={`Себестоимость ${sv.sizeCm}`}
+                                value={Math.round(sv.unitCostRub)}
+                                min={0}
+                                step={10}
+                                onChangeValue={(nextVal) =>
+                                  handleUpdateSizeVariantUnitCost(sv.skuIndex, nextVal)
+                                }
+                                className="w-14 text-right font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none"
+                              />
+                              <span className="font-mono text-[9.5px] text-[#686762]">₽</span>
                             </div>
                           </div>
-                          <span className="font-mono text-[12px] font-bold text-[#146C43]">
+                          <span className="font-mono text-[12px] font-bold text-[#146C43] shrink-0">
                             {pct}%
                           </span>
                         </div>
@@ -1478,7 +1492,19 @@ export function SkuProcurementMvpWorkbench({
                           </span>
                         </td>
                         <td className="py-2 px-2.5 text-right font-mono font-bold text-[#141413]">
-                          {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                          <div className="inline-flex items-center justify-end gap-1 rounded-[7px] border border-[#D8D7CE] bg-white px-2 py-0.5 focus-within:border-[#157347]">
+                            <NumericInput
+                              ariaLabel={`Себестоимость размера ${sv.sizeCm}`}
+                              value={Math.round(sv.unitCostRub)}
+                              min={0}
+                              step={10}
+                              onChangeValue={(nextVal) =>
+                                handleUpdateSizeVariantUnitCost(sv.skuIndex, nextVal)
+                              }
+                              className="w-16 text-right font-mono text-[12px] font-bold text-[#141413] bg-transparent focus:outline-none"
+                            />
+                            <span className="text-[10.5px] font-semibold text-[#686762]">₽</span>
+                          </div>
                         </td>
                         <td className="py-2 px-2.5 text-right font-mono text-[#52514C]">
                           {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} компл.

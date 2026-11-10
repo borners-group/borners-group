@@ -3641,6 +3641,157 @@ test('49. Контрастность наведения (hover) в тёмной 
   );
 });
 
+test('50. Прямое редактирование закупочной себестоимости в сводной таблице «03 · Закупки» (по карточке и по каждому размеру полотен) с живым пересчётом и сохранением в localStorage (F5)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const {
+    updateModelSizeVariantUnitCost,
+    updateModelUnitCostWithVariants,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  // 1. Проверяем, что в сводной таблице 03 · Закупки и в карточке товара встроены инлайновые поля редактирования себестоимости
+  const contourSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const workbenchSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/SkuProcurementMvpWorkbench.tsx'),
+    'utf8'
+  );
+  assert.ok(
+    contourSrc.includes('updateModelUnitCostWithVariants') &&
+      contourSrc.includes('updateModelSizeVariantUnitCost') &&
+      contourSrc.includes('getNormalizedProcurementCategoryLabel'),
+    'Сводная таблица 03 · Закупки должна поддерживать прямое редактирование себестоимости 1 компл. и каждого размера, а также нормализацию категорий FUKAI'
+  );
+  assert.ok(
+    workbenchSrc.includes('handleUpdateSizeVariantUnitCost') &&
+      workbenchSrc.includes('updateModelUnitCostWithVariants'),
+    'Карточка товара в 03 · Закупки должна синхронизировать себестоимость модели и размерных вариантов'
+  );
+
+  // 2. Сквозной тест: редактируем себестоимость модели BORNERS и размерного полотна LISKANI, проверяем пересчёт Сводки и сохранение после F5
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    const scenarios = [...INITIAL_SCENARIOS, LISKANI_2027_SCENARIO_DEF];
+    const selectedByBrand: Record<string, number> = {
+      BORNERS: 1,
+      FUKAI: 100,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+    };
+
+    let portfolio = hydratePortfolioModelsFromStorage();
+    const summaryBefore = computeMultiBrandPortfolioSummary(
+      portfolio,
+      scenarios,
+      selectedByBrand
+    );
+
+    // А) Меняем себестоимость первой модели BORNERS (Borners2) с 409 ₽ на 500 ₽ прямо в таблице
+    const bornersModel = portfolio.find(
+      (m) => m.title === 'Borners2' || m.code.includes('244995893')
+    )!;
+    assert.ok(bornersModel, 'Модель Borners2 (244995893) должна быть в портфеле');
+    const bornersUpdated = updateModelUnitCostWithVariants(bornersModel, 500);
+    assert.equal(bornersUpdated.unitCostRub, 500);
+
+    // Б) Меняем себестоимость конкретного размера в карточке LISKANI (LSC-001) с ~850 ₽ на 1500 ₽
+    const lsc001 = portfolio.find((m) => m.code === 'LSC-001')!;
+    assert.ok(lsc001 && lsc001.liskaniSizeVariants?.length, 'Карточка LSC-001 должна содержать размеры полотен');
+    const firstVariant = lsc001.liskaniSizeVariants![0];
+    const lsc001Updated = updateModelSizeVariantUnitCost(
+      lsc001,
+      firstVariant.skuIndex,
+      1500
+    );
+    assert.equal(
+      lsc001Updated.liskaniSizeVariants![0].unitCostRub,
+      1500,
+      'Себестоимость выбранного размера полотна должна обновиться до 1500 ₽'
+    );
+    assert.ok(
+      lsc001Updated.unitCostRub > lsc001.unitCostRub,
+      'Средневзвешенная себестоимость карточки LSC-001 должна автоматически пересчитаться вверх'
+    );
+
+    // Сохраняем обе правки в портфель и проверяем живой пересчёт сводки холдинга
+    portfolio = persistPortfolioModels(
+      portfolio.map((m) => {
+        if (m.id === bornersUpdated.id) return bornersUpdated;
+        if (m.id === lsc001Updated.id) return lsc001Updated;
+        return m;
+      })
+    );
+
+    const summaryAfter = computeMultiBrandPortfolioSummary(
+      portfolio,
+      scenarios,
+      selectedByBrand
+    );
+    assert.ok(
+      summaryAfter.groupTotal.annualSoldGoodsCostRub >
+        summaryBefore.groupTotal.annualSoldGoodsCostRub,
+      'Себестоимость выкупов в Сводке холдинга должна вырасти после увеличения себестоимости комплектов'
+    );
+    assert.ok(
+      summaryAfter.groupTotal.totalProcurementBudgetRub >
+        summaryBefore.groupTotal.totalProcurementBudgetRub,
+      'Годовой бюджет закупок у фабрик должен вырасти после увеличения себестоимости комплектов'
+    );
+    assert.ok(
+      summaryAfter.groupTotal.firstWaveStartBudgetRub >
+        summaryBefore.groupTotal.firstWaveStartBudgetRub,
+      'Стартовый бюджет 1-й волны (Q1) должен синхронно пересчитаться'
+    );
+
+    // В) Симулируем перезагрузку страницы (F5) и проверяем сохранность всех новых значений
+    const reloaded = hydratePortfolioModelsFromStorage();
+    const bornersAfterF5 = reloaded.find((m) => m.id === bornersUpdated.id)!;
+    const lsc001AfterF5 = reloaded.find((m) => m.code === 'LSC-001')!;
+    assert.equal(
+      bornersAfterF5.unitCostRub,
+      500,
+      'Изменённая себестоимость 1 компл. BORNERS должна сохраняться после F5'
+    );
+    assert.equal(
+      lsc001AfterF5.liskaniSizeVariants![0].unitCostRub,
+      1500,
+      'Изменённая себестоимость размера полотна LISKANI должна сохраняться после F5'
+    );
+    assert.equal(
+      lsc001AfterF5.unitCostRub,
+      lsc001Updated.unitCostRub,
+      'Пересчитанная средневзвешенная себестоимость карточки LISKANI должна сохраняться после F5'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+
 
 
 

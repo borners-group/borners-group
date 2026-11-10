@@ -4945,5 +4945,95 @@ export function computeWhatIfSensitivitySimulation(
   };
 }
 
+/**
+ * Обновляет закупочную себестоимость 1 комплекта (unitCostRub) карточки модели.
+ * Если у карточки есть поразмерные варианты полотен (liskaniSizeVariants),
+ * пропорционально масштабирует себестоимость размеров, чтобы агрегаты по размерам и по карточке оставались синхронными.
+ */
+export function updateModelUnitCostWithVariants(
+  rawModel: ScenarioModelSpec,
+  nextCostRub: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const shared = model.sharedSupplyAndFact!;
+  const clean = Math.max(0, Math.round(Number(nextCostRub) || 0));
+  const prevUnitCost = Math.max(0, model.unitCostRub || 0);
+
+  let nextLiskaniVariants = model.liskaniSizeVariants;
+  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+    nextLiskaniVariants = model.liskaniSizeVariants.map((sv) => ({
+      ...sv,
+      unitCostRub:
+        prevUnitCost > 0
+          ? Math.max(0, Math.round((sv.unitCostRub * clean) / prevUnitCost))
+          : clean,
+    }));
+  }
+
+  return {
+    ...model,
+    unitCostRub: clean,
+    liskaniSizeVariants: nextLiskaniVariants,
+    sharedSupplyAndFact: {
+      ...shared,
+      costStatus: clean > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
+    },
+  };
+}
+
+/**
+ * Обновляет закупочную себестоимость конкретного размерного SKU внутри карточки (liskaniSizeVariants)
+ * и автоматически пересчитывает средневзвешенную себестоимость 1 комплекта (unitCostRub) по всей карточке.
+ */
+export function updateModelSizeVariantUnitCost(
+  rawModel: ScenarioModelSpec,
+  skuIndexOrSellerSku: number | string,
+  nextSizeCostRub: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  if (!Array.isArray(model.liskaniSizeVariants) || model.liskaniSizeVariants.length === 0) {
+    return updateModelUnitCostWithVariants(model, nextSizeCostRub);
+  }
+  const shared = model.sharedSupplyAndFact!;
+  const cleanSizeCost = Math.max(0, Math.round(Number(nextSizeCostRub) || 0));
+
+  const nextVariants = model.liskaniSizeVariants.map((sv) => {
+    const isMatch =
+      typeof skuIndexOrSellerSku === 'number'
+        ? sv.skuIndex === skuIndexOrSellerSku
+        : sv.sellerSku === skuIndexOrSellerSku;
+    if (!isMatch) return sv;
+    return {
+      ...sv,
+      unitCostRub: cleanSizeCost,
+    };
+  });
+
+  const totalBuyouts = nextVariants.reduce((s, v) => s + (v.annualBuyoutsUnits || 0), 0);
+  const totalCogs = nextVariants.reduce(
+    (s, v) => s + (v.annualBuyoutsUnits || 0) * (v.unitCostRub || 0),
+    0
+  );
+  const weightedCost =
+    totalBuyouts > 0
+      ? Math.round(totalCogs / totalBuyouts)
+      : Math.round(
+          nextVariants.reduce((s, v) => s + (v.unitCostRub || 0), 0) /
+            Math.max(1, nextVariants.length)
+        );
+
+  return {
+    ...model,
+    unitCostRub: weightedCost,
+    liskaniSizeVariants: nextVariants,
+    sharedSupplyAndFact: {
+      ...shared,
+      costStatus:
+        weightedCost > 0 && shared.costStatus === 'not_filled' ? 'plan' : shared.costStatus,
+    },
+  };
+}
+
+
 
 
