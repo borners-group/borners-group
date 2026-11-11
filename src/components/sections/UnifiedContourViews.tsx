@@ -64,7 +64,7 @@ function ScenarioContourHeader({
   subtitle: string;
   selectedScenarioId: number;
   orderedScenarios: ReturnType<typeof useLiveScenarioPortfolio>['orderedScenarios'];
-  onSelectScenario: (id: number) => void;
+  onSelectScenario: (id: number, explicitBrandOverride?: string) => void;
   includeGroupPortfolioInS1: boolean;
   onToggleGroupPortfolio: (v: boolean) => void;
   eligibleCount: number;
@@ -98,7 +98,17 @@ function ScenarioContourHeader({
               <button
                 key={sc.id}
                 type="button"
-                onClick={() => onSelectScenario(sc.id)}
+                onClick={() => {
+                  if (sc.id === 105 || sc.id === 202705 || sc.ownerBrandCode === 'LISKANI') {
+                    setBrandFilter('LISKANI');
+                    onSelectScenario(sc.id, 'LISKANI');
+                  } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
+                    setBrandFilter('AKUSHA');
+                    onSelectScenario(sc.id, 'AKUSHA');
+                  } else {
+                    onSelectScenario(sc.id);
+                  }
+                }}
                 className={`h-8.5 px-3 rounded-xl text-[12px] font-semibold border transition cursor-pointer ${
                   isSel
                     ? 'bg-[#E2E8F0] dark:bg-emerald-500/15 text-[#0F172A] dark:text-emerald-300 border-[#94A3B8] dark:border-emerald-500/30 shadow-2xs'
@@ -121,7 +131,12 @@ function ScenarioContourHeader({
               </span>
               <button
                 type="button"
-                onClick={() => setBrandFilter('ALL')}
+                onClick={() => {
+                  setBrandFilter('ALL');
+                  if (selectedScenarioId === 202705 || selectedScenarioId === 202706) {
+                    onSelectScenario(1, 'ALL');
+                  }
+                }}
                 className="underline hover:opacity-75 cursor-pointer text-emerald-700 dark:text-emerald-300"
               >
                 Все бренды
@@ -1366,12 +1381,15 @@ export function ProcurementContourView() {
                     onClick={() => {
                       setHoldingScopeMode(false);
                       setSelectedCategoryFilter('ALL');
-                      if (sc.id === 105 || sc.ownerBrandCode === 'LISKANI') {
+                      if (sc.id === 105 || sc.id === 202705 || sc.ownerBrandCode === 'LISKANI') {
                         setBrandFilter('LISKANI');
+                        setSelectedScenarioId(sc.id, 'LISKANI');
                       } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
                         setBrandFilter('AKUSHA');
+                        setSelectedScenarioId(sc.id, 'AKUSHA');
+                      } else {
+                        setSelectedScenarioId(sc.id);
                       }
-                      setSelectedScenarioId(sc.id);
                     }}
                     className={`h-7 px-2.5 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
                       active
@@ -2050,7 +2068,7 @@ export function ProcurementContourView() {
                                 setSelectedCategoryFilter('ALL');
                                 setBrandFilter(b.brandCode);
                                 if (b.selectedScenarioId !== null) {
-                                  setSelectedScenarioId(b.selectedScenarioId);
+                                  setSelectedScenarioId(b.selectedScenarioId, b.brandCode);
                                 }
                               }}
                               className={`h-7.5 px-3 rounded-lg text-[11.5px] font-semibold transition cursor-pointer ${

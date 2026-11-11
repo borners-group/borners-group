@@ -3483,6 +3483,34 @@ export function getScenariosForBrand(
 }
 
 /**
+ * Проверяет, совместим ли сценарий с выбранным брендом (защита от перезаписи BORNERS чужим сценарием AKUSHA / LISKANI при переключении вкладок).
+ */
+export function isScenarioCompatibleWithBrand(
+  scenario: GrowthScenarioDef | undefined | null,
+  brandInput: string
+): boolean {
+  if (!scenario || scenario.isArchived) return false;
+  const normBrand = normalizePortfolioBrandCode(brandInput);
+  if (normBrand === 'ALL') {
+    if (!scenario.ownerBrandCode || scenario.ownerBrandCode === 'ALL') return true;
+    return normalizePortfolioBrandCode(scenario.ownerBrandCode) === 'BORNERS';
+  }
+  if (scenario.ownerBrandCode && scenario.ownerBrandCode !== 'ALL') {
+    return normalizePortfolioBrandCode(scenario.ownerBrandCode) === normBrand;
+  }
+  if (scenario.ownerBrandCode === 'ALL') return true;
+  if (normBrand === 'BORNERS' || normBrand === 'FUKAI') return true;
+  if (normBrand === 'NA_TELE') {
+    return (
+      scenario.id === 2 ||
+      scenario.id === 3 ||
+      scenario.includedBrands.includes('NA_TELE')
+    );
+  }
+  return false;
+}
+
+/**
  * Раздел 5.3 и Тест 6 ТЗ: Расчёт переходящего физического остатка с 31 декабря 2027 года на 1 января 2028 года.
  */
 export function computeCarryOverStock2027To2028(
@@ -4105,11 +4133,21 @@ export function computeMultiBrandPortfolioSummary(
             ? rawSelectedId
             : defaultScenarioId;
 
-      const selectedScenario =
+      const rawCandidate =
         resolvedScenarioId !== null
           ? scenarios.find((s) => s.id === resolvedScenarioId && !s.isArchived) ||
             null
           : null;
+
+      const selectedScenario =
+        rawCandidate && isScenarioCompatibleWithBrand(rawCandidate, brandCode)
+          ? rawCandidate
+          : resolvedScenarioId === null
+            ? null
+            : defaultScenarioId !== null
+              ? scenarios.find((s) => s.id === defaultScenarioId && !s.isArchived) ||
+                null
+              : null;
 
       if (!selectedScenario) {
         return {
@@ -4169,8 +4207,17 @@ export function computeMultiBrandPortfolioSummary(
         };
       }
 
+      const scopedBrandModels =
+        selectedScenario.id === 100
+          ? brandModels.filter(
+              (m) =>
+                Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+                Boolean(m.plansByScenario[100])
+            )
+          : brandModels;
+
       const summary = computeScenarioInvestmentSummary(
-        brandModels,
+        scopedBrandModels,
         selectedScenario,
         {
           initialCashRub: 0,

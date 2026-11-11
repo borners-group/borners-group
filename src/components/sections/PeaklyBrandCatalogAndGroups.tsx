@@ -79,7 +79,7 @@ export interface BrandCabinetsMatrixTableProps {
   activeBrandFilter: string;
   onSelectBrandFilter: (brandCode: string) => void;
   onSelectScenarioForBrand: (brandCode: string, scenarioId: number | null) => void;
-  onSelectActiveScenarioId: (scenarioId: number) => void;
+  onSelectActiveScenarioId: (scenarioId: number, explicitBrandCode?: string) => void;
   onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenCreateModelForBrand: (brandCode: string) => void;
   onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
@@ -136,7 +136,7 @@ export function BrandCabinetsMatrixTable({
                   onClick={() => {
                     onSelectBrandFilter(b.brandCode);
                     if (b.selectedScenarioId !== null) {
-                      onSelectActiveScenarioId(b.selectedScenarioId);
+                      onSelectActiveScenarioId(b.selectedScenarioId, b.brandCode);
                     }
                   }}
                   className={`transition-colors cursor-pointer ${
@@ -184,8 +184,8 @@ export function BrandCabinetsMatrixTable({
                           const raw = e.target.value;
                           const nextId = raw === '' ? null : Number(raw);
                           onSelectScenarioForBrand(b.brandCode, nextId);
-                          if (nextId !== null) {
-                            onSelectActiveScenarioId(nextId);
+                          if (nextId !== null && activeBrandFilter === b.brandCode) {
+                            onSelectActiveScenarioId(nextId, b.brandCode);
                           }
                         }}
                         className={`h-8 flex-1 min-w-0 px-2.5 rounded-[8px] border text-[11.5px] font-semibold focus:outline-none focus:border-[#334155] cursor-pointer truncate ${
@@ -352,7 +352,7 @@ export function BrandCabinetsMatrixTable({
                   (x) => x.brandCode === 'BORNERS'
                 )?.selectedScenarioId;
                 if (bornersScenId) {
-                  onSelectActiveScenarioId(bornersScenId);
+                  onSelectActiveScenarioId(bornersScenId, 'ALL');
                 }
               }}
               className="bg-[#F4F6F9] border-t border-[#DCE2EC] font-bold text-[#111827] text-[12px] cursor-pointer hover:bg-[#E9EDF4] transition"
@@ -482,7 +482,7 @@ export interface PeaklyMasterCabinetsSummaryProps {
   activeBrandFilter: string;
   onSelectBrandFilter: (brandCode: string) => void;
   onSelectScenarioForBrand: (brandCode: string, scenarioId: number | null) => void;
-  onSelectActiveScenarioId: (scenarioId: number) => void;
+  onSelectActiveScenarioId: (scenarioId: number, explicitBrandCode?: string) => void;
   onOpenCreateScenarioForBrand: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenCreateModelForBrand: (brandCode: string) => void;
   onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
@@ -975,7 +975,7 @@ export function PeaklyMasterCabinetsSummary({
                   (x) => x.brandCode === 'BORNERS'
                 )?.selectedScenarioId;
                 if (bornersScenId) {
-                  onSelectActiveScenarioId(bornersScenId);
+                  onSelectActiveScenarioId(bornersScenId, 'ALL');
                 }
               }}
               className={`h-7 px-2.5 rounded-lg text-[12px] font-medium transition cursor-pointer inline-flex items-center gap-1.5 ${
@@ -1007,12 +1007,12 @@ export function PeaklyMasterCabinetsSummary({
                         (x) => x.brandCode === 'BORNERS'
                       )?.selectedScenarioId;
                       if (bornersScenId) {
-                        onSelectActiveScenarioId(bornersScenId);
+                        onSelectActiveScenarioId(bornersScenId, 'ALL');
                       }
                     } else {
                       onSelectBrandFilter(b.brandCode);
                       if (b.selectedScenarioId !== null) {
-                        onSelectActiveScenarioId(b.selectedScenarioId);
+                        onSelectActiveScenarioId(b.selectedScenarioId, b.brandCode);
                       }
                     }
                   }}
@@ -2623,7 +2623,7 @@ export interface PeaklyCatalogGroupsAndBrandsProps {
   multiBrandSummary?: MultiBrandPortfolioSummaryResult;
   selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>>;
   onSelectScenarioForBrand?: (brandCode: string, scenarioId: number | null) => void;
-  onSelectActiveScenarioId?: (scenarioId: number) => void;
+  onSelectActiveScenarioId?: (scenarioId: number, explicitBrandCode?: string) => void;
   onOpenCreateScenarioForBrand?: (brandCode: CanonicalBrandCode, defaultTitle: string) => void;
   onOpenModelPassport: (modelId: string) => void;
   onUpdateModel: (updated: ScenarioModelSpec) => void;
@@ -3414,8 +3414,12 @@ export function PeaklyCatalogGroupsAndBrandsView({
                             const raw = e.target.value;
                             const nextId = raw === '' ? null : Number(raw);
                             onSelectScenarioForBrand(sec.brandCode, nextId);
-                            if (nextId !== null && onSelectActiveScenarioId) {
-                              onSelectActiveScenarioId(nextId);
+                            if (
+                              nextId !== null &&
+                              onSelectActiveScenarioId &&
+                              brandFilter === sec.brandCode
+                            ) {
+                              onSelectActiveScenarioId(nextId, sec.brandCode);
                             }
                           }}
                           className="font-bold text-[#111827] bg-transparent focus:outline-none cursor-pointer max-w-[190px]"

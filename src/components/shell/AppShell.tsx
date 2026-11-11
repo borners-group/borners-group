@@ -1176,6 +1176,11 @@ export function AppShell() {
                         type="button"
                         onClick={() => {
                           setBrandFilter('ALL');
+                          const bornersScenId =
+                            livePortfolio.selectedScenarioByBrand?.BORNERS ?? 1;
+                          if (typeof bornersScenId === 'number') {
+                            livePortfolio.setSelectedScenarioId(bornersScenId, 'ALL');
+                          }
                           setBrandDropdownOpen(false);
                         }}
                         className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
@@ -1207,6 +1212,7 @@ export function AppShell() {
                             key={bItem.code}
                             type="button"
                             onClick={() => {
+                              setBrandFilter(bItem.code);
                               if (
                                 bItem.code === 'FUKAI' &&
                                 livePortfolio.selectedScenarioId === 1 &&
@@ -1219,9 +1225,8 @@ export function AppShell() {
                                   bItem.code as 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'NA_TELE'
                                 ];
                               if (typeof brandScenId === 'number') {
-                                livePortfolio.setSelectedScenarioId(brandScenId);
+                                livePortfolio.setSelectedScenarioId(brandScenId, bItem.code);
                               }
-                              setBrandFilter(bItem.code);
                               setBrandDropdownOpen(false);
                             }}
                             className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${

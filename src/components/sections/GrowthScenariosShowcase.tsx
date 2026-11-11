@@ -44,6 +44,11 @@ import {
   verifyActingAssortment2027Bundle,
 } from '@/lib/actingAssortment2027';
 import {
+  AKUSHA_2027_MODELS,
+  AKUSHA_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_ID,
+} from '@/lib/akushaAssortment2027';
+import {
   LISKANI_2027_MODELS,
   LISKANI_2027_SCENARIO_DEF,
   LISKANI_2027_SCENARIO_ID,
@@ -80,6 +85,7 @@ import {
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
   overlayBackupOntoModels as overlayUserPlansBackup,
+  sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup as saveUserPlansBackup,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/useLiveScenarioPortfolio';
@@ -122,6 +128,7 @@ const DEFAULT_RESTORED_MODELS: ScenarioModelSpec[] = applyCategoryWbUnitEconomic
     ...ACTING_2027_SCENARIO_MODELS,
     ...S1_100M_SCENARIO_MODELS,
     ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
   ])
 );
 
@@ -158,6 +165,7 @@ export function GrowthScenariosShowcase({
   const [scenarios, setScenarios] = useState<GrowthScenarioDef[]>([
     ...INITIAL_SCENARIOS,
     LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
   ]);
   const [models, setModels] = useState<ScenarioModelSpec[]>(DEFAULT_RESTORED_MODELS);
   const [selectedScenarioId, setSelectedScenarioIdState] = useState<number>(1);
@@ -381,7 +389,7 @@ export function GrowthScenariosShowcase({
   >({
     BORNERS: 1,
     FUKAI: ACTING_2027_SCENARIO_ID,
-    AKUSHA: null,
+    AKUSHA: AKUSHA_2027_SCENARIO_ID,
     LISKANI: LISKANI_2027_SCENARIO_ID,
     NA_TELE: 2,
   });
@@ -651,10 +659,16 @@ export function GrowthScenariosShowcase({
       scenarios,
       selectedScenarioByBrand
     );
-    const hasOfficialLiskani = res.models.some((m) => m.id === 'scen-liskani-001');
+    const hasOfficialLiskani = res.models.some(
+      (m) => Array.isArray(m.liskaniSizeVariants) && m.liskaniSizeVariants.length > 0
+    );
+    const hasOfficialAkusha = res.models.some((m) =>
+      Boolean(m.plansByScenario?.[AKUSHA_2027_SCENARIO_ID])
+    );
     const nextByBrand = {
       ...res.selectedScenarioByBrand,
       ...(hasOfficialLiskani ? { LISKANI: LISKANI_2027_SCENARIO_ID } : {}),
+      ...(hasOfficialAkusha ? { AKUSHA: AKUSHA_2027_SCENARIO_ID } : {}),
     };
     setModels(res.models);
     setScenarios(res.scenarios);
@@ -705,8 +719,13 @@ export function GrowthScenariosShowcase({
       }
       setModels(hydratedModels);
 
-      // 2. Загружаем сценарии и гарантируем наличие ACTING 2027 и LISKANI 2027 (500 млн ₽)
+      // 2. Загружаем сценарии и гарантируем наличие ACTING 2027, LISKANI 2027 (500 млн ₽) и AKUSHA 2027 (105,79 млн ₽)
       const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
+      let effectiveScenList = [
+        ...INITIAL_SCENARIOS,
+        LISKANI_2027_SCENARIO_DEF,
+        AKUSHA_2027_SCENARIO_DEF,
+      ];
       if (Array.isArray(parsedScen) && parsedScen.length > 0) {
         let nextScen = [...parsedScen];
         let scenChanged = false;
@@ -718,36 +737,46 @@ export function GrowthScenariosShowcase({
           nextScen = [...nextScen, LISKANI_2027_SCENARIO_DEF];
           scenChanged = true;
         }
+        if (!nextScen.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)) {
+          nextScen = [...nextScen, AKUSHA_2027_SCENARIO_DEF];
+          scenChanged = true;
+        }
         if (scenChanged) {
           safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
         }
+        effectiveScenList = nextScen;
         setScenarios(nextScen);
       }
 
-      // 3. Загружаем привязку сценариев к брендам
+      // 3. Загружаем и валидируем привязку сценариев к брендам
       const parsedBrandScen = safeGetStorageJson<Record<string, number | null>>(
         STORAGE_KEY_SCENARIO_BY_BRAND
       );
+      const sanitizedBrandScen = sanitizeSelectedScenarioByBrand(
+        parsedBrandScen,
+        effectiveScenList
+      );
       if (parsedBrandScen && typeof parsedBrandScen === 'object') {
-        const normalizedBrandScen = { ...parsedBrandScen };
-        if (normalizedBrandScen.FUKAI === 1) {
-          normalizedBrandScen.FUKAI = ACTING_2027_SCENARIO_ID;
+        if (
+          sanitizedBrandScen.BORNERS !== parsedBrandScen.BORNERS ||
+          sanitizedBrandScen.FUKAI !== parsedBrandScen.FUKAI ||
+          sanitizedBrandScen.LISKANI !== parsedBrandScen.LISKANI ||
+          sanitizedBrandScen.AKUSHA !== parsedBrandScen.AKUSHA
+        ) {
+          safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedBrandScen);
         }
-        if (!normalizedBrandScen.LISKANI) {
-          normalizedBrandScen.LISKANI = LISKANI_2027_SCENARIO_ID;
-        }
-        setSelectedScenarioByBrandState((prev) => ({ ...prev, ...normalizedBrandScen }));
+        setSelectedScenarioByBrandState((prev) => ({ ...prev, ...sanitizedBrandScen }));
       }
 
       const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
       const effectiveBornersScen =
-        parsedBrandScen && typeof parsedBrandScen.BORNERS === 'number'
-          ? parsedBrandScen.BORNERS
-          : 1;
+        typeof sanitizedBrandScen.BORNERS === 'number' ? sanitizedBrandScen.BORNERS : 1;
       if (typeof savedScenId === 'number') {
         const syncedScenId =
-          savedScenId === ACTING_2027_SCENARIO_ID &&
-          effectiveBornersScen !== ACTING_2027_SCENARIO_ID
+          savedScenId === AKUSHA_2027_SCENARIO_ID ||
+          savedScenId === LISKANI_2027_SCENARIO_ID ||
+          (savedScenId === ACTING_2027_SCENARIO_ID &&
+            effectiveBornersScen !== ACTING_2027_SCENARIO_ID)
             ? effectiveBornersScen
             : savedScenId;
         if (syncedScenId !== savedScenId) {

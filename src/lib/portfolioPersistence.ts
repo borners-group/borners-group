@@ -1,8 +1,10 @@
 import {
+  type GrowthScenarioDef,
   type ModelPriorityLevel,
   type ScenarioModelSpec,
 } from './scenarioData.ts';
 import {
+  ACTING_2027_SCENARIO_ID,
   ACTING_2027_SCENARIO_MODELS,
 } from './actingAssortment2027.ts';
 import {
@@ -20,11 +22,27 @@ import {
   applyClientSavedS1SalesPlan,
 } from './scenarioS1_100M.ts';
 import {
+  type CanonicalBrandCode,
   applyCategoryWbUnitEconomics,
   applyCategoryWbUnitEconomicsToPortfolio,
   ensureModelUnifiedV11,
+  isScenarioCompatibleWithBrand,
 } from './unifiedBusinessEngine.ts';
 import { safeGetStorageJson, safeSetStorageJson } from './safeStorage.ts';
+
+const CLIENT_SAVED_S1_MODELS = applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS);
+const RAW_BRN_001_SC_PACKS =
+  S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')?.plansByScenario[1]
+    ?.monthlyPacks || [];
+const CLIENT_BRN_001_SC_PACKS =
+  CLIENT_SAVED_S1_MODELS.find((m) => m.code === 'BRN-001-SC')?.plansByScenario[1]
+    ?.monthlyPacks || [];
+const RAW_BRN_003_PACKS =
+  S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-003')?.plansByScenario[1]
+    ?.monthlyPacks || [];
+const CLIENT_BRN_003_PACKS =
+  CLIENT_SAVED_S1_MODELS.find((m) => m.code === 'BRN-003')?.plansByScenario[1]
+    ?.monthlyPacks || [];
 
 export const STORAGE_KEY_SCENARIOS = 'borners_tz_scenarios_v1';
 export const STORAGE_KEY_MODELS = 'borners_tz_models_v1';
@@ -35,6 +53,182 @@ export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
 export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
+export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_repair_v1';
+
+function isExactSamePacksArray(a: number[] | undefined, b: number[]): boolean {
+  return (
+    Array.isArray(a) &&
+    a.length === 12 &&
+    b.length === 12 &&
+    a.every((v, idx) => v === b[idx])
+  );
+}
+
+function upgradeUnadjustedRawS1SalesPlan<
+  T extends {
+    id?: string;
+    code?: string;
+    plansByScenario?: ScenarioModelSpec['plansByScenario'];
+  },
+>(entry: T): { updated: T; changed: boolean } {
+  const idLower = (entry.id || '').trim().toLowerCase();
+  const codeUpper = (entry.code || '').trim().toUpperCase();
+  const p1 = entry.plansByScenario?.[1];
+  if (!p1) return { updated: entry, changed: false };
+
+  if (
+    (idLower === 'scen-brn-001-sc' || codeUpper === 'BRN-001-SC') &&
+    isExactSamePacksArray(p1.monthlyPacks, RAW_BRN_001_SC_PACKS)
+  ) {
+    return {
+      changed: true,
+      updated: {
+        ...entry,
+        plansByScenario: {
+          ...entry.plansByScenario,
+          1: {
+            ...p1,
+            monthlyPacks: [...CLIENT_BRN_001_SC_PACKS],
+            monthlyPricesRub: Array(12).fill(2490),
+          },
+        },
+      },
+    };
+  }
+
+  if (
+    (idLower === 'scen-brn-003' || codeUpper === 'BRN-003') &&
+    isExactSamePacksArray(p1.monthlyPacks, RAW_BRN_003_PACKS)
+  ) {
+    return {
+      changed: true,
+      updated: {
+        ...entry,
+        plansByScenario: {
+          ...entry.plansByScenario,
+          1: {
+            ...p1,
+            monthlyPacks: [...CLIENT_BRN_003_PACKS],
+            monthlyPricesRub: Array(12).fill(1990),
+          },
+        },
+      },
+    };
+  }
+
+  return { updated: entry, changed: false };
+}
+
+export function sanitizeSelectedScenarioByBrand(
+  savedByBrand: Partial<Record<string, number | null>> | null | undefined,
+  scenarios?: GrowthScenarioDef[]
+): Partial<Record<CanonicalBrandCode, number | null>> {
+  const next: Partial<Record<CanonicalBrandCode, number | null>> = {
+    ...(savedByBrand as Partial<Record<CanonicalBrandCode, number | null>>),
+  };
+
+  if (
+    next.FUKAI === undefined ||
+    next.FUKAI === 1 ||
+    next.FUKAI === AKUSHA_2027_SCENARIO_ID ||
+    next.FUKAI === LISKANI_2027_SCENARIO_ID
+  ) {
+    next.FUKAI = ACTING_2027_SCENARIO_ID;
+  }
+  if (!next.LISKANI) {
+    next.LISKANI = LISKANI_2027_SCENARIO_ID;
+  }
+  if (!next.AKUSHA) {
+    next.AKUSHA = AKUSHA_2027_SCENARIO_ID;
+  }
+
+  // BORNERS никогда не может ссылаться на сценарий чужого бренда (AKUSHA 202706, LISKANI 202705 и т.д.)
+  if (
+    next.BORNERS === undefined ||
+    next.BORNERS === null ||
+    next.BORNERS === AKUSHA_2027_SCENARIO_ID ||
+    next.BORNERS === LISKANI_2027_SCENARIO_ID
+  ) {
+    next.BORNERS = 1;
+  } else if (Array.isArray(scenarios) && scenarios.length > 0 && typeof next.BORNERS === 'number') {
+    const found = scenarios.find((s) => s.id === next.BORNERS && !s.isArchived);
+    if (!found || !isScenarioCompatibleWithBrand(found, 'BORNERS')) {
+      next.BORNERS = 1;
+    }
+  }
+
+  return next;
+}
+
+export function runBornersSalesScenarioRepairMigrationV1(): void {
+  const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1);
+
+  // Постоянная защита от записи чужого сценария (202706 / 202705) в BORNERS
+  const savedByBrand = safeGetStorageJson<Record<string, number | null>>(
+    STORAGE_KEY_SCENARIO_BY_BRAND
+  );
+  if (savedByBrand && typeof savedByBrand === 'object') {
+    const sanitized = sanitizeSelectedScenarioByBrand(savedByBrand);
+    const shouldResetActingFromStaleBug =
+      alreadyMigrated !== '1' && sanitized.BORNERS === ACTING_2027_SCENARIO_ID;
+    const finalByBrand = shouldResetActingFromStaleBug
+      ? { ...sanitized, BORNERS: 1 }
+      : sanitized;
+    if (
+      finalByBrand.BORNERS !== savedByBrand.BORNERS ||
+      finalByBrand.FUKAI !== savedByBrand.FUKAI ||
+      finalByBrand.LISKANI !== savedByBrand.LISKANI ||
+      finalByBrand.AKUSHA !== savedByBrand.AKUSHA
+    ) {
+      safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, finalByBrand);
+    }
+  }
+
+  if (alreadyMigrated === '1') return;
+
+  // Сбрасываем залипший чужой или исходный сценарий в активном ключе на эталонный Сценарий №1 (686,28 млн ₽)
+  const savedActiveId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
+  if (
+    savedActiveId === AKUSHA_2027_SCENARIO_ID ||
+    savedActiveId === LISKANI_2027_SCENARIO_ID ||
+    savedActiveId === ACTING_2027_SCENARIO_ID
+  ) {
+    safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, 1);
+  }
+
+  // Если при прошлой догрузке S1_100M_SCENARIO_MODELS в кэш попали сырые неадаптированные числа BRN-001-SC / BRN-003 (606,37 млн ₽ вместо 686,28 млн ₽), обновляем их без потери ручных правок
+  const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
+    STORAGE_KEY_USER_PLANS_BACKUP
+  );
+  if (backup && typeof backup === 'object') {
+    let backupChanged = false;
+    const nextBackup: Record<string, UserSavedModelPlanBackup> = {};
+    for (const [k, entry] of Object.entries(backup)) {
+      if (!entry) continue;
+      const res = upgradeUnadjustedRawS1SalesPlan(entry);
+      if (res.changed) backupChanged = true;
+      nextBackup[k] = res.updated;
+    }
+    if (backupChanged) {
+      safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, nextBackup);
+    }
+  }
+
+  const savedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
+  if (Array.isArray(savedModels) && savedModels.length > 0) {
+    let modelsChanged = false;
+    const nextModels = savedModels.map((m) => {
+      const res = upgradeUnadjustedRawS1SalesPlan(m);
+      if (res.changed) modelsChanged = true;
+      return res.updated;
+    });
+    if (modelsChanged) {
+      safeSetStorageJson(STORAGE_KEY_MODELS, nextModels);
+    }
+  }
+
+  safeSetStorageJson(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1, '1');
+}
 
 export function isLegacyPlaceholderAkusha(
   m: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
@@ -611,6 +805,7 @@ export function deleteModelFromPortfolio(
 export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
   runLiskani269OfficialMigrationV3();
   runAkusha2027OfficialMigrationV1();
+  runBornersSalesScenarioRepairMigrationV1();
   const deletedReg = getDeletedModelsRegistry();
   const parsedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
 
@@ -629,7 +824,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
     const merged = [...filteredLegacy];
     for (const itemMod of [
       ...ACTING_2027_SCENARIO_MODELS,
-      ...S1_100M_SCENARIO_MODELS,
+      ...CLIENT_SAVED_S1_MODELS,
       ...LISKANI_2027_MODELS,
       ...AKUSHA_2027_MODELS,
     ]) {

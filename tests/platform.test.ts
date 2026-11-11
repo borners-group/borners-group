@@ -4302,6 +4302,7 @@ test('54. Официальный план продаж AKUSHA 2027 из PDF (31 
 });
 
 test('55. Уточнение параметров «уточнить» у моделей AKUSHA (AKU-028 Мокасины и AKU-017 Топсайдеры): защита от деления на ноль (Infinity/NaN) и полный пересчёт заказов, выручки, закупок и P&L', async () => {
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
   const {
     AKUSHA_2027_MODELS,
     AKUSHA_2027_SCENARIO_DEF,
@@ -4449,6 +4450,7 @@ test('55. Уточнение параметров «уточнить» у мод
 });
 
 test('56. Сквозная синхронизация сценариев AKUSHA (202706) / LISKANI (202705) и защита эталонных карточек AKU-001..003 от перезаписи демо-шаблонами', async () => {
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
   const {
     AKUSHA_2027_MODELS,
     AKUSHA_2027_SCENARIO_DEF,
@@ -4591,6 +4593,234 @@ test('57. Корректная резолюция публичных URL рес�
     'https://borners-group.github.io/test.jpg'
   );
 });
+
+test('58. Изоляция сценариев брендов (защита от бага «продажи сбились по BORNERS»): сценарии AKUSHA (202706) и LISKANI (202705) никогда не перезаписывают Сценарий №1 BORNERS (686 284 972 ₽ / 109 938 111 ₽ дек)', async () => {
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_ID,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    isScenarioCompatibleWithBrand,
+    computeMultiBrandPortfolioSummary,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { sanitizeSelectedScenarioByBrand } = await import(
+    '../src/lib/portfolioPersistence.ts'
+  );
+  const { CLIENT_SAVED_S1_TOTALS, applyClientSavedS1SalesPlan } = await import(
+    '../src/lib/scenarioS1_100M.ts'
+  );
+
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+
+  // 1. Проверка совместимости сценариев с брендами и фильтром ALL
+  assert.equal(isScenarioCompatibleWithBrand(AKUSHA_2027_SCENARIO_DEF, 'AKUSHA'), true);
+  assert.equal(isScenarioCompatibleWithBrand(AKUSHA_2027_SCENARIO_DEF, 'BORNERS'), false);
+  assert.equal(isScenarioCompatibleWithBrand(AKUSHA_2027_SCENARIO_DEF, 'FUKAI'), false);
+  assert.equal(isScenarioCompatibleWithBrand(AKUSHA_2027_SCENARIO_DEF, 'ALL'), false);
+
+  assert.equal(isScenarioCompatibleWithBrand(LISKANI_2027_SCENARIO_DEF, 'LISKANI'), true);
+  assert.equal(isScenarioCompatibleWithBrand(LISKANI_2027_SCENARIO_DEF, 'BORNERS'), false);
+  assert.equal(isScenarioCompatibleWithBrand(LISKANI_2027_SCENARIO_DEF, 'ALL'), false);
+
+  assert.equal(isScenarioCompatibleWithBrand(s1, 'BORNERS'), true);
+  assert.equal(isScenarioCompatibleWithBrand(s1, 'ALL'), true);
+  assert.equal(isScenarioCompatibleWithBrand(s1, 'AKUSHA'), false);
+  assert.equal(isScenarioCompatibleWithBrand(s1, 'LISKANI'), false);
+
+  // 2. Санитайзер автоматически сбрасывает чужие сценарии из BORNERS и FUKAI
+  const cleaned = sanitizeSelectedScenarioByBrand(
+    {
+      BORNERS: AKUSHA_2027_SCENARIO_ID,
+      FUKAI: LISKANI_2027_SCENARIO_ID,
+      AKUSHA: null,
+      LISKANI: null,
+    },
+    allScenarios
+  );
+  assert.equal(cleaned.BORNERS, 1);
+  assert.equal(cleaned.FUKAI, ACTING_2027_SCENARIO_ID);
+  assert.equal(cleaned.AKUSHA, AKUSHA_2027_SCENARIO_ID);
+  assert.equal(cleaned.LISKANI, LISKANI_2027_SCENARIO_ID);
+
+  // 3. Даже если в computeMultiBrandPortfolioSummary передать повреждённый BORNERS: 202706, выручка BORNERS остаётся ровно 686 284 972 ₽ (109 938 111 ₽ в дек)
+  const fullPortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const summaryFromCorruptedMap = computeMultiBrandPortfolioSummary(
+    fullPortfolio,
+    allScenarios,
+    {
+      BORNERS: AKUSHA_2027_SCENARIO_ID,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: 2,
+    }
+  );
+  const bornersRow = summaryFromCorruptedMap.brands.find((b) => b.brandCode === 'BORNERS')!;
+  assert.equal(bornersRow.selectedScenarioId, 1);
+  assert.equal(bornersRow.modelsCount, 21);
+  assert.equal(bornersRow.annualRevenueRub, CLIENT_SAVED_S1_TOTALS.annualRevenueRub);
+  assert.equal(bornersRow.decemberRevenueRub, CLIENT_SAVED_S1_TOTALS.decemberRevenueRub);
+
+  const akushaRow = summaryFromCorruptedMap.brands.find((b) => b.brandCode === 'AKUSHA')!;
+  assert.equal(akushaRow.selectedScenarioId, AKUSHA_2027_SCENARIO_ID);
+  assert.equal(akushaRow.annualRevenueRub, 105_793_210);
+
+  // 4. При явном выборе Исходного плана (100) для BORNERS сводка считает строго 5 действующих SKU (как в 02 · Продажи)
+  const summaryActingExplicit = computeMultiBrandPortfolioSummary(
+    fullPortfolio,
+    allScenarios,
+    {
+      BORNERS: ACTING_2027_SCENARIO_ID,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+    }
+  );
+  const bornersActingRow = summaryActingExplicit.brands.find((b) => b.brandCode === 'BORNERS')!;
+  assert.equal(bornersActingRow.modelsCount, 5);
+});
+
+test('59. Авто-лечение браузерного кэша при перезагрузке F5 (runBornersSalesScenarioRepairMigrationV1): сброс залипшего сценария 202706/100 и апгрейд сырых S1-пачек (606,37 млн ₽ → 686,28 млн ₽) без потери ручных правок', async () => {
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
+  const { AKUSHA_2027_SCENARIO_ID } = await import('../src/lib/akushaAssortment2027.ts');
+  const { LISKANI_2027_SCENARIO_ID } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { CLIENT_SAVED_S1_TOTALS } = await import('../src/lib/scenarioS1_100M.ts');
+  const {
+    STORAGE_KEY_ACTIVE_SCENARIO_ID,
+    STORAGE_KEY_MODELS,
+    STORAGE_KEY_SCENARIO_BY_BRAND,
+    STORAGE_KEY_USER_PLANS_BACKUP,
+    hydratePortfolioModelsFromStorage,
+    syncUserPlansBackup,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    // Симулируем повреждённое состояние браузера партнёра:
+    // 1) BORNERS залип на сценарии AKUSHA (202706) из-за stale closure
+    // 2) В borners_tz_models_v1 и borners_user_saved_plans_v1 попали сырые неадаптированные S1_100M_SCENARIO_MODELS (606,37 млн ₽ вместо 686,28 млн ₽)
+    // 3) При этом у карточки BRN-002 есть ручная пользовательская правка цены (2 150 ₽ вместо 1 790 ₽), которая НЕ должна потеряться!
+    const rawCorruptedModels = [
+      ...ACTING_2027_SCENARIO_MODELS,
+      ...S1_100M_SCENARIO_MODELS.map((m) =>
+        m.code === 'BRN-002'
+          ? {
+              ...m,
+              retailPriceRub: 2150,
+              plansByScenario: {
+                ...m.plansByScenario,
+                1: {
+                  ...m.plansByScenario[1],
+                  monthlyPricesRub: Array(12).fill(2150),
+                },
+              },
+            }
+          : m
+      ),
+    ];
+
+    store.set(STORAGE_KEY_MODELS, JSON.stringify(rawCorruptedModels));
+    syncUserPlansBackup(rawCorruptedModels);
+    store.set(
+      STORAGE_KEY_SCENARIO_BY_BRAND,
+      JSON.stringify({
+        BORNERS: AKUSHA_2027_SCENARIO_ID,
+        FUKAI: ACTING_2027_SCENARIO_ID,
+        AKUSHA: AKUSHA_2027_SCENARIO_ID,
+        LISKANI: LISKANI_2027_SCENARIO_ID,
+      })
+    );
+    store.set(STORAGE_KEY_ACTIVE_SCENARIO_ID, JSON.stringify(AKUSHA_2027_SCENARIO_ID));
+
+    // Нажимаем F5 -> вызывается hydratePortfolioModelsFromStorage()
+    const repairedPortfolio = hydratePortfolioModelsFromStorage();
+
+    const repairedByBrand = JSON.parse(store.get(STORAGE_KEY_SCENARIO_BY_BRAND)!);
+    const repairedActiveId = JSON.parse(store.get(STORAGE_KEY_ACTIVE_SCENARIO_ID)!);
+    assert.equal(repairedByBrand.BORNERS, 1, 'Сценарий BORNERS автоматически восстановлен в 1');
+    assert.equal(repairedActiveId, 1, 'Активный сценарий автоматически сброшен с 202706 на 1');
+
+    const brn001 = repairedPortfolio.find((m) => m.code === 'BRN-001-SC')!;
+    const brn003 = repairedPortfolio.find((m) => m.code === 'BRN-003')!;
+    const brn002 = repairedPortfolio.find((m) => m.code === 'BRN-002')!;
+
+    assert.equal(
+      brn001.plansByScenario[1].monthlyPacks[11],
+      6429,
+      'Декабрьские выкупы BRN-001-SC восстановлены с сырых 2 500 до клиентских 6 429 компл.'
+    );
+    assert.equal(
+      brn003.plansByScenario[1].monthlyPacks.reduce((a, b) => a + b, 0),
+      17728,
+      'Годовые выкупы BRN-003 восстановлены с сырых 17 592 до клиентских 17 728 компл.'
+    );
+    assert.equal(
+      brn002.retailPriceRub,
+      2150,
+      'Ручная пользовательская правка цены на BRN-002 полностью сохранена при авто-лечении'
+    );
+
+    // Проверяем также догрузку с нуля при частичном кэше (только ACTING_2027 в localStorage -> догружаются S1_100M уже с клиентским планом 686,28 млн ₽)
+    store.clear();
+    store.set(STORAGE_KEY_MODELS, JSON.stringify(ACTING_2027_SCENARIO_MODELS));
+    store.delete(STORAGE_KEY_USER_PLANS_BACKUP);
+    const mergedFromPartial = hydratePortfolioModelsFromStorage();
+    const s1Scen = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+    const bornersS1Models = mergedFromPartial.filter(
+      (m) =>
+        m.code.startsWith('BRN-') ||
+        ['WB 244995893', 'WB 440758616', 'WB 439426186', 'WB 440759654', 'WB 257807266'].includes(
+          m.code
+        )
+    );
+    assert.equal(bornersS1Models.length, 21);
+    const totalAnnualRev = bornersS1Models.reduce(
+      (acc, m) => acc + computeModelScenarioMetrics(m, s1Scen).annualRevenueRub,
+      0
+    );
+    const totalDecRev = bornersS1Models.reduce(
+      (acc, m) => acc + computeModelScenarioMetrics(m, s1Scen).targetMonthRevenueRub,
+      0
+    );
+    assert.equal(totalAnnualRev, CLIENT_SAVED_S1_TOTALS.annualRevenueRub);
+    assert.equal(totalDecRev, CLIENT_SAVED_S1_TOTALS.decemberRevenueRub);
+  } finally {
+    if (prevWindow === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = prevWindow;
+    }
+  }
+});
+
 
 
 

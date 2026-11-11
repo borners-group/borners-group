@@ -595,7 +595,7 @@ export function ProductCatalogView() {
           scenario={effectiveScenario}
           allScenarios={scenarios}
           onSelectScenario={(id) => {
-            setSelectedScenarioId(id);
+            setSelectedScenarioId(id, modBrandCode);
             if (modBrandCode !== 'ALL') {
               setSelectedScenarioForBrand(modBrandCode, id);
             }
@@ -742,7 +742,12 @@ export function ProductCatalogView() {
                     if (b.code !== 'ALL') {
                       const targetScenId = selectedScenarioByBrand[b.code];
                       if (typeof targetScenId === 'number') {
-                        setSelectedScenarioId(targetScenId);
+                        setSelectedScenarioId(targetScenId, b.code);
+                      }
+                    } else {
+                      const bornersScenId = selectedScenarioByBrand.BORNERS ?? 1;
+                      if (typeof bornersScenId === 'number') {
+                        setSelectedScenarioId(bornersScenId, 'ALL');
                       }
                     }
                   }}
@@ -1138,8 +1143,8 @@ export function ProductCatalogView() {
             onSelectScenarioForBrand={(bCode, scenId) => {
               setSelectedScenarioForBrand(bCode, scenId);
             }}
-            onSelectActiveScenarioId={(scenId) => {
-              setSelectedScenarioId(scenId);
+            onSelectActiveScenarioId={(scenId, explicitBrandCode) => {
+              setSelectedScenarioId(scenId, explicitBrandCode);
             }}
             onOpenModelPassport={(modelId) => {
               setActivePassportModelId(modelId);
