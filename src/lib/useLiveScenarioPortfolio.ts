@@ -32,7 +32,9 @@ import {
   isUnverifiedActingSku,
 } from '@/lib/scenarioS1_100M';
 import {
+  BatchFactoryTermsPatch,
   CanonicalBrandCode,
+  applyBatchFactoryPaymentTermsToModels,
   applyCategoryWbUnitEconomics,
   applyCategoryWbUnitEconomicsToPortfolio,
   createBrandProductModel,
@@ -881,6 +883,29 @@ export function useLiveScenarioPortfolio() {
     [scheduleCompleteCloudPush]
   );
 
+  const updateBatchFactoryTerms = useCallback(
+    (targetModelIds: string[], patch: BatchFactoryTermsPatch, author = 'Владелец') => {
+      const idSet = new Set(targetModelIds);
+      if (idSet.size === 0) return;
+      setModels((prev) => {
+        const next = applyBatchFactoryPaymentTermsToModels(prev, idSet, patch, author);
+        const iso = touchPortfolioUpdatedAt();
+        safeSetStorageJson(STORAGE_KEY_MODELS, next);
+        syncUserPlansBackup(next);
+        void savePortfolioSnapshotToIdb(next, iso);
+        modelsRef.current = next;
+        scheduleCompleteCloudPush({ models: next });
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+          }, 0);
+        }
+        return next;
+      });
+    },
+    [scheduleCompleteCloudPush]
+  );
+
   const launchStarterCabinet = useCallback(
     (bCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
       const res = launchBrandStarterMatrix(models, scenarios, bCode);
@@ -1012,6 +1037,7 @@ export function useLiveScenarioPortfolio() {
     updateModelsBatch,
     updateScenariosBatch,
     applyIndustryNormsToAllModels,
+    updateBatchFactoryTerms,
     launchStarterCabinet,
     launchAllCabinets,
     resetStarterCabinets,

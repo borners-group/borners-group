@@ -22,6 +22,7 @@ import {
   computeFinancialPnL,
   computeGroupBrandsInvestmentReport,
   computeMultiBrandPortfolioSummary,
+  computePortfolioProcurementWavesSummary,
   computeProcurementPlan,
   computeScenarioInvestmentSummary,
   computeWhatIfSensitivitySimulation,
@@ -42,12 +43,14 @@ import {
   updateModelSizeVariantUnitCost,
   updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurementMvpWorkbench';
+import { PeakOwnMoneyChartPanel } from '@/components/sections/PeakOwnMoneyChartPanel';
 import { RoadmapTasksView } from '@/components/sections/ManagementAndSystemViews';
 import { FinanceView } from '@/components/sections/FinanceAndImportViews';
 
@@ -1092,10 +1095,12 @@ export function ProcurementContourView() {
     eligibleModels,
     totals,
     updateModelSpec,
+    updateBatchFactoryTerms,
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
   const [wavesCalendarOpen, setWavesCalendarOpen] = useState(false);
+  const [factoryTermsPanelOpen, setFactoryTermsPanelOpen] = useState(false);
   const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
 
   useEffect(() => {
@@ -1333,6 +1338,20 @@ export function ProcurementContourView() {
       peakWorkingCapitalRub: gt.peakWorkingCapitalRub,
       netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
       verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+      peakMonthIdx: gt.peakMonthIdx,
+      peakMonthLabel: gt.peakMonthLabel,
+      peakPhase: gt.peakPhase,
+      peakPhaseLabelRu: gt.peakPhaseLabelRu,
+      peakWindowHumanRu: gt.peakWindowHumanRu,
+      monthsInDeficitCount: gt.monthsInDeficitCount,
+      openingBalanceAtPeakMonthRub: gt.openingBalanceAtPeakMonthRub,
+      prepayInPeakMonthRub: gt.prepayInPeakMonthRub,
+      balancePayInPeakMonthRub: gt.balancePayInPeakMonthRub,
+      wbInflowInPeakMonthRub: gt.wbInflowInPeakMonthRub,
+      endOfPeakMonthBalanceRub: gt.endOfPeakMonthBalanceRub,
+      selfFundingMonthIdx: gt.selfFundingMonthIdx,
+      selfFundingMonthLabel: gt.selfFundingMonthLabel,
+      yearEndCashBalanceRub: gt.yearEndCashBalanceRub,
       monthlyRows: gt.monthlyRows,
     };
   }, [
@@ -1341,6 +1360,16 @@ export function ProcurementContourView() {
     multiBrandSummary.groupTotal,
     procData,
   ]);
+
+  const wavesSummary = useMemo(
+    () =>
+      computePortfolioProcurementWavesSummary(
+        scopedModelEntries,
+        investmentSummary.monthlyRows,
+        currentScenario.year || 2027
+      ),
+    [scopedModelEntries, investmentSummary.monthlyRows, currentScenario.year]
+  );
 
   const brandsReport = useMemo(() => {
     const baseReport = computeGroupBrandsInvestmentReport(
@@ -1365,6 +1394,10 @@ export function ProcurementContourView() {
         firstWaveStartBudgetRub: mb.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: mb.firstWavePrepaymentRub,
         peakWorkingCapitalRub: mb.peakWorkingCapitalRub,
+        peakMonthIdx: mb.peakMonthIdx,
+        peakMonthLabel: mb.peakMonthLabel,
+        peakPhaseLabelRu: mb.peakPhaseLabelRu,
+        selfFundingMonthLabel: mb.selfFundingMonthLabel,
         totalProcurementBudgetRub: mb.totalProcurementBudgetRub,
         annualSoldGoodsCostRub: mb.annualSoldGoodsCostRub,
         annualEstimatedOperatingProfitRub: mb.annualEstimatedOperatingProfitRub,
@@ -1392,6 +1425,9 @@ export function ProcurementContourView() {
         firstWavePrepaymentRub: multiBrandSummary.groupTotal.firstWavePrepaymentRub,
         peakWorkingCapitalRub: multiBrandSummary.groupTotal.peakWorkingCapitalRub,
         netOwnMoneyRequiredRub: multiBrandSummary.groupTotal.netOwnMoneyRequiredRub,
+        peakMonthIdx: multiBrandSummary.groupTotal.peakMonthIdx,
+        peakMonthLabel: multiBrandSummary.groupTotal.peakMonthLabel,
+        selfFundingMonthLabel: multiBrandSummary.groupTotal.selfFundingMonthLabel,
       },
     };
   }, [
@@ -1815,159 +1851,126 @@ export function ProcurementContourView() {
         </div>
       ) : (
         <>
-          {/* ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК 2027 (GANTT TIMELINE & CASH-GAP RADAR) */}
-          {wavesCalendarOpen &&
-            (() => {
-              const totalProc = Math.max(investmentSummary.totalProcurementBudgetRub, 0);
-              const w1 = Math.max(investmentSummary.firstWaveStartBudgetRub, Math.round(totalProc * 0.2));
-              const w1Prepay = Math.max(investmentSummary.firstWavePrepaymentRub, Math.round(w1 * 0.3));
-              const rem = Math.max(0, totalProc - w1);
-              const w2 = Math.round(rem * 0.27);
-              const w3 = Math.round(rem * 0.34);
-              const w4 = Math.max(0, rem - w2 - w3);
-              const waves = [
-                {
-                  id: 'w1',
-                  num: 'Волна №1 · Q1',
-                  title: 'Стартовая партия (Янв–Мар)',
-                  orderMonth: 'Ноя–Дек',
-                  arrivalMonth: 'Январь',
-                  budgetRub: w1,
-                  prepayRub: w1Prepay,
-                  balanceRub: Math.max(0, w1 - w1Prepay),
-                  covered: [0, 1, 2],
-                  funding: 'Аванс 30% + доплата 70% (свой капитал)',
-                  selfFunded: false,
-                },
-                {
-                  id: 'w2',
-                  num: 'Волна №2 · Q2',
-                  title: 'Весна–Лето (Апр–Июн)',
-                  orderMonth: 'Февраль',
-                  arrivalMonth: 'Апрель',
-                  budgetRub: w2,
-                  prepayRub: Math.round(w2 * 0.3),
-                  balanceRub: Math.round(w2 * 0.7),
-                  covered: [3, 4, 5],
-                  funding: 'Реинвест WB + пик оборотного капитала',
-                  selfFunded: false,
-                },
-                {
-                  id: 'w3',
-                  num: 'Волна №3 · Q3',
-                  title: 'Высокий сезон (Июл–Сен)',
-                  orderMonth: 'Май',
-                  arrivalMonth: 'Июль',
-                  budgetRub: w3,
-                  prepayRub: Math.round(w3 * 0.3),
-                  balanceRub: Math.round(w3 * 0.7),
-                  covered: [6, 7, 8],
-                  funding: '100% из оборотной выручки WB',
-                  selfFunded: true,
-                },
-                {
-                  id: 'w4',
-                  num: 'Волна №4 · Q4',
-                  title: 'Пик декабря (Окт–Дек)',
-                  orderMonth: 'Август',
-                  arrivalMonth: 'Октябрь',
-                  budgetRub: w4,
-                  prepayRub: Math.round(w4 * 0.3),
-                  balanceRub: Math.round(w4 * 0.7),
-                  covered: [9, 10, 11],
-                  funding: '100% из оборота WB · защита от Out-of-Stock',
-                  selfFunded: true,
-                },
-              ];
-
-              return (
-                <section className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-3.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[13px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                        📦 Платёжный календарь 4 волн закупок {currentScenario.year || 2027} · Авансы 30%, доплаты 70% и реинвест с WB
-                      </div>
-                      <p className="text-[11.5px] text-[#64748B]">
-                        Годовой бюджет закупок: <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totalProc)}</strong> · Пик собственных средств: <strong className="font-mono text-emerald-600 dark:text-emerald-400">{investmentSummary.verifiedOwnMoneyRequiredRub != null ? formatMln(investmentSummary.verifiedOwnMoneyRequiredRub) : '—'}</strong> · Волны №3 и №4 финансируются на 100% из выручки WB
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleExportFactoryOrderCsv('first_wave')}
-                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11.5px] font-semibold cursor-pointer transition"
-                    >
-                      Скачать заказ 1-й волны Q1 (CSV)
-                    </button>
+          {/* ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК 2027 (РЕАЛЬНЫЕ КВАРТАЛЬНЫЕ ПАРТИИ И PO БЕЗ УСЛОВНЫХ ПРОПОРЦИЙ) */}
+          {wavesCalendarOpen && (
+            <section className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[13px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                    📦 Платёжный календарь 4 реальных волн закупок {currentScenario.year || 2027} · Авансы {wavesSummary.avgPrepaymentPct}%, доплаты {100 - wavesSummary.avgPrepaymentPct}% и реинвест с WB
                   </div>
+                  <p className="text-[11.5px] text-[#64748B]">
+                    Годовой бюджет закупок:{' '}
+                    <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                      {formatMln(wavesSummary.totalBudgetRub)}
+                    </strong>{' '}
+                    ({wavesSummary.totalPacks.toLocaleString('ru-RU')} компл. · утв. PO: {wavesSummary.totalApprovedPosCount}, план: {wavesSummary.totalDraftBatchesCount}) · Пик своих денег:{' '}
+                    <strong className="font-mono text-amber-700 dark:text-amber-400">
+                      {investmentSummary.verifiedOwnMoneyRequiredRub != null
+                        ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} (${investmentSummary.peakMonthLabel})`
+                        : '—'}
+                    </strong>
+                    {investmentSummary.selfFundingMonthLabel
+                      ? ` · С ${investmentSummary.selfFundingMonthLabel} — выход в плюс из выручки WB`
+                      : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setScenarioDrawerTab('investment')}
+                    className="h-8 px-3 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11.5px] font-bold cursor-pointer transition"
+                  >
+                    📍 Подробный график «Пик своих денег» →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportFactoryOrderCsv('first_wave')}
+                    className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11.5px] font-semibold cursor-pointer transition"
+                  >
+                    Скачать заказ 1-й волны Q1 (CSV)
+                  </button>
+                </div>
+              </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    {waves.map((w) => (
-                      <div
-                        key={w.id}
-                        className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A] p-3.5 space-y-2"
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                {wavesSummary.waves.map((w) => (
+                  <div
+                    key={w.id}
+                    className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A] p-3.5 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        {w.waveNum}
+                      </span>
+                      <span
+                        className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
+                          w.selfFunded
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                            : w.fundedFromWbPct > 0
+                            ? 'bg-indigo-50 text-indigo-800'
+                            : 'bg-amber-50 text-amber-900'
+                        }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                            {w.num}
-                          </span>
-                          <span
-                            className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
-                              w.selfFunded
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-[#F1F5F9] dark:bg-[#1E2536] text-[#475569] dark:text-[#94A3B8]'
-                            }`}
-                          >
-                            {w.selfFunded ? '100% с WB' : 'Старт / Оборот'}
-                          </span>
-                        </div>
-                        <div className="text-[13px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
-                          {w.title}
-                        </div>
-                        <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                          {formatMln(w.budgetRub)}
-                        </div>
-                        <div className="space-y-1 text-[11px] text-[#64748B]">
-                          <div className="flex justify-between">
-                            <span>Аванс 30% ({w.orderMonth}):</span>
-                            <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
-                              {formatMln(w.prepayRub)}
-                            </strong>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Доплата 70% ({w.arrivalMonth}):</span>
-                            <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
-                              {formatMln(w.balanceRub)}
-                            </strong>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-12 gap-0.5 h-1.5 rounded overflow-hidden bg-[#E2E8F0] dark:bg-[#222938]">
-                          {MONTHS_SHORT_RU.map((m, idx) => (
-                            <div
-                              key={m}
-                              className={
-                                w.covered.includes(idx)
-                                  ? w.selfFunded
-                                    ? 'bg-emerald-500'
-                                    : 'bg-teal-500'
-                                  : 'bg-transparent'
-                              }
-                            />
-                          ))}
-                        </div>
-                        <div className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8]">
-                          {w.funding}
-                        </div>
-                        <div
-                          className={`absolute inset-x-0 bottom-0 h-[3px] ${
-                            w.selfFunded ? 'bg-emerald-500/80' : 'bg-teal-500/80'
-                          }`}
-                        />
+                        {w.selfFunded
+                          ? '100% с WB'
+                          : w.fundedFromWbPct > 0
+                          ? `${w.fundedFromWbPct}% с WB`
+                          : 'Старт · свои ₽'}
+                      </span>
+                    </div>
+                    <div className="text-[13px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                      {w.title}
+                    </div>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                        {formatMln(w.budgetRub)}
                       </div>
-                    ))}
+                      <span className="font-mono text-[11px] font-semibold text-[#64748B]">
+                        {w.packsQty.toLocaleString('ru-RU')} компл. ({w.sharePct}%)
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-[11px] text-[#64748B]">
+                      <div className="flex justify-between">
+                        <span>Аванс {wavesSummary.avgPrepaymentPct}% ({w.orderWindow}):</span>
+                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                          {formatMln(w.prepayRub)}
+                        </strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Доплата {100 - wavesSummary.avgPrepaymentPct}% ({w.arrivalMonth}):</span>
+                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                          {formatMln(w.balanceRub)}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-12 gap-0.5 h-1.5 rounded overflow-hidden bg-[#E2E8F0] dark:bg-[#222938]">
+                      {MONTHS_SHORT_RU.map((m, idx) => (
+                        <div
+                          key={m}
+                          className={
+                            w.coverageMonths.includes(idx)
+                              ? w.selfFunded
+                                ? 'bg-emerald-500'
+                                : 'bg-amber-500'
+                              : 'bg-transparent'
+                          }
+                        />
+                      ))}
+                    </div>
+                    <div className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8]">
+                      {w.fundingLabel}
+                    </div>
+                    <div
+                      className={`absolute inset-x-0 bottom-0 h-[3px] ${
+                        w.selfFunded ? 'bg-emerald-500/80' : 'bg-amber-500/80'
+                      }`}
+                    />
                   </div>
-                </section>
-              );
-            })()}
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* ЕДИНАЯ РАСКРЫВАЮЩАЯСЯ ПАНЕЛЬ СЦЕНАРИЯ (Скрыта по умолчанию, чтобы не дублировать карточки на экране!) */}
           {scenarioDrawerTab !== 'none' && (
@@ -2122,131 +2125,27 @@ export function ProcurementContourView() {
                     </div>
                   </div>
 
-                  {/* Таблица 12 месяцев внутри сводки */}
-                  <div className="p-4 space-y-3 bg-[#FAF9F6]/50">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-[12.5px] font-bold text-[#141413]">
-                        Помесячный график вложений и возврата выручки с Wildberries (2027)
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2.5 text-[11.5px]">
-                        <label className="inline-flex items-center gap-1.5 rounded-[7px] border border-[#D8D7CE] bg-white px-2.5 py-1">
-                          <span className="text-[#52514C] font-medium">Свои деньги на старте:</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={500}
-                            step={1}
-                            value={initialCashMln}
-                            onChange={(e) =>
-                              setInitialCashMln(Math.max(0, Number(e.target.value) || 0))
-                            }
-                            className="w-12 rounded border border-[#E2E1D9] px-1.5 py-0.5 text-right font-mono font-bold text-[#141413]"
-                          />
-                          <span className="text-[#686762]">млн ₽</span>
-                        </label>
-                        <label className="inline-flex items-center gap-1.5 rounded-[7px] border border-[#D8D7CE] bg-white px-2.5 py-1">
-                          <span className="text-[#52514C] font-medium">Выплаты WB:</span>
-                          <select
-                            value={wbLagMonths}
-                            onChange={(e) => setWbLagMonths(Number(e.target.value))}
-                            className="font-semibold text-[#141413] bg-transparent focus:outline-none"
-                          >
-                            <option value={0}>В месяц продаж</option>
-                            <option value={1}>Лаг 1 месяц</option>
-                            <option value={-1}>График WB не указан</option>
-                          </select>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto rounded-[10px] border border-[#E4E3DC] bg-white">
-                      <table className="w-full min-w-[820px] border-collapse text-left text-[11.5px]">
-                        <thead>
-                          <tr className="border-b border-[#E4E3DC] bg-[#FAF9F6] text-[10.5px] font-bold uppercase tracking-wide text-[#5E5D58]">
-                            <th className="py-2 px-3 sticky left-0 bg-[#FAF9F6] border-r border-[#E4E3DC]">
-                              Поток денег (млн ₽)
-                            </th>
-                            {investmentSummary.monthlyRows.map((r) => (
-                              <th
-                                key={r.monthIdx}
-                                className={`py-2 px-2 text-right ${
-                                  r.isPeakDeficitMonth ? 'bg-amber-50 text-amber-900' : ''
-                                }`}
-                              >
-                                {r.monthLabel}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#ECEBE4]">
-                          <tr>
-                            <td className="py-2 px-3 font-medium text-[#52514C] sticky left-0 bg-white border-r border-[#ECEBE4]">
-                              Выручка продаж (выкупы WB)
-                            </td>
-                            {investmentSummary.monthlyRows.map((r) => (
-                              <td
-                                key={r.monthIdx}
-                                className="py-2 px-2 text-right font-mono text-[#52514C]"
-                              >
-                                {(r.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
-                              </td>
-                            ))}
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 font-semibold text-[#157347] sticky left-0 bg-white border-r border-[#ECEBE4]">
-                              + Поступления от WB (после комиссии, логистики и рекламы)
-                            </td>
-                            {investmentSummary.monthlyRows.map((r) => (
-                              <td
-                                key={r.monthIdx}
-                                className="py-2 px-2 text-right font-mono font-semibold text-[#157347]"
-                              >
-                                +{(r.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
-                              </td>
-                            ))}
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 font-semibold text-[#B45309] sticky left-0 bg-white border-r border-[#ECEBE4]">
-                              − Оплаты фабрикам (авансы 30% + доплаты 70%)
-                            </td>
-                            {investmentSummary.monthlyRows.map((r) => (
-                              <td
-                                key={r.monthIdx}
-                                className="py-2 px-2 text-right font-mono text-[#B45309]"
-                              >
-                                {r.factoryTotalOutflowRub > 0
-                                  ? `−${(r.factoryTotalOutflowRub / 1_000_000)
-                                      .toFixed(1)
-                                      .replace('.', ',')}`
-                                  : '0,0'}
-                              </td>
-                            ))}
-                          </tr>
-                          <tr className="bg-[#FAF9F6] font-extrabold">
-                            <td className="py-2.5 px-3 text-[#141413] sticky left-0 bg-[#FAF9F6] border-r border-[#ECEBE4]">
-                              Накопленный баланс денег (минус = свои вложения)
-                            </td>
-                            {investmentSummary.monthlyRows.map((r) => (
-                              <td
-                                key={r.monthIdx}
-                                className={`py-2.5 px-2 text-right font-mono ${
-                                  r.isPeakDeficitMonth
-                                    ? 'bg-amber-100/80 text-amber-950'
-                                    : r.cumulativeCashBalanceRub < 0
-                                      ? 'text-rose-700'
-                                      : 'text-[#157347]'
-                                }`}
-                              >
-                                {r.cumulativeCashBalanceRub >= 0 ? '+' : ''}
-                                {(r.cumulativeCashBalanceRub / 1_000_000)
-                                  .toFixed(1)
-                                  .replace('.', ',')}
-                              </td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                  {/* Подробный интерактивный график «Пик своих денег» и помесячная сверка */}
+                  <div className="p-4 bg-[#FAF9F6]/50">
+                    <PeakOwnMoneyChartPanel
+                      investmentSummary={investmentSummary}
+                      wavesSummary={wavesSummary}
+                      scenarioTitle={
+                        isHoldingAllBrandsActive
+                          ? 'Все 5 брендов холдинга'
+                          : currentScenario.title
+                      }
+                      year={currentScenario.year || 2027}
+                      initialCashMln={initialCashMln}
+                      onChangeInitialCashMln={setInitialCashMln}
+                      wbLagMonths={wbLagMonths < 0 ? 0 : wbLagMonths}
+                      onChangeWbLagMonths={setWbLagMonths}
+                      wbScheduleSpecified={wbLagMonths >= 0}
+                      onToggleWbScheduleSpecified={() =>
+                        setWbLagMonths((prev) => (prev < 0 ? 0 : -1))
+                      }
+                      compact
+                    />
                   </div>
                 </div>
               )}
@@ -2305,7 +2204,17 @@ export function ProcurementContourView() {
                               )}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
-                              {b.modelsCount > 0 ? formatMln(b.peakWorkingCapitalRub) : '—'}
+                              {b.modelsCount > 0 ? (
+                                <div>
+                                  <div>{formatMln(b.peakWorkingCapitalRub)}</div>
+                                  <div className="text-[10px] font-normal text-amber-800">
+                                    пик: {b.peakMonthLabel || 'Янв'}
+                                    {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ''}
+                                  </div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
                               {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
@@ -2528,6 +2437,214 @@ export function ProcurementContourView() {
                     </button>
                   </div>
 
+                  {/* 1Б. ПОМЕСЯЧНАЯ ЛЕНТА ПЛАТЕЖЕЙ ФАБРИКАМ (12 МЕС.) + УПРАВЛЕНИЕ УСЛОВИЯМИ ОПЛАТЫ И ПИКОМ СВОИХ ДЕНЕГ */}
+                  <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-3.5 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[12.5px] font-bold text-[#0F172A]">
+                            📅 Платёжный график фабрикам по 12 месяцам (Авансы {wavesSummary.avgPrepaymentPct}% + Доплаты {100 - wavesSummary.avgPrepaymentPct}%)
+                          </span>
+                          <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                            📍 Пик своих денег:{' '}
+                            {investmentSummary.verifiedOwnMoneyRequiredRub != null
+                              ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} в ${investmentSummary.peakMonthLabel}`
+                              : '—'}
+                            {investmentSummary.selfFundingMonthLabel
+                              ? ` · с ${investmentSummary.selfFundingMonthLabel} — в плюс с WB`
+                              : ''}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#64748B] mt-0.5">
+                          Реальные квартальные партии: Q1 {formatMln(wavesSummary.waves[0]?.budgetRub || 0)} · Q2 {formatMln(wavesSummary.waves[1]?.budgetRub || 0)} · Q3 {formatMln(wavesSummary.waves[2]?.budgetRub || 0)} · Q4 {formatMln(wavesSummary.waves[3]?.budgetRub || 0)}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFactoryTermsPanelOpen((v) => !v)}
+                          className={`h-8 px-3 rounded-lg border text-[11.5px] font-semibold transition cursor-pointer ${
+                            factoryTermsPanelOpen
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : 'bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#0F172A] border-[#CBD5E1]'
+                          }`}
+                        >
+                          ⚙️ Условия оплаты фабрикам ({wavesSummary.avgPrepaymentPct}/{100 - wavesSummary.avgPrepaymentPct}%) {factoryTermsPanelOpen ? '▴' : '▾'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScenarioDrawerTab('investment')}
+                          className="h-8 px-3 rounded-lg bg-amber-500/12 hover:bg-amber-500/20 border border-amber-400/60 text-amber-950 text-[11.5px] font-bold cursor-pointer transition"
+                        >
+                          Подробный график «Пик своих денег» →
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Компактная 12-месячная шкала выплат фабрикам */}
+                    {(() => {
+                      const maxOut = Math.max(
+                        1,
+                        ...wavesSummary.monthlySchedule.map((r) => r.totalOutflowRub)
+                      );
+                      return (
+                        <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5 pt-1">
+                          {wavesSummary.monthlySchedule.map((ms) => {
+                            const isPeakM = ms.monthIdx === investmentSummary.peakMonthIdx;
+                            const prepayH = Math.round((ms.prepayRub / maxOut) * 34);
+                            const balH = Math.round((ms.balanceRub / maxOut) * 34);
+                            return (
+                              <button
+                                key={ms.monthIdx}
+                                type="button"
+                                onClick={() => setScenarioDrawerTab('investment')}
+                                title={`${ms.monthLabel}: всего фабрикам ${formatMln(ms.totalOutflowRub)} (аванс ${formatMln(ms.prepayRub)} + доплата ${formatMln(ms.balanceRub)})${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`}
+                                className={`rounded-lg border p-1.5 text-center transition cursor-pointer ${
+                                  isPeakM
+                                    ? 'border-amber-400 bg-amber-50/70'
+                                    : ms.totalOutflowRub > 0
+                                    ? 'border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#94A3B8]'
+                                    : 'border-[#F1F5F9] bg-white opacity-75'
+                                }`}
+                              >
+                                <div className="flex items-center justify-center gap-0.5 text-[10px] font-bold text-[#334155]">
+                                  <span>{ms.monthLabel}</span>
+                                  {isPeakM && <span>📍</span>}
+                                </div>
+                                <div className="h-9 flex flex-col justify-end items-center my-1">
+                                  {balH > 0 && (
+                                    <div
+                                      style={{ height: `${Math.max(3, balH)}px` }}
+                                      className="w-4 rounded-t-xs bg-rose-400"
+                                    />
+                                  )}
+                                  {prepayH > 0 && (
+                                    <div
+                                      style={{ height: `${Math.max(3, prepayH)}px` }}
+                                      className="w-4 rounded-b-xs bg-amber-400"
+                                    />
+                                  )}
+                                </div>
+                                <div className="font-mono text-[10px] font-bold text-[#0F172A]">
+                                  {ms.totalOutflowRub > 0
+                                    ? `−${(ms.totalOutflowRub / 1_000_000).toFixed(1)}`
+                                    : '0'}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Групповая настройка условий закупки (мгновенно пересчитывает волны и Пик своих денег) */}
+                    {factoryTermsPanelOpen && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11.5px]">
+                        <div className="space-y-1.5">
+                          <div className="font-bold text-slate-800">
+                            1. Аванс / Доплата фабрикам ({scopedModelEntries.length} SKU)
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[20, 30, 50, 100].map((pct) => {
+                              const active = wavesSummary.avgPrepaymentPct === pct;
+                              return (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => {
+                                    updateBatchFactoryTerms(
+                                      scopedModelEntries.map((e) => e.model.id),
+                                      { prepaymentPct: pct }
+                                    );
+                                    notify(
+                                      'success',
+                                      `Установлена схема оплаты ${pct}% / ${100 - pct}% для ${scopedModelEntries.length} SKU`
+                                    );
+                                  }}
+                                  className={`px-2.5 py-1 rounded-lg font-mono font-bold border cursor-pointer transition ${
+                                    active
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {pct}/{100 - pct}%
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="font-bold text-slate-800">
+                            2. Срок производства на фабрике
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[20, 30, 45, 60].map((days) => (
+                              <button
+                                key={days}
+                                type="button"
+                                onClick={() => {
+                                  updateBatchFactoryTerms(
+                                    scopedModelEntries.map((e) => e.model.id),
+                                    { productionLeadDays: days }
+                                  );
+                                  notify(
+                                    'success',
+                                    `Срок пошива/производства установлен: ${days} дн. (${scopedModelEntries.length} SKU)`
+                                  );
+                                }}
+                                className="px-2.5 py-1 rounded-lg font-mono font-bold border bg-white text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer transition"
+                              >
+                                {days} дн.
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="font-bold text-slate-800">
+                            3. Объём закупа с учётом возвратов ПВЗ
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateBatchFactoryTerms(
+                                  scopedModelEntries.map((e) => e.model.id),
+                                  { procureByOrdersVolume: false }
+                                );
+                                notify(
+                                  'success',
+                                  `Режим закупки: под чистые выкупы ×1,00 (${scopedModelEntries.length} SKU)`
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded-lg font-semibold border bg-white text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer transition"
+                            >
+                              Под выкупы (×1,00)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateBatchFactoryTerms(
+                                  scopedModelEntries.map((e) => e.model.id),
+                                  { procureByOrdersVolume: true }
+                                );
+                                notify(
+                                  'success',
+                                  `Режим закупки: под полный объём заказов ПВЗ (${scopedModelEntries.length} SKU)`
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded-lg font-semibold border bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100 cursor-pointer transition"
+                            >
+                              Под заказы ПВЗ
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* 2. ГРУППИРОВКА ЗАКУПОК ПО КАТЕГОРИЯМ / ЛИНЕЙКАМ (БЛЭКАУТ, МРАМОР, РОГОЖКА, ТЮЛЬ И ДР.) */}
                   {categoryGroups.length > 1 && (
                     <div className="space-y-2.5">
@@ -2737,6 +2854,16 @@ export function ProcurementContourView() {
                                 ? totalModelPacks / baselineVariantBuyoutsSum
                                 : 1;
 
+                            const prodProfile = getBrandProductionProfile(
+                              detectModelBrandPortfolioLabel(m),
+                              `${m.title} ${m.categoryLabel || ''}`
+                            );
+                            const sizeRangeShortLabel = hasLiskaniSizes
+                              ? `${sizesCount} разм.`
+                              : prodProfile.sizes.length >= 2
+                              ? `${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]}`
+                              : 'S–XXL';
+
                             return (
                               <React.Fragment key={m.id}>
                                 <tr
@@ -2751,7 +2878,7 @@ export function ProcurementContourView() {
                                     <div className="flex items-center gap-2">
                                       <span className="font-bold text-[#0F172A]">{m.title}</span>
                                       <span className="rounded bg-[#EEF2F6] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#334155]">
-                                        {hasLiskaniSizes ? `${sizesCount} разм.` : 'S–XXL'}
+                                        {sizeRangeShortLabel}
                                       </span>
                                     </div>
                                     <div className="font-mono text-[10.5px] text-[#64748B]">
@@ -3032,27 +3159,102 @@ export function ProcurementContourView() {
                                           </div>
                                         ) : (
                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                            {plan.recommendedBatches.map((rb, bIdx) => (
+                                            {confirmedPos.map((po) => (
                                               <div
-                                                key={rb.periodId}
-                                                className="rounded-lg border border-[#CBD5E1] bg-white p-3 space-y-1"
+                                                key={po.id}
+                                                className="rounded-lg border border-emerald-300 bg-emerald-50/50 p-3 space-y-1.5"
                                               >
                                                 <div className="flex items-center justify-between text-[11px]">
-                                                  <span className="font-bold text-[#0F172A]">
-                                                    Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
+                                                  <span className="font-bold text-emerald-950">
+                                                    ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
                                                   </span>
-                                                  <span className="font-mono font-semibold text-emerald-700">
-                                                    {formatMln(rb.estimatedTotalRub)}
+                                                  <span className="font-mono font-bold text-emerald-700">
+                                                    {formatMln(po.totalOrderRub)}
                                                   </span>
                                                 </div>
                                                 <div className="font-mono text-[12px] font-bold text-[#0F172A]">
-                                                  {rb.recommendedPacks.toLocaleString('ru-RU')} компл. ({rb.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
+                                                  {po.packsQty.toLocaleString('ru-RU')} компл. ({po.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
                                                 </div>
-                                                <div className="text-[10.5px] text-[#64748B]">
-                                                  Аванс: {formatMln(rb.prepaymentRub)} · S:{rb.sizeBreakdownPacks.S} M:{rb.sizeBreakdownPacks.M} L:{rb.sizeBreakdownPacks.L} XL:{rb.sizeBreakdownPacks.XL} XXL:{rb.sizeBreakdownPacks.XXL}
+                                                <div className="text-[10.5px] text-emerald-900/80 flex items-center justify-between">
+                                                  <span>Аванс: {formatMln(po.prepaymentRub)}</span>
+                                                  <span>Приход: {po.requiredArrivalDateIso}</span>
                                                 </div>
                                               </div>
                                             ))}
+
+                                            {plan.recommendedBatches.map((rb, bIdx) => {
+                                              const canonicalKeys = ['S', 'M', 'L', 'XL', 'XXL'] as const;
+                                              const mappedSizesText =
+                                                prodProfile.sizes.length === 5 &&
+                                                prodProfile.sizes[0] !== 'S'
+                                                  ? prodProfile.sizes
+                                                      .map(
+                                                        (szLabel, sIdx) =>
+                                                          `${szLabel}:${rb.sizeBreakdownPacks[canonicalKeys[sIdx]] || 0}`
+                                                      )
+                                                      .join(' ')
+                                                  : prodProfile.sizes.length > 0 &&
+                                                    prodProfile.sizes[0] !== 'S'
+                                                  ? prodProfile.sizes
+                                                      .map((szLabel) => {
+                                                        const share =
+                                                          (prodProfile.sizeSharesPct[szLabel] ||
+                                                            Math.round(100 / prodProfile.sizes.length)) / 100;
+                                                        return `${szLabel}:${Math.round(rb.recommendedPacks * share)}`;
+                                                      })
+                                                      .join(' ')
+                                                  : `S:${rb.sizeBreakdownPacks.S} M:${rb.sizeBreakdownPacks.M} L:${rb.sizeBreakdownPacks.L} XL:${rb.sizeBreakdownPacks.XL} XXL:${rb.sizeBreakdownPacks.XXL}`;
+
+                                              return (
+                                                <div
+                                                  key={rb.periodId}
+                                                  className="rounded-lg border border-[#CBD5E1] bg-white p-3 space-y-1.5 flex flex-col justify-between"
+                                                >
+                                                  <div className="space-y-1">
+                                                    <div className="flex items-center justify-between text-[11px]">
+                                                      <span className="font-bold text-[#0F172A]">
+                                                        Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
+                                                      </span>
+                                                      <span className="font-mono font-semibold text-emerald-700">
+                                                        {formatMln(rb.estimatedTotalRub)}
+                                                      </span>
+                                                    </div>
+                                                    <div className="font-mono text-[12px] font-bold text-[#0F172A]">
+                                                      {rb.recommendedPacks.toLocaleString('ru-RU')} компл. ({rb.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
+                                                    </div>
+                                                    <div className="text-[10.5px] text-[#64748B]">
+                                                      Аванс: {formatMln(rb.prepaymentRub)} · Доплата: {formatMln(rb.balancePaymentRub)}
+                                                    </div>
+                                                    <div className="font-mono text-[10px] text-[#475569] bg-slate-50 rounded px-1.5 py-0.5">
+                                                      {mappedSizesText}
+                                                    </div>
+                                                  </div>
+                                                  <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100">
+                                                    <span className="text-[10px] text-slate-500">
+                                                      Заказ до {rb.recommendedOrderDateIso}
+                                                    </span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        const nextM = approveRecommendedBatch(
+                                                          m,
+                                                          rb,
+                                                          'Владелец'
+                                                        );
+                                                        updateModelSpec(nextM);
+                                                        notify(
+                                                          'success',
+                                                          `Партия ${rb.coverageMonthsLabel} (${m.code}) утверждена в PO`
+                                                        );
+                                                      }}
+                                                      className="rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 px-2 py-0.5 text-[10.5px] font-bold transition cursor-pointer"
+                                                    >
+                                                      ✓ Утвердить в PO
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
                                           </div>
                                         )}
                                       </div>
@@ -3424,6 +3626,21 @@ export function FinanceContourView() {
       isHoldingAllBrands
         ? {
             ...brandsReport.groupTotal,
+            peakMonthIdx: holdingSummary.groupTotal.peakMonthIdx,
+            peakMonthLabel: holdingSummary.groupTotal.peakMonthLabel,
+            peakPhase: holdingSummary.groupTotal.peakPhase,
+            peakPhaseLabelRu: holdingSummary.groupTotal.peakPhaseLabelRu,
+            peakWindowHumanRu: holdingSummary.groupTotal.peakWindowHumanRu,
+            monthsInDeficitCount: holdingSummary.groupTotal.monthsInDeficitCount,
+            openingBalanceAtPeakMonthRub:
+              holdingSummary.groupTotal.openingBalanceAtPeakMonthRub,
+            prepayInPeakMonthRub: holdingSummary.groupTotal.prepayInPeakMonthRub,
+            balancePayInPeakMonthRub: holdingSummary.groupTotal.balancePayInPeakMonthRub,
+            wbInflowInPeakMonthRub: holdingSummary.groupTotal.wbInflowInPeakMonthRub,
+            endOfPeakMonthBalanceRub: holdingSummary.groupTotal.endOfPeakMonthBalanceRub,
+            selfFundingMonthIdx: holdingSummary.groupTotal.selfFundingMonthIdx,
+            selfFundingMonthLabel: holdingSummary.groupTotal.selfFundingMonthLabel,
+            yearEndCashBalanceRub: holdingSummary.groupTotal.yearEndCashBalanceRub,
             monthlyRows: holdingSummary.groupTotal.monthlyRows,
             firstWavePacks:
               brandsReport.groupTotal.firstWavePacks > 0
@@ -3434,10 +3651,20 @@ export function FinanceContourView() {
     [
       isHoldingAllBrands,
       brandsReport.groupTotal,
-      holdingSummary.groupTotal.monthlyRows,
+      holdingSummary.groupTotal,
       finSummary.totalFirstWavePacks,
       singleScenarioInvestmentSummary,
     ]
+  );
+
+  const financeWavesSummary = useMemo(
+    () =>
+      computePortfolioProcurementWavesSummary(
+        scopedFinanceEntries,
+        investmentSummary.monthlyRows,
+        currentScenario.year || 2027
+      ),
+    [scopedFinanceEntries, investmentSummary.monthlyRows, currentScenario.year]
   );
 
   const effectiveAnnualRevenueRub = isHoldingAllBrands
@@ -3608,9 +3835,20 @@ export function FinanceContourView() {
               <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                2. Максимум своих денег (с оборотом WB)
+            <div
+              onClick={() => {
+                const el = document.getElementById('peak-own-money-chart-anchor');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] hover:border-amber-400 p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)] cursor-pointer transition"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                  2. Пик своих денег (с оборотом WB)
+                </div>
+                <span className="rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                  📍 {investmentSummary.peakMonthLabel} {currentScenario.year || 2027}
+                </span>
               </div>
               {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
               investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
@@ -3618,11 +3856,15 @@ export function FinanceContourView() {
                   <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                     {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
                   </div>
-                  <div className="text-[11.5px] text-[#64748B]">
-                    Пик в <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{investmentSummary.peakMonthLabel} {currentScenario.year || 2027}</strong>
+                  <div className="text-[11px] text-[#64748B] leading-snug">
+                    <strong className="text-amber-800 dark:text-amber-300">
+                      {investmentSummary.peakPhase === 'before_wb_inflow'
+                        ? `1–15 ${investmentSummary.peakMonthLabel.toLowerCase()}. (до прихода WB)`
+                        : `Конец ${investmentSummary.peakMonthLabel.toLowerCase()}.`}
+                    </strong>
                     {investmentSummary.selfFundingMonthLabel
-                      ? ` · С ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB`
-                      : ' · Учитывает возврат выручки с WB'}
+                      ? ` · с ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB ↓`
+                      : ' · нажмите для подробного графика ↓'}
                   </div>
                 </>
               ) : (
@@ -3630,7 +3872,7 @@ export function FinanceContourView() {
                   {investmentSummary.ownMoneyStatusLabel}
                 </div>
               )}
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/85" />
             </div>
 
             <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
@@ -3931,7 +4173,19 @@ export function FinanceContourView() {
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7]">
-                        {b.modelsCount > 0 ? formatMln(b.peakWorkingCapitalRub) : '—'}
+                        {b.modelsCount > 0 ? (
+                          <div>
+                            <div>{formatMln(b.peakWorkingCapitalRub)}</div>
+                            <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">
+                              пик: {b.peakMonthLabel || 'Янв'}
+                              {b.selfFundingMonthLabel
+                                ? ` · с ${b.selfFundingMonthLabel} с WB`
+                                : ''}
+                            </div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
                         {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
@@ -3969,7 +4223,13 @@ export function FinanceContourView() {
                       </div>
                     </td>
                     <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
-                      {formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
+                      <div>{formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}</div>
+                      <div className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300">
+                        пик: {holdingSummary.groupTotal.peakMonthLabel}
+                        {holdingSummary.groupTotal.selfFundingMonthLabel
+                          ? ` · в плюс с ${holdingSummary.groupTotal.selfFundingMonthLabel}`
+                          : ''}
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
                       {formatMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
@@ -3986,138 +4246,24 @@ export function FinanceContourView() {
             </div>
           </section>
 
-          {/* 02 · Помесячный график инвестиций и возврата выручки с WB (12 мес.) */}
-          <section className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-                  02 · Денежный поток 2027 (помесячно)
-                </div>
-                <h2 className="text-[18px] font-bold text-[#141413] mt-0.5">
-                  График выплат фабрикам, возврата выручки с WB и накопленного баланса денег (млн ₽)
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5 text-[12px]">
-                <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
-                  <span className="text-[#52514C] font-medium">Деньги на счёте на старт:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={500}
-                    step={1}
-                    value={initialCashMln}
-                    onChange={(e) => setInitialCashMln(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-14 rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 text-right font-mono font-bold text-[#141413]"
-                  />
-                  <span className="text-[#686762]">млн ₽</span>
-                </label>
-                <label className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] px-2.5 py-1">
-                  <span className="text-[#52514C] font-medium">Выплаты WB:</span>
-                  <select
-                    value={wbLagMonths}
-                    onChange={(e) => setWbLagMonths(Number(e.target.value))}
-                    className="rounded bg-white border border-[#CFCEC6] px-1.5 py-0.5 font-semibold text-[#141413]"
-                  >
-                    <option value={0}>В месяц продаж (без задержки)</option>
-                    <option value={1}>Лаг 1 месяц</option>
-                    <option value={-1}>График выплат WB не указан</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-[12px] border-[1.5px] border-[#CECDC4]">
-              <table className="w-full text-left border-collapse text-[12px]">
-                <thead>
-                  <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
-                    <th className="py-2.5 px-3 font-bold min-w-[240px] sticky left-0 z-10 bg-[#F5F5F1] border-r border-[#DFDED6]">
-                      Статья движения денег
-                    </th>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <th
-                        key={r.monthIdx}
-                        className={`py-2.5 px-2 font-bold text-right ${
-                          r.isPeakDeficitMonth ? 'bg-amber-50 text-amber-900' : ''
-                        }`}
-                      >
-                        {r.monthLabel}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E4E3DC]">
-                  <tr>
-                    <td className="py-2.5 px-3 font-medium text-[#52514C] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
-                      Выручка продаж (выкупы WB)
-                    </td>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#52514C]">
-                        {(r.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-semibold text-[#157347] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
-                      + Поступления от WB на счёт (за вычетом комиссии, логистики и рекламы)
-                    </td>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#157347] font-semibold">
-                        +{(r.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-3 font-semibold text-[#B45309] sticky left-0 z-10 bg-white border-r border-[#ECEBE4]">
-                      − Оплаты фабрикам (авансы 30% + доплаты 70%)
-                    </td>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <td key={r.monthIdx} className="py-2.5 px-2 text-right font-mono text-[#B45309]">
-                        {r.factoryTotalOutflowRub > 0
-                          ? `−${(r.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}`
-                          : '0,0'}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr className="bg-[#FAFAF7] font-bold">
-                    <td className="py-2.5 px-3 text-[#141413] sticky left-0 z-10 bg-[#FAFAF7] border-r border-[#ECEBE4]">
-                      = Чистый поток месяца
-                    </td>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <td
-                        key={r.monthIdx}
-                        className={`py-2.5 px-2 text-right font-mono ${
-                          r.netMonthlyCashflowRub < 0 ? 'text-[#B45309]' : 'text-[#157347]'
-                        }`}
-                      >
-                        {r.netMonthlyCashflowRub >= 0 ? '+' : ''}
-                        {(r.netMonthlyCashflowRub / 1_000_000).toFixed(1).replace('.', ',')}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr className="bg-[#F1F5F9] dark:bg-[#1E2536] font-extrabold">
-                    <td className="py-2.5 px-3 text-[#0F172A] dark:text-[#EDF0F7] sticky left-0 z-10 bg-[#F1F5F9] dark:bg-[#1E2536] border-r border-[#E2E6EE] dark:border-[#222938]">
-                      Накопленный баланс денег (минус = пик своих денег)
-                    </td>
-                    {investmentSummary.monthlyRows.map((r) => (
-                      <td
-                        key={r.monthIdx}
-                        className={`py-2.5 px-2 text-right font-mono ${
-                          r.isPeakDeficitMonth
-                            ? 'bg-amber-100/90 text-amber-950 underline decoration-amber-600'
-                            : r.cumulativeCashBalanceRub < 0
-                            ? 'text-rose-700'
-                            : 'text-[#157347]'
-                        }`}
-                      >
-                        {r.cumulativeCashBalanceRub >= 0 ? '+' : ''}
-                        {(r.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+          {/* 02 · Подробный двухслойный интерактивный график «Пик своих денег» и помесячный денежный поток 2027 */}
+          <PeakOwnMoneyChartPanel
+            id="peak-own-money-chart-anchor"
+            investmentSummary={investmentSummary}
+            wavesSummary={financeWavesSummary}
+            scenarioTitle={
+              isHoldingAllBrands ? 'Все 5 брендов холдинга' : currentScenario.title
+            }
+            year={currentScenario.year || 2027}
+            initialCashMln={initialCashMln}
+            onChangeInitialCashMln={setInitialCashMln}
+            wbLagMonths={wbLagMonths < 0 ? 0 : wbLagMonths}
+            onChangeWbLagMonths={setWbLagMonths}
+            wbScheduleSpecified={wbLagMonths >= 0}
+            onToggleWbScheduleSpecified={() =>
+              setWbLagMonths((prev) => (prev < 0 ? 0 : -1))
+            }
+          />
 
           {/* 03 · Юнит-экономика по моделям */}
           <section className="rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">

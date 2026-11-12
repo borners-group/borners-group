@@ -2742,8 +2742,14 @@ export interface ScenarioMonthlyCashflowRow {
   factoryBalanceOutflowRub: number;
   factoryTotalOutflowRub: number;
   netMonthlyCashflowRub: number;
+  openingCashBalanceRub: number;
+  intraMonthLowBalanceRub: number;
+  ownMoneyInWorkPeakRub: number;
+  ownMoneyInWorkEndRub: number;
   cumulativeCashBalanceRub: number;
   isPeakDeficitMonth: boolean;
+  isIntraMonthPeak: boolean;
+  isSelfFundingCrossoverMonth: boolean;
 }
 
 export interface ScenarioInvestmentSummary {
@@ -2786,6 +2792,15 @@ export interface ScenarioInvestmentSummary {
   netOwnMoneyRequiredRub: number;
   peakMonthIdx: number;
   peakMonthLabel: string;
+  peakPhase: 'before_wb_inflow' | 'month_end';
+  peakPhaseLabelRu: string;
+  peakWindowHumanRu: string;
+  monthsInDeficitCount: number;
+  openingBalanceAtPeakMonthRub: number;
+  prepayInPeakMonthRub: number;
+  balancePayInPeakMonthRub: number;
+  wbInflowInPeakMonthRub: number;
+  endOfPeakMonthBalanceRub: number;
   selfFundingMonthIdx: number | null;
   selfFundingMonthLabel: string | null;
   yearEndCashBalanceRub: number;
@@ -2995,11 +3010,28 @@ export function computeScenarioInvestmentSummary(
       ? Math.round((annualEstimatedOperatingProfitRub / annualRevenueRub) * 1000) / 10
       : 0;
 
+  const MONTHS_GENITIVE_FULL_RU = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+  const scenarioYear = scenario.year || 2027;
+
   // Строим 12-месячный календарь кэшфлоу и находим точку максимального кассового разрыва (пик капитала)
   const monthlyRows: ScenarioMonthlyCashflowRow[] = [];
   let runningCashFromZero = 0;
   let minCumulativeFromZero = 0;
   let peakMonthIdx = 0;
+  let peakWasIntraMonth = false;
 
   for (let m = 0; m < 12; m++) {
     const srcM = m - settlementLagMonths;
@@ -3012,21 +3044,26 @@ export function computeScenarioInvestmentSummary(
     const factoryTotalOutflowRub =
       factoryPrepaymentOutflowRub + factoryBalanceOutflowRub;
 
-    // Внутри месяца сначала уходят платежи фабрике на старт периода, затем поступает выручка WB.
-    // Для честной оценки пика капитала в Январе (месяц 0) проверяем также предоплату + доплату Партии №1 до прихода выручки:
-    const intraMonthLowBeforeInflow = runningCashFromZero - factoryTotalOutflowRub;
-    if (m === 0 && intraMonthLowBeforeInflow < minCumulativeFromZero) {
-      minCumulativeFromZero = intraMonthLowBeforeInflow;
-      peakMonthIdx = 0;
-    }
-
+    const openingFromZero = runningCashFromZero;
+    // Внутри месяца сначала уходят платежи фабрике (авансы 30% + доплаты 70%), затем поступает выручка WB
+    const intraMonthLowBeforeInflow = openingFromZero - factoryTotalOutflowRub;
     const netMonthlyCashflowRub = wbNetInflowRub - factoryTotalOutflowRub;
     runningCashFromZero += netMonthlyCashflowRub;
 
-    if (runningCashFromZero < minCumulativeFromZero) {
+    if (intraMonthLowBeforeInflow < minCumulativeFromZero) {
+      minCumulativeFromZero = intraMonthLowBeforeInflow;
+      peakMonthIdx = m;
+      peakWasIntraMonth = runningCashFromZero > intraMonthLowBeforeInflow;
+    }
+    if (runningCashFromZero <= minCumulativeFromZero) {
       minCumulativeFromZero = runningCashFromZero;
       peakMonthIdx = m;
+      peakWasIntraMonth = false;
     }
+
+    const openingCashBalanceRub = initialCashOnHandRub + openingFromZero;
+    const intraMonthLowBalanceRub = initialCashOnHandRub + intraMonthLowBeforeInflow;
+    const cumulativeCashBalanceRub = initialCashOnHandRub + runningCashFromZero;
 
     monthlyRows.push({
       monthIdx: m,
@@ -3038,13 +3075,23 @@ export function computeScenarioInvestmentSummary(
       factoryBalanceOutflowRub,
       factoryTotalOutflowRub,
       netMonthlyCashflowRub,
-      cumulativeCashBalanceRub: initialCashOnHandRub + runningCashFromZero,
+      openingCashBalanceRub,
+      intraMonthLowBalanceRub,
+      ownMoneyInWorkPeakRub: Math.max(
+        0,
+        -Math.min(intraMonthLowBalanceRub, cumulativeCashBalanceRub)
+      ),
+      ownMoneyInWorkEndRub: Math.max(0, -cumulativeCashBalanceRub),
+      cumulativeCashBalanceRub,
       isPeakDeficitMonth: false,
+      isIntraMonthPeak: false,
+      isSelfFundingCrossoverMonth: false,
     });
   }
 
   if (monthlyRows[peakMonthIdx]) {
     monthlyRows[peakMonthIdx].isPeakDeficitMonth = true;
+    monthlyRows[peakMonthIdx].isIntraMonthPeak = peakWasIntraMonth;
   }
 
   // Пик потребности в оборотном капитале (от 0 ₽) — не меньше стартового аванса 1-й волны
@@ -3075,6 +3122,27 @@ export function computeScenarioInvestmentSummary(
       break;
     }
   }
+  if (selfFundingMonthIdx !== null && monthlyRows[selfFundingMonthIdx]) {
+    monthlyRows[selfFundingMonthIdx].isSelfFundingCrossoverMonth = true;
+  }
+
+  const peakRow = monthlyRows[peakMonthIdx];
+  const monthsInDeficitCount = monthlyRows.filter(
+    (r) => r.intraMonthLowBalanceRub < 0 || r.cumulativeCashBalanceRub < 0
+  ).length;
+  const monthGen = MONTHS_GENITIVE_FULL_RU[peakMonthIdx] || 'января';
+  const peakPhase: 'before_wb_inflow' | 'month_end' = peakWasIntraMonth
+    ? 'before_wb_inflow'
+    : 'month_end';
+  const peakPhaseLabelRu = peakWasIntraMonth
+    ? 'Начало месяца (до прихода выплат WB)'
+    : 'Конец месяца (накопленный кассовый дефицит)';
+  const peakWindowHumanRu =
+    netOwnMoneyRequiredRub <= 0
+      ? 'Собственные средства не требуются (покрывается стартовым остатком / выручкой WB)'
+      : peakWasIntraMonth
+      ? `1–15 ${monthGen} ${scenarioYear} (оплата партий фабрикам до поступления выручки WB за ${MONTHS_SHORT[peakMonthIdx]})`
+      : `Конец ${monthGen} ${scenarioYear} (накопленное превышение оплат фабрикам над приходами WB)`;
 
   return {
     modelsCount: uniqueModels.length,
@@ -3108,6 +3176,15 @@ export function computeScenarioInvestmentSummary(
     netOwnMoneyRequiredRub,
     peakMonthIdx,
     peakMonthLabel: MONTHS_SHORT[peakMonthIdx] || 'Янв',
+    peakPhase,
+    peakPhaseLabelRu,
+    peakWindowHumanRu,
+    monthsInDeficitCount,
+    openingBalanceAtPeakMonthRub: peakRow?.openingCashBalanceRub ?? initialCashOnHandRub,
+    prepayInPeakMonthRub: peakRow?.factoryPrepaymentOutflowRub ?? 0,
+    balancePayInPeakMonthRub: peakRow?.factoryBalanceOutflowRub ?? 0,
+    wbInflowInPeakMonthRub: peakRow?.wbNetInflowRub ?? 0,
+    endOfPeakMonthBalanceRub: peakRow?.cumulativeCashBalanceRub ?? initialCashOnHandRub,
     selfFundingMonthIdx,
     selfFundingMonthLabel:
       selfFundingMonthIdx !== null ? MONTHS_SHORT[selfFundingMonthIdx] : null,
@@ -3129,6 +3206,9 @@ export interface BrandInvestmentSummaryRow {
   firstWaveStartBudgetRub: number;
   firstWavePrepaymentRub: number;
   peakWorkingCapitalRub: number;
+  peakMonthLabel?: string;
+  peakPhaseLabelRu?: string;
+  selfFundingMonthLabel?: string | null;
   totalProcurementBudgetRub: number;
   annualSoldGoodsCostRub: number;
   annualEstimatedOperatingProfitRub: number;
@@ -3197,6 +3277,9 @@ export function computeGroupBrandsInvestmentReport(
           firstWaveStartBudgetRub: 0,
           firstWavePrepaymentRub: 0,
           peakWorkingCapitalRub: 0,
+          peakMonthLabel: undefined,
+          peakPhaseLabelRu: undefined,
+          selfFundingMonthLabel: null,
           totalProcurementBudgetRub: 0,
           annualSoldGoodsCostRub: 0,
           annualEstimatedOperatingProfitRub: 0,
@@ -3232,6 +3315,9 @@ export function computeGroupBrandsInvestmentReport(
         firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
         peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        peakMonthLabel: summary.peakMonthLabel,
+        peakPhaseLabelRu: summary.peakPhaseLabelRu,
+        selfFundingMonthLabel: summary.selfFundingMonthLabel,
         totalProcurementBudgetRub: summary.totalProcurementBudgetRub,
         annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
         annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
@@ -3251,6 +3337,8 @@ export function computeGroupBrandsInvestmentReport(
         : 0;
     const peakRowIdx = gt.monthlyRows.findIndex((r) => r.isPeakDeficitMonth);
     const safePeakIdx = peakRowIdx >= 0 ? peakRowIdx : 0;
+    const peakRow = gt.monthlyRows[safePeakIdx];
+    const peakWasIntra = Boolean(peakRow?.isIntraMonthPeak);
     let selfFundingMonthIdx: number | null = null;
     for (let m = safePeakIdx; m < gt.monthlyRows.length; m++) {
       if (gt.monthlyRows.slice(m).every((r) => r.cumulativeCashBalanceRub >= 0)) {
@@ -3258,6 +3346,21 @@ export function computeGroupBrandsInvestmentReport(
         break;
       }
     }
+    const monthsGen = [
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря',
+    ];
+    const yr = scenario.year || 2027;
 
     return {
       brands,
@@ -3293,6 +3396,24 @@ export function computeGroupBrandsInvestmentReport(
         netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
         peakMonthIdx: safePeakIdx,
         peakMonthLabel: gt.monthlyRows[safePeakIdx]?.monthLabel || 'Янв',
+        peakPhase: peakWasIntra ? 'before_wb_inflow' : 'month_end',
+        peakPhaseLabelRu: peakWasIntra
+          ? 'Начало месяца (до прихода выплат WB)'
+          : 'Конец месяца (накопленный кассовый дефицит)',
+        peakWindowHumanRu:
+          gt.netOwnMoneyRequiredRub <= 0
+            ? 'Собственные средства не требуются (покрывается стартовым остатком / выручкой WB)'
+            : peakWasIntra
+            ? `1–15 ${monthsGen[safePeakIdx] || 'января'} ${yr} (оплата партий фабрикам до поступления выручки WB за ${gt.monthlyRows[safePeakIdx]?.monthLabel || 'Янв'})`
+            : `Конец ${monthsGen[safePeakIdx] || 'января'} ${yr} (накопленное превышение оплат фабрикам над приходами WB)`,
+        monthsInDeficitCount: gt.monthlyRows.filter(
+          (r) => r.intraMonthLowBalanceRub < 0 || r.cumulativeCashBalanceRub < 0
+        ).length,
+        openingBalanceAtPeakMonthRub: peakRow?.openingCashBalanceRub ?? 0,
+        prepayInPeakMonthRub: peakRow?.factoryPrepaymentOutflowRub ?? 0,
+        balancePayInPeakMonthRub: peakRow?.factoryBalanceOutflowRub ?? 0,
+        wbInflowInPeakMonthRub: peakRow?.wbNetInflowRub ?? 0,
+        endOfPeakMonthBalanceRub: peakRow?.cumulativeCashBalanceRub ?? 0,
         selfFundingMonthIdx,
         selfFundingMonthLabel:
           selfFundingMonthIdx !== null
@@ -3325,6 +3446,9 @@ export function computeGroupBrandsInvestmentReport(
         firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
         peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        peakMonthLabel: summary.peakMonthLabel,
+        peakPhaseLabelRu: summary.peakPhaseLabelRu,
+        selfFundingMonthLabel: summary.selfFundingMonthLabel,
         totalProcurementBudgetRub: summary.totalProcurementBudgetRub,
         annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
         annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
@@ -4167,6 +4291,12 @@ export interface MultiBrandRowSummary {
   firstWaveStartBudgetRub: number;
   firstWavePrepaymentRub: number;
   peakWorkingCapitalRub: number;
+  peakMonthIdx?: number;
+  peakMonthLabel?: string;
+  peakPhaseLabelRu?: string;
+  peakWindowHumanRu?: string;
+  selfFundingMonthIdx?: number | null;
+  selfFundingMonthLabel?: string | null;
   verifiedOwnMoneyRequiredRub: number | null;
   annualSoldGoodsCostRub: number;
   annualEstimatedOperatingProfitRub: number;
@@ -4194,6 +4324,20 @@ export interface MultiBrandPortfolioSummaryResult {
     peakWorkingCapitalRub: number;
     netOwnMoneyRequiredRub: number;
     verifiedOwnMoneyRequiredRub: number | null;
+    peakMonthIdx: number;
+    peakMonthLabel: string;
+    peakPhase: 'before_wb_inflow' | 'month_end';
+    peakPhaseLabelRu: string;
+    peakWindowHumanRu: string;
+    monthsInDeficitCount: number;
+    openingBalanceAtPeakMonthRub: number;
+    prepayInPeakMonthRub: number;
+    balancePayInPeakMonthRub: number;
+    wbInflowInPeakMonthRub: number;
+    endOfPeakMonthBalanceRub: number;
+    selfFundingMonthIdx: number | null;
+    selfFundingMonthLabel: string | null;
+    yearEndCashBalanceRub: number;
     annualSoldGoodsCostRub: number;
     annualEstimatedOperatingProfitRub: number;
     monthlyRows: ScenarioMonthlyCashflowRow[];
@@ -4436,6 +4580,12 @@ export function computeMultiBrandPortfolioSummary(
         firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
         peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        peakMonthIdx: summary.peakMonthIdx,
+        peakMonthLabel: summary.peakMonthLabel,
+        peakPhaseLabelRu: summary.peakPhaseLabelRu,
+        peakWindowHumanRu: summary.peakWindowHumanRu,
+        selfFundingMonthIdx: summary.selfFundingMonthIdx,
+        selfFundingMonthLabel: summary.selfFundingMonthLabel,
         verifiedOwnMoneyRequiredRub: summary.verifiedOwnMoneyRequiredRub ?? null,
         annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
         annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
@@ -4449,6 +4599,7 @@ export function computeMultiBrandPortfolioSummary(
   let runningCashFromZero = 0;
   let minCumulativeFromZero = 0;
   let peakMonthIdx = 0;
+  let groupPeakWasIntraMonth = false;
 
   for (let m = 0; m < 12; m++) {
     const grossSalesRub = combinedMonthlyGrossSalesRub[m] || 0;
@@ -4459,18 +4610,25 @@ export function computeMultiBrandPortfolioSummary(
     const factoryTotalOutflowRub =
       factoryPrepaymentOutflowRub + factoryBalanceOutflowRub;
 
-    const intraLow = runningCashFromZero - factoryTotalOutflowRub;
-    if (m === 0 && intraLow < minCumulativeFromZero) {
-      minCumulativeFromZero = intraLow;
-      peakMonthIdx = 0;
-    }
-
+    const openingFromZero = runningCashFromZero;
+    const intraLow = openingFromZero - factoryTotalOutflowRub;
     const netMonthlyCashflowRub = wbNetInflowRub - factoryTotalOutflowRub;
     runningCashFromZero += netMonthlyCashflowRub;
-    if (runningCashFromZero < minCumulativeFromZero) {
+
+    if (intraLow < minCumulativeFromZero) {
+      minCumulativeFromZero = intraLow;
+      peakMonthIdx = m;
+      groupPeakWasIntraMonth = runningCashFromZero > intraLow;
+    }
+    if (runningCashFromZero <= minCumulativeFromZero) {
       minCumulativeFromZero = runningCashFromZero;
       peakMonthIdx = m;
+      groupPeakWasIntraMonth = false;
     }
+
+    const openingCashBalanceRub = initialCashOnHandRub + openingFromZero;
+    const intraMonthLowBalanceRub = initialCashOnHandRub + intraLow;
+    const cumulativeCashBalanceRub = initialCashOnHandRub + runningCashFromZero;
 
     groupMonthlyRows.push({
       monthIdx: m,
@@ -4482,12 +4640,36 @@ export function computeMultiBrandPortfolioSummary(
       factoryBalanceOutflowRub,
       factoryTotalOutflowRub,
       netMonthlyCashflowRub,
-      cumulativeCashBalanceRub: initialCashOnHandRub + runningCashFromZero,
+      openingCashBalanceRub,
+      intraMonthLowBalanceRub,
+      ownMoneyInWorkPeakRub: Math.max(
+        0,
+        -Math.min(intraMonthLowBalanceRub, cumulativeCashBalanceRub)
+      ),
+      ownMoneyInWorkEndRub: Math.max(0, -cumulativeCashBalanceRub),
+      cumulativeCashBalanceRub,
       isPeakDeficitMonth: false,
+      isIntraMonthPeak: false,
+      isSelfFundingCrossoverMonth: false,
     });
   }
   if (groupMonthlyRows[peakMonthIdx]) {
     groupMonthlyRows[peakMonthIdx].isPeakDeficitMonth = true;
+    groupMonthlyRows[peakMonthIdx].isIntraMonthPeak = groupPeakWasIntraMonth;
+  }
+
+  let groupSelfFundingMonthIdx: number | null = null;
+  for (let m = peakMonthIdx; m < 12; m++) {
+    if (
+      groupMonthlyRows[m]?.cumulativeCashBalanceRub >= 0 &&
+      groupMonthlyRows.slice(m).every((r) => r.cumulativeCashBalanceRub >= 0)
+    ) {
+      groupSelfFundingMonthIdx = m;
+      break;
+    }
+  }
+  if (groupSelfFundingMonthIdx !== null && groupMonthlyRows[groupSelfFundingMonthIdx]) {
+    groupMonthlyRows[groupSelfFundingMonthIdx].isSelfFundingCrossoverMonth = true;
   }
 
   const rawGroupPeak = Math.max(
@@ -4504,6 +4686,27 @@ export function computeMultiBrandPortfolioSummary(
   const ownMoneyStatusLabel = wbPayoutScheduleSpecified
     ? 'Рассчитано по календарю выплат WB и платежей фабрикам'
     : 'Недостаточно данных для расчёта потребности в собственных деньгах';
+
+  const monthsGen = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+  const groupPeakWindowHumanRu =
+    groupNetOwnMoneyRub <= 0
+      ? 'Собственные средства не требуются (покрывается стартовым остатком / выручкой WB)'
+      : groupPeakWasIntraMonth
+      ? `1–15 ${monthsGen[peakMonthIdx] || 'января'} 2027 (оплата партий фабрикам до поступления выручки WB за ${MONTHS_SHORT[peakMonthIdx]})`
+      : `Конец ${monthsGen[peakMonthIdx] || 'января'} 2027 (накопленное превышение оплат фабрикам над приходами WB)`;
 
   const procurementBreakdownText =
     procurementBreakdownByUnit.length > 0
@@ -4531,6 +4734,33 @@ export function computeMultiBrandPortfolioSummary(
       peakWorkingCapitalRub: groupPeakWorkingCapitalRub,
       netOwnMoneyRequiredRub: groupNetOwnMoneyRub,
       verifiedOwnMoneyRequiredRub: groupVerifiedOwnMoneyRub,
+      peakMonthIdx,
+      peakMonthLabel: MONTHS_SHORT[peakMonthIdx] || 'Янв',
+      peakPhase: groupPeakWasIntraMonth ? 'before_wb_inflow' : 'month_end',
+      peakPhaseLabelRu: groupPeakWasIntraMonth
+        ? 'Начало месяца (до прихода выплат WB)'
+        : 'Конец месяца (накопленный кассовый дефицит)',
+      peakWindowHumanRu: groupPeakWindowHumanRu,
+      monthsInDeficitCount: groupMonthlyRows.filter(
+        (r) => r.intraMonthLowBalanceRub < 0 || r.cumulativeCashBalanceRub < 0
+      ).length,
+      openingBalanceAtPeakMonthRub:
+        groupMonthlyRows[peakMonthIdx]?.openingCashBalanceRub ?? initialCashOnHandRub,
+      prepayInPeakMonthRub:
+        groupMonthlyRows[peakMonthIdx]?.factoryPrepaymentOutflowRub ?? 0,
+      balancePayInPeakMonthRub:
+        groupMonthlyRows[peakMonthIdx]?.factoryBalanceOutflowRub ?? 0,
+      wbInflowInPeakMonthRub:
+        groupMonthlyRows[peakMonthIdx]?.wbNetInflowRub ?? 0,
+      endOfPeakMonthBalanceRub:
+        groupMonthlyRows[peakMonthIdx]?.cumulativeCashBalanceRub ?? initialCashOnHandRub,
+      selfFundingMonthIdx: groupSelfFundingMonthIdx,
+      selfFundingMonthLabel:
+        groupSelfFundingMonthIdx !== null
+          ? MONTHS_SHORT[groupSelfFundingMonthIdx] || null
+          : null,
+      yearEndCashBalanceRub:
+        groupMonthlyRows[11]?.cumulativeCashBalanceRub ?? initialCashOnHandRub,
       annualSoldGoodsCostRub: totalAnnualSoldGoodsCostRub,
       annualEstimatedOperatingProfitRub: totalAnnualOperatingProfitRub,
       monthlyRows: groupMonthlyRows,
@@ -6128,6 +6358,421 @@ export function toggleModelProcurementByOrders(
     },
   };
 }
+
+export interface PortfolioProcurementWaveItem {
+  id: 'q1' | 'q2' | 'q3' | 'q4';
+  quarterIdx: number;
+  waveNum: string;
+  title: string;
+  orderWindow: string;
+  arrivalMonth: string;
+  orderMonthIdx: number;
+  arrivalMonthIdx: number;
+  coverageMonths: number[];
+  modelsCount: number;
+  approvedPosCount: number;
+  draftBatchesCount: number;
+  packsQty: number;
+  unitsQty: number;
+  budgetRub: number;
+  prepayRub: number;
+  balanceRub: number;
+  sharePct: number;
+  fundedFromWbRub: number;
+  fundedFromOwnRub: number;
+  fundedFromWbPct: number;
+  selfFunded: boolean;
+  fundingLabel: string;
+  fundingTone: 'cyan' | 'indigo' | 'emerald';
+}
+
+export interface MonthlyProcurementPaymentRow {
+  monthIdx: number;
+  monthLabel: string;
+  orderPacksPlaced: number;
+  arrivingPacks: number;
+  prepayRub: number;
+  balanceRub: number;
+  totalOutflowRub: number;
+  wbNetInflowRub: number;
+  coveredByWbRub: number;
+  ownCashUsedRub: number;
+  waveTags: string[];
+}
+
+export interface PortfolioProcurementWavesSummary {
+  totalBudgetRub: number;
+  totalPrepayRub: number;
+  totalBalanceRub: number;
+  totalPacks: number;
+  totalUnits: number;
+  totalApprovedPosCount: number;
+  totalDraftBatchesCount: number;
+  avgPrepaymentPct: number;
+  avgTotalLeadDays: number;
+  waves: PortfolioProcurementWaveItem[];
+  monthlySchedule: MonthlyProcurementPaymentRow[];
+}
+
+/**
+ * Реальный агрегатор 4 квартальных волн закупок (Q1–Q4) и 12-месячного платёжного графика
+ * по фактическим партиям моделей (утверждённые PO + расчётные партии без искусственных пропорций).
+ */
+export function computePortfolioProcurementWavesSummary(
+  entries: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[],
+  cashflowMonthlyRows?: ScenarioMonthlyCashflowRow[],
+  year = 2027
+): PortfolioProcurementWavesSummary {
+  const seenKeys = new Set<string>();
+  const waveAcc = [0, 1, 2, 3].map((q) => ({
+    q,
+    modelIds: new Set<string>(),
+    approvedPosCount: 0,
+    draftBatchesCount: 0,
+    packsQty: 0,
+    unitsQty: 0,
+    budgetRub: 0,
+    prepayRub: 0,
+    balanceRub: 0,
+    orderMonthSumWeighted: 0,
+    arrivalMonthSumWeighted: 0,
+    weightRub: 0,
+  }));
+
+  const mOrderPacks = Array(12).fill(0) as number[];
+  const mArrivingPacks = Array(12).fill(0) as number[];
+  const mPrepayRub = Array(12).fill(0) as number[];
+  const mBalanceRub = Array(12).fill(0) as number[];
+  const mTags: Set<string>[] = Array.from({ length: 12 }, () => new Set<string>());
+
+  let prepayPctWeightedSum = 0;
+  let leadDaysWeightedSum = 0;
+  let modelsWeightCount = 0;
+
+  for (const entry of entries) {
+    const rawM = entry.model;
+    if (!rawM || rawM.launchStatus === 'В архиве') continue;
+    const key = rawM.id || rawM.code;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    const m = ensureModelUnifiedV11(rawM);
+    const proc = computeProcurementPlan(m, entry.scenario);
+    const fp = m.sharedSupplyAndFact!.factoryParams;
+    prepayPctWeightedSum += fp.prepaymentPct ?? 30;
+    leadDaysWeightedSum += proc.totalLeadDays || 45;
+    modelsWeightCount += 1;
+
+    const confirmedPos = proc.approvedOrders.filter(
+      (po) => po.confirmedByFactory !== false
+    );
+
+    for (const po of confirmedPos) {
+      const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
+      const orderM = Math.max(
+        0,
+        arrivalM - Math.ceil((po.leadTimeDaysAtApproval || proc.totalLeadDays || 45) / 30)
+      );
+      const qIdx = Math.min(3, Math.max(0, Math.floor(arrivalM / 3)));
+      const w = waveAcc[qIdx];
+      w.modelIds.add(key);
+      w.approvedPosCount += 1;
+      w.packsQty += po.packsQty;
+      w.unitsQty += po.packsQty * Math.max(1, po.unitsInPack || m.unitsInPack || 1);
+      w.budgetRub += po.totalOrderRub;
+      w.prepayRub += po.prepaymentRub;
+      w.balanceRub += po.balancePaymentRub;
+      w.orderMonthSumWeighted += orderM * Math.max(1, po.totalOrderRub);
+      w.arrivalMonthSumWeighted += arrivalM * Math.max(1, po.totalOrderRub);
+      w.weightRub += Math.max(1, po.totalOrderRub);
+
+      mOrderPacks[orderM] += po.packsQty;
+      mArrivingPacks[arrivalM] += po.packsQty;
+      mPrepayRub[orderM] += po.prepaymentRub;
+      mBalanceRub[arrivalM] += po.balancePaymentRub;
+      if (po.prepaymentRub > 0) mTags[orderM].add(`Аванс Q${qIdx + 1}`);
+      if (po.balancePaymentRub > 0) mTags[arrivalM].add(`Доплата Q${qIdx + 1}`);
+    }
+
+    for (const rb of proc.recommendedBatches) {
+      if (rb.recommendedPacks <= 0 && rb.estimatedTotalRub <= 0) continue;
+      const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
+      const orderM = Math.max(
+        0,
+        arrivalM - Math.ceil((rb.totalLeadDays || proc.totalLeadDays || 45) / 30)
+      );
+      const qIdx = Math.min(3, Math.max(0, Math.floor(arrivalM / 3)));
+      const w = waveAcc[qIdx];
+      w.modelIds.add(key);
+      w.draftBatchesCount += 1;
+      w.packsQty += rb.recommendedPacks;
+      w.unitsQty += rb.physicalUnitsQty;
+      w.budgetRub += rb.estimatedTotalRub;
+      w.prepayRub += rb.prepaymentRub;
+      w.balanceRub += rb.balancePaymentRub;
+      w.orderMonthSumWeighted += orderM * Math.max(1, rb.estimatedTotalRub);
+      w.arrivalMonthSumWeighted += arrivalM * Math.max(1, rb.estimatedTotalRub);
+      w.weightRub += Math.max(1, rb.estimatedTotalRub);
+
+      mOrderPacks[orderM] += rb.recommendedPacks;
+      mArrivingPacks[arrivalM] += rb.recommendedPacks;
+      mPrepayRub[orderM] += rb.prepaymentRub;
+      mBalanceRub[arrivalM] += rb.balancePaymentRub;
+      if (rb.prepaymentRub > 0) mTags[orderM].add(`Аванс Q${qIdx + 1}`);
+      if (rb.balancePaymentRub > 0) mTags[arrivalM].add(`Доплата Q${qIdx + 1}`);
+    }
+  }
+
+  const totalBudgetRub = waveAcc.reduce((s, w) => s + w.budgetRub, 0);
+  const totalPrepayRub = waveAcc.reduce((s, w) => s + w.prepayRub, 0);
+  const totalBalanceRub = waveAcc.reduce((s, w) => s + w.balanceRub, 0);
+  const totalPacks = waveAcc.reduce((s, w) => s + w.packsQty, 0);
+  const totalUnits = waveAcc.reduce((s, w) => s + w.unitsQty, 0);
+  const totalApprovedPosCount = waveAcc.reduce((s, w) => s + w.approvedPosCount, 0);
+  const totalDraftBatchesCount = waveAcc.reduce((s, w) => s + w.draftBatchesCount, 0);
+
+  const avgPrepaymentPct =
+    modelsWeightCount > 0 ? Math.round(prepayPctWeightedSum / modelsWeightCount) : 30;
+  const avgTotalLeadDays =
+    modelsWeightCount > 0 ? Math.round(leadDaysWeightedSum / modelsWeightCount) : 45;
+
+  const monthlySchedule: MonthlyProcurementPaymentRow[] = Array.from(
+    { length: 12 },
+    (_, mIdx) => {
+      const cfRow = cashflowMonthlyRows?.[mIdx];
+      const prepayRub = mPrepayRub[mIdx] || 0;
+      const balanceRub = mBalanceRub[mIdx] || 0;
+      const totalOutflowRub = prepayRub + balanceRub;
+      const wbNetInflowRub = cfRow ? cfRow.wbNetInflowRub : 0;
+      const priorPositivePool = cfRow ? Math.max(0, cfRow.openingCashBalanceRub) : 0;
+      const availableWbPool = priorPositivePool + wbNetInflowRub;
+      const coveredByWbRub = Math.min(totalOutflowRub, availableWbPool);
+      const ownCashUsedRub = Math.max(0, totalOutflowRub - coveredByWbRub);
+
+      return {
+        monthIdx: mIdx,
+        monthLabel: MONTHS_SHORT[mIdx] || String(mIdx + 1),
+        orderPacksPlaced: mOrderPacks[mIdx] || 0,
+        arrivingPacks: mArrivingPacks[mIdx] || 0,
+        prepayRub,
+        balanceRub,
+        totalOutflowRub,
+        wbNetInflowRub,
+        coveredByWbRub,
+        ownCashUsedRub,
+        waveTags: Array.from(mTags[mIdx]),
+      };
+    }
+  );
+
+  const waveTitles = [
+    'Стартовая партия (Янв – Мар)',
+    'Весна – Лето (Апр – Июн)',
+    'Высокий сезон и Осень (Июл – Сен)',
+    'Пик декабря и Новый год (Окт – Дек)',
+  ];
+  const defaultArrivalNames = ['Январь', 'Апрель', 'Июль', 'Октябрь'];
+  const fullMonthNames = [
+    'Январь',
+    'Февраль',
+    'Март',
+    'Апрель',
+    'Май',
+    'Июнь',
+    'Июль',
+    'Август',
+    'Сентябрь',
+    'Октябрь',
+    'Ноябрь',
+    'Декабрь',
+  ];
+
+  const waves: PortfolioProcurementWaveItem[] = waveAcc.map((w, idx) => {
+    const defaultArrM = idx * 3;
+    const defaultOrdM = Math.max(0, defaultArrM - Math.ceil(avgTotalLeadDays / 30));
+    const arrM =
+      w.weightRub > 0 ? Math.round(w.arrivalMonthSumWeighted / w.weightRub) : defaultArrM;
+    const ordM =
+      w.weightRub > 0 ? Math.round(w.orderMonthSumWeighted / w.weightRub) : defaultOrdM;
+    const orderWindow =
+      idx === 0 && avgTotalLeadDays >= 30
+        ? `Ноя–Дек ${year - 1} / Янв`
+        : fullMonthNames[ordM] || MONTHS_SHORT[ordM];
+    const arrivalMonth = fullMonthNames[arrM] || defaultArrivalNames[idx];
+
+    // Оцениваем покрытие этой волны по реальному кэшфлоу месяца аванса и месяца доплаты
+    let fundedFromOwnRub = 0;
+    if (w.budgetRub > 0 && cashflowMonthlyRows && cashflowMonthlyRows.length === 12) {
+      const ordCf = cashflowMonthlyRows[ordM];
+      const arrCf = cashflowMonthlyRows[arrM];
+      if (idx === 0) {
+        // Первая стартовая волна оплачивается до накопления оборота WB, затем частично компенсируется январём
+        const janOwnAfterWb = ordCf ? Math.max(0, -ordCf.cumulativeCashBalanceRub) : w.budgetRub;
+        fundedFromOwnRub = Math.min(w.budgetRub, Math.max(w.prepayRub, janOwnAfterWb));
+      } else {
+        const ordDeficitShare =
+          ordCf && ordCf.factoryTotalOutflowRub > 0 && ordCf.cumulativeCashBalanceRub < 0
+            ? Math.min(
+                1,
+                Math.max(0, -ordCf.netMonthlyCashflowRub) / ordCf.factoryTotalOutflowRub
+              )
+            : 0;
+        const arrDeficitShare =
+          arrCf && arrCf.factoryTotalOutflowRub > 0 && arrCf.cumulativeCashBalanceRub < 0
+            ? Math.min(
+                1,
+                Math.max(0, -arrCf.netMonthlyCashflowRub) / arrCf.factoryTotalOutflowRub
+              )
+            : 0;
+        fundedFromOwnRub = Math.round(
+          w.prepayRub * ordDeficitShare + w.balanceRub * arrDeficitShare
+        );
+      }
+    } else if (idx === 0) {
+      fundedFromOwnRub = w.budgetRub;
+    }
+
+    const fundedFromWbRub = Math.max(0, w.budgetRub - fundedFromOwnRub);
+    const fundedFromWbPct =
+      w.budgetRub > 0 ? Math.round((fundedFromWbRub / w.budgetRub) * 100) : 100;
+    const selfFunded = w.budgetRub > 0 ? fundedFromWbPct >= 85 : idx >= 2;
+    const fundingTone: 'cyan' | 'indigo' | 'emerald' =
+      idx === 0 && !selfFunded ? 'cyan' : selfFunded ? 'emerald' : 'indigo';
+    const fundingLabel =
+      w.budgetRub === 0
+        ? 'Партии не требуются в этом квартале'
+        : selfFunded
+        ? `Оплата из оборота WB (${fundedFromWbPct}%)`
+        : fundedFromWbPct >= 30
+        ? `Оборот WB (${fundedFromWbPct}%) + свои средства`
+        : `Аванс ${avgPrepaymentPct}% + доплата ${100 - avgPrepaymentPct}% (старт)`;
+
+    const sharePct =
+      totalBudgetRub > 0 ? Math.round((w.budgetRub / totalBudgetRub) * 100) : 25;
+
+    return {
+      id: (['q1', 'q2', 'q3', 'q4'] as const)[idx],
+      quarterIdx: idx,
+      waveNum: `Волна №${idx + 1} · Q${idx + 1}`,
+      title: waveTitles[idx],
+      orderWindow,
+      arrivalMonth,
+      orderMonthIdx: ordM,
+      arrivalMonthIdx: arrM,
+      coverageMonths: [idx * 3, idx * 3 + 1, idx * 3 + 2],
+      modelsCount: w.modelIds.size,
+      approvedPosCount: w.approvedPosCount,
+      draftBatchesCount: w.draftBatchesCount,
+      packsQty: w.packsQty,
+      unitsQty: w.unitsQty,
+      budgetRub: w.budgetRub,
+      prepayRub: w.prepayRub,
+      balanceRub: w.balanceRub,
+      sharePct,
+      fundedFromWbRub,
+      fundedFromOwnRub,
+      fundedFromWbPct,
+      selfFunded,
+      fundingLabel,
+      fundingTone,
+    };
+  });
+
+  return {
+    totalBudgetRub,
+    totalPrepayRub,
+    totalBalanceRub,
+    totalPacks,
+    totalUnits,
+    totalApprovedPosCount,
+    totalDraftBatchesCount,
+    avgPrepaymentPct,
+    avgTotalLeadDays,
+    waves,
+    monthlySchedule,
+  };
+}
+
+export interface BatchFactoryTermsPatch {
+  prepaymentPct?: number;
+  productionLeadDays?: number;
+  safetyStockDays?: number;
+  procureByOrdersVolume?: boolean;
+}
+
+/**
+ * Групповое обновление условий закупки и оплаты фабрикам по выбранным моделям (кабинета или сценария)
+ * с мгновенным пересчётом партий, авансов/доплат и графика «Пик своих денег».
+ */
+export function applyBatchFactoryPaymentTermsToModels(
+  models: ScenarioModelSpec[],
+  targetModelIds: Set<string> | string[],
+  patch: BatchFactoryTermsPatch,
+  author = 'Владелец'
+): ScenarioModelSpec[] {
+  const idSet =
+    targetModelIds instanceof Set ? targetModelIds : new Set(targetModelIds);
+  return models.map((rawM) => {
+    if (!idSet.has(rawM.id)) return rawM;
+    let m = ensureModelUnifiedV11(rawM);
+    if (patch.procureByOrdersVolume !== undefined) {
+      m = toggleModelProcurementByOrders(m, patch.procureByOrdersVolume, author);
+    }
+    const shared = m.sharedSupplyAndFact!;
+    const fp = shared.factoryParams;
+    const nextPrepay =
+      patch.prepaymentPct !== undefined
+        ? Math.max(0, Math.min(100, Math.round(patch.prepaymentPct)))
+        : fp.prepaymentPct;
+    const nextBalancePct = 100 - nextPrepay;
+    const nextProdDays =
+      patch.productionLeadDays !== undefined
+        ? Math.max(5, Math.min(150, Math.round(patch.productionLeadDays)))
+        : fp.productionLeadDays;
+    const nextSafetyDays =
+      patch.safetyStockDays !== undefined
+        ? Math.max(0, Math.min(90, Math.round(patch.safetyStockDays)))
+        : fp.safetyStockDays;
+
+    if (
+      nextPrepay === fp.prepaymentPct &&
+      nextBalancePct === fp.balancePaymentPct &&
+      nextProdDays === fp.productionLeadDays &&
+      nextSafetyDays === fp.safetyStockDays
+    ) {
+      return m;
+    }
+
+    return {
+      ...m,
+      sharedSupplyAndFact: {
+        ...shared,
+        passportVersion: (shared.passportVersion || 1) + 1,
+        factoryParams: {
+          ...fp,
+          prepaymentPct: nextPrepay,
+          balancePaymentPct: nextBalancePct,
+          productionLeadDays: nextProdDays,
+          safetyStockDays: nextSafetyDays,
+        },
+        auditHistory: [
+          {
+            id: `aud-batch-terms-${Date.now()}-${m.id}`,
+            timestamp: new Date().toISOString(),
+            author,
+            category: 'procurement',
+            summary: `Обновлены условия закупки: аванс ${nextPrepay}%/${nextBalancePct}%, производство ${nextProdDays} дн., страх. запас ${nextSafetyDays} дн.`,
+            beforeValue: `${fp.prepaymentPct}% / ${fp.productionLeadDays}д / ${fp.safetyStockDays}д`,
+            afterValue: `${nextPrepay}% / ${nextProdDays}д / ${nextSafetyDays}д`,
+            passportVersion: (shared.passportVersion || 1) + 1,
+          },
+          ...(shared.auditHistory || []),
+        ],
+      },
+    };
+  });
+}
+
 
 
 

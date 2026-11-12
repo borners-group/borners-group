@@ -37,6 +37,7 @@ import {
   MultiBrandPortfolioSummaryResult,
   RecommendedProcurementBatch,
   approveRecommendedBatch,
+  computePortfolioProcurementWavesSummary,
   computeProcurementPlan,
   computeWhatIfSensitivitySimulation,
   detectModelBrandPortfolioLabel,
@@ -47,6 +48,10 @@ import {
   normalizePortfolioBrandCode,
   removeApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
+import {
+  isBrandScenarioExplicitlyNone,
+  resolveEffectiveScenarioForModel,
+} from '@/lib/portfolioPersistence';
 import {
   ProductGroupDef,
   buildBrandCatalogSections,
@@ -305,7 +310,10 @@ export function BrandCabinetsMatrixTable({
                             ? formatMln(b.verifiedOwnMoneyRequiredRub)
                             : '—'}
                         </div>
-                        <div className="text-[10px] text-[#64748B]">с оборотом WB</div>
+                        <div className="text-[10px] font-medium text-amber-800">
+                          пик: {b.peakMonthLabel || 'Янв'}
+                          {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ' · с WB'}
+                        </div>
                       </div>
                     ) : (
                       <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
@@ -432,9 +440,15 @@ export function BrandCabinetsMatrixTable({
                 {formatMln(gt.firstWaveStartBudgetRub)}
               </td>
               <td className="py-3 px-3 text-right font-mono text-[#334155]">
-                {gt.verifiedOwnMoneyRequiredRub !== null
-                  ? formatMln(gt.verifiedOwnMoneyRequiredRub)
-                  : '—'}
+                <div>
+                  {gt.verifiedOwnMoneyRequiredRub !== null
+                    ? formatMln(gt.verifiedOwnMoneyRequiredRub)
+                    : '—'}
+                </div>
+                <div className="text-[10px] font-semibold text-amber-800">
+                  пик: {gt.peakMonthLabel || 'Янв'}
+                  {gt.selfFundingMonthLabel ? ` → с ${gt.selfFundingMonthLabel}` : ''}
+                </div>
               </td>
               <td className="py-3 px-4 text-right font-mono font-extrabold text-[#059669]">
                 +{formatMln(gt.annualEstimatedOperatingProfitRub)}
@@ -509,6 +523,8 @@ function AnimatedMlnValue({
 // =============================================================================
 export interface PeaklyMasterCabinetsSummaryProps {
   multiBrandSummary: MultiBrandPortfolioSummaryResult;
+  models?: ScenarioModelSpec[];
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>;
   scenarios: GrowthScenarioDef[];
   activeBrandFilter: string;
   onSelectBrandFilter: (brandCode: string) => void;
@@ -528,6 +544,8 @@ export interface PeaklyMasterCabinetsSummaryProps {
 
 export function PeaklyMasterCabinetsSummary({
   multiBrandSummary,
+  models,
+  selectedScenarioByBrand,
   scenarios,
   activeBrandFilter,
   onSelectBrandFilter,
@@ -677,13 +695,15 @@ export function PeaklyMasterCabinetsSummary({
     }));
   }, [multiBrandSummary.brands, holdingTotal.annualRevenueRub]);
 
-  const [trendChartMode, setTrendChartMode] = useState<'payout' | 'monthlyProfit'>('payout');
+  const [trendChartMode, setTrendChartMode] = useState<
+    'payout' | 'monthlyProfit' | 'ownMoneyPeak'
+  >('payout');
   const [selectedTrendMonthIdx, setSelectedTrendMonthIdx] = useState<number>(11);
 
   const activeCards = waterfallViewMode === 'pnl' ? expenseCards : brandSegments;
   const activeBarSegments = waterfallViewMode === 'pnl' ? pnlWaterfallSegments : brandSegments;
 
-  // Плавный кубический график (ProfitTrendChart 7+5) по 12 месяцам — без дублирования 312,80 млн ₽
+  // Плавный кубический график (ProfitTrendChart 7+5) по 12 месяцам (К выплате WB / Прибыль / Пик своих денег)
   const trendChartData = useMemo(() => {
     const rows = gt.monthlyRows || [];
     const marginRatio =
@@ -696,13 +716,22 @@ export function PeaklyMasterCabinetsSummary({
       const payoutRub =
         mRow && mRow.wbNetInflowRub > 0 ? mRow.wbNetInflowRub : revRub * 0.6;
       const profRub = revRub * marginRatio;
-      const valRub = trendChartMode === 'payout' ? payoutRub : profRub;
+      const intraLowRub = mRow ? mRow.intraMonthLowBalanceRub : 0;
+      const endCashRub = mRow ? mRow.cumulativeCashBalanceRub : 0;
+      const valRub =
+        trendChartMode === 'payout'
+          ? payoutRub
+          : trendChartMode === 'monthlyProfit'
+          ? profRub
+          : intraLowRub;
       return {
         idx,
         monthLabel: MONTHS_SHORT_RU[idx]?.toLowerCase() || String(idx + 1),
         revRub,
         payoutRub,
         profRub,
+        intraLowRub,
+        endCashRub,
         valRub,
         valMln: valRub / 1_000_000,
       };
@@ -710,7 +739,7 @@ export function PeaklyMasterCabinetsSummary({
 
     const totalPayoutYearRub = series.reduce((acc, s) => acc + s.payoutRub, 0);
     const values = series.map((s) => s.valRub);
-    const maxV = Math.max(...values, 1);
+    const maxV = Math.max(...values, 1_000_000);
     const minV = Math.min(...values, 0);
     const span = Math.max(maxV - minV, 1);
     const svgW = 680;
@@ -718,6 +747,7 @@ export function PeaklyMasterCabinetsSummary({
     const padTop = 16;
     const padBottom = 14;
     const usableH = svgH - padTop - padBottom;
+    const zeroY = padTop + usableH * (1 - (0 - minV) / span);
 
     const coords = series.map((s, i) => {
       const x = 22 + (i / 11) * (svgW - 44);
@@ -737,9 +767,10 @@ export function PeaklyMasterCabinetsSummary({
       }
     });
 
+    const baseLineY = trendChartMode === 'ownMoneyPeak' ? zeroY : svgH;
     const areaPath =
       coords.length > 0
-        ? `${smoothPath} L ${coords[coords.length - 1].x.toFixed(1)} ${svgH} L ${coords[0].x.toFixed(1)} ${svgH} Z`
+        ? `${smoothPath} L ${coords[coords.length - 1].x.toFixed(1)} ${baseLineY.toFixed(1)} L ${coords[0].x.toFixed(1)} ${baseLineY.toFixed(1)} Z`
         : '';
 
     const janRevRub = series[0]?.revRub || 0;
@@ -754,6 +785,7 @@ export function PeaklyMasterCabinetsSummary({
       svgH,
       padTop,
       usableH,
+      zeroY,
       janRevRub,
       decRevRub,
       totalPayoutYearRub,
@@ -900,79 +932,106 @@ export function PeaklyMasterCabinetsSummary({
   const hasActiveWhatIf =
     whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
 
-  // Данные 4 волн закупок 2027 года (Gantt-таймлайн и защита от кассового разрыва)
+  // Данные 4 реальных волн закупок 2027 года (из фактических PO и квартальных партий моделей)
   const procurementWavesTimeline = useMemo(() => {
-    const totalProc = Math.max(gt.totalProcurementBudgetRub, 0);
-    const w1Budget = Math.max(gt.firstWaveStartBudgetRub, Math.round(totalProc * 0.197));
-    const w1Prepay = Math.max(gt.firstWavePrepaymentRub, Math.round(w1Budget * 0.3));
-    const remainingBudget = Math.max(0, totalProc - w1Budget);
-    const w2Budget = Math.round(remainingBudget * 0.27);
-    const w3Budget = Math.round(remainingBudget * 0.34);
-    const w4Budget = Math.max(0, remainingBudget - w2Budget - w3Budget);
+    if (models && models.length > 0 && scenarios.length > 0) {
+      const entries: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] = [];
+      for (const m of models) {
+        if (!m || m.launchStatus === 'В архиве') continue;
+        const mBrand = normalizePortfolioBrandCode(
+          detectModelBrandPortfolioLabel(m)
+        );
+        if (normalizedSelectedBrand !== 'ALL' && mBrand !== normalizedSelectedBrand) {
+          continue;
+        }
+        if (
+          selectedScenarioByBrand &&
+          isBrandScenarioExplicitlyNone(mBrand, selectedScenarioByBrand as Record<string, number | null>)
+        ) {
+          continue;
+        }
+        const effScen = resolveEffectiveScenarioForModel(
+          m,
+          scenarios,
+          (selectedScenarioByBrand || {}) as Record<string, number | null>,
+          scenarios[0]
+        );
+        if (!effScen) continue;
+        // BORNERS S1: строгая изоляция 21 SKU
+        if (
+          mBrand === 'BORNERS' &&
+          effScen.id === 1 &&
+          m.plansByScenario?.[1] === undefined
+        ) {
+          continue;
+        }
+        entries.push({ model: m, scenario: effScen });
+      }
+      if (entries.length > 0) {
+        return computePortfolioProcurementWavesSummary(entries, gt.monthlyRows, 2027).waves;
+      }
+    }
 
-    return [
-      {
-        id: 'wave-1',
-        waveNum: 'Волна №1 · Q1',
-        title: 'Стартовая партия (Янв – Мар)',
-        orderWindow: 'Ноя – Дек',
-        arrivalMonth: 'Январь',
-        coverageMonths: [0, 1, 2],
-        orderMonthIdx: 0,
-        budgetRub: w1Budget,
-        prepayRub: w1Prepay,
-        balanceRub: Math.max(0, w1Budget - w1Prepay),
-        fundingLabel: 'Аванс 30% + доплата 70% (свой капитал)',
-        fundingTone: 'cyan',
-        sharePct: totalProc > 0 ? Math.round((w1Budget / totalProc) * 100) : 20,
-      },
-      {
-        id: 'wave-2',
-        waveNum: 'Волна №2 · Q2',
-        title: 'Весна – Лето (Апр – Июн)',
-        orderWindow: 'Февраль',
-        arrivalMonth: 'Апрель',
-        coverageMonths: [3, 4, 5],
-        orderMonthIdx: 1,
-        budgetRub: w2Budget,
-        prepayRub: Math.round(w2Budget * 0.3),
-        balanceRub: Math.round(w2Budget * 0.7),
-        fundingLabel: 'Частично с выручки WB (пик капитала)',
-        fundingTone: 'indigo',
-        sharePct: totalProc > 0 ? Math.round((w2Budget / totalProc) * 100) : 22,
-      },
-      {
-        id: 'wave-3',
-        waveNum: 'Волна №3 · Q3',
-        title: 'Осень и Back-to-Office (Июл – Сен)',
-        orderWindow: 'Май',
-        arrivalMonth: 'Июль',
-        coverageMonths: [6, 7, 8],
-        orderMonthIdx: 4,
-        budgetRub: w3Budget,
-        prepayRub: Math.round(w3Budget * 0.3),
-        balanceRub: Math.round(w3Budget * 0.7),
-        fundingLabel: '100% из оборотной выручки WB',
-        fundingTone: 'emerald',
-        sharePct: totalProc > 0 ? Math.round((w3Budget / totalProc) * 100) : 27,
-      },
-      {
-        id: 'wave-4',
-        waveNum: 'Волна №4 · Q4',
-        title: 'Высокий сезон и пик декабря (Окт – Дек)',
-        orderWindow: 'Август',
-        arrivalMonth: 'Октябрь',
-        coverageMonths: [9, 10, 11],
-        orderMonthIdx: 7,
-        budgetRub: w4Budget,
-        prepayRub: Math.round(w4Budget * 0.3),
-        balanceRub: Math.round(w4Budget * 0.7),
-        fundingLabel: '100% из оборотной выручки WB · защита от Out-of-Stock',
-        fundingTone: 'emerald',
-        sharePct: totalProc > 0 ? Math.max(1, 100 - Math.round(((w1Budget + w2Budget + w3Budget) / totalProc) * 100)) : 31,
-      },
+    // Резервный расчёт строго по реальным помесячным оттокам gt.monthlyRows (без условных долей)
+    const rows = gt.monthlyRows || [];
+    const totalProc = Math.max(gt.totalProcurementBudgetRub, 0);
+    const qOutflows = [0, 1, 2, 3].map((q) => {
+      const m0 = rows[q * 3];
+      const m1 = rows[q * 3 + 1];
+      const m2 = rows[q * 3 + 2];
+      return {
+        prepay:
+          (m0?.factoryPrepaymentOutflowRub || 0) +
+          (m1?.factoryPrepaymentOutflowRub || 0) +
+          (m2?.factoryPrepaymentOutflowRub || 0),
+        balance:
+          (m0?.factoryBalanceOutflowRub || 0) +
+          (m1?.factoryBalanceOutflowRub || 0) +
+          (m2?.factoryBalanceOutflowRub || 0),
+      };
+    });
+    const titles = [
+      'Стартовая партия (Янв – Мар)',
+      'Весна – Лето (Апр – Июн)',
+      'Высокий сезон и Осень (Июл – Сен)',
+      'Пик декабря и Новый год (Окт – Дек)',
     ];
-  }, [gt.totalProcurementBudgetRub, gt.firstWaveStartBudgetRub, gt.firstWavePrepaymentRub]);
+    const orderWindows = ['Ноя – Дек', 'Февраль', 'Май', 'Август'];
+    const arrivals = ['Январь', 'Апрель', 'Июль', 'Октябрь'];
+    return qOutflows.map((qo, idx) => {
+      const budgetRub = qo.prepay + qo.balance;
+      const selfFunded = idx >= 2;
+      return {
+        id: `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4',
+        waveNum: `Волна №${idx + 1} · Q${idx + 1}`,
+        title: titles[idx],
+        orderWindow: orderWindows[idx],
+        arrivalMonth: arrivals[idx],
+        coverageMonths: [idx * 3, idx * 3 + 1, idx * 3 + 2],
+        orderMonthIdx: Math.max(0, idx * 3 - 1),
+        budgetRub,
+        prepayRub: qo.prepay,
+        balanceRub: qo.balance,
+        fundingLabel: selfFunded
+          ? '100% из оборотной выручки WB'
+          : idx === 0
+          ? 'Стартовый капитал + аванс фабрикам'
+          : 'Реинвест с выручки WB',
+        fundingTone: (selfFunded ? 'emerald' : idx === 0 ? 'cyan' : 'indigo') as
+          | 'cyan'
+          | 'indigo'
+          | 'emerald',
+        sharePct: totalProc > 0 ? Math.round((budgetRub / totalProc) * 100) : 25,
+      };
+    });
+  }, [
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    normalizedSelectedBrand,
+    gt.monthlyRows,
+    gt.totalProcurementBudgetRub,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -1251,7 +1310,14 @@ export function PeaklyMasterCabinetsSummary({
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white/95 dark:bg-[#181D2A]/90 border border-[#CBD5E1] dark:border-[#283246] p-3.5 shadow-2xs">
+              <div
+                onClick={() => {
+                  setTrendChartMode('ownMoneyPeak');
+                  setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
+                }}
+                title="Нажмите, чтобы показать кривую «Пик своих денег» на графике 12 мес."
+                className="rounded-2xl bg-white/95 dark:bg-[#181D2A]/90 border border-[#CBD5E1] dark:border-[#283246] hover:border-amber-400/70 dark:hover:border-amber-500/40 p-3.5 shadow-2xs cursor-pointer transition"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8]">
                     3. Пик своих денег
@@ -1263,8 +1329,11 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                   {gt.verifiedOwnMoneyRequiredRub ? formatMln(gt.verifiedOwnMoneyRequiredRub) : 'Из оборота'}
                 </div>
-                <div className="mt-0.5 text-[11.5px] text-emerald-700 dark:text-emerald-400 font-medium">
-                  {selfFundedProcurementPct}% партий оплачиваются с WB
+                <div className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-300 font-semibold leading-snug">
+                  📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027{' '}
+                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                    · {gt.selfFundingMonthLabel ? `с ${gt.selfFundingMonthLabel} — в плюс с WB` : `${selfFundedProcurementPct}% партий с WB`}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1331,19 +1400,39 @@ export function PeaklyMasterCabinetsSummary({
                 <span className="text-xs font-bold uppercase tracking-wider text-[#334155] dark:text-[#94A3B8]">
                   {trendChartMode === 'payout'
                     ? 'Поступления от WB на расчётный счёт · 2027'
-                    : `Помесячная чистая прибыль (${selectedMonthPoint?.monthLabel || 'дек'}) · 2027`}
+                    : trendChartMode === 'monthlyProfit'
+                    ? `Помесячная чистая прибыль (${selectedMonthPoint?.monthLabel || 'дек'}) · 2027`
+                    : 'Баланс своих денег внутри месяца (пик и выход в плюс) · 2027'}
                 </span>
               </div>
               <div className="mt-1.5 flex flex-wrap items-baseline gap-2.5">
                 <span className="font-mono text-2xl sm:text-[28px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                   {trendChartMode === 'payout'
                     ? formatMln(trendChartData.totalPayoutYearRub)
-                    : `+${formatMln(selectedMonthPoint?.profRub || 0)} в ${selectedMonthPoint?.monthLabel || 'дек'}`}
+                    : trendChartMode === 'monthlyProfit'
+                    ? `+${formatMln(selectedMonthPoint?.profRub || 0)} в ${selectedMonthPoint?.monthLabel || 'дек'}`
+                    : gt.verifiedOwnMoneyRequiredRub
+                    ? `Пик: ${formatMln(gt.verifiedOwnMoneyRequiredRub)}`
+                    : 'Из оборота WB'}
                 </span>
-                {trendChartData.growthMult && trendChartData.growthMult > 1 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                    ↑ ×{trendChartData.growthMult.toFixed(1).replace('.', ',')} к январю
-                  </span>
+                {trendChartMode === 'ownMoneyPeak' ? (
+                  <>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                      📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027
+                    </span>
+                    {gt.selfFundingMonthLabel && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                        ✓ В плюс с {gt.selfFundingMonthLabel}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  trendChartData.growthMult &&
+                  trendChartData.growthMult > 1 && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                      ↑ ×{trendChartData.growthMult.toFixed(1).replace('.', ',')} к январю
+                    </span>
+                  )
                 )}
                 {selectedMonthPoint && (
                   <span className="text-xs text-[#475569] dark:text-[#94A3B8]">
@@ -1351,19 +1440,21 @@ export function PeaklyMasterCabinetsSummary({
                     <strong className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                       {trendChartMode === 'payout'
                         ? `${(selectedMonthPoint.payoutRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽ на счёт`
-                        : `выручка ${(selectedMonthPoint.revRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`}
+                        : trendChartMode === 'monthlyProfit'
+                        ? `выручка ${(selectedMonthPoint.revRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
+                        : `до прихода WB ${(selectedMonthPoint.intraLowRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽ · конец мес. ${(selectedMonthPoint.endCashRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`}
                     </strong>
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Контрастный переключатель К выплате WB / Прибыль мес. */}
-            <div className="inline-flex items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs">
+            {/* Контрастный переключатель К выплате WB / Прибыль мес. / Пик своих денег */}
+            <div className="inline-flex flex-wrap items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs gap-0.5">
               <button
                 type="button"
                 onClick={() => setTrendChartMode('payout')}
-                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'payout'
                     ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
@@ -1374,13 +1465,27 @@ export function PeaklyMasterCabinetsSummary({
               <button
                 type="button"
                 onClick={() => setTrendChartMode('monthlyProfit')}
-                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
                   trendChartMode === 'monthlyProfit'
                     ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
                     : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                 }`}
               >
                 Прибыль по мес.
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrendChartMode('ownMoneyPeak');
+                  setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
+                }}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                  trendChartMode === 'ownMoneyPeak'
+                    ? 'bg-white dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-400/60 dark:border-amber-500/35 shadow-2xs'
+                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
+                }`}
+              >
+                Пик своих денег
               </button>
             </div>
           </div>
@@ -1397,6 +1502,11 @@ export function PeaklyMasterCabinetsSummary({
                   <linearGradient id="peaklyEmeraldAreaGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10B981" stopOpacity="0.28" />
                     <stop offset="100%" stopColor="#10B981" stopOpacity="0.02" />
+                  </linearGradient>
+                  <linearGradient id="peaklyOwnMoneyAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
+                    <stop offset="65%" stopColor="#F59E0B" stopOpacity="0.14" />
+                    <stop offset="100%" stopColor="#E11D48" stopOpacity="0.22" />
                   </linearGradient>
                 </defs>
                 <line
@@ -1419,10 +1529,35 @@ export function PeaklyMasterCabinetsSummary({
                   strokeDasharray="3 5"
                   strokeWidth="1"
                 />
+                {trendChartMode === 'ownMoneyPeak' && (
+                  <g>
+                    <line
+                      x1="0"
+                      y1={trendChartData.zeroY}
+                      x2={trendChartData.svgW}
+                      y2={trendChartData.zeroY}
+                      stroke="#64748B"
+                      strokeDasharray="4 4"
+                      strokeWidth="1.4"
+                    />
+                    <text
+                      x={trendChartData.svgW - 6}
+                      y={Math.max(11, trendChartData.zeroY - 4)}
+                      textAnchor="end"
+                      className="font-mono text-[9.5px] font-bold fill-[#475569] dark:fill-[#CBD5E1] select-none"
+                    >
+                      0 ₽ (самоокупаемость)
+                    </text>
+                  </g>
+                )}
                 {trendChartData.areaPath && (
                   <path
                     d={trendChartData.areaPath}
-                    fill="url(#peaklyEmeraldAreaGrad)"
+                    fill={
+                      trendChartMode === 'ownMoneyPeak'
+                        ? 'url(#peaklyOwnMoneyAreaGrad)'
+                        : 'url(#peaklyEmeraldAreaGrad)'
+                    }
                     className="transition-all duration-700 ease-out"
                   />
                 )}
@@ -1430,7 +1565,7 @@ export function PeaklyMasterCabinetsSummary({
                   <path
                     d={trendChartData.smoothPath}
                     fill="none"
-                    stroke="#10B981"
+                    stroke={trendChartMode === 'ownMoneyPeak' ? '#0D9488' : '#10B981'}
                     strokeWidth="3"
                     strokeLinecap="round"
                     className="transition-all duration-700 ease-out"
@@ -1438,9 +1573,28 @@ export function PeaklyMasterCabinetsSummary({
                 )}
                 {trendChartData.coords.map((pt) => {
                   const isSel = pt.idx === selectedTrendMonthIdx;
+                  const isPeakMonthPt =
+                    trendChartMode === 'ownMoneyPeak' && pt.idx === (gt.peakMonthIdx ?? 0);
+                  const isCrossoverPt =
+                    trendChartMode === 'ownMoneyPeak' &&
+                    gt.selfFundingMonthIdx !== null &&
+                    gt.selfFundingMonthIdx !== undefined &&
+                    pt.idx === gt.selfFundingMonthIdx;
                   const showMilestoneLabel =
-                    isSel || pt.idx === 0 || pt.idx === 4 || pt.idx === 8 || pt.idx === 11;
+                    isSel ||
+                    isPeakMonthPt ||
+                    isCrossoverPt ||
+                    pt.idx === 0 ||
+                    pt.idx === 4 ||
+                    pt.idx === 8 ||
+                    pt.idx === 11;
                   const labelMln = (pt.valRub / 1_000_000).toFixed(1).replace('.', ',');
+                  const isNeg = trendChartMode === 'ownMoneyPeak' && pt.valRub < 0;
+                  const dotColor = isPeakMonthPt
+                    ? '#E11D48'
+                    : isNeg
+                    ? '#F59E0B'
+                    : '#10B981';
                   return (
                     <g
                       key={pt.idx}
@@ -1448,35 +1602,43 @@ export function PeaklyMasterCabinetsSummary({
                       className="cursor-pointer"
                     >
                       <circle cx={pt.x} cy={pt.y} r="14" fill="transparent" />
-                      {isSel && (
+                      {(isSel || isPeakMonthPt) && (
                         <circle
                           cx={pt.x}
                           cy={pt.y}
-                          r="8"
-                          fill="#10B981"
+                          r="8.5"
+                          fill={dotColor}
                           fillOpacity="0.25"
                         />
                       )}
                       <circle
                         cx={pt.x}
                         cy={pt.y}
-                        r={isSel ? 4.6 : 3}
-                        fill={isSel ? '#10B981' : '#FFFFFF'}
-                        stroke="#10B981"
+                        r={isSel || isPeakMonthPt ? 4.8 : 3.2}
+                        fill={isSel || isPeakMonthPt ? dotColor : '#FFFFFF'}
+                        stroke={dotColor}
                         strokeWidth="2.2"
                       />
                       {showMilestoneLabel && (
                         <text
                           x={pt.x}
-                          y={Math.max(11, pt.y - 10)}
+                          y={
+                            isNeg && pt.y > trendChartData.svgH - 22
+                              ? Math.max(11, pt.y - 10)
+                              : Math.max(11, pt.y - 10)
+                          }
                           textAnchor="middle"
                           className={`font-mono text-[10.5px] select-none ${
-                            isSel
-                              ? 'fill-emerald-700 dark:fill-emerald-300 font-extrabold'
+                            isPeakMonthPt
+                              ? 'fill-rose-600 dark:fill-rose-400 font-extrabold'
+                              : isSel
+                              ? isNeg
+                                ? 'fill-amber-700 dark:fill-amber-300 font-extrabold'
+                                : 'fill-emerald-700 dark:fill-emerald-300 font-extrabold'
                               : 'fill-[#334155] dark:fill-[#94A3B8] font-semibold'
                           }`}
                         >
-                          {labelMln}
+                          {isPeakMonthPt ? `ПИК ${labelMln}` : labelMln}
                         </text>
                       )}
                     </g>
@@ -1489,6 +1651,8 @@ export function PeaklyMasterCabinetsSummary({
             <div className="grid grid-cols-12 gap-1 pt-2 border-t border-[#E2E8F0] dark:border-[#222938]">
               {trendChartData.coords.map((pt) => {
                 const isSel = pt.idx === selectedTrendMonthIdx;
+                const isPeakMonthBtn =
+                  trendChartMode === 'ownMoneyPeak' && pt.idx === (gt.peakMonthIdx ?? 0);
                 return (
                   <button
                     key={pt.idx}
@@ -1496,7 +1660,11 @@ export function PeaklyMasterCabinetsSummary({
                     onClick={() => setSelectedTrendMonthIdx(pt.idx)}
                     className={`text-center py-1 rounded-md text-[11px] transition cursor-pointer ${
                       isSel
-                        ? 'font-bold text-[#0F172A] dark:text-emerald-300 bg-[#E2E8F0] dark:bg-emerald-500/20'
+                        ? isPeakMonthBtn
+                          ? 'font-bold text-rose-700 dark:text-rose-300 bg-rose-500/15'
+                          : 'font-bold text-[#0F172A] dark:text-emerald-300 bg-[#E2E8F0] dark:bg-emerald-500/20'
+                        : isPeakMonthBtn
+                        ? 'font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10'
                         : 'font-medium text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
                     }`}
                   >
@@ -1505,6 +1673,20 @@ export function PeaklyMasterCabinetsSummary({
                 );
               })}
             </div>
+            {trendChartMode === 'ownMoneyPeak' && (
+              <div className="mt-2.5 pt-2 border-t border-[#EEF2F6] dark:border-[#222938] flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+                <span className="text-[#475569] dark:text-[#94A3B8]">
+                  Окно пика: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{gt.peakWindowHumanRu || `${gt.peakMonthLabel || 'Янв'} 2027 · до прихода выплат WB`}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigateSection('finance')}
+                  className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                >
+                  Подробная анатомия и 2-слойный график в 04 · Финансы →
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1736,12 +1918,17 @@ export function PeaklyMasterCabinetsSummary({
                   '—'
                 )}
               </div>
+              <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300 truncate">
+                📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027 · {gt.peakPhaseLabelRu || 'до выплат WB'}
+              </div>
             </div>
-            <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
-              <span>Доля от закупок года</span>
-              <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+            <div className="mt-2.5 pt-2 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between gap-2">
+              <span className="truncate">
+                {gt.selfFundingMonthLabel ? `В плюс с ${gt.selfFundingMonthLabel}` : 'Доля от закупок'}
+              </span>
+              <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] shrink-0">
                 {gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
-                  ? `всего ${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}%`
+                  ? `доля ${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}%`
                   : 'реинвест'}
               </span>
             </div>
@@ -2509,18 +2696,33 @@ export function PeaklyMasterCabinetsSummary({
 
         {monthlyCashflowOpen && (
           <div className="overflow-x-auto rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4">
-            <div className="text-xs font-medium text-[#64748B] mb-2.5">
-              {selectedBrandRow
-                ? `Помесячный денежный поток · ${selectedBrandRow.displayCode} (12 мес., млн ₽)`
-                : 'Помесячный денежный поток холдинга BORNERS GROUP (12 мес., млн ₽)'}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div className="text-xs font-medium text-[#64748B]">
+                {selectedBrandRow
+                  ? `Помесячный денежный поток и пик своих денег · ${selectedBrandRow.displayCode} (12 мес., млн ₽)`
+                  : 'Помесячный денежный поток и пик своих денег холдинга BORNERS GROUP (12 мес., млн ₽)'}
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigateSection('finance')}
+                className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+              >
+                Интерактивный 2-слойный график в 04 · Финансы →
+              </button>
             </div>
             <table className="w-full min-w-[780px] text-left border-collapse text-[11px]">
               <thead>
                 <tr className="border-b border-[#E2E6EE] dark:border-[#222938] text-[#64748B]">
                   <th className="py-2 px-2.5 font-medium">Показатель</th>
                   {gt.monthlyRows.map((m) => (
-                    <th key={m.monthIdx} className="py-2 px-1.5 text-right font-medium">
+                    <th
+                      key={m.monthIdx}
+                      className={`py-2 px-1.5 text-right font-medium ${
+                        m.isPeakDeficitMonth ? 'text-rose-600 dark:text-rose-400 font-bold' : ''
+                      }`}
+                    >
                       {m.monthLabel}
+                      {m.isPeakDeficitMonth ? ' 📍' : ''}
                     </th>
                   ))}
                 </tr>
@@ -2547,21 +2749,57 @@ export function PeaklyMasterCabinetsSummary({
                   ))}
                 </tr>
                 <tr>
+                  <td className="py-2 px-2.5 font-sans font-medium text-amber-700 dark:text-amber-300">
+                    − Авансы фабрикам (млн ₽)
+                  </td>
+                  {gt.monthlyRows.map((m) => (
+                    <td key={m.monthIdx} className="py-2 px-1.5 text-right text-amber-700 dark:text-amber-300">
+                      −{(m.factoryPrepaymentOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
                   <td className="py-2 px-2.5 font-sans font-medium text-rose-600 dark:text-rose-400">
-                    − Оплаты фабрикам (млн ₽)
+                    − Доплаты фабрикам (млн ₽)
                   </td>
                   {gt.monthlyRows.map((m) => (
                     <td key={m.monthIdx} className="py-2 px-1.5 text-right text-rose-600 dark:text-rose-400">
-                      −{(m.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                      −{(m.factoryBalanceOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-amber-500/5 dark:bg-amber-500/10 font-semibold">
+                  <td className="py-2 px-2.5 font-sans text-amber-800 dark:text-amber-300">
+                    ⚡ Минимум внутри мес. до WB (минус = пик своих ₽)
+                  </td>
+                  {gt.monthlyRows.map((m) => (
+                    <td
+                      key={m.monthIdx}
+                      className={`py-2 px-1.5 text-right ${
+                        m.isPeakDeficitMonth
+                          ? 'text-rose-600 dark:text-rose-400 font-extrabold underline decoration-rose-500/50'
+                          : m.intraMonthLowBalanceRub < 0
+                          ? 'text-amber-700 dark:text-amber-300'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {(m.intraMonthLowBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
                     </td>
                   ))}
                 </tr>
                 <tr className="font-semibold">
                   <td className="py-2 px-2.5 font-sans text-[#0F172A] dark:text-[#EDF0F7]">
-                    Накопленный баланс денег
+                    = Накопленный баланс на конец месяца
                   </td>
                   {gt.monthlyRows.map((m) => (
-                    <td key={m.monthIdx} className="py-2 px-1.5 text-right text-[#0F172A] dark:text-[#EDF0F7]">
+                    <td
+                      key={m.monthIdx}
+                      className={`py-2 px-1.5 text-right ${
+                        m.cumulativeCashBalanceRub < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
                       {(m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
                     </td>
                   ))}

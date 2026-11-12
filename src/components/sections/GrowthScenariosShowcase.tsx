@@ -2244,6 +2244,8 @@ export function GrowthScenariosShowcase({
           {homeSubView === 'home' && (
             <PeaklyMasterCabinetsSummary
               multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+              models={models}
+              selectedScenarioByBrand={selectedScenarioByBrand}
               scenarios={scenarios}
               activeBrandFilter={brandFilterLocal}
               isStandaloneHome={true}

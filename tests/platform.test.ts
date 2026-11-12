@@ -6883,6 +6883,438 @@ test('90. Единая мультибрендовая аналитика 5 бр�
   );
 });
 
+test('91. Детализация «Пик своих денег» (внутри месяца до выплат WB vs конец месяца): сверка рубль-в-рубль по BORNERS S1 и LISKANI 202705', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersModels = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code));
+  assert.equal(bornersModels.length, 21, 'В BORNERS S1 ровно 21 SKU');
+
+  const bornersInv = computeScenarioInvestmentSummary(bornersModels, s1Def, {
+    initialCashRub: 0,
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+
+  // Проверяем точный месяц пика, фазу внутри месяца и месяц выхода в плюс с WB
+  assert.equal(bornersInv.peakMonthIdx, 0, 'Пик своих денег BORNERS S1 наступает в январе (индекс 0)');
+  assert.equal(bornersInv.peakMonthLabel, 'Янв');
+  assert.equal(bornersInv.peakPhase, 'before_wb_inflow');
+  assert.ok(
+    bornersInv.peakWindowHumanRu.includes('1–15 января 2027'),
+    `Человекочитаемое окно пика должно указывать 1–15 января 2027, получено: ${bornersInv.peakWindowHumanRu}`
+  );
+  assert.equal(bornersInv.selfFundingMonthLabel, 'Мар', 'С марта BORNERS S1 выходит в устойчивую самоокупаемость с WB');
+
+  const janRow = bornersInv.monthlyRows[0];
+  assert.equal(janRow.isPeakDeficitMonth, true);
+  assert.equal(janRow.isIntraMonthPeak, true);
+  assert.equal(
+    bornersInv.openingBalanceAtPeakMonthRub -
+      bornersInv.prepayInPeakMonthRub -
+      bornersInv.balancePayInPeakMonthRub,
+    janRow.intraMonthLowBalanceRub,
+    'Формула минимума внутри месяца (Остаток на 1-е − Авансы − Доплаты) обязана сходиться до рубля'
+  );
+  assert.equal(
+    Math.max(0, -Math.min(janRow.intraMonthLowBalanceRub, janRow.cumulativeCashBalanceRub)),
+    bornersInv.peakWorkingCapitalRub,
+    'Пик своих денег BORNERS S1 должен на 100% совпадать с внутримесячным минимумом января'
+  );
+  assert.ok(
+    Math.abs(janRow.intraMonthLowBalanceRub) > Math.abs(janRow.cumulativeCashBalanceRub),
+    'Внутримесячный минимум до прихода WB глубже остатка на конец января — именно поэтому раньше казалось, что таблица и карточка расходятся'
+  );
+
+  // Проверяем влияние стартового кэша (например, 5 млн ₽ на счёте)
+  const bornersWithCash = computeScenarioInvestmentSummary(bornersModels, s1Def, {
+    initialCashRub: 5_000_000,
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+  assert.equal(
+    bornersWithCash.netOwnMoneyRequiredRub,
+    Math.max(0, bornersInv.peakWorkingCapitalRub - 5_000_000),
+    'Стартовый остаток денег ровно уменьшает чистую потребность в своих деньгах'
+  );
+  assert.equal(
+    bornersWithCash.monthlyRows[0].intraMonthLowBalanceRub,
+    janRow.intraMonthLowBalanceRub + 5_000_000
+  );
+
+  // Проверяем аналогичную точную сходимость по LISKANI 202705 (33 карточки · 500 млн ₽)
+  const liskaniInv = computeScenarioInvestmentSummary(
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    { initialCashRub: 0, settlementLagMonths: 0, wbPayoutScheduleSpecified: true }
+  );
+  const lskPeakRow = liskaniInv.monthlyRows[liskaniInv.peakMonthIdx];
+  assert.equal(liskaniInv.peakMonthIdx, 0);
+  assert.equal(liskaniInv.peakMonthLabel, 'Янв');
+  assert.equal(liskaniInv.selfFundingMonthLabel, 'Мар');
+  assert.equal(
+    Math.max(0, -Math.min(lskPeakRow.intraMonthLowBalanceRub, lskPeakRow.cumulativeCashBalanceRub)),
+    liskaniInv.peakWorkingCapitalRub,
+    'Пик своих денег LISKANI обязан сходиться рубль-в-рубль с графиком 12 мес.'
+  );
+});
+
+test('92. Тайминг «Пик своих денег» для обуви AKUSHA 202706 и сводного холдинга 5 брендов (computeMultiBrandPortfolioSummary)', async () => {
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_ID,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+
+  const akushaInv = computeScenarioInvestmentSummary(
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+    { initialCashRub: 0, settlementLagMonths: 0, wbPayoutScheduleSpecified: true }
+  );
+  assert.ok(akushaInv.peakMonthIdx >= 0 && akushaInv.peakMonthIdx < 12);
+  assert.ok(akushaInv.peakMonthLabel.length >= 3);
+  assert.ok(akushaInv.peakWindowHumanRu.includes('2027'));
+  const akPeakRow = akushaInv.monthlyRows[akushaInv.peakMonthIdx];
+  assert.equal(akPeakRow.isPeakDeficitMonth, true);
+  assert.equal(
+    akushaInv.openingBalanceAtPeakMonthRub -
+      akushaInv.prepayInPeakMonthRub -
+      akushaInv.balancePayInPeakMonthRub +
+      akushaInv.wbInflowInPeakMonthRub,
+    akushaInv.endOfPeakMonthBalanceRub,
+    'Кассовое уравнение пикового месяца AKUSHA (Начало − Авансы − Доплаты + Приход WB = Конец месяца) сходится до рубля'
+  );
+
+  // Полный портфель всех 5 брендов холдинга
+  const allModels = [
+    ...INITIAL_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const holding = computeMultiBrandPortfolioSummary(allModels, allScenarios, {
+    BORNERS: 1,
+    FUKAI: 100,
+    AKUSHA: AKUSHA_2027_SCENARIO_ID,
+    LISKANI: LISKANI_2027_SCENARIO_ID,
+    NA_TELE: 2,
+  });
+
+  const gt = holding.groupTotal;
+  assert.ok(gt.peakWorkingCapitalRub > 100_000_000, 'Сводный пик своих денег 5 брендов превышает 100 млн ₽');
+  assert.equal(gt.peakMonthIdx, 0);
+  assert.equal(gt.peakMonthLabel, 'Янв');
+  assert.ok(gt.selfFundingMonthLabel, 'У сводного холдинга определён месяц выхода в самоокупаемость');
+  const gtPeakRow = gt.monthlyRows[gt.peakMonthIdx];
+  assert.equal(
+    gt.openingBalanceAtPeakMonthRub - gt.prepayInPeakMonthRub - gt.balancePayInPeakMonthRub,
+    gtPeakRow.intraMonthLowBalanceRub,
+    'Сводный график холдинга 5 брендов сходится по формуле внутримесячного минимума до рубля'
+  );
+  assert.equal(
+    Math.max(0, -Math.min(gtPeakRow.intraMonthLowBalanceRub, gtPeakRow.cumulativeCashBalanceRub)),
+    gt.peakWorkingCapitalRub
+  );
+});
+
+test('93. Реальные квартальные волны закупок (computePortfolioProcurementWavesSummary): 100% сходимость с бюджетом без захардкоженных коэффициентов', async () => {
+  const { computePortfolioProcurementWavesSummary } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersModels = INITIAL_SCENARIO_MODELS.filter(
+    (m) =>
+      normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'BORNERS' &&
+      m.plansByScenario?.[1] !== undefined
+  );
+  const bornersInv = computeScenarioInvestmentSummary(bornersModels, s1Def);
+  const bornersWaves = computePortfolioProcurementWavesSummary(
+    bornersModels.map((model) => ({ model, scenario: s1Def })),
+    bornersInv.monthlyRows,
+    2027
+  );
+
+  assert.equal(bornersWaves.waves.length, 4, 'Ровно 4 квартальные волны (Q1–Q4)');
+  assert.equal(bornersWaves.monthlySchedule.length, 12, 'Ровно 12 месяцев в платёжном календаре фабрик');
+
+  const sumWaveBudgets = bornersWaves.waves.reduce((s, w) => s + w.budgetRub, 0);
+  const sumWavePacks = bornersWaves.waves.reduce((s, w) => s + w.packsQty, 0);
+  const sumMonthlyOutflow = bornersWaves.monthlySchedule.reduce(
+    (s, m) => s + m.totalOutflowRub,
+    0
+  );
+  const sumMonthlyPrepay = bornersWaves.monthlySchedule.reduce((s, m) => s + m.prepayRub, 0);
+  const sumMonthlyBalance = bornersWaves.monthlySchedule.reduce((s, m) => s + m.balanceRub, 0);
+
+  assert.equal(
+    sumWaveBudgets,
+    bornersInv.totalProcurementBudgetRub,
+    'Сумма бюджетов 4 волн BORNERS S1 обязана сходиться с годовым бюджетом закупок рубль-в-рубль'
+  );
+  assert.equal(
+    sumWavePacks,
+    bornersInv.totalProcurementPacks,
+    'Сумма комплектов 4 волн BORNERS S1 обязана сходиться с годовым объёмом закупок'
+  );
+  assert.equal(
+    sumMonthlyOutflow,
+    bornersInv.totalProcurementBudgetRub,
+    'Сумма 12 месяцев авансов и доплат обязана равняться годовому бюджету закупок'
+  );
+  assert.equal(sumMonthlyPrepay + sumMonthlyBalance, sumMonthlyOutflow);
+
+  // Проверяем LISKANI
+  const liskaniInv = computeScenarioInvestmentSummary(
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF
+  );
+  const liskaniWaves = computePortfolioProcurementWavesSummary(
+    LISKANI_2027_MODELS.map((model) => ({ model, scenario: LISKANI_2027_SCENARIO_DEF })),
+    liskaniInv.monthlyRows,
+    2027
+  );
+  assert.equal(
+    liskaniWaves.waves.reduce((s, w) => s + w.budgetRub, 0),
+    liskaniInv.totalProcurementBudgetRub,
+    'Сумма 4 волн LISKANI сходится с годовым бюджетом закупок 1-в-1'
+  );
+
+  // Проверяем отсутствие старых фейковых коэффициентов 0.27 / 0.34 в UI
+  const contoursCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const homeCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    contoursCode.includes('remainingBudget * 0.27') || homeCode.includes('remainingBudget * 0.27'),
+    false,
+    'Старые захардкоженные пропорции волн (0.27 / 0.34) полностью удалены из UI'
+  );
+});
+
+test('94. Групповая настройка условий оплаты фабрикам (applyBatchFactoryPaymentTermsToModels): аванс 20/80 vs 50/50, цикл пошива и режим под выкупы vs под заказы ПВЗ', async () => {
+  const {
+    applyBatchFactoryPaymentTermsToModels,
+    computePortfolioProcurementWavesSummary,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersBase = INITIAL_SCENARIO_MODELS.filter(
+    (m) =>
+      normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'BORNERS' &&
+      m.plansByScenario?.[1] !== undefined
+  ).map((m) => structuredClone(m));
+  const targetIds = bornersBase.map((m) => m.id);
+
+  const models20 = applyBatchFactoryPaymentTermsToModels(
+    bornersBase,
+    targetIds,
+    { prepaymentPct: 20 },
+    'Тест'
+  );
+  const models50 = applyBatchFactoryPaymentTermsToModels(
+    bornersBase,
+    targetIds,
+    { prepaymentPct: 50, productionLeadDays: 45 },
+    'Тест'
+  );
+
+  assert.equal(models20[0].sharedSupplyAndFact?.factoryParams.prepaymentPct, 20);
+  assert.equal(models20[0].sharedSupplyAndFact?.factoryParams.balancePaymentPct, 80);
+  assert.equal(models50[0].sharedSupplyAndFact?.factoryParams.prepaymentPct, 50);
+  assert.equal(models50[0].sharedSupplyAndFact?.factoryParams.balancePaymentPct, 50);
+  assert.equal(models50[0].sharedSupplyAndFact?.factoryParams.productionLeadDays, 45);
+
+  const inv20 = computeScenarioInvestmentSummary(models20, s1Def);
+  const inv30 = computeScenarioInvestmentSummary(bornersBase, s1Def);
+  const inv50 = computeScenarioInvestmentSummary(models50, s1Def);
+
+  assert.equal(inv20.totalProcurementBudgetRub, inv30.totalProcurementBudgetRub);
+  assert.equal(inv50.totalProcurementBudgetRub, inv30.totalProcurementBudgetRub);
+  assert.ok(
+    inv20.firstWavePrepaymentRub < inv30.firstWavePrepaymentRub &&
+      inv30.firstWavePrepaymentRub < inv50.firstWavePrepaymentRub,
+    'Аванс 1-й волны монотонно растёт при переключении схемы оплаты 20/80 → 30/70 → 50/50'
+  );
+
+  const waves50 = computePortfolioProcurementWavesSummary(
+    models50.map((model) => ({ model, scenario: s1Def })),
+    inv50.monthlyRows,
+    2027
+  );
+  assert.equal(waves50.avgPrepaymentPct, 50);
+
+  // Проверяем переключение режима «Под заказы ПВЗ» vs «Под чистые выкупы ×1,00» на клоне AKUSHA
+  const akushaOrdersMode = AKUSHA_2027_MODELS.map((m) => structuredClone(m));
+  const akushaBuyoutsMode = applyBatchFactoryPaymentTermsToModels(
+    akushaOrdersMode,
+    akushaOrdersMode.map((m) => m.id),
+    { procureByOrdersVolume: false },
+    'Тест'
+  );
+  const akInvOrders = computeScenarioInvestmentSummary(akushaOrdersMode, AKUSHA_2027_SCENARIO_DEF);
+  const akInvBuyouts = computeScenarioInvestmentSummary(akushaBuyoutsMode, AKUSHA_2027_SCENARIO_DEF);
+  assert.ok(
+    akInvBuyouts.totalProcurementPacks < akInvOrders.totalProcurementPacks,
+    'При переключении обуви AKUSHA с заказов ПВЗ (35% выкупа) на чистые выкупы (×1,00) объём закупки кратно снижается'
+  );
+  assert.ok(
+    akInvBuyouts.peakWorkingCapitalRub < akInvOrders.peakWorkingCapitalRub,
+    'Пик своих денег AKUSHA синхронно снижается при закупке только под чистые выкупы'
+  );
+});
+
+test('95. Брендовые размерные сетки в 03 · Закупки (XS–XL, 22–30, 36–41), 1-клик утверждение партии в PO и рендер PeakOwnMoneyChartPanel', async () => {
+  const { getBrandProductionProfile } = await import('../src/lib/brandProductionConfig.ts');
+  const { computePortfolioProcurementWavesSummary } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const naTeleProf = getBrandProductionProfile('НА ТЕЛЕ', 'Комплект женских слипов');
+  const akushaKidsProf = getBrandProductionProfile('AKUSHA', 'Детские кеды из экокожи');
+  const akushaWomenProf = getBrandProductionProfile('AKUSHA', 'Дыхабельные женские мокасины');
+  const bornersProf = getBrandProductionProfile('BORNERS', 'Мужские боксеры 4-pack');
+
+  assert.equal(`${naTeleProf.sizes[0]}–${naTeleProf.sizes[naTeleProf.sizes.length - 1]}`, 'XS–XL');
+  assert.equal(
+    `${akushaKidsProf.sizes[0]}–${akushaKidsProf.sizes[akushaKidsProf.sizes.length - 1]}`,
+    '22–30'
+  );
+  assert.equal(
+    `${akushaWomenProf.sizes[0]}–${akushaWomenProf.sizes[akushaWomenProf.sizes.length - 1]}`,
+    '36–41'
+  );
+  assert.equal(`${bornersProf.sizes[0]}–${bornersProf.sizes[bornersProf.sizes.length - 1]}`, 'S–4XL');
+
+  // Проверяем 1-клик утверждение черновой партии в PO (approveRecommendedBatch) и инвариантность бюджета волн
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const sorbet = structuredClone(
+    ensureModelUnifiedV11(S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!)
+  );
+  const planBefore = computeProcurementPlan(sorbet, s1Def);
+  assert.ok(planBefore.recommendedBatches.length >= 1);
+
+  const sorbetApproved = approveRecommendedBatch(
+    sorbet,
+    planBefore.recommendedBatches[0],
+    'Тест PO'
+  );
+  assert.equal(sorbetApproved.sharedSupplyAndFact?.approvedOrders.length, 1);
+  const wavesAfterPo = computePortfolioProcurementWavesSummary(
+    [{ model: sorbetApproved, scenario: s1Def }],
+    undefined,
+    2027
+  );
+  assert.equal(wavesAfterPo.totalApprovedPosCount, 1);
+  assert.equal(
+    wavesAfterPo.totalPacks,
+    planBefore.totalRecommendedPacks,
+    'После перевода 1-й партии из черновика в утверждённый PO суммарный объём волн остаётся неизменным'
+  );
+
+  // Проверяем подключение PeakOwnMoneyChartPanel в 03 · Закупки, 04 · Финансы и режима «Пик своих денег» на Главной
+  const chartPanelPath = path.join(
+    process.cwd(),
+    'src/components/sections/PeakOwnMoneyChartPanel.tsx'
+  );
+  assert.equal(fs.existsSync(chartPanelPath), true);
+  const contoursCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const homeCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  assert.ok(
+    contoursCode.includes('<PeakOwnMoneyChartPanel') &&
+      contoursCode.includes('id="peak-own-money-chart-anchor"') &&
+      contoursCode.includes('Утвердить в PO') &&
+      contoursCode.includes('updateBatchFactoryTerms('),
+    'UnifiedContourViews должен рендерить PeakOwnMoneyChartPanel, кнопку «Утвердить в PO» и панель условий оплаты фабрикам'
+  );
+  assert.ok(
+    homeCode.includes("setTrendChartMode('ownMoneyPeak')") &&
+      homeCode.includes('Пик своих денег'),
+    'Главная страница должна поддерживать 3-й режим 12-месячного графика «Пик своих денег»'
+  );
+});
+
+test('96. Контрольная регрессионная проверка всех строгих финансовых эталонов платформы (BORNERS, LISKANI, AKUSHA, FUKAI)', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const {
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+
+  // 1. BORNERS S1: 21 SKU · 686 284 972 ₽ за год · 109 938 111 ₽ в декабре
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersS1 = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code));
+  const bornersInv = computeScenarioInvestmentSummary(bornersS1, s1Def);
+  assert.equal(bornersS1.length, 21);
+  assert.equal(bornersInv.annualRevenueRub, 686_284_972);
+  assert.equal(bornersInv.decemberRevenueRub, 109_938_111);
+
+  // 2. FUKAI (Действующий ассортимент 100): 2 SKU (435tru + 4351877) · 90 553 401 ₽
+  const fukaiScen = INITIAL_SCENARIOS.find((s) => s.id === 100)!;
+  const fukaiModels = ACTING_2027_SCENARIO_MODELS.filter((m) =>
+    isUnverifiedActingSku(m.code)
+  );
+  const fukaiInv = computeScenarioInvestmentSummary(fukaiModels, fukaiScen);
+  assert.equal(fukaiModels.length, 2);
+  assert.equal(fukaiInv.annualRevenueRub, 90_553_401);
+
+  // 3. LISKANI 202705: 33 карточки · 500 000 000 ₽ выкупов · 877 192 982 ₽ заказов
+  const liskaniInv = computeScenarioInvestmentSummary(
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF
+  );
+  assert.equal(LISKANI_2027_MODELS.length, 33);
+  assert.equal(liskaniInv.annualRevenueRub, 500_000_000);
+
+  // 4. AKUSHA 202706: 24 карточки · 105 793 210 ₽ выручки · 37 448 200 ₽ себестоимости проданных пар
+  const akushaInv = computeScenarioInvestmentSummary(
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF
+  );
+  assert.equal(AKUSHA_2027_MODELS.length, 24);
+  assert.equal(akushaInv.annualRevenueRub, 105_793_210);
+  assert.equal(akushaInv.annualSoldGoodsCostRub, 37_448_200);
+});
+
 
 
 
