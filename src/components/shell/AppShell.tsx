@@ -58,6 +58,22 @@ import {
   computeMultiBrandPortfolioSummary,
   detectModelBrandPortfolioLabel,
 } from '@/lib/unifiedBusinessEngine';
+import {
+  STORAGE_KEY_MODELS,
+  STORAGE_KEY_S1_GROUP_PORTFOLIO,
+  STORAGE_KEY_SCENARIO_BY_BRAND,
+  STORAGE_KEY_SCENARIOS,
+  buildFullPlatformBackupBundle,
+  parseFullPlatformBackupBundle,
+  syncUserPlansBackup,
+} from '@/lib/portfolioPersistence';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import {
+  safeGetStorageJson,
+  safeSetStorageJson,
+  saveModelGalleryToIdb,
+  savePortfolioSnapshotToIdb,
+} from '@/lib/safeStorage';
 
 interface NavGroup {
   groupTitle: string;
@@ -174,13 +190,17 @@ export function AppShell() {
     loginAs,
     logout,
     brands,
+    strategies,
     products,
     concepts,
+    miroItems,
     launches,
+    financialPlans,
     projects,
     tasks,
     documents,
     competitors,
+    presentationOverrides,
     activeSection,
     navHistory,
     canGoBack,
@@ -204,6 +224,7 @@ export function AppShell() {
     restoreEntity,
     permanentlyDeleteEntity,
     emptyTrash,
+    restorePlatformBackupState,
     notify,
     toasts,
     dismissToast,
@@ -300,7 +321,7 @@ export function AppShell() {
           entityType: 'concept',
           typeLabel: 'Карточка R&D',
           title: `${c.code} — ${c.name}`,
-          subtitle: `Бренд: ${c.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · Этап: ${CONCEPT_STAGE_LABELS_RU[c.stage]}`,
+          subtitle: `Бренд: ${formatLabBrandLabel(c.brandId)} · Этап: ${CONCEPT_STAGE_LABELS_RU[c.stage]}`,
         });
       });
 
@@ -312,7 +333,7 @@ export function AppShell() {
           entityType: 'product',
           typeLabel: 'Модель SKU',
           title: `${p.sku} — ${p.name}`,
-          subtitle: `Бренд: ${p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · ${p.collection}`,
+          subtitle: `Бренд: ${formatLabBrandLabel(p.brandId)} · ${p.collection}`,
         });
       });
 
@@ -937,6 +958,17 @@ export function AppShell() {
       ).length,
     [concepts]
   );
+  const activeConceptsForBrandCount = useMemo(
+    () =>
+      concepts.filter((c) => {
+        if (c.isArchived || ['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage)) {
+          return false;
+        }
+        if (!brandFilter || brandFilter === 'ALL') return true;
+        return normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter);
+      }).length,
+    [concepts, brandFilter]
+  );
   const openTasksCount = useMemo(
     () => tasks.filter((t) => !t.isArchived && t.status !== 'Done').length,
     [tasks]
@@ -1003,9 +1035,18 @@ export function AppShell() {
         label: 'Продукт',
         target: 'product-catalog' as NavSectionId,
         isActive:
-          platformMode === 'management' &&
-          (activeSection === 'product-catalog' || activeSection === 'product-lab'),
+          platformMode === 'management' && activeSection === 'product-catalog',
         badge: String(effectiveModelsCount),
+      },
+      {
+        key: 'lab',
+        step: 'R&D',
+        label: 'Лаборатория',
+        target: 'product-lab' as NavSectionId,
+        isActive:
+          platformMode === 'management' && activeSection === 'product-lab',
+        badge:
+          activeConceptsForBrandCount > 0 ? String(activeConceptsForBrandCount) : null,
       },
       {
         key: 'sales',
@@ -1047,6 +1088,7 @@ export function AppShell() {
     ].filter((s) => canUserAccessSection(currentUser, s.target));
   }, [
     activeSection,
+    activeConceptsForBrandCount,
     brandFilter,
     currentUser,
     holdingSummary.groupTotal.annualRevenueRub,
@@ -1458,18 +1500,34 @@ export function AppShell() {
                           </span>
                         </button>
 
-                        {/* Раздел 10.5 ТЗ: Резервная копия всех данных BORNERS GROUP */}
+                        {/* Раздел 10.5 ТЗ: Резервная копия всех данных BORNERS GROUP (Экспорт + Импорт) */}
                         <button
                           type="button"
                           onClick={() => {
                             try {
-                              const payload = {
-                                backupVersion: '2026-11-08-v1',
-                                exportedAt: new Date().toISOString(),
+                              const payload = buildFullPlatformBackupBundle({
                                 scenarios: livePortfolio.scenarios,
                                 models: livePortfolio.models,
                                 selectedScenarioByBrand: livePortfolio.selectedScenarioByBrand,
-                              };
+                                includeGroupPortfolioInS1:
+                                  livePortfolio.includeGroupPortfolioInS1,
+                                productGroups: safeGetStorageJson('borners_product_groups_v1'),
+                                platformState: {
+                                  users,
+                                  brands,
+                                  strategies,
+                                  concepts,
+                                  products,
+                                  launches,
+                                  financialPlans,
+                                  projects,
+                                  tasks,
+                                  documents,
+                                  competitors,
+                                  miroItems,
+                                  presentationOverrides,
+                                },
+                              });
                               const blob = new Blob([JSON.stringify(payload, null, 2)], {
                                 type: 'application/json;charset=utf-8',
                               });
@@ -1482,8 +1540,8 @@ export function AppShell() {
                               setProfileMenuOpen(false);
                               notify(
                                 'success',
-                                '✓ Резервная копия сохранена',
-                                'Выгружены все бренды, карточки, фотографии, сценарии 2027–2028 и утверждённые заказы фабрикам.'
+                                '✓ Полная резервная копия сохранена',
+                                `Выгружены ${livePortfolio.models.length} SKU, сценарии 2027, Лаборатория R&D (${concepts.length}) и Холст идей.`
                               );
                             } catch {
                               notify('error', 'Ошибка сохранения резервной копии');
@@ -1493,9 +1551,91 @@ export function AppShell() {
                         >
                           <span>Скачать резервную копию (JSON)</span>
                           <span className="font-mono text-[10.5px] text-emerald-700 font-semibold">
-                            Сохранено
+                            Экспорт
                           </span>
                         </button>
+
+                        <label className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer">
+                          <span>Восстановить из копии (JSON)</span>
+                          <span className="font-mono text-[10.5px] text-indigo-700 font-semibold">
+                            Импорт
+                          </span>
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              try {
+                                const text = await file.text();
+                                const parsed = parseFullPlatformBackupBundle(text);
+                                if (!parsed.valid || !parsed.bundle) {
+                                  notify(
+                                    'error',
+                                    'Ошибка восстановления из файла',
+                                    parsed.error || 'Некорректный формат резервной копии'
+                                  );
+                                  return;
+                                }
+                                const b = parsed.bundle;
+                                safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
+                                syncUserPlansBackup(b.models);
+                                void savePortfolioSnapshotToIdb(b.models);
+                                for (const m of b.models) {
+                                  if (Array.isArray(m.gallery) && m.gallery.length > 0) {
+                                    void saveModelGalleryToIdb(m.id, m.gallery);
+                                  }
+                                }
+                                safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
+                                safeSetStorageJson(
+                                  STORAGE_KEY_SCENARIO_BY_BRAND,
+                                  b.selectedScenarioByBrand
+                                );
+                                if (typeof b.includeGroupPortfolioInS1 === 'boolean') {
+                                  safeSetStorageJson(
+                                    STORAGE_KEY_S1_GROUP_PORTFOLIO,
+                                    b.includeGroupPortfolioInS1
+                                  );
+                                }
+                                if (b.productGroups !== undefined) {
+                                  safeSetStorageJson(
+                                    'borners_product_groups_v1',
+                                    b.productGroups
+                                  );
+                                }
+                                livePortfolio.updateModelsBatch(() => b.models);
+                                livePortfolio.updateScenariosBatch(() => b.scenarios);
+                                if (b.platformState) {
+                                  restorePlatformBackupState(b.platformState);
+                                }
+                                if (typeof window !== 'undefined') {
+                                  window.dispatchEvent(
+                                    new CustomEvent('borners-scenario-models-changed')
+                                  );
+                                  window.dispatchEvent(
+                                    new CustomEvent('borners-scenarios-changed')
+                                  );
+                                  window.dispatchEvent(
+                                    new CustomEvent('borners-active-scenario-changed')
+                                  );
+                                }
+                                setProfileMenuOpen(false);
+                                notify(
+                                  'success',
+                                  '✓ Резервная копия успешно восстановлена',
+                                  `Загружено ${b.models.length} карточек SKU, сценарии 2027 и данные Лаборатории R&D.`
+                                );
+                              } catch {
+                                notify(
+                                  'error',
+                                  'Не удалось импортировать резервную копию'
+                                );
+                              }
+                            }}
+                          />
+                        </label>
                       </div>
 
                       {/* Проверка роли доступа */}

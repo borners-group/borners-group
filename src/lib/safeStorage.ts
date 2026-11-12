@@ -225,6 +225,8 @@ export async function saveModelGalleryToIdb(
 }
 
 const IDB_FULL_PORTFOLIO_KEY = '__FULL_PORTFOLIO_SNAPSHOT_V1__';
+const IDB_PLATFORM_CONCEPTS_KEY = '__PLATFORM_CONCEPTS_SNAPSHOT_V1__';
+const IDB_PLATFORM_MIRO_KEY = '__PLATFORM_MIRO_SNAPSHOT_V1__';
 
 export async function savePortfolioSnapshotToIdb(models: unknown[]): Promise<boolean> {
   if (!Array.isArray(models) || models.length === 0) return false;
@@ -246,6 +248,165 @@ export async function savePortfolioSnapshotToIdb(models: unknown[]): Promise<boo
   } catch {
     return false;
   }
+}
+
+export async function savePlatformRichStateToIdb(
+  concepts: unknown[],
+  miroItems: unknown[]
+): Promise<boolean> {
+  try {
+    const db = await openFilesDb();
+    return await new Promise<boolean>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_PHOTO_STORE);
+      if (Array.isArray(concepts)) {
+        store.put(compactGalleryDataUrls(concepts), IDB_PLATFORM_CONCEPTS_KEY);
+      }
+      if (Array.isArray(miroItems)) {
+        store.put(compactGalleryDataUrls(miroItems), IDB_PLATFORM_MIRO_KEY);
+      }
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function loadPlatformRichStateFromIdb<
+  C = Record<string, unknown>,
+  M = Record<string, unknown>,
+>(): Promise<{ concepts: C[] | null; miroItems: M[] | null }> {
+  try {
+    const db = await openFilesDb();
+    return await new Promise<{ concepts: C[] | null; miroItems: M[] | null }>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readonly');
+      const store = tx.objectStore(IDB_PHOTO_STORE);
+      const conceptsReq = store.get(IDB_PLATFORM_CONCEPTS_KEY);
+      const miroReq = store.get(IDB_PLATFORM_MIRO_KEY);
+      tx.oncomplete = () => {
+        db.close();
+        resolve({
+          concepts: Array.isArray(conceptsReq.result) ? (conceptsReq.result as C[]) : null,
+          miroItems: Array.isArray(miroReq.result) ? (miroReq.result as M[]) : null,
+        });
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve({ concepts: null, miroItems: null });
+      };
+    });
+  } catch {
+    return { concepts: null, miroItems: null };
+  }
+}
+
+/**
+ * Восстанавливает медиа-поля (фотографии образцов, галереи R&D, чек-фото 4 проверок и голосовые/фото Холста идей),
+ * если localStorage при переполнении квоты поджал длинные data:URL строки, а полная копия сохранена в IndexedDB.
+ */
+export function rehydrateConceptsFromIdbSnapshot<T extends Record<string, any>>(
+  localConcepts: T[],
+  idbConcepts: T[] | null | undefined
+): T[] {
+  if (!Array.isArray(idbConcepts) || idbConcepts.length === 0) return localConcepts;
+  const byId = new Map<string, T>();
+  for (const item of idbConcepts) {
+    if (item && typeof item.id === 'string') {
+      byId.set(item.id, item);
+    }
+  }
+  return localConcepts.map((c) => {
+    const rich = byId.get(c.id);
+    if (!rich) return c;
+    const nextImageUrl = c.imageUrl || rich.imageUrl || '';
+    const nextGalleryPhotos = Array.isArray(c.galleryPhotos)
+      ? c.galleryPhotos.map((gp: any, idx: number) => {
+          if (gp?.url) return gp;
+          const richGp =
+            rich.galleryPhotos?.find((r: any) => r.id === gp?.id) || rich.galleryPhotos?.[idx];
+          return richGp?.url ? { ...gp, url: richGp.url } : gp;
+        })
+      : rich.galleryPhotos;
+    const nextSamples = Array.isArray(c.samples)
+      ? c.samples.map((s: any, idx: number) => {
+          const richS = rich.samples?.find((r: any) => r.id === s?.id) || rich.samples?.[idx];
+          if (!richS) return s;
+          const mergedPhotos = Array.isArray(s.photos)
+            ? s.photos
+                .map((p: string, pIdx: number) => p || richS.photos?.[pIdx] || '')
+                .filter(Boolean)
+            : richS.photos;
+          return { ...s, photos: mergedPhotos };
+        })
+      : rich.samples;
+    const nextFourChecks =
+      c.fourChecksTest && rich.fourChecksTest
+        ? {
+            ...c.fourChecksTest,
+            fitAndComfortPhoto:
+              c.fourChecksTest.fitAndComfortPhoto || rich.fourChecksTest.fitAndComfortPhoto,
+            waistbandAndSeamsPhoto:
+              c.fourChecksTest.waistbandAndSeamsPhoto ||
+              rich.fourChecksTest.waistbandAndSeamsPhoto,
+            washShapeColorPhoto:
+              c.fourChecksTest.washShapeColorPhoto || rich.fourChecksTest.washShapeColorPhoto,
+            manufacturingQualityPhoto:
+              c.fourChecksTest.manufacturingQualityPhoto ||
+              rich.fourChecksTest.manufacturingQualityPhoto,
+          }
+        : c.fourChecksTest || rich.fourChecksTest;
+    const nextAttachments = Array.isArray(c.attachments)
+      ? c.attachments.map((att: any, idx: number) => {
+          if (att?.url) return att;
+          const richAtt =
+            rich.attachments?.find((r: any) => r.id === att?.id) || rich.attachments?.[idx];
+          return richAtt?.url ? { ...att, url: richAtt.url } : att;
+        })
+      : rich.attachments;
+    return {
+      ...c,
+      imageUrl: nextImageUrl,
+      galleryPhotos: nextGalleryPhotos,
+      samples: nextSamples,
+      fourChecksTest: nextFourChecks,
+      attachments: nextAttachments,
+    };
+  });
+}
+
+export function rehydrateMiroItemsFromIdbSnapshot<T extends Record<string, any>>(
+  localMiro: T[],
+  idbMiro: T[] | null | undefined
+): T[] {
+  if (!Array.isArray(idbMiro) || idbMiro.length === 0) return localMiro;
+  const byId = new Map<string, T>();
+  for (const item of idbMiro) {
+    if (item && typeof item.id === 'string') {
+      byId.set(item.id, item);
+    }
+  }
+  return localMiro.map((m) => {
+    const rich = byId.get(m.id);
+    if (!rich) return m;
+    const nextGallery = Array.isArray(m.galleryUrls)
+      ? m.galleryUrls
+          .map((u: string, idx: number) => u || rich.galleryUrls?.[idx] || '')
+          .filter(Boolean)
+      : rich.galleryUrls;
+    return {
+      ...m,
+      imageUrl: m.imageUrl || rich.imageUrl,
+      galleryUrls: nextGallery && nextGallery.length > 0 ? nextGallery : rich.galleryUrls,
+      audioDataUrl: m.audioDataUrl || rich.audioDataUrl,
+    };
+  });
 }
 
 export async function loadPortfolioSnapshotFromIdb<T = unknown>(): Promise<T[] | null> {
@@ -283,7 +444,7 @@ export async function loadAllModelGalleriesFromIdb(): Promise<Record<string, unk
         if (cursor) {
           if (
             typeof cursor.key === 'string' &&
-            cursor.key !== IDB_FULL_PORTFOLIO_KEY &&
+            !cursor.key.startsWith('__') &&
             Array.isArray(cursor.value)
           ) {
             out[cursor.key] = cursor.value;

@@ -31,6 +31,7 @@ import {
   getModelPriority,
 } from '../src/lib/scenarioData.ts';
 import {
+  ACTING_2027_SCENARIO_ID,
   ACTING_2027_SCENARIO_MODELS,
   ACTING_2027_SKUS,
   verifyActingAssortment2027Bundle,
@@ -2506,8 +2507,15 @@ test('40. Аудит исходного кода компонентов: син�
     path.join(process.cwd(), 'src', 'lib', 'useLiveScenarioPortfolio.ts'),
     'utf-8'
   );
+  const persistenceCode = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'lib', 'portfolioPersistence.ts'),
+    'utf-8'
+  );
   assert.ok(
-    liveHookCode.includes("if (modelBrand === 'AKUSHA' || modelBrand === 'LISKANI')"),
+    liveHookCode.includes('filterModelsForScenario') &&
+      (liveHookCode + persistenceCode).includes(
+        "if (modelBrand === 'AKUSHA' || modelBrand === 'LISKANI')"
+      ),
     'filterModelsForScenario должен изолировать отдельные кабинеты AKUSHA и LISKANI от базовых сценариев BORNERS'
   );
 
@@ -4820,6 +4828,600 @@ test('59. Авто-лечение браузерного кэша при пер�
     }
   }
 });
+
+test('60. Возрождение Лаборатории R&D + Холста идей (Miro) и двухсторонняя синхронизация с Единым каталогом SKU без потери карточек', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const appShellSrc = fs.readFileSync(
+    path.join(root, 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  const catalogSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+  const labSrc = fs.readFileSync(
+    path.join(root, 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+
+  // 1. Лаборатория R&D выведена в верхнюю панель навигации AppShell и в шапку 01 · Продукт
+  assert.ok(
+    appShellSrc.includes("key: 'lab'") &&
+      appShellSrc.includes("target: 'product-lab' as NavSectionId") &&
+      appShellSrc.includes("label: 'Лаборатория'"),
+    'Лаборатория R&D должна быть доступна в 1 клик в главном меню AppShell'
+  );
+  assert.ok(
+    catalogSrc.includes("navigateTo('product-lab'") &&
+      catalogSrc.includes('Лаборатория R&D'),
+    'Переход и синхронизация с Лабораторией R&D должны быть доступны в 01 · Продукт'
+  );
+
+  // 2. В Лабораторию R&D интегрирован Холст идей (MiroBoardView), подключён useLiveScenarioPortfolio и поддерживаются все 5 брендов без INITIAL_SCENARIO_MODELS
+  assert.ok(
+    labSrc.includes('MiroBoardView') && labSrc.includes("viewMode === 'miro'"),
+    'Холст идей (Miro) должен открываться прямо внутри Лаборатории R&D'
+  );
+  assert.equal(
+    labSrc.includes('INITIAL_SCENARIO_MODELS'),
+    false,
+    'ProductLabView больше не должен затирать каталог старым массивом INITIAL_SCENARIO_MODELS'
+  );
+  for (const b of ['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI']) {
+    assert.ok(
+      labSrc.includes(`<option value="${b}">`),
+      `ProductLabView должен поддерживать бренд ${b}`
+    );
+  }
+
+  // 3. Проверка чистой двухсторонней синхронизации R&D <-> ScenarioModelSpec без затирания 80 эталонных SKU
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+  const {
+    syncConceptToScenarioPortfolio,
+    syncAllBrandConceptsToScenarioPortfolio,
+    buildConceptPatchFromScenarioModel,
+    findLinkedScenarioModelForConcept,
+  } = await import('../src/lib/rndCatalogSync.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { CLIENT_SAVED_S1_TOTALS, applyClientSavedS1SalesPlan } = await import(
+    '../src/lib/scenarioS1_100M.ts'
+  );
+
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const basePortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const baseCount = basePortfolio.length;
+
+  // Синхронизируем все R&D концепции НА ТЕЛЕ (RD-030 Мягкие боксеры, RD-029 Бесшовная база 2.0 и др.)
+  const naTeleBatch = syncAllBrandConceptsToScenarioPortfolio(
+    INITIAL_CONCEPTS,
+    'NA_TELE',
+    basePortfolio,
+    allScenarios
+  );
+  assert.ok(
+    naTeleBatch.syncedItems.length >= 2,
+    'Все R&D разработки НА ТЕЛЕ должны переноситься в каталог в 1 клик'
+  );
+  assert.equal(
+    naTeleBatch.models.length,
+    baseCount + naTeleBatch.syncedItems.length,
+    'Ни одна из базовых карточек BORNERS / FUKAI / LISKANI / AKUSHA не должна потеряться'
+  );
+
+  // Проверяем расчёт себестоимости комплекта (2 шт. * 480 ₽ = 960 ₽ при рознице 2 490 ₽ для RD-030)
+  const softBoxersConcept = INITIAL_CONCEPTS.find((c) => c.id === 'concept-soft-boxers');
+  if (softBoxersConcept) {
+    const syncedSoft = findLinkedScenarioModelForConcept(
+      softBoxersConcept,
+      naTeleBatch.models
+    )!;
+    assert.ok(syncedSoft, 'Карточка Мягкие боксеры найдена в ScenarioModelSpec');
+    assert.equal(syncedSoft.brandId, 'NA_TELE');
+    assert.equal(syncedSoft.retailPriceRub, softBoxersConcept.plannedRetailPrice);
+    assert.equal(
+      syncedSoft.unitCostRub,
+      (softBoxersConcept.packUnitsCount || 1) * softBoxersConcept.plannedUnitCost
+    );
+    assert.ok(syncedSoft.gallery.length >= 1, 'Фотографии перенесены из R&D');
+
+    // Зададим план продаж на 12 мес. в Сценарии №2 и затем обновим концепцию в R&D — план продаж обязан сохраниться!
+    const withSalesPlan = naTeleBatch.models.map((m) =>
+      m.id === syncedSoft.id
+        ? {
+            ...m,
+            plansByScenario: {
+              ...m.plansByScenario,
+              2: {
+                ...m.plansByScenario[2],
+                monthlyPacks: [300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 850, 1000],
+              },
+            },
+          }
+        : m
+    );
+
+    const updatedConcept = {
+      ...softBoxersConcept,
+      linkedScenarioModelId: syncedSoft.id,
+      plannedRetailPrice: 2690,
+      stage: 'LAUNCH' as const,
+    };
+    const resAfterEdit = syncConceptToScenarioPortfolio(
+      updatedConcept,
+      withSalesPlan,
+      allScenarios
+    );
+    assert.equal(resAfterEdit.createdNew, false, 'Дубликат SKU не создаётся');
+    assert.equal(resAfterEdit.model.retailPriceRub, 2690);
+    assert.equal(resAfterEdit.model.launchStatus, 'Утверждено');
+    assert.deepEqual(
+      resAfterEdit.model.plansByScenario[2].monthlyPacks,
+      [300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 850, 1000],
+      'Помесячный план продаж в 02 · Продажи полностью сохранён при обновлении карточки из Лаборатории R&D'
+    );
+
+    // Обратный импорт из Каталога в Лабораторию R&D
+    const reversePatch = buildConceptPatchFromScenarioModel(resAfterEdit.model);
+    assert.equal(reversePatch.brandId, 'NA_TELE');
+    assert.equal(reversePatch.linkedScenarioModelId, resAfterEdit.model.id);
+    assert.equal(reversePatch.plannedRetailPrice, 2690);
+  }
+
+  // Проверяем неизменность эталонной выручки BORNERS (686 284 972 ₽) после массовой синхронизации Лаборатории R&D
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersS1Rev = naTeleBatch.models
+    .filter(
+      (m) =>
+        m.code.startsWith('BRN-') ||
+        ['WB 244995893', 'WB 440758616', 'WB 439426186', 'WB 440759654', 'WB 257807266'].includes(
+          m.code
+        )
+    )
+    .reduce((acc, m) => acc + computeModelScenarioMetrics(m, s1).annualRevenueRub, 0);
+  assert.equal(bornersS1Rev, CLIENT_SAVED_S1_TOTALS.annualRevenueRub);
+});
+
+test('61. Полный сквозной бизнес-контур НА ТЕЛЕ (NA_TELE): изоляция сценариев, выкуп 75%, закупки Q1–Q4, P&L, Сводка холдинга и сохранение при F5', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const contourSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+
+  // 1. В UnifiedContourViews переключение на Сценарий №2 для НА ТЕЛЕ больше никогда не сбрасывает brandFilter в ALL и не перезаписывает сценарий BORNERS
+  assert.equal(
+    contourSrc.includes("setSelectedScenarioId(2);\n                  setBrandFilter('ALL');"),
+    false,
+    'Кнопка переключения сценария НА ТЕЛЕ не должна сбрасывать фильтр бренда на ALL и портить BORNERS'
+  );
+
+  const {
+    createBrandProductModel,
+    createIndependentBrandScenario,
+    computeProcurementPlan,
+    computeFinancialPnL,
+    computeMultiBrandPortfolioSummary,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    STORAGE_KEY_MODELS,
+    STORAGE_KEY_SCENARIO_BY_BRAND,
+    filterModelsForScenario,
+    hydratePortfolioModelsFromStorage,
+    sanitizeSelectedScenarioByBrand,
+    syncUserPlansBackup,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { safeSetStorageJson } = await import('../src/lib/safeStorage.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { CLIENT_SAVED_S1_TOTALS, applyClientSavedS1SalesPlan } = await import(
+    '../src/lib/scenarioS1_100M.ts'
+  );
+
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+
+  // 2. Проверка sanitizeSelectedScenarioByBrand для НА ТЕЛЕ: чинит undefined и чужие ID, но уважает явный null
+  const healedUndefined = sanitizeSelectedScenarioByBrand({}, allScenarios);
+  assert.equal(healedUndefined.NA_TELE, 2);
+  const healedForeign = sanitizeSelectedScenarioByBrand(
+    { NA_TELE: AKUSHA_2027_SCENARIO_ID },
+    allScenarios
+  );
+  assert.equal(healedForeign.NA_TELE, 2);
+  const preservedNull = sanitizeSelectedScenarioByBrand({ NA_TELE: null }, allScenarios);
+  assert.equal(preservedNull.NA_TELE, null);
+
+  // 3. Создаём выделенный сценарий НА ТЕЛЕ 2027 и 2 полноценные карточки НА ТЕЛЕ с помесячным планом
+  const basePortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+
+  const {
+    scenario: naTeleScen,
+    scenarios: scenariosWithNaTele,
+    models: portfolioAfterScen,
+  } = createIndependentBrandScenario(allScenarios, basePortfolio, {
+    brandCode: 'NA_TELE',
+    title: 'НА ТЕЛЕ — План 2027',
+    monthlyTargetMln: 25,
+  });
+
+  const healedWithOwned = sanitizeSelectedScenarioByBrand(
+    { NA_TELE: 1 },
+    scenariosWithNaTele
+  );
+  assert.equal(
+    healedWithOwned.NA_TELE,
+    naTeleScen.id,
+    'Если у НА ТЕЛЕ создан собственный сценарий, санитайзер выбирает именно его'
+  );
+
+  const monthly1 = [400, 450, 500, 550, 600, 650, 700, 800, 900, 1000, 1200, 1500]; // 9 250 компл.
+  const monthly2 = [250, 300, 350, 400, 450, 500, 550, 600, 650, 750, 850, 1100]; // 6 750 компл.
+
+  const c1 = createBrandProductModel(portfolioAfterScen, scenariosWithNaTele, {
+    brandCode: 'NA_TELE',
+    title: 'Комплект микромодал НА ТЕЛЕ Soft Boxers 2-pack',
+    retailPriceRub: 2490,
+    unitCostRub: 860,
+    unitsInPack: 2,
+    buyoutRatePct: 75,
+    imageUrl: 'images/products/rnd-soft-boxers.jpg',
+    initialMonthlyPacks: monthly1,
+  });
+  const c2 = createBrandProductModel(c1.models, scenariosWithNaTele, {
+    brandCode: 'NA_TELE',
+    title: 'Бесшовная база НА ТЕЛЕ Second Skin 2.0',
+    retailPriceRub: 2790,
+    unitCostRub: 920,
+    unitsInPack: 2,
+    buyoutRatePct: 75,
+    imageUrl: 'images/products/rnd-seamless-base.jpg',
+    initialMonthlyPacks: monthly2,
+  });
+
+  const naTeleVisibleInOwned = filterModelsForScenario(
+    c2.models,
+    naTeleScen,
+    false,
+    'NA_TELE'
+  );
+  const naTeleVisibleInS2 = filterModelsForScenario(
+    c2.models,
+    INITIAL_SCENARIOS.find((s) => s.id === 2)!,
+    false,
+    'NA_TELE'
+  );
+  assert.equal(naTeleVisibleInOwned.length, 2);
+  assert.equal(naTeleVisibleInS2.length, 2);
+
+  // Проверяем расчёт выручки, 75% выкупа (заказы), закупок 4 волн и P&L
+  const m1Metrics = computeModelScenarioMetrics(c1.model, naTeleScen);
+  const m2Metrics = computeModelScenarioMetrics(c2.model, naTeleScen);
+  const expectedRev = 9250 * 2490 + 6750 * 2790; // 23 032 500 + 18 832 500 = 41 865 000 ₽
+  assert.equal(m1Metrics.annualRevenueRub + m2Metrics.annualRevenueRub, expectedRev);
+
+  const proc1 = computeProcurementPlan(c1.model, naTeleScen);
+  assert.ok(
+    proc1.annualDemandPacks > 9250 && proc1.annualOrdersPacks > 9250,
+    'При закупке с учётом 75% выкупа объём заказа фабрике учитывает оборот витрины WB'
+  );
+  assert.equal(proc1.allPeriodBatches.length, 4, 'Сформированы 4 квартальные волны закупок НА ТЕЛЕ');
+
+  const pnl1 = computeFinancialPnL(c1.model, naTeleScen);
+  assert.equal(pnl1.annualRevenueRub, 9250 * 2490);
+  assert.ok((pnl1.annualGrossProfitRub ?? 0) > 0, 'Валовая прибыль НА ТЕЛЕ положительная');
+
+  // Проверяем сводку всех 5 брендов холдинга: НА ТЕЛЕ даёт ровно 41 865 000 ₽, а BORNERS остаётся ровно 686 284 972 ₽
+  const holdingSummary = computeMultiBrandPortfolioSummary(
+    c2.models,
+    scenariosWithNaTele,
+    {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: naTeleScen.id,
+    }
+  );
+  const naTeleSummaryRow = holdingSummary.brands.find((b) => b.brandCode === 'NA_TELE')!;
+  const bornersSummaryRow = holdingSummary.brands.find((b) => b.brandCode === 'BORNERS')!;
+  assert.equal(naTeleSummaryRow.modelsCount, 2);
+  assert.equal(naTeleSummaryRow.annualRevenueRub, expectedRev);
+  assert.equal(bornersSummaryRow.annualRevenueRub, CLIENT_SAVED_S1_TOTALS.annualRevenueRub);
+
+  // 4. Проверяем 100% выживаемость всех артикулов и планов НА ТЕЛЕ после перезагрузки страницы (F5)
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+  try {
+    safeSetStorageJson(STORAGE_KEY_MODELS, c2.models);
+    syncUserPlansBackup(c2.models);
+    safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: naTeleScen.id,
+    });
+
+    const afterF5 = hydratePortfolioModelsFromStorage();
+    const naTeleAfterF5 = afterF5.filter((m) => m.brandId === 'NA_TELE');
+    assert.equal(naTeleAfterF5.length, 2, 'Обе карточки НА ТЕЛЕ сохранились после F5');
+    const revAfterF5 = naTeleAfterF5.reduce(
+      (sum, m) => sum + computeModelScenarioMetrics(m, naTeleScen).annualRevenueRub,
+      0
+    );
+    assert.equal(
+      revAfterF5,
+      expectedRev,
+      'Годовая выручка НА ТЕЛЕ рубль-в-рубль сохранилась после перезагрузки F5'
+    );
+  } finally {
+    if (prevWin === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = prevWin;
+  }
+});
+
+test('62. Прохождение всех 7 этапов Лаборатории R&D (01 Идея -> 07 Запуск) и проверка ролевых ворот качества для НА ТЕЛЕ', async () => {
+  const { INITIAL_CONCEPTS, INITIAL_USERS } = await import('../src/lib/initial-data.ts');
+  const { validateRnDStageTransition } = await import('../src/lib/finance.ts');
+  const { mapConceptStageToLaunchStatus } = await import('../src/lib/rndCatalogSync.ts');
+
+  const owner = INITIAL_USERS.find((u) => u.role === 'Owner')!;
+  const baseConcept = {
+    ...INITIAL_CONCEPTS[0],
+    id: 'test-natele-7stages',
+    brandId: 'NA_TELE',
+    stage: 'IDEA' as const,
+    name: 'Капсула НА ТЕЛЕ Soft Rib',
+    ownerId: owner.id,
+    whatAttracted: 'Мягкое полотно микромодал в рубчик',
+    ideaDescription: 'Капсула НА ТЕЛЕ 2027',
+  };
+
+  // 01 IDEA -> 02 ANALYSIS
+  const gateToAnalysis = validateRnDStageTransition(baseConcept, 'ANALYSIS', owner);
+  assert.equal(gateToAnalysis.allowed, true);
+  assert.equal(mapConceptStageToLaunchStatus('IDEA'), 'В разработке');
+
+  // 02 ANALYSIS -> 03 SAMPLE (требует гипотезу и риски в analysisReport)
+  const withAnalysis = {
+    ...baseConcept,
+    stage: 'ANALYSIS' as const,
+    analysisReport: {
+      ...(baseConcept.analysisReport as any),
+      whatWeCreate: 'Женский и мужской базовый комплект Soft Rib',
+      openQuestionsAndRisks: 'Проверить пиллингуемость после 5 стирок',
+      recommendation: 'continue' as const,
+    },
+  };
+  assert.equal(validateRnDStageTransition(withAnalysis, 'SAMPLE', owner).allowed, true);
+
+  // 05 DECISION -> 06 PRODUCTION -> 07 LAUNCH
+  assert.equal(mapConceptStageToLaunchStatus('PRODUCTION'), 'В плане');
+  assert.equal(mapConceptStageToLaunchStatus('LAUNCH'), 'Утверждено');
+});
+
+test('63. Защита от потери медиа при переполнении localStorage (IndexedDB rehydration) и полный цикл Экспорт/Импорт резервной копии JSON v2', async () => {
+  const {
+    stripOversizedDataUrls,
+    rehydrateConceptsFromIdbSnapshot,
+    rehydrateMiroItemsFromIdbSnapshot,
+  } = await import('../src/lib/safeStorage.ts');
+  const {
+    buildFullPlatformBackupBundle,
+    parseFullPlatformBackupBundle,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { applyClientSavedS1SalesPlan } = await import('../src/lib/scenarioS1_100M.ts');
+
+  // 1. Имитируем тяжёлую base64-фотографию (> 60 КБ) в Лаборатории R&D и голосовую заметку на Холсте идей
+  const bigPhotoDataUrl = 'data:image/jpeg;base64,' + 'A'.repeat(65_000);
+  const bigAudioDataUrl = 'data:audio/wav;base64,' + 'B'.repeat(65_000);
+
+  const idbConcepts = [
+    {
+      id: 'c-media-1',
+      name: 'Мягкие боксеры НА ТЕЛЕ',
+      imageUrl: bigPhotoDataUrl,
+      galleryPhotos: [{ id: 'gp-1', url: bigPhotoDataUrl, caption: 'Обложка' }],
+      samples: [{ id: 'smp-1', versionCode: 'V1', photos: [bigPhotoDataUrl] }],
+      fourChecksTest: {
+        fitAndComfort: 'passed',
+        fitAndComfortPhoto: bigPhotoDataUrl,
+      },
+    },
+  ];
+  const idbMiro = [
+    {
+      id: 'm-media-1',
+      type: 'voice',
+      title: 'Голосовая заметка партнёра',
+      imageUrl: bigPhotoDataUrl,
+      galleryUrls: [bigPhotoDataUrl],
+      audioDataUrl: bigAudioDataUrl,
+    },
+  ];
+
+  // localStorage поджал длинные data:URL (> 45 КБ) до пустой строки, но пользователь успел поменять заголовок текста
+  const strippedLocalConcepts = stripOversizedDataUrls(
+    [{ ...idbConcepts[0], name: 'Мягкие боксеры НА ТЕЛЕ (обновлено)' }],
+    45_000
+  );
+  const strippedLocalMiro = stripOversizedDataUrls(idbMiro, 45_000);
+
+  assert.equal(strippedLocalConcepts[0].imageUrl, '');
+  assert.equal(strippedLocalMiro[0].audioDataUrl, '');
+
+  // IndexedDB-регидратация возвращает 100% фотографий и аудио, сохраняя при этом свежий текст из localStorage!
+  const restoredConcepts = rehydrateConceptsFromIdbSnapshot(
+    strippedLocalConcepts,
+    idbConcepts
+  );
+  const restoredMiro = rehydrateMiroItemsFromIdbSnapshot(strippedLocalMiro, idbMiro);
+
+  assert.equal(restoredConcepts[0].name, 'Мягкие боксеры НА ТЕЛЕ (обновлено)');
+  assert.equal(restoredConcepts[0].imageUrl, bigPhotoDataUrl);
+  assert.equal(restoredConcepts[0].galleryPhotos[0].url, bigPhotoDataUrl);
+  assert.equal(restoredConcepts[0].samples[0].photos[0], bigPhotoDataUrl);
+  assert.equal(restoredConcepts[0].fourChecksTest.fitAndComfortPhoto, bigPhotoDataUrl);
+  assert.equal(restoredMiro[0].imageUrl, bigPhotoDataUrl);
+  assert.equal(restoredMiro[0].audioDataUrl, bigAudioDataUrl);
+
+  // 2. Полный цикл Экспорт -> Импорт JSON резервной копии (включая Лабораторию R&D и Холст идей)
+  const portfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const scenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const backupBundle = buildFullPlatformBackupBundle({
+    scenarios,
+    models: portfolio,
+    selectedScenarioByBrand: {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      NA_TELE: 2,
+    },
+    includeGroupPortfolioInS1: true,
+    platformState: {
+      concepts: restoredConcepts,
+      miroItems: restoredMiro,
+    },
+  });
+
+  const rawJson = JSON.stringify(backupBundle);
+  const parsedRes = parseFullPlatformBackupBundle(rawJson);
+  assert.equal(parsedRes.valid, true);
+  assert.equal(parsedRes.bundle!.models.length, portfolio.length);
+  assert.equal(parsedRes.bundle!.selectedScenarioByBrand.BORNERS, 1);
+  assert.equal(parsedRes.bundle!.selectedScenarioByBrand.NA_TELE, 2);
+  assert.equal(parsedRes.bundle!.includeGroupPortfolioInS1, true);
+  assert.equal(
+    (parsedRes.bundle!.platformState?.concepts as any[])[0].id,
+    'c-media-1'
+  );
+});
+
+test('64. Полный аудит всех фотографий в public/ и resolvePublicAssetUrl во всех компонентах Лаборатории R&D, PDF-конструктора и Miro для GitHub Pages', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+  const { resolvePublicAssetUrl } = await import('../src/lib/scenarioData.ts');
+  const { LISKANI_2027_MODELS } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+
+  // 1. Все локальные изображения R&D-концепций, BORNERS, FUKAI, LISKANI и AKUSHA физически существуют и не пустые
+  const allUrls = new Set<string>();
+  for (const c of INITIAL_CONCEPTS) {
+    if (c.imageUrl) allUrls.add(c.imageUrl);
+    for (const gp of c.galleryPhotos || []) {
+      if (gp.url) allUrls.add(gp.url);
+    }
+    for (const smp of c.samples || []) {
+      for (const p of smp.photos || []) {
+        if (p) allUrls.add(p);
+      }
+    }
+  }
+  for (const m of [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ]) {
+    for (const g of m.gallery || []) {
+      if (g.url) allUrls.add(g.url);
+    }
+  }
+
+  for (const rawUrl of allUrls) {
+    if (rawUrl.startsWith('data:') || rawUrl.startsWith('http')) continue;
+    const cleanRel = rawUrl.replace(/^\.?\/+/, '');
+    const absPath = path.join(root, 'public', cleanRel);
+    assert.equal(
+      fs.existsSync(absPath),
+      true,
+      `Отсутствует файл изображения в public/: ${cleanRel}`
+    );
+    assert.ok(
+      fs.statSync(absPath).size > 0,
+      `Пустой файл изображения (0 байт): ${cleanRel}`
+    );
+    assert.equal(
+      resolvePublicAssetUrl(rawUrl, '/borners-group'),
+      `/borners-group/${cleanRel}`
+    );
+    assert.equal(
+      resolvePublicAssetUrl(rawUrl, '/borners-platform'),
+      `/borners-platform/${cleanRel}`
+    );
+  }
+
+  // 2. Все 4 файла Лаборатории R&D используют resolvePublicAssetUrl для корректной работы на /borners-group и /borners-platform
+  for (const relFile of [
+    'src/components/sections/ProductLabView.tsx',
+    'src/components/sections/ProductLabTabs.tsx',
+    'src/components/sections/PdfConstructorModal.tsx',
+    'src/components/sections/MiroBoardView.tsx',
+  ]) {
+    const content = fs.readFileSync(path.join(root, relFile), 'utf8');
+    assert.ok(
+      content.includes('resolvePublicAssetUrl('),
+      `В файле ${relFile} должен использоваться resolvePublicAssetUrl для всех локальных фото`
+    );
+  }
+});
+
 
 
 

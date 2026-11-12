@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Check,
   Edit3,
+  FlaskConical,
   Folder,
   ImagePlus,
   LayoutGrid,
@@ -49,6 +50,11 @@ import {
 } from '@/lib/unifiedBusinessEngine';
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
 import { getModelBrandAccentStyles } from '@/lib/productGroups';
+import {
+  formatLabBrandLabel,
+  normalizeLabBrandCode,
+  syncAllBrandConceptsToScenarioPortfolio,
+} from '@/lib/rndCatalogSync';
 
 interface BrandCreatePreset {
   skuPrefix: string;
@@ -175,6 +181,8 @@ function computeNextBrandSkuCode(
 export function ProductCatalogView() {
   const {
     products,
+    concepts,
+    updateConcept,
     brandFilter,
     setBrandFilter,
     navigateTo,
@@ -200,6 +208,7 @@ export function ProductCatalogView() {
     updateModelSpec,
     updateModelsBatch,
     updateScenariosBatch,
+    launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
   // Гарантируем, что все модели очищены от чужих дефолтов Borners2
@@ -207,6 +216,45 @@ export function ProductCatalogView() {
     () => rawScenarioModels.map((m) => ensureModelUnifiedV11(m)),
     [rawScenarioModels]
   );
+
+  const activeLabConceptsForFilter = useMemo(
+    () =>
+      concepts.filter((c) => {
+        if (c.isArchived || ['REJECTED', 'CANCELLED'].includes(c.stage)) return false;
+        if (!brandFilter || brandFilter === 'ALL') return true;
+        return normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter);
+      }),
+    [concepts, brandFilter]
+  );
+
+  const handleSyncBrandFromLab = () => {
+    const targetBrand: CanonicalBrandCode =
+      brandFilter && brandFilter !== 'ALL'
+        ? normalizeLabBrandCode(brandFilter)
+        : 'NA_TELE';
+    const res = syncAllBrandConceptsToScenarioPortfolio(
+      concepts,
+      targetBrand,
+      scenarioModels,
+      scenarios
+    );
+    if (res.syncedItems.length === 0) {
+      navigateTo('product-lab', { brandId: targetBrand });
+      return;
+    }
+    updateModelsBatch(() => res.models);
+    for (const item of res.syncedItems) {
+      updateConcept(item.conceptId, { linkedScenarioModelId: item.model.id });
+      if (item.model.gallery?.length) {
+        void saveModelGalleryToIdb(item.model.id, item.model.gallery);
+      }
+    }
+    notify(
+      'success',
+      `Перенесено в каталог ${formatLabBrandLabel(targetBrand)}: ${res.syncedItems.length} SKU`,
+      'Все фото, цены, себестоимость и состав синхронизированы с 02 · Продажи и 03 · Закупки.'
+    );
+  };
 
   // Сбрасываем фильтр категории при смене бренда
   useEffect(() => {
@@ -707,6 +755,20 @@ export function ProductCatalogView() {
 
             <button
               type="button"
+              onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
+              className="h-9.5 px-3.5 rounded-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[12.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <FlaskConical className="h-4 w-4 text-indigo-600" />
+              <span>Лаборатория R&D</span>
+              {activeLabConceptsForFilter.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10.5px]">
+                  {activeLabConceptsForFilter.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => openCreateModalForBrand()}
               className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
             >
@@ -931,22 +993,63 @@ export function ProductCatalogView() {
       {viewMode === 'grid' && (
         <>
           {filteredModels.length === 0 ? (
-            <div className="rounded-2xl bg-white border border-[#CBD5E1] p-10 text-center space-y-3">
+            <div className="rounded-2xl bg-white border border-[#CBD5E1] p-10 text-center space-y-4">
               <div className="text-[16px] font-bold text-[#0F172A]">
                 В выбранном фильтре пока нет карточек моделей
               </div>
-              <p className="text-[13px] text-[#475569] max-w-md mx-auto">
+              <p className="text-[13px] text-[#475569] max-w-lg mx-auto">
                 Добавьте новую модель для бренда{' '}
-                <strong>{brandFilter === 'ALL' ? 'холдинга' : brandFilter}</strong> или сбросьте поисковый фильтр.
+                <strong>
+                  {brandFilter === 'ALL' ? 'холдинга' : formatLabBrandLabel(brandFilter)}
+                </strong>
+                , перенесите готовые карточки из «Лаборатории R&D» в 1 клик или разверните стартовую матрицу.
               </p>
-              <button
-                type="button"
-                onClick={() => openCreateModalForBrand()}
-                className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
-              >
-                <Plus className="h-4 w-4" />
-                <span>+ Добавить первую модель</span>
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => openCreateModalForBrand()}
+                  className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>+ Добавить первую модель</span>
+                </button>
+                {brandFilter !== 'ALL' && activeLabConceptsForFilter.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncBrandFromLab}
+                    className="h-9.5 px-4 rounded-[10px] bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <FlaskConical className="h-4 w-4" />
+                    <span>
+                      Перенести из Лаборатории R&D ({activeLabConceptsForFilter.length})
+                    </span>
+                  </button>
+                )}
+                {(brandFilter === 'NA_TELE' ||
+                  brandFilter === 'AKUSHA' ||
+                  brandFilter === 'LISKANI') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = launchStarterCabinet(brandFilter);
+                      notify(
+                        'success',
+                        `Стартовая матрица ${formatLabBrandLabel(brandFilter)} добавлена (${res.addedCount} SKU)`
+                      );
+                    }}
+                    className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
+                  className="h-9.5 px-3.5 rounded-[10px] bg-[#EEF2F6] hover:bg-[#E2E8F0] text-[#0F172A] border border-[#CBD5E1] text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <span>Открыть Лабораторию R&D →</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">

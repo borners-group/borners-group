@@ -63,7 +63,11 @@ import {
 } from '@/lib/finance';
 import {
   cleanupLegacyStorageKeys,
+  loadPlatformRichStateFromIdb,
+  rehydrateConceptsFromIdbSnapshot,
+  rehydrateMiroItemsFromIdbSnapshot,
   safeSetStorageJson,
+  savePlatformRichStateToIdb,
   stripOversizedDataUrls,
 } from '@/lib/safeStorage';
 
@@ -214,6 +218,7 @@ interface PlatformContextValue extends PersistedState {
   updateBrand: (brandId: string, patch: Partial<Brand>) => void;
   updateBrandPalette: (brandId: string, accentColor: string, secondaryColor: string) => void;
   createBrand: (input: { code: string; name: string; tagline: string; segment: string; accentColor: string }) => void;
+  restorePlatformBackupState: (snapshot: Partial<PersistedState>) => void;
   resetToDemoDefaults: () => void;
 }
 
@@ -371,6 +376,7 @@ const PlatformContext = createContext<PlatformContextValue | null>(null);
 export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PersistedState>(DEFAULT_STATE);
   const [hydrated, setHydrated] = useState(false);
+  const [idbRichMediaReady, setIdbRichMediaReady] = useState(false);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [currentUserId, setCurrentUserId] = useState<string>('user-owner');
@@ -565,6 +571,25 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to hydrate state from localStorage:', err);
     } finally {
       setHydrated(true);
+      loadPlatformRichStateFromIdb<ProductConcept, MiroBoardItem>()
+        .then(({ concepts: idbConcepts, miroItems: idbMiro }) => {
+          if (
+            (Array.isArray(idbConcepts) && idbConcepts.length > 0) ||
+            (Array.isArray(idbMiro) && idbMiro.length > 0)
+          ) {
+            setState((prev) => ({
+              ...prev,
+              concepts: rehydrateConceptsFromIdbSnapshot(prev.concepts, idbConcepts),
+              miroItems: rehydrateMiroItemsFromIdbSnapshot(prev.miroItems, idbMiro),
+            }));
+          }
+        })
+        .catch(() => {
+          // ignore IDB errors
+        })
+        .finally(() => {
+          setIdbRichMediaReady(true);
+        });
     }
   }, []);
 
@@ -605,6 +630,11 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     safeSetStorageJson(STORAGE_KEY, state);
   }, [state, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !idbRichMediaReady) return;
+    void savePlatformRichStateToIdb(state.concepts, state.miroItems);
+  }, [state.concepts, state.miroItems, hydrated, idbRichMediaReady]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2125,9 +2155,41 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     [appendAudit, notify]
   );
 
+  const restorePlatformBackupState = useCallback(
+    (snapshot: Partial<PersistedState>) => {
+      if (!snapshot || typeof snapshot !== 'object') return;
+      setState((prev) => {
+        const next: PersistedState = {
+          ...prev,
+          ...snapshot,
+          users: Array.isArray(snapshot.users) && snapshot.users.length > 0 ? snapshot.users : prev.users,
+          brands: Array.isArray(snapshot.brands) && snapshot.brands.length > 0 ? snapshot.brands : prev.brands,
+          concepts: Array.isArray(snapshot.concepts) ? snapshot.concepts : prev.concepts,
+          products: Array.isArray(snapshot.products)
+            ? deduplicateAndHealProducts(snapshot.products)
+            : prev.products,
+          miroItems: Array.isArray(snapshot.miroItems) ? snapshot.miroItems : prev.miroItems,
+          launches: Array.isArray(snapshot.launches) ? snapshot.launches : prev.launches,
+          tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : prev.tasks,
+          strategies: Array.isArray(snapshot.strategies) ? snapshot.strategies : prev.strategies,
+          documents: Array.isArray(snapshot.documents) ? snapshot.documents : prev.documents,
+          financialPlans: Array.isArray(snapshot.financialPlans)
+            ? snapshot.financialPlans
+            : prev.financialPlans,
+          presentationOverrides: snapshot.presentationOverrides || prev.presentationOverrides,
+        };
+        safeSetStorageJson(STORAGE_KEY, next);
+        void savePlatformRichStateToIdb(next.concepts, next.miroItems);
+        return next;
+      });
+    },
+    []
+  );
+
   const resetToDemoDefaults = useCallback(() => {
     setState(DEFAULT_STATE);
     window.localStorage.removeItem(STORAGE_KEY);
+    void savePlatformRichStateToIdb(DEFAULT_STATE.concepts, DEFAULT_STATE.miroItems);
     notify('success', 'Демо-данные восстановлены по умолчанию');
   }, [notify]);
 
@@ -2204,6 +2266,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       updateBrandPalette,
       updateBrand,
       createBrand,
+      restorePlatformBackupState,
       resetToDemoDefaults,
     }),
     [
@@ -2269,6 +2332,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       updateBrandPalette,
       updateBrand,
       createBrand,
+      restorePlatformBackupState,
       resetToDemoDefaults,
     ]
   );

@@ -39,10 +39,20 @@ import {
   RnDCardTabId,
 } from '@/components/sections/ProductLabTabs';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
+import { MiroBoardView } from '@/components/sections/MiroBoardView';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
-import { INITIAL_SCENARIO_MODELS, ScenarioModelSpec } from '@/lib/scenarioData';
-import { STORAGE_KEY_MODELS } from '@/components/sections/GrowthScenariosShowcase';
-import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import { ScenarioModelSpec, resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { saveModelGalleryToIdb } from '@/lib/safeStorage';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+import {
+  buildConceptPatchFromScenarioModel,
+  findLinkedScenarioModelForConcept,
+  formatLabBrandLabel,
+  normalizeLabBrandCode,
+  syncAllBrandConceptsToScenarioPortfolio,
+  syncConceptToScenarioPortfolio,
+} from '@/lib/rndCatalogSync';
 
 export function ProductLabView() {
   const {
@@ -71,7 +81,7 @@ export function ProductLabView() {
 
   const isStrategyMode = false;
 
-  const [viewMode, setViewMode] = useState<'kanban' | 'gallery'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'gallery' | 'miro'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('ALL');
 
@@ -92,34 +102,22 @@ export function ProductLabView() {
   const [addFromCatalogOpen, setAddFromCatalogOpen] = useState(false);
   const [targetStageForImport, setTargetStageForImport] =
     useState<ConceptStage>('IDEA');
-  const [scenarioModels, setScenarioModels] = useState<ScenarioModelSpec[]>(
-    INITIAL_SCENARIO_MODELS
-  );
 
-  useEffect(() => {
-    const loadModels = () => {
-      const parsed = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-      if (Array.isArray(parsed)) {
-        setScenarioModels(parsed);
-      }
-    };
-    loadModels();
-    window.addEventListener('borners-scenario-models-changed', loadModels);
-    window.addEventListener('storage', loadModels);
-    return () => {
-      window.removeEventListener('borners-scenario-models-changed', loadModels);
-      window.removeEventListener('storage', loadModels);
-    };
-  }, []);
+  const {
+    models: liveScenarioModels,
+    scenarios: liveScenarios,
+    updateModelsBatch,
+  } = useLiveScenarioPortfolio();
 
   // Единый список карточек из базы (Сценарии роста + Каталог моделей SKU)
   const unifiedCatalogItems = useMemo(() => {
     const items: Array<{
       key: string;
+      scenarioModel?: ScenarioModelSpec;
       code: string;
       name: string;
       subtitle: string;
-      brandId: 'BORNERS' | 'NA_TELE';
+      brandId: string;
       imageUrl?: string;
       retailPriceRub: number;
       unitCostRub: number;
@@ -128,8 +126,15 @@ export function ProductLabView() {
     }> = [];
     const seenNames = new Set<string>();
 
-    for (const sm of scenarioModels) {
+    for (const sm of liveScenarioModels) {
       if (sm.launchStatus === 'В архиве') continue;
+      const detectedBrand = normalizeLabBrandCode(detectModelBrandPortfolioLabel(sm));
+      if (
+        brandFilter !== 'ALL' &&
+        detectedBrand !== normalizeLabBrandCode(brandFilter)
+      ) {
+        continue;
+      }
       const photo =
         (sm.gallery.find((g) => g.isMain && g.url) ||
           sm.gallery.find((g) => Boolean(g.url)))?.url ||
@@ -137,10 +142,11 @@ export function ProductLabView() {
       seenNames.add(sm.title.trim().toUpperCase());
       items.push({
         key: `scen-${sm.id}`,
+        scenarioModel: sm,
         code: sm.code,
         name: sm.title,
         subtitle: sm.subtitle,
-        brandId: sm.brandId,
+        brandId: detectedBrand,
         imageUrl: photo,
         retailPriceRub: sm.retailPriceRub,
         unitCostRub: sm.unitCostRub,
@@ -151,6 +157,13 @@ export function ProductLabView() {
 
     for (const pr of products) {
       if (pr.isArchived) continue;
+      const prBrand = normalizeLabBrandCode(pr.brandId);
+      if (
+        brandFilter !== 'ALL' &&
+        prBrand !== normalizeLabBrandCode(brandFilter)
+      ) {
+        continue;
+      }
       if (seenNames.has(pr.name.trim().toUpperCase())) continue;
       seenNames.add(pr.name.trim().toUpperCase());
       items.push({
@@ -158,7 +171,7 @@ export function ProductLabView() {
         code: pr.sku,
         name: pr.name,
         subtitle: `${pr.category} · ${pr.productType}`,
-        brandId: pr.brandId === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+        brandId: prBrand,
         imageUrl: pr.imageUrl,
         retailPriceRub: pr.economics.plannedRetailPrice,
         unitCostRub: pr.economics.unitCostPrice,
@@ -168,33 +181,52 @@ export function ProductLabView() {
     }
 
     return items;
-  }, [scenarioModels, products]);
+  }, [liveScenarioModels, products, brandFilter]);
 
   const handleImportModelToBoard = (
     item: (typeof unifiedCatalogItems)[number],
     stage: ConceptStage = targetStageForImport
   ) => {
+    const patchFromModel = item.scenarioModel
+      ? buildConceptPatchFromScenarioModel(item.scenarioModel)
+      : null;
     const created = createConcept({
-      name: item.name,
-      brandId: item.brandId,
+      name: patchFromModel?.name || item.name,
+      brandId: patchFromModel?.brandId || item.brandId,
       stage,
       developmentType: 'new_construction',
       whatAttracted: `${item.subtitle} · ${item.materials}`,
-      ideaDescription: `${item.subtitle} (${item.code}) — розница ${item.retailPriceRub} ₽, себестоимость ${item.unitCostRub} ₽`,
+      ideaDescription:
+        patchFromModel?.ideaDescription ||
+        `${item.subtitle} (${item.code}) — розница ${item.retailPriceRub} ₽, себестоимость ${item.unitCostRub} ₽`,
       ownerId: currentUser.id,
       targetLaunchDate: '2027-03-15',
-      imageUrl: item.imageUrl,
+      imageUrl: patchFromModel?.imageUrl || item.imageUrl,
+      plannedRetailPrice: patchFromModel?.plannedRetailPrice || item.retailPriceRub,
+      plannedUnitCost: patchFromModel?.plannedUnitCost || item.unitCostRub,
+      packUnitsCount: patchFromModel?.packUnitsCount || 1,
+      supplierName: patchFromModel?.supplierName,
+      linkedScenarioModelId: patchFromModel?.linkedScenarioModelId,
     });
-    if (item.imageUrl) {
+    const nextPhotos =
+      patchFromModel?.galleryPhotos && patchFromModel.galleryPhotos.length > 0
+        ? patchFromModel.galleryPhotos
+        : item.imageUrl
+        ? [
+            {
+              id: `ph-import-${Date.now()}`,
+              url: item.imageUrl,
+              caption: 'Главное фото из базы',
+            },
+          ]
+        : undefined;
+    if (nextPhotos || patchFromModel?.linkedScenarioModelId) {
       updateConcept(created.id, {
-        imageUrl: item.imageUrl,
-        galleryPhotos: [
-          {
-            id: `ph-import-${Date.now()}`,
-            url: item.imageUrl,
-            caption: 'Главное фото из базы',
-          },
-        ],
+        ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}),
+        ...(nextPhotos ? { galleryPhotos: nextPhotos } : {}),
+        ...(patchFromModel?.linkedScenarioModelId
+          ? { linkedScenarioModelId: patchFromModel.linkedScenarioModelId }
+          : {}),
       });
     }
     setAddFromCatalogOpen(false);
@@ -202,7 +234,7 @@ export function ProductLabView() {
     notify(
       'success',
       `✓ Карточка «${item.name}» добавлена в Лабораторию R&D`,
-      `Этап: ${CONCEPT_STAGE_LABELS_RU[stage]}`
+      `Бренд: ${formatLabBrandLabel(item.brandId)} · Этап: ${CONCEPT_STAGE_LABELS_RU[stage]}`
     );
   };
   const [quickIdeaForm, setQuickIdeaForm] = useState<{
@@ -215,7 +247,10 @@ export function ProductLabView() {
     targetLaunchDate: string;
     images: string[];
   }>({
-    brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    brandId:
+      brandFilter && brandFilter !== 'ALL'
+        ? normalizeLabBrandCode(brandFilter)
+        : 'BORNERS',
     name: '',
     comment: '',
     referenceLink: '',
@@ -224,6 +259,15 @@ export function ProductLabView() {
     targetLaunchDate: '2027-01-15',
     images: [],
   });
+
+  useEffect(() => {
+    if (brandFilter && brandFilter !== 'ALL') {
+      const nextBrand = normalizeLabBrandCode(brandFilter);
+      setQuickIdeaForm((prev) =>
+        prev.brandId === nextBrand ? prev : { ...prev, brandId: nextBrand }
+      );
+    }
+  }, [brandFilter]);
 
   // Короткая проверка перед сменой этапа (Стр. 3 и Сценарий №3 PDF)
   const [stageGateModal, setStageGateModal] = useState<{
@@ -259,7 +303,12 @@ export function ProductLabView() {
   const accessibleConcepts = useMemo(() => {
     return concepts.filter((c) => {
       if (c.isArchived) return false;
-      if (brandFilter !== 'ALL' && c.brandId !== brandFilter) return false;
+      if (
+        brandFilter !== 'ALL' &&
+        normalizeLabBrandCode(c.brandId) !== normalizeLabBrandCode(brandFilter)
+      ) {
+        return false;
+      }
       return true;
     });
   }, [concepts, brandFilter]);
@@ -434,6 +483,34 @@ export function ProductLabView() {
     notify('success', `Статус изменён: «${CONCEPT_STAGE_LABELS_RU[targetStage]}»`);
   };
 
+  const handleSyncConceptToCatalog = (
+    conceptToSync: ProductConcept,
+    silentToast = false
+  ) => {
+    const syncRes = syncConceptToScenarioPortfolio(
+      conceptToSync,
+      liveScenarioModels,
+      liveScenarios
+    );
+    updateModelsBatch(() => syncRes.models);
+    if (syncRes.model.gallery?.length) {
+      void saveModelGalleryToIdb(syncRes.model.id, syncRes.model.gallery);
+    }
+    if (conceptToSync.linkedScenarioModelId !== syncRes.model.id) {
+      updateConcept(conceptToSync.id, { linkedScenarioModelId: syncRes.model.id });
+    }
+    if (!silentToast) {
+      notify(
+        'success',
+        syncRes.createdNew
+          ? `✓ Передано в Каталог ${formatLabBrandLabel(conceptToSync.brandId)}: ${syncRes.model.code}`
+          : `✓ Обновлено в Каталоге ${formatLabBrandLabel(conceptToSync.brandId)}: ${syncRes.model.code}`,
+        'Карточка доступна в 01 · Продукт, 02 · Продажи, 03 · Закупки и 04 · Финансы.'
+      );
+    }
+    return syncRes.model;
+  };
+
   // Быстрое создание новой идеи (Сценарий №1 и №2 со Стр. 10 PDF)
   const handleQuickCreateIdea = (openAfterSave = true) => {
     if (!quickIdeaForm.name.trim() && !quickIdeaForm.comment.trim()) {
@@ -445,9 +522,16 @@ export function ProductLabView() {
       quickIdeaForm.comment.trim().slice(0, 60) ||
       'Новая продуктовая идея';
 
+    const cleanBrand = normalizeLabBrandCode(quickIdeaForm.brandId);
+    const galleryPhotos = quickIdeaForm.images.map((url, idx) => ({
+      id: `ph-${Date.now()}-${idx}`,
+      url,
+      caption: idx === 0 ? 'Обложка карточки' : `Фото ${idx + 1}`,
+    }));
+
     const created = createConcept({
       name: title,
-      brandId: quickIdeaForm.brandId,
+      brandId: cleanBrand,
       stage: 'IDEA',
       developmentType: quickIdeaForm.developmentType,
       whatAttracted: quickIdeaForm.comment.trim() || title,
@@ -458,67 +542,47 @@ export function ProductLabView() {
         ? [quickIdeaForm.referenceLink.trim()]
         : [],
       imageUrl: quickIdeaForm.images[0] || undefined,
+      galleryPhotos: galleryPhotos.length > 0 ? galleryPhotos : undefined,
     });
 
-    if (quickIdeaForm.images.length > 0) {
+    const conceptWithMedia: ProductConcept = {
+      ...created,
+      brandId: cleanBrand,
+      ...(quickIdeaForm.images[0] ? { imageUrl: quickIdeaForm.images[0] } : {}),
+      ...(galleryPhotos.length > 0 ? { galleryPhotos } : {}),
+    };
+
+    if (galleryPhotos.length > 0) {
       updateConcept(created.id, {
         imageUrl: quickIdeaForm.images[0],
-        galleryPhotos: quickIdeaForm.images.map((url, idx) => ({
-          id: `ph-${Date.now()}-${idx}`,
-          url,
-          caption: idx === 0 ? 'Обложка карточки' : `Фото ${idx + 1}`,
-        })),
+        galleryPhotos,
       });
     }
 
-    // Также синхронизируем созданную в Лаборатории R&D карточку в Каталог моделей (SKU) и Сценарии роста
-    const nextNum = String(scenarioModels.length + 1).padStart(3, '0');
-    const cleanBrand =
-      quickIdeaForm.brandId === 'NA_TELE' ? 'NA_TELE' : 'BORNERS';
+    // Безопасная двухсторонняя синхронизация с единым каталогом ScenarioModelSpec без затирания портфеля!
+    const syncedModel = handleSyncConceptToCatalog(conceptWithMedia, true);
+    updateConcept(created.id, { linkedScenarioModelId: syncedModel.id });
+
     createProduct({
-      sku: `${cleanBrand === 'NA_TELE' ? 'NT' : 'BRN'}-RND-${nextNum}`,
+      sku: syncedModel.code,
       name: title,
       brandId: cleanBrand,
-      category: 'Боксеры',
-      productType: 'Базовая коллекция',
-      priceSegment: 'Middle+',
-      collection: `${cleanBrand === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} 2027`,
-      materials: quickIdeaForm.comment.trim() || '93% хлопок компакт-пенье, 7% спандекс',
+      category: 'Разработка R&D',
+      productType: 'Новая коллекция',
+      priceSegment: cleanBrand === 'NA_TELE' || cleanBrand === 'AKUSHA' ? 'Premium' : 'Middle+',
+      collection: `${formatLabBrandLabel(cleanBrand)} 2027`,
+      materials: quickIdeaForm.comment.trim() || syncedModel.fabric.composition,
       fitType: 'Разработка R&D',
       imageUrl: quickIdeaForm.images[0] || undefined,
       status: 'in_development',
     });
 
-    const newScenarioSpec: ScenarioModelSpec = {
-      ...INITIAL_SCENARIO_MODELS[0],
-      id: `scen-model-${Date.now()}`,
-      code: `№${nextNum}`,
-      title: title.toUpperCase(),
-      subtitle: quickIdeaForm.comment.trim() || 'Разработка R&D · 4 шт. в комплекте',
-      brandId: cleanBrand,
-      launchStatus: 'В разработке',
-      unitsInPack: 4,
-      retailPriceRub: 1290,
-      unitCostRub: 410,
-      hasActualSalesOrPurchases: false,
-      gallery: [
-        {
-          id: `g-main-${Date.now()}`,
-          category: 'pack',
-          label: 'Главное фото',
-          url: quickIdeaForm.images[0] || undefined,
-          isMain: true,
-        },
-      ],
-    };
-    const nextScenarioModels = [...scenarioModels, newScenarioSpec];
-    setScenarioModels(nextScenarioModels);
-    safeSetStorageJson(STORAGE_KEY_MODELS, nextScenarioModels);
-    window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
-
     setQuickIdeaOpen(false);
     setQuickIdeaForm({
-      brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+      brandId:
+        brandFilter && brandFilter !== 'ALL'
+          ? normalizeLabBrandCode(brandFilter)
+          : cleanBrand,
       name: '',
       comment: '',
       referenceLink: '',
@@ -528,16 +592,30 @@ export function ProductLabView() {
       images: [],
     });
     if (openAfterSave) {
-      openConceptCard(created, 'overview');
+      openConceptCard(
+        { ...conceptWithMedia, linkedScenarioModelId: syncedModel.id },
+        'overview'
+      );
     } else {
       setSelectedConceptId(null);
     }
-    notify('success', `✓ Карточка «${created.code} · ${created.name}» сохранена`);
+    notify(
+      'success',
+      `✓ Карточка «${created.code} · ${created.name}» сохранена и добавлена в Каталог (${syncedModel.code})`
+    );
   };
 
   const activeConcept: ProductConcept | null = useMemo(
     () => accessibleConcepts.find((c) => c.id === selectedConceptId) || null,
     [accessibleConcepts, selectedConceptId]
+  );
+
+  const activeLinkedScenarioModel = useMemo(
+    () =>
+      activeConcept
+        ? findLinkedScenarioModelForConcept(activeConcept, liveScenarioModels)
+        : null,
+    [activeConcept, liveScenarioModels]
   );
 
   const canEditActiveConcept =
@@ -666,6 +744,46 @@ export function ProductLabView() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
+              className="h-9 rounded-[9px] bg-[#FAF9F6] hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] px-3.5 text-[12px] font-semibold transition cursor-pointer"
+            >
+              Каталог SKU →
+            </button>
+
+            {brandFilter !== 'ALL' && accessibleConcepts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetCode = normalizeLabBrandCode(brandFilter);
+                  const res = syncAllBrandConceptsToScenarioPortfolio(
+                    concepts,
+                    targetCode,
+                    liveScenarioModels,
+                    liveScenarios
+                  );
+                  updateModelsBatch(() => res.models);
+                  for (const item of res.syncedItems) {
+                    updateConcept(item.conceptId, {
+                      linkedScenarioModelId: item.model.id,
+                    });
+                    if (item.model.gallery?.length) {
+                      void saveModelGalleryToIdb(item.model.id, item.model.gallery);
+                    }
+                  }
+                  notify(
+                    'success',
+                    `✓ Синхронизировано ${res.syncedItems.length} SKU бренда ${formatLabBrandLabel(targetCode)}`,
+                    'Все карточки перенесены в 01 · Продукт и 02 · Продажи.'
+                  );
+                }}
+                className="h-9 rounded-[9px] bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 text-[12px] font-semibold transition cursor-pointer"
+              >
+                Перенести {formatLabBrandLabel(brandFilter)} в План 2027 ({accessibleConcepts.length})
+              </button>
+            )}
+
+            <button
+              type="button"
               onClick={() => setAddFromCatalogOpen(true)}
               className="h-9 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] px-3.5 text-[12px] font-semibold transition cursor-pointer"
             >
@@ -677,7 +795,7 @@ export function ProductLabView() {
               onClick={() => setQuickIdeaOpen(true)}
               className="h-9 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white px-4 text-[12px] font-semibold transition cursor-pointer"
             >
-              Новая идея
+              + Новая идея
             </button>
           </div>
         </div>
@@ -693,6 +811,9 @@ export function ProductLabView() {
               <option value="ALL">Все бренды</option>
               <option value="BORNERS">BORNERS</option>
               <option value="NA_TELE">НА ТЕЛЕ</option>
+              <option value="FUKAI">FUKAI</option>
+              <option value="AKUSHA">AKUSHA</option>
+              <option value="LISKANI">LISKANI</option>
             </select>
 
             <select
@@ -738,6 +859,17 @@ export function ProductLabView() {
               }`}
             >
               Галерея
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('miro')}
+              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
+                viewMode === 'miro'
+                  ? 'bg-[#141413] text-white shadow-2xs'
+                  : 'text-[#3F3E3A] hover:text-[#141413]'
+              }`}
+            >
+              Холст идей (Miro)
             </button>
           </div>
         </div>
@@ -831,7 +963,7 @@ export function ProductLabView() {
                             <div className="h-[196px] w-full bg-[#F3EFE8] border-b border-[#EAE6DF] overflow-hidden flex items-center justify-center">
                               {hasPhoto ? (
                                 <img
-                                  src={concept.imageUrl}
+                                  src={resolvePublicAssetUrl(concept.imageUrl)}
                                   alt={concept.name}
                                   loading="lazy"
                                   decoding="async"
@@ -851,7 +983,7 @@ export function ProductLabView() {
                               </h4>
 
                               <div className="text-[12px] text-[#7A756D] truncate">
-                                {concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} ·{' '}
+                                {formatLabBrandLabel(concept.brandId)} ·{' '}
                                 {getUserShortName(concept.ownerId)}
                               </div>
 
@@ -957,7 +1089,7 @@ export function ProductLabView() {
                   <div className="h-56 w-full rounded-xl bg-[#EFECE8] border border-[#E8E8E5] flex items-center justify-center p-3">
                     {concept.imageUrl ? (
                       <img
-                        src={concept.imageUrl}
+                        src={resolvePublicAssetUrl(concept.imageUrl)}
                         alt={concept.name}
                         className="h-full w-full object-contain"
                       />
@@ -977,7 +1109,7 @@ export function ProductLabView() {
                     </h4>
                     <div className="flex items-center justify-between text-[13px] text-[#737373]">
                       <span>
-                        {concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} ·{' '}
+                        {formatLabBrandLabel(concept.brandId)} ·{' '}
                         {getUserShortName(concept.ownerId)}
                       </span>
                       <span className="font-semibold">{statusLine.text}</span>
@@ -986,6 +1118,15 @@ export function ProductLabView() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ===================================================================
+            РЕЖИМ ХОЛСТА ИДЕЙ (СТУДИЯ MIRO — СТИКЕРЫ, ФОТО, ГОЛОСОВЫЕ ЗАМЕТКИ)
+        =================================================================== */}
+        {viewMode === 'miro' && (
+          <div className="pt-2" data-no-swipe-nav="true">
+            <MiroBoardView />
           </div>
         )}
       </div>
@@ -1022,7 +1163,7 @@ export function ProductLabView() {
                   <div className="flex flex-wrap items-center gap-2.5 text-[12px] font-bold uppercase tracking-wider text-[#737373]">
                     <span>
                       {activeConcept.code} /{' '}
-                      {activeConcept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} /{' '}
+                      {formatLabBrandLabel(activeConcept.brandId)} /{' '}
                       {CONCEPT_STAGE_LABELS_RU[
                         normalizeConceptStageToSeven(activeConcept.stage)
                       ].toUpperCase()}
@@ -1062,12 +1203,42 @@ export function ProductLabView() {
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
+                    onClick={() => handleSyncConceptToCatalog(activeConcept)}
+                    className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
+                  >
+                    <span>
+                      {activeLinkedScenarioModel
+                        ? `✓ Обновить в Каталоге (${activeLinkedScenarioModel.code})`
+                        : '+ В Каталог SKU и План 2027'}
+                    </span>
+                  </button>
+
+                  {activeLinkedScenarioModel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedConceptId(null);
+                        navigateTo('launch-calendar', {
+                          brandId: normalizeLabBrandCode(activeConcept.brandId),
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#FAF8F5] hover:bg-[#EFECE6] border border-[#CFC8BC] text-[#171717] text-[12.5px] font-bold transition cursor-pointer"
+                    >
+                      <span>02 · Продажи →</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
                     onClick={() => {
                       updateConcept(activeConcept.id, {
                         name: activeConcept.name,
                         whatAttracted: activeConcept.whatAttracted,
                         ideaDescription: activeConcept.ideaDescription,
                       });
+                      if (activeLinkedScenarioModel) {
+                        handleSyncConceptToCatalog(activeConcept, true);
+                      }
                       notify(
                         'success',
                         '✓ Карточка сохранена',
@@ -1149,7 +1320,7 @@ export function ProductLabView() {
                     {activeGalleryPhotos[activePhotoIndex]?.url ? (
                       <>
                         <img
-                          src={activeGalleryPhotos[activePhotoIndex].url}
+                          src={resolvePublicAssetUrl(activeGalleryPhotos[activePhotoIndex].url)}
                           alt={activeConcept.name}
                           onClick={() =>
                             setZoomPhotoUrl(
@@ -1199,7 +1370,7 @@ export function ProductLabView() {
                           }`}
                         >
                           <img
-                            src={ph.url}
+                            src={resolvePublicAssetUrl(ph.url)}
                             alt={ph.caption || 'thumb'}
                             className="h-full w-full object-cover"
                           />
@@ -1304,7 +1475,7 @@ export function ProductLabView() {
                     <div className="flex items-center justify-between gap-2">
                       <select
                         disabled={!canEditActiveConcept}
-                        value={activeConcept.brandId}
+                        value={normalizeLabBrandCode(activeConcept.brandId)}
                         onChange={(e) =>
                           updateConcept(activeConcept.id, { brandId: e.target.value })
                         }
@@ -1312,6 +1483,9 @@ export function ProductLabView() {
                       >
                         <option value="BORNERS">BORNERS</option>
                         <option value="NA_TELE">НА ТЕЛЕ</option>
+                        <option value="FUKAI">FUKAI</option>
+                        <option value="AKUSHA">AKUSHA</option>
+                        <option value="LISKANI">LISKANI</option>
                       </select>
                       <span className="text-[14px] font-semibold text-[#525252]">
                         · {getUserShortName(activeConcept.authorId || currentUser.id)}
@@ -1512,6 +1686,10 @@ export function ProductLabView() {
               onCreateProductFromConcept={(cid) => {
                 createProductFromConcept(cid);
               }}
+              linkedScenarioModelCode={activeLinkedScenarioModel?.code || null}
+              onSyncToScenarioCatalog={(c) => {
+                handleSyncConceptToCatalog(c);
+              }}
               onCreateTaskForConcept={(title, assigneeId, deadline) => {
                 createTask({
                   title,
@@ -1697,6 +1875,9 @@ export function ProductLabView() {
                   >
                     <option value="BORNERS">BORNERS</option>
                     <option value="NA_TELE">НА ТЕЛЕ</option>
+                    <option value="FUKAI">FUKAI</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISKANI">LISKANI</option>
                   </select>
                 </div>
 
@@ -1853,7 +2034,7 @@ export function ProductLabView() {
                         }`}
                       >
                         <img
-                          src={img}
+                          src={resolvePublicAssetUrl(img)}
                           alt="preview"
                           className="h-full w-full object-cover"
                         />
@@ -1986,19 +2167,19 @@ export function ProductLabView() {
                     <div className="h-14 w-14 rounded-xl bg-white border border-[#E5DEC9] flex items-center justify-center overflow-hidden shrink-0">
                       {item.imageUrl ? (
                         <img
-                          src={item.imageUrl}
+                          src={resolvePublicAssetUrl(item.imageUrl)}
                           alt={item.name}
                           className="h-full w-full object-cover"
                         />
                       ) : (
                         <span className="text-[10px] font-bold text-[#8B6F47] text-center px-1">
-                          {item.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                          {formatLabBrandLabel(item.brandId)}
                         </span>
                       )}
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10.5px] font-bold text-[#8B6F47]">
-                        {item.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {item.code}
+                        {formatLabBrandLabel(item.brandId)} · {item.code}
                       </div>
                       <div className="text-[13.5px] font-bold text-[#1D1D1F] truncate">
                         {item.name}
@@ -2165,7 +2346,7 @@ export function ProductLabView() {
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-6 cursor-zoom-out"
         >
           <img
-            src={zoomPhotoUrl}
+            src={resolvePublicAssetUrl(zoomPhotoUrl)}
             alt="Увеличенное фото"
             className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain bg-white p-4"
           />

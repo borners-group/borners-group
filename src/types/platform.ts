@@ -524,6 +524,7 @@ export interface ProductConcept {
   attachments?: RnDAttachmentItem[];
   stageHistory?: RnDStageHistoryEntry[];
   linkedProductId?: string;
+  linkedScenarioModelId?: string;
   linkedLaunchId?: string;
   linkedCompetitorIds?: string[];
   linkedTaskIds?: string[];

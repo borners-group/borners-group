@@ -1,11 +1,14 @@
 import {
+  INITIAL_SCENARIOS,
   type GrowthScenarioDef,
   type ModelPriorityLevel,
   type ScenarioModelSpec,
 } from './scenarioData.ts';
 import {
+  ACTING_2027_SCENARIO_DEF,
   ACTING_2027_SCENARIO_ID,
   ACTING_2027_SCENARIO_MODELS,
+  getActingSkuByWbOrVendor,
 } from './actingAssortment2027.ts';
 import {
   AKUSHA_2027_MODELS,
@@ -20,13 +23,17 @@ import {
 import {
   S1_100M_SCENARIO_MODELS,
   applyClientSavedS1SalesPlan,
+  isUnverifiedActingSku,
 } from './scenarioS1_100M.ts';
 import {
   type CanonicalBrandCode,
   applyCategoryWbUnitEconomics,
   applyCategoryWbUnitEconomicsToPortfolio,
+  detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   isScenarioCompatibleWithBrand,
+  matchesBrandFilter,
+  normalizePortfolioBrandCode,
 } from './unifiedBusinessEngine.ts';
 import { safeGetStorageJson, safeSetStorageJson } from './safeStorage.ts';
 
@@ -142,6 +149,35 @@ export function sanitizeSelectedScenarioByBrand(
     next.AKUSHA = AKUSHA_2027_SCENARIO_ID;
   }
 
+  // НА ТЕЛЕ: сохраняем явный null («Нет сценария»), но чиним undefined или несовместимые сценарии (1, 100, 202705, 202706)
+  const ownedNaTeleScenario = Array.isArray(scenarios)
+    ? scenarios.find(
+        (s) =>
+          !s.isArchived &&
+          s.ownerBrandCode &&
+          s.ownerBrandCode.trim().toUpperCase() === 'NA_TELE'
+      )
+    : undefined;
+  const fallbackNaTeleScenarioId = ownedNaTeleScenario?.id ?? 2;
+
+  if (next.NA_TELE === undefined) {
+    next.NA_TELE = fallbackNaTeleScenarioId;
+  } else if (typeof next.NA_TELE === 'number') {
+    if (
+      next.NA_TELE === 1 ||
+      next.NA_TELE === ACTING_2027_SCENARIO_ID ||
+      next.NA_TELE === AKUSHA_2027_SCENARIO_ID ||
+      next.NA_TELE === LISKANI_2027_SCENARIO_ID
+    ) {
+      next.NA_TELE = fallbackNaTeleScenarioId;
+    } else if (Array.isArray(scenarios) && scenarios.length > 0) {
+      const foundNaTele = scenarios.find((s) => s.id === next.NA_TELE && !s.isArchived);
+      if (!foundNaTele || !isScenarioCompatibleWithBrand(foundNaTele, 'NA_TELE')) {
+        next.NA_TELE = fallbackNaTeleScenarioId;
+      }
+    }
+  }
+
   // BORNERS никогда не может ссылаться на сценарий чужого бренда (AKUSHA 202706, LISKANI 202705 и т.д.)
   if (
     next.BORNERS === undefined ||
@@ -178,7 +214,8 @@ export function runBornersSalesScenarioRepairMigrationV1(): void {
       finalByBrand.BORNERS !== savedByBrand.BORNERS ||
       finalByBrand.FUKAI !== savedByBrand.FUKAI ||
       finalByBrand.LISKANI !== savedByBrand.LISKANI ||
-      finalByBrand.AKUSHA !== savedByBrand.AKUSHA
+      finalByBrand.AKUSHA !== savedByBrand.AKUSHA ||
+      finalByBrand.NA_TELE !== savedByBrand.NA_TELE
     ) {
       safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, finalByBrand);
     }
@@ -896,4 +933,196 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
     safeSetStorageJson(STORAGE_KEY_MODELS, recovered);
   }
   return recovered;
+}
+
+export interface FullPlatformBackupBundleV2 {
+  exportedAt: string;
+  platformVersion: string;
+  scenarios: GrowthScenarioDef[];
+  models: ScenarioModelSpec[];
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>;
+  includeGroupPortfolioInS1?: boolean;
+  productGroups?: unknown;
+  platformState?: Record<string, unknown>;
+}
+
+export function buildFullPlatformBackupBundle(params: {
+  scenarios: GrowthScenarioDef[];
+  models: ScenarioModelSpec[];
+  selectedScenarioByBrand: Partial<Record<string, number | null>>;
+  includeGroupPortfolioInS1?: boolean;
+  productGroups?: unknown;
+  platformState?: Record<string, unknown> | null;
+}): FullPlatformBackupBundleV2 {
+  const cleanScenarios = Array.isArray(params.scenarios) ? params.scenarios : INITIAL_SCENARIOS;
+  const cleanModels = Array.isArray(params.models)
+    ? params.models.map((m) => ensureModelUnifiedV11(m))
+    : [];
+  return {
+    exportedAt: new Date().toISOString(),
+    platformVersion: 'BORNERS GROUP Strategy Platform 2027 · Full Backup v2',
+    scenarios: cleanScenarios,
+    models: cleanModels,
+    selectedScenarioByBrand: sanitizeSelectedScenarioByBrand(
+      params.selectedScenarioByBrand,
+      cleanScenarios
+    ),
+    includeGroupPortfolioInS1: Boolean(params.includeGroupPortfolioInS1),
+    productGroups: params.productGroups ?? undefined,
+    platformState: params.platformState ?? undefined,
+  };
+}
+
+export function parseFullPlatformBackupBundle(rawJson: string): {
+  valid: boolean;
+  error?: string;
+  bundle?: FullPlatformBackupBundleV2;
+} {
+  try {
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      return { valid: false, error: 'Файл резервной копии не является корректным JSON-объектом' };
+    }
+    const rawModels = Array.isArray(parsed.models) ? (parsed.models as ScenarioModelSpec[]) : null;
+    const rawScenarios = Array.isArray(parsed.scenarios)
+      ? (parsed.scenarios as GrowthScenarioDef[])
+      : INITIAL_SCENARIOS;
+
+    if (!rawModels || rawModels.length === 0) {
+      return {
+        valid: false,
+        error: 'В файле резервной копии не найден массив карточек каталога (models)',
+      };
+    }
+
+    const normalizedModels = applyCategoryWbUnitEconomicsToPortfolio(
+      rawModels.map((m) => ensureModelUnifiedV11(m))
+    );
+    const normalizedScenarios = [
+      ...rawScenarios,
+      ...(rawScenarios.some((s) => s.id === ACTING_2027_SCENARIO_ID)
+        ? []
+        : [ACTING_2027_SCENARIO_DEF]),
+      ...(rawScenarios.some((s) => s.id === LISKANI_2027_SCENARIO_ID)
+        ? []
+        : [LISKANI_2027_SCENARIO_DEF]),
+      ...(rawScenarios.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)
+        ? []
+        : [AKUSHA_2027_SCENARIO_DEF]),
+    ];
+
+    const sanitizedByBrand = sanitizeSelectedScenarioByBrand(
+      (parsed.selectedScenarioByBrand as Partial<Record<string, number | null>>) || {},
+      normalizedScenarios
+    );
+
+    return {
+      valid: true,
+      bundle: {
+        exportedAt:
+          typeof parsed.exportedAt === 'string' ? parsed.exportedAt : new Date().toISOString(),
+        platformVersion:
+          typeof parsed.platformVersion === 'string'
+            ? parsed.platformVersion
+            : 'BORNERS GROUP Backup Restored',
+        scenarios: normalizedScenarios,
+        models: normalizedModels,
+        selectedScenarioByBrand: sanitizedByBrand,
+        includeGroupPortfolioInS1:
+          typeof parsed.includeGroupPortfolioInS1 === 'boolean'
+            ? parsed.includeGroupPortfolioInS1
+            : false,
+        productGroups: parsed.productGroups,
+        platformState:
+          parsed.platformState && typeof parsed.platformState === 'object'
+            ? (parsed.platformState as Record<string, unknown>)
+            : undefined,
+      },
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      error:
+        err instanceof Error
+          ? `Ошибка чтения JSON: ${err.message}`
+          : 'Не удалось прочитать JSON-файл резервной копии',
+    };
+  }
+}
+
+export function filterModelsForScenario(
+  models: ScenarioModelSpec[],
+  scenario: GrowthScenarioDef,
+  includeGroupPortfolioInS1: boolean,
+  brandFilter: string = 'ALL'
+): ScenarioModelSpec[] {
+  const isActing = scenario.id === ACTING_2027_SCENARIO_ID;
+  const normFilter =
+    brandFilter && brandFilter !== 'ALL'
+      ? normalizePortfolioBrandCode(brandFilter)
+      : 'ALL';
+  const normOwner =
+    scenario.ownerBrandCode && scenario.ownerBrandCode !== 'ALL'
+      ? normalizePortfolioBrandCode(scenario.ownerBrandCode)
+      : 'ALL';
+
+  return models.filter((m) => {
+    if (m.launchStatus === 'В архиве') return false;
+    if (
+      ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
+        m.id
+      ) ||
+      ['№001', '№002', '№003', '№004'].includes(m.code)
+    ) {
+      return false;
+    }
+
+    if (normFilter !== 'ALL') {
+      if (!matchesBrandFilter(m, normFilter)) {
+        return false;
+      }
+      if (normFilter === 'AKUSHA' || normFilter === 'LISKANI') {
+        return true;
+      }
+    }
+
+    if (normOwner !== 'ALL' && normOwner !== 'BORNERS') {
+      return matchesBrandFilter(m, normOwner);
+    }
+
+    const modelBrand = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m));
+
+    if (isActing) {
+      if (modelBrand !== 'BORNERS' && modelBrand !== 'FUKAI') {
+        return false;
+      }
+      const okActing =
+        Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+        Boolean(m.plansByScenario[ACTING_2027_SCENARIO_ID]);
+      return okActing;
+    }
+
+    if (scenario.id === 1 || normOwner === 'BORNERS') {
+      if (modelBrand === 'FUKAI') {
+        return includeGroupPortfolioInS1 || normFilter === 'FUKAI';
+      }
+      if (modelBrand !== 'BORNERS') {
+        return false;
+      }
+      if (!includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
+        return false;
+      }
+      return true;
+    }
+
+    if (modelBrand === 'AKUSHA' || modelBrand === 'LISKANI') {
+      return false;
+    }
+
+    return (
+      scenario.includedBrands.includes(m.brandId) ||
+      (modelBrand === 'NA_TELE' && scenario.includedBrands.includes('NA_TELE')) ||
+      modelBrand === 'FUKAI'
+    );
+  });
 }

@@ -27,6 +27,8 @@ import {
   RnDSampleItem,
   TaskItem,
 } from '@/types/platform';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
 import {
   canUserApproveProduction,
   canUserViewCostPrice,
@@ -116,6 +118,8 @@ export interface ProductLabCardBodyProps {
   onChangeStageWithGate: (concept: ProductConcept, targetStage: ConceptStage) => void;
   onCreateLaunchFromConcept: (concept: ProductConcept) => void;
   onCreateProductFromConcept: (conceptId: string) => void;
+  linkedScenarioModelCode?: string | null;
+  onSyncToScenarioCatalog?: (concept: ProductConcept) => void;
   onCreateTaskForConcept: (title: string, assigneeId: string, deadline: string) => void;
   onNavigateToSection: (
     section:
@@ -125,7 +129,7 @@ export interface ProductLabCardBodyProps {
       | 'market-intelligence'
       | 'brand-strategy'
       | 'documents',
-    opts?: { productId?: string; launchId?: string }
+    opts?: { productId?: string; launchId?: string; brandId?: string }
   ) => void;
   notify: (type: 'success' | 'warning' | 'error', title: string, description?: string) => void;
 }
@@ -139,6 +143,8 @@ export function ProductLabCardBody({
   onUpdateConcept,
   onChangeStageWithGate,
   onCreateProductFromConcept,
+  linkedScenarioModelCode,
+  onSyncToScenarioCatalog,
   onNavigateToSection,
   notify,
 }: ProductLabCardBodyProps) {
@@ -877,7 +883,7 @@ export function ProductLabCardBody({
                       {s.photos.map((ph, idx) => (
                         <img
                           key={idx}
-                          src={ph}
+                          src={resolvePublicAssetUrl(ph)}
                           alt={s.versionCode}
                           className="h-16 w-16 rounded-xl object-cover border border-[#E8E8E5] bg-white"
                         />
@@ -1800,7 +1806,7 @@ export function ProductLabCardBody({
                 PRODUCTION ORDER / {currentOrder.internalStatus === 'order_prep' ? 'ЧЕРНОВИК' : 'УТВЕРЖДЁН'} · ВЕРСИЯ v{currentOrder.orderVersion || 1}
               </div>
               <h3 className="text-[24px] font-bold text-[#171717] mt-1">
-                {concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {concept.name} ({unitsInOnePack} шт.)
+                {formatLabBrandLabel(concept.brandId)} · {concept.name} ({unitsInOnePack} шт.)
               </h3>
               <p className="text-[13px] text-[#737373] mt-0.5">
                 Образец: <b>{currentOrder.approvedSampleVersion}</b> · Состав: <b>{currentOrder.materialAndColors}</b> · Дата согласования: <b>{currentOrder.approvedAt || '—'}</b>
@@ -1808,11 +1814,13 @@ export function ProductLabCardBody({
             </div>
 
             <div className="flex items-center gap-3">
-              <img
-                src={concept.imageUrl}
-                alt={concept.name}
-                className="h-16 w-16 rounded-2xl object-contain bg-[#F7F7F5] border border-[#E8E8E5] p-1.5"
-              />
+              {concept.imageUrl && (
+                <img
+                  src={resolvePublicAssetUrl(concept.imageUrl)}
+                  alt={concept.name}
+                  className="h-16 w-16 rounded-2xl object-contain bg-[#F7F7F5] border border-[#E8E8E5] p-1.5"
+                />
+              )}
             </div>
           </div>
 
@@ -2319,31 +2327,68 @@ export function ProductLabCardBody({
               </div>
             </div>
 
-            {linkedProduct ? (
-              <button
-                type="button"
-                onClick={() =>
-                  onNavigateToSection('product-catalog', { productId: linkedProduct.id })
-                }
-                className="h-11 px-6 rounded-xl bg-[#16805D] text-white text-[13px] font-bold cursor-pointer"
-              >
-                Открыть модель в Каталоге ({linkedProduct.sku}) →
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  onUpdateConcept(concept.id, {
-                    launchSalesStatus: 'in_sale',
-                    stage: 'LAUNCH',
-                  });
-                  onCreateProductFromConcept(concept.id);
-                }}
-                className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#16805D] text-white text-[13px] font-bold transition cursor-pointer"
-              >
-                Зафиксировать старт продаж и связать с Каталогом →
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {linkedScenarioModelCode || linkedProduct ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSyncToScenarioCatalog?.({
+                        ...concept,
+                        launchSalesStatus: 'in_sale',
+                        stage: 'LAUNCH',
+                      });
+                    }}
+                    className="h-11 px-4 rounded-xl bg-[#F3EFE8] hover:bg-[#E7E1D6] border border-[#D4CDC2] text-[#171717] text-[12.5px] font-bold cursor-pointer transition"
+                  >
+                    Обновить в Каталоге ({linkedScenarioModelCode || linkedProduct?.sku})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onNavigateToSection('product-catalog', {
+                        productId: linkedProduct?.id,
+                        brandId: concept.brandId,
+                      })
+                    }
+                    className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold cursor-pointer transition"
+                  >
+                    Открыть в 01 · Продукт →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onNavigateToSection('launch-calendar', {
+                        brandId: concept.brandId,
+                      })
+                    }
+                    className="h-11 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13px] font-bold cursor-pointer transition"
+                  >
+                    Открыть в 02 · Продажи →
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const launchedConcept: ProductConcept = {
+                      ...concept,
+                      launchSalesStatus: 'in_sale',
+                      stage: 'LAUNCH',
+                    };
+                    onUpdateConcept(concept.id, {
+                      launchSalesStatus: 'in_sale',
+                      stage: 'LAUNCH',
+                    });
+                    onSyncToScenarioCatalog?.(launchedConcept);
+                    onCreateProductFromConcept(concept.id);
+                  }}
+                  className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#16805D] text-white text-[13px] font-bold transition cursor-pointer"
+                >
+                  Зафиксировать старт продаж и связать с Каталогом →
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

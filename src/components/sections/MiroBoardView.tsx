@@ -21,6 +21,7 @@ import {
 import { usePlatform } from '@/context/PlatformContext';
 import { MiroBoardItem } from '@/types/platform';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 
 const STICKY_COLORS = [
   { hex: '#FFF8D6', label: 'Тёплый жёлтый' },
@@ -1033,7 +1034,7 @@ export function MiroBoardView() {
                 {item.imageUrl && (
                   <div className="rounded-[10px] bg-white border border-black/15 p-2 space-y-2">
                     <img
-                      src={item.imageUrl}
+                      src={resolvePublicAssetUrl(item.imageUrl)}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
@@ -1052,7 +1053,11 @@ export function MiroBoardView() {
                                 : 'border-black/15'
                             }`}
                           >
-                            <img src={u} alt="" className="h-full w-full object-cover" />
+                            <img
+                              src={resolvePublicAssetUrl(u)}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
                           </button>
                         ))}
                       </div>

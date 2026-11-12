@@ -7,6 +7,8 @@ import {
   compressImageFileToDataUrl,
   downloadEditorialPdfDocument,
 } from '@/lib/document-export';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
 
 interface PdfConstructorModalProps {
   concept: ProductConcept;
@@ -240,7 +242,7 @@ export function PdfConstructorModal({
   };
 
   const handleDownloadPdf = () => {
-    const brandLabel = concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS';
+    const brandLabel = formatLabBrandLabel(concept.brandId);
 
     const sizeRows = SIZES.map((sz) => {
       const packs = packsBySize[sz] || 0;
@@ -432,8 +434,8 @@ export function PdfConstructorModal({
             : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} наборов (${currencyMetrics.totalUnits.toLocaleString('ru-RU')} шт.)`,
         },
       ],
-      frontPhotoUrl: includePhotos ? frontPhotoUrl : undefined,
-      backPhotoUrl: includePhotos ? backPhotoUrl : undefined,
+      frontPhotoUrl: includePhotos ? resolvePublicAssetUrl(frontPhotoUrl) : undefined,
+      backPhotoUrl: includePhotos ? resolvePublicAssetUrl(backPhotoUrl) : undefined,
       frontPhotoCaption: frontCaption,
       backPhotoCaption: backCaption,
       sections: sectionsToRender,
@@ -704,7 +706,7 @@ export function PdfConstructorModal({
 
                   <div className="h-40 rounded-[8px] bg-white border border-[#E5E0D8] flex items-center justify-center overflow-hidden p-2">
                     <img
-                      src={frontPhotoUrl}
+                      src={resolvePublicAssetUrl(frontPhotoUrl)}
                       alt="Лицевая фотография"
                       decoding="async"
                       className="max-h-full max-w-full object-contain rounded-[6px]"
@@ -732,7 +734,7 @@ export function PdfConstructorModal({
                           frontPhotoUrl === u ? 'border-[#B85D35]' : 'border-transparent opacity-70 hover:opacity-100'
                         }`}
                       >
-                        <img src={u} alt="" className="h-full w-full object-cover" />
+                        <img src={resolvePublicAssetUrl(u)} alt="" className="h-full w-full object-cover" />
                       </button>
                     ))}
                   </div>
@@ -758,7 +760,7 @@ export function PdfConstructorModal({
 
                   <div className="h-40 rounded-[8px] bg-white border border-[#E5E0D8] flex items-center justify-center overflow-hidden p-2">
                     <img
-                      src={backPhotoUrl}
+                      src={resolvePublicAssetUrl(backPhotoUrl)}
                       alt="Вид сзади"
                       decoding="async"
                       className="max-h-full max-w-full object-contain rounded-[6px]"
@@ -786,7 +788,7 @@ export function PdfConstructorModal({
                           backPhotoUrl === u ? 'border-[#B85D35]' : 'border-transparent opacity-70 hover:opacity-100'
                         }`}
                       >
-                        <img src={u} alt="" className="h-full w-full object-cover" />
+                        <img src={resolvePublicAssetUrl(u)} alt="" className="h-full w-full object-cover" />
                       </button>
                     ))}
                   </div>
@@ -1245,7 +1247,7 @@ export function PdfConstructorModal({
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded bg-[#181715] text-white font-mono text-[10.5px] font-semibold shrink-0">
-                    {concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                    {formatLabBrandLabel(concept.brandId)}
                   </span>
                 </div>
 
@@ -1254,7 +1256,7 @@ export function PdfConstructorModal({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-[8px] bg-white border-[1.5px] border-[#CFC8BC] p-2.5 flex items-center gap-2.5">
                       <img
-                        src={frontPhotoUrl}
+                        src={resolvePublicAssetUrl(frontPhotoUrl)}
                         alt="Лицевая"
                         className="h-16 w-16 rounded object-contain bg-[#F3EFE8] shrink-0"
                       />
@@ -1273,7 +1275,7 @@ export function PdfConstructorModal({
 
                     <div className="rounded-[8px] bg-white border-[1.5px] border-[#CFC8BC] p-2.5 flex items-center gap-2.5">
                       <img
-                        src={backPhotoUrl}
+                        src={resolvePublicAssetUrl(backPhotoUrl)}
                         alt="Вид сзади"
                         className="h-16 w-16 rounded object-contain bg-[#F3EFE8] shrink-0"
                       />

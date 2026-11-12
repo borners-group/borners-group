@@ -105,6 +105,11 @@ function ScenarioContourHeader({
                   } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
                     setBrandFilter('AKUSHA');
                     onSelectScenario(sc.id, 'AKUSHA');
+                  } else if (sc.ownerBrandCode === 'NA_TELE') {
+                    setBrandFilter('NA_TELE');
+                    onSelectScenario(sc.id, 'NA_TELE');
+                  } else if (brandFilter !== 'ALL') {
+                    onSelectScenario(sc.id, brandFilter);
                   } else {
                     onSelectScenario(sc.id);
                   }
@@ -132,8 +137,15 @@ function ScenarioContourHeader({
               <button
                 type="button"
                 onClick={() => {
+                  const activeOwner = orderedScenarios.find(
+                    (s) => s.id === selectedScenarioId
+                  )?.ownerBrandCode;
                   setBrandFilter('ALL');
-                  if (selectedScenarioId === 202705 || selectedScenarioId === 202706) {
+                  if (
+                    selectedScenarioId === 202705 ||
+                    selectedScenarioId === 202706 ||
+                    (activeOwner && activeOwner !== 'BORNERS')
+                  ) {
                     onSelectScenario(1, 'ALL');
                   }
                 }}
@@ -176,7 +188,9 @@ function ScenarioContourHeader({
         </div>
       </div>
 
-      {brandFilter === 'NA_TELE' && eligibleCount === 0 && (
+      {brandFilter === 'NA_TELE' &&
+        eligibleCount === 0 &&
+        (selectedScenarioId === 1 || selectedScenarioId === ACTING_2027_SCENARIO_ID) && (
         <div className="rounded-[12px] bg-[#F7F7F3] border-[1.5px] border-[#CECDC4] px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-[12.5px]">
           <span className="text-[#262624] font-medium">
             В выбранном сценарии модели <strong>НА ТЕЛЕ</strong> не задействованы (моно-цель BORNERS). Линейка НА ТЕЛЕ включена в Сценарии №2 и №3.
@@ -184,7 +198,7 @@ function ScenarioContourHeader({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => onSelectScenario(2)}
+              onClick={() => onSelectScenario(2, 'NA_TELE')}
               className="h-8 px-3 rounded-[8px] bg-[#EAE9E2] hover:bg-[#DFDED6] text-[#141413] border border-[#CECDC4] text-[11.5px] font-semibold cursor-pointer"
             >
               Переключить на Сценарий №2 (150 млн)
@@ -449,18 +463,32 @@ export function SalesMatrixContourView() {
       />
 
       {eligibleModels.length === 0 && (
-        <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="rounded-[14px] bg-white dark:bg-[#121620] border border-[#D8D7CF] dark:border-[#222938] p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1 max-w-2xl">
-            <div className="text-[14.5px] font-bold text-[#141413]">
-              В сценарии «{currentScenario.title}» нет моделей выбранного бренда ({brandFilter})
+            <div className="text-[14.5px] font-bold text-[#141413] dark:text-[#EDF0F7]">
+              В сценарии «{currentScenario.title}» пока нет моделей бренда {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}
             </div>
-            <p className="text-[12.5px] text-[#5E5D58]">
+            <p className="text-[12.5px] text-[#5E5D58] dark:text-[#94A3B8]">
               {brandFilter === 'NA_TELE'
-                ? 'Линейка «НА ТЕЛЕ» запускается со Сценария №2 · 150 млн ₽/мес и Сценария №3 · 200 млн ₽/мес. В исходном плане и Сценарии №1 участвуют модели BORNERS и WB.'
-                : 'Для выбранного фильтра бренда в текущем сценарии нет активных SKU. Переключите сценарий или сбросьте фильтр бренда.'}
+                ? 'Добавьте артикулы НА ТЕЛЕ в «01 · Продукт», перенесите разработки из «Лаборатории R&D» в 1 клик или разверните стартовую матрицу (3 SKU).'
+                : 'Для выбранного фильтра бренда в текущем сценарии пока нет активных SKU. Добавьте модель в каталоге или разверните стартовую матрицу.'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
+              className="h-8.5 px-3.5 rounded-xl bg-[#0F172A] dark:bg-white hover:opacity-90 text-white dark:text-[#0F172A] text-[12px] font-semibold cursor-pointer transition"
+            >
+              + Добавить в Каталоге
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
+              className="h-8.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold cursor-pointer transition"
+            >
+              🧪 Из Лаборатории R&D
+            </button>
             {(brandFilter === 'AKUSHA' ||
               brandFilter === 'LISKANI' ||
               brandFilter === 'NA_TELE') && (
@@ -480,12 +508,11 @@ export function SalesMatrixContourView() {
                 🚀 Запустить стартовую матрицу (3 SKU)
               </button>
             )}
-            {brandFilter === 'NA_TELE' && (
+            {brandFilter === 'NA_TELE' && selectedScenarioId !== 2 && (
               <button
                 type="button"
                 onClick={() => {
-                  setSelectedScenarioId(2);
-                  setBrandFilter('ALL');
+                  setSelectedScenarioId(2, 'NA_TELE');
                 }}
                 className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
               >
@@ -1434,6 +1461,20 @@ export function ProcurementContourView() {
               В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).
             </p>
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
+                className="h-9.5 rounded-xl bg-[#0F172A] dark:bg-white px-4 text-[12.5px] font-semibold text-white dark:text-[#0F172A] hover:opacity-90 transition cursor-pointer"
+              >
+                + Добавить в Каталоге
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
+                className="h-9.5 rounded-xl bg-indigo-600 px-4 text-[12.5px] font-semibold text-white hover:bg-indigo-700 transition cursor-pointer"
+              >
+                🧪 Из Лаборатории R&D
+              </button>
               {(brandFilter === 'AKUSHA' ||
                 brandFilter === 'LISKANI' ||
                 brandFilter === 'NA_TELE') && (
@@ -1460,16 +1501,17 @@ export function ProcurementContourView() {
               >
                 Показать все бренды ({currentScenario.title.split('·')[0].trim()})
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedScenarioId(2);
-                  setBrandFilter('ALL');
-                }}
-                className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
-              >
-                Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)
-              </button>
+              {selectedScenarioId !== 2 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedScenarioId(2, brandFilter !== 'ALL' ? brandFilter : undefined);
+                  }}
+                  className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
+                >
+                  Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)
+                </button>
+              )}
               {selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
                 <button
                   type="button"
@@ -3052,6 +3094,20 @@ export function FinanceContourView() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
+                  className="h-8.5 px-3.5 rounded-xl bg-[#0F172A] dark:bg-white hover:opacity-90 text-white dark:text-[#0F172A] text-[12px] font-semibold cursor-pointer transition"
+                >
+                  + Добавить в Каталоге
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
+                  className="h-8.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold cursor-pointer transition"
+                >
+                  🧪 Из Лаборатории R&D
+                </button>
                 {(brandFilter === 'AKUSHA' ||
                   brandFilter === 'LISKANI' ||
                   brandFilter === 'NA_TELE') && (
@@ -3071,12 +3127,11 @@ export function FinanceContourView() {
                     🚀 Запустить стартовую матрицу (3 SKU)
                   </button>
                 )}
-                {brandFilter === 'NA_TELE' && (
+                {brandFilter === 'NA_TELE' && selectedScenarioId !== 2 && (
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedScenarioId(2);
-                      setBrandFilter('ALL');
+                      setSelectedScenarioId(2, 'NA_TELE');
                     }}
                     className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
                   >
