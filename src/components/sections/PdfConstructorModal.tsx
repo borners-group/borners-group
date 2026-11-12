@@ -9,6 +9,10 @@ import {
 } from '@/lib/document-export';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
+import {
+  cleanTechPackText,
+  getBrandProductionProfile,
+} from '@/lib/brandProductionConfig';
 
 interface PdfConstructorModalProps {
   concept: ProductConcept;
@@ -16,54 +20,57 @@ interface PdfConstructorModalProps {
   onSaveToConcept?: (patch: Partial<ProductConcept>) => void;
 }
 
-const SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'] as const;
-
 export function PdfConstructorModal({
   concept,
   onClose,
   onSaveToConcept,
 }: PdfConstructorModalProps) {
   const existingOrder = concept.productionOrders?.[0];
+  const prodProfile = useMemo(
+    () => getBrandProductionProfile(concept.brandId, concept.name),
+    [concept.brandId, concept.name]
+  );
 
-  const brandLabel = formatLabBrandLabel(concept.brandId);
+  const brandLabel = prodProfile.brandLabel;
   const defaultZhProductLabel =
-    brandLabel === 'НА ТЕЛЕ'
+    prodProfile.brandCode === 'NA_TELE'
       ? 'НА ТЕЛЕ 女士无痕亲肤内衣套装'
-      : brandLabel === 'AKUSHA'
-      ? 'AKUSHA 儿童真皮学步鞋'
-      : brandLabel === 'LISKANI'
+      : prodProfile.brandCode === 'AKUSHA'
+      ? prodProfile.sizes[0] === '36'
+        ? 'AKUSHA 女士真皮舒适鞋履'
+        : 'AKUSHA 儿童真皮学步鞋'
+      : prodProfile.brandCode === 'LISKANI'
       ? 'LISKANI 家居窗帘纺织系列'
       : `${brandLabel} 男士莫代尔平角内裤`;
 
   const defaultFactoryZh =
-    brandLabel === 'НА ТЕЛЕ'
-      ? '杭州无痕针织内衣制造有限公司 (杭州, 中国)'
-      : brandLabel === 'AKUSHA'
-      ? '广州阿库莎童鞋制造有限公司 (广州, 中国)'
-      : brandLabel === 'LISKANI'
-      ? '绍兴利斯卡尼家纺制品有限公司 (绍兴, 中国)'
+    prodProfile.brandCode === 'NA_TELE'
+      ? '汕头无痕针织内衣制造有限公司 (汕头, 中国)'
+      : prodProfile.brandCode === 'AKUSHA'
+      ? '温州阿库莎鞋业制造有限公司 (温州, 中国)'
+      : prodProfile.brandCode === 'LISKANI'
+      ? '绍兴柯桥利斯卡尼家纺制品有限公司 (绍兴, 中国)'
       : '广东奥佩克内衣有限公司 (佛山, 中国)';
 
   const defaultFactoryRu =
-    brandLabel === 'НА ТЕЛЕ'
-      ? 'Фабрика Ханчжоу Бесшовные Технологии (Ханчжоу, КНР)'
-      : brandLabel === 'AKUSHA'
-      ? 'Фабрика Гуанчжоу Детская Обувь (Гуанчжоу, КНР)'
-      : brandLabel === 'LISKANI'
-      ? 'Фабрика Шаосин Домашний Текстиль (Шаосин, КНР)'
-      : 'Фабрика Гуандун Апекс Интимэйт (Фошань, КНР)';
+    prodProfile.brandCode === 'NA_TELE'
+      ? 'Shantou Seamless Intimate Co. (Шаньтоу, КНР)'
+      : prodProfile.brandCode === 'AKUSHA'
+      ? 'Wenzhou Akusha Footwear Co. (Вэньчжоу, КНР)'
+      : prodProfile.brandCode === 'LISKANI'
+      ? 'Shaoxing Keqiao Home Textile (Шаосин, КНР)'
+      : 'Guangdong Apex Intimate (Фошань, КНР)';
 
   const defaultPackUnits =
     existingOrder?.unitsPerPack ||
     concept.packUnitsCount ||
-    (brandLabel === 'НА ТЕЛЕ' ? 1 : brandLabel === 'LISKANI' ? 2 : brandLabel === 'AKUSHA' ? 8 : 3);
+    prodProfile.defaultPackUnits;
 
   const [docTitleZh, setDocTitleZh] = useState(
-    `生产工艺单及大货采购订单：${
-      concept.techPack?.zh?.modelName && concept.techPack.zh.modelName !== '待定'
-        ? concept.techPack.zh.modelName
-        : defaultZhProductLabel
-    } (${concept.code})`
+    `生产工艺单及大货采购订单：${cleanTechPackText(
+      concept.techPack?.zh?.modelName,
+      defaultZhProductLabel
+    )} (${concept.code})`
   );
   const [docTitle, setDocTitle] = useState(
     `Спецификация и заказ на производство: ${concept.name} (${concept.code})`
@@ -82,9 +89,14 @@ export function PdfConstructorModal({
     existingOrder?.paymentTerms || '30% депозит / 70% перед отгрузкой после QC'
   );
 
+  const defaultHeroPhoto =
+    prodProfile.brandCode === 'NA_TELE'
+      ? 'images/products/natele-editorial-hero.jpg'
+      : 'images/products/rnd-soft-boxers.jpg';
+
   // Фотографии товара: Лицевая (вид спереди) + Вторая (вид сзади / детали)
   const [frontPhotoUrl, setFrontPhotoUrl] = useState<string>(
-    concept.imageUrl || 'images/products/rnd-soft-boxers.jpg'
+    concept.imageUrl || defaultHeroPhoto
   );
   const [backPhotoUrl, setBackPhotoUrl] = useState<string>(
     concept.galleryPhotos?.[1]?.url ||
@@ -95,15 +107,7 @@ export function PdfConstructorModal({
   const [frontCaption, setFrontCaption] = useState(
     `Лицевая фотография товара · ${concept.name} (${concept.code})`
   );
-  const [backCaption, setBackCaption] = useState(
-    brandLabel === 'AKUSHA'
-      ? 'Вид сбоку, протектор подошвы и обработка кожаного верха'
-      : brandLabel === 'LISKANI'
-      ? 'Фактура ткани, шторная лента и качество нижнего подгиба'
-      : brandLabel === 'НА ТЕЛЕ'
-      ? 'Вид сзади, бесшовные края и посадка second-skin'
-      : 'Вид сзади, поясная резинка и обработка плоских швов'
-  );
+  const [backCaption, setBackCaption] = useState(prodProfile.defaultDetailCaptionRu);
 
   // Валюты: CNY (¥), USD ($), RUB (₽) + живой курс конвертации
   const [primaryCurrency, setPrimaryCurrency] = useState<'CNY' | 'USD' | 'RUB'>(
@@ -120,19 +124,52 @@ export function PdfConstructorModal({
     return 18.5;
   });
 
-  // Комплектация и размерная сетка
+  // Комплектация и размерная сетка (с учётом профиля бренда + сохранённых ключей)
   const [unitsPerPack, setUnitsPerPack] = useState<number>(defaultPackUnits);
-  const [packsBySize, setPacksBySize] = useState<Record<string, number>>(
-    existingOrder?.packsBySize || {
-      S: 100,
-      M: 300,
-      L: 500,
-      XL: 400,
-      '2XL': 250,
-      '3XL': 150,
-      '4XL': 100,
+  const [packsBySize, setPacksBySize] = useState<Record<string, number>>(() => {
+    const existingMap = existingOrder?.packsBySize;
+    const hasExistingNonZero =
+      existingMap &&
+      Object.keys(existingMap).length > 0 &&
+      Object.values(existingMap).some((v) => Number(v) > 0);
+
+    if (hasExistingNonZero && existingMap) {
+      const merged: Record<string, number> = {};
+      for (const sz of prodProfile.sizes) {
+        merged[sz] = Math.max(0, Number(existingMap[sz]) || 0);
+      }
+      for (const [k, v] of Object.entries(existingMap)) {
+        if (!(k in merged) && Number(v) > 0) {
+          merged[k] = Math.max(0, Number(v) || 0);
+        }
+      }
+      return merged;
     }
-  );
+
+    const starterTotalPacks =
+      prodProfile.brandCode === 'AKUSHA'
+        ? 600
+        : prodProfile.brandCode === 'LISKANI'
+        ? 500
+        : prodProfile.brandCode === 'NA_TELE'
+        ? 1000
+        : 1500;
+    const fresh: Record<string, number> = {};
+    for (const sz of prodProfile.sizes) {
+      const share =
+        prodProfile.sizeSharesPct[sz] ??
+        Math.round(100 / Math.max(1, prodProfile.sizes.length));
+      fresh[sz] = Math.max(10, Math.round((starterTotalPacks * share) / 100));
+    }
+    return fresh;
+  });
+
+  const orderedSizes = useMemo(() => {
+    const extraKeys = Object.keys(packsBySize).filter(
+      (k) => !prodProfile.sizes.includes(k)
+    );
+    return [...prodProfile.sizes, ...extraKeys];
+  }, [prodProfile.sizes, packsBySize]);
 
   // Переключатели блоков: что именно отобразить в PDF перед скачиванием
   const [includePhotos, setIncludePhotos] = useState<boolean>(true);
@@ -142,42 +179,6 @@ export function PdfConstructorModal({
   const [includeTotalSumColumn, setIncludeTotalSumColumn] = useState<boolean>(true);
   const [includeSizeMatrix, setIncludeSizeMatrix] = useState<boolean>(true);
   const [includeFactoryTerms, setIncludeFactoryTerms] = useState<boolean>(true);
-
-  const defaultZhConstruction =
-    brandLabel === 'НА ТЕЛЕ'
-      ? '无痕超声波贴合工艺 · 激光裁剪隐形边 · 亲肤零束缚版型'
-      : brandLabel === 'AKUSHA'
-      ? '人体工学护踝童鞋楦型 · 防滑耐磨柔韧大底 · 加固车缝工艺'
-      : brandLabel === 'LISKANI'
-      ? '高精密垂感定型窗帘工艺 · 均匀褶皱挂带 · 精细包边底摆'
-      : '3D立体囊袋平角内裤 · 四针六线无骨平缝 · 后档无中缝';
-
-  const defaultRuConstruction =
-    brandLabel === 'НА ТЕЛЕ'
-      ? 'Бесшовная клеевая/лазерная обработка краёв, анатомическая посадка second-skin'
-      : brandLabel === 'AKUSHA'
-      ? 'Анатомическая детская колодка с фиксирующим задником и гибкой подошвой'
-      : brandLabel === 'LISKANI'
-      ? 'Равномерная шторная сборка, усиленный боковой и нижний подгиб'
-      : 'Анатомический 3D-гульфик, плоские швы 4 иглы / 6 нитей, без заднего шва';
-
-  const defaultZhComposition =
-    brandLabel === 'НА ТЕЛЕ'
-      ? '78% 锦纶超细纤维 + 22% 莱卡氨纶 · 克重 145g/m²'
-      : brandLabel === 'AKUSHA'
-      ? '头层牛皮鞋面 + 透气内里 · 环保防滑TPR大底'
-      : brandLabel === 'LISKANI'
-      ? '100% 高克重遮光聚酯纤维面料 · 克重 280g/m²'
-      : '92% 兰精超细莫代尔 + 8% 氨纶 · 克重 180g/m²';
-
-  const defaultRuComposition =
-    brandLabel === 'НА ТЕЛЕ'
-      ? '78% полиамид микрофибра + 22% эластан Lycra · Плотность 145 г/м²'
-      : brandLabel === 'AKUSHA'
-      ? 'Натуральная кожа КРС + дышащая стелька · Подошва ТЭП'
-      : brandLabel === 'LISKANI'
-      ? '100% плотный портьерный полиэстер · Плотность 280 г/м²'
-      : '92% микромодал Lenzing + 8% эластан · Плотность 180 г/м²';
 
   // Двуязычные строки: Крупный китайский (中文) сверху + мелкий русский снизу
   const [bilingualRows, setBilingualRows] = useState<
@@ -194,55 +195,45 @@ export function PdfConstructorModal({
       id: 'row-1',
       labelZh: '款式名称与版型工艺',
       labelRu: 'Модель и конструкция',
-      zhLarge:
-        concept.techPack?.zh?.construction && concept.techPack.zh.construction !== '待定'
-          ? concept.techPack.zh.construction
-          : defaultZhConstruction,
-      ruSmall: `${concept.name} (${concept.code}) · ${
-        concept.techPack?.ru?.construction || defaultRuConstruction
-      }`,
+      zhLarge: cleanTechPackText(
+        concept.techPack?.zh?.construction,
+        prodProfile.defaultConstructionZh
+      ),
+      ruSmall: `${concept.name} (${concept.code}) · ${cleanTechPackText(
+        concept.techPack?.ru?.construction,
+        prodProfile.defaultConstructionRu
+      )}`,
       highlight: true,
     },
     {
       id: 'row-2',
       labelZh: '面料成分与克重标准',
       labelRu: 'Состав ткани и плотность',
-      zhLarge:
-        concept.techPack?.zh?.compositionAndDensity &&
-        concept.techPack.zh.compositionAndDensity !== '待定'
-          ? concept.techPack.zh.compositionAndDensity
-          : defaultZhComposition,
-      ruSmall:
-        existingOrder?.materialAndColors ||
-        concept.techPack?.ru?.compositionAndDensity ||
-        defaultRuComposition,
+      zhLarge: cleanTechPackText(
+        concept.techPack?.zh?.compositionAndDensity,
+        prodProfile.defaultMaterialZh
+      ),
+      ruSmall: cleanTechPackText(
+        existingOrder?.materialAndColors || concept.techPack?.ru?.compositionAndDensity,
+        prodProfile.defaultMaterialRu
+      ),
       highlight: true,
     },
     {
       id: 'row-3',
       labelZh: '辅料细节与包装配比',
       labelRu: 'Фурнитура / пояс и комплектация',
-      zhLarge:
-        brandLabel === 'AKUSHA'
-          ? `加固魔术贴搭扣 · 每箱 ${defaultPackUnits} 双尺码配比装`
-          : brandLabel === 'LISKANI'
-          ? `6cm 加固窗帘挂带 · 每组 ${defaultPackUnits} 幅独立包装`
-          : brandLabel === 'НА ТЕЛЕ'
-          ? `隐形无痕贴合弹力边 · 每套 ${defaultPackUnits} 件独立包装`
-          : `38mm 超柔提花腰头（内侧微纤维）· 每盒 ${defaultPackUnits} 条装`,
-      ruSmall: `${
-        concept.techPack?.ru?.waistbandSpec ||
-        (brandLabel === 'AKUSHA'
-          ? 'Анатомическая фиксация липучкой Velcro'
-          : brandLabel === 'LISKANI'
-          ? 'Универсальная шторная лента 6 см'
-          : brandLabel === 'НА ТЕЛЕ'
-          ? 'Бесшовная микрофибровая окантовка без давления'
-          : 'Мягкая жаккардовая резинка 38 мм')
-      } · В комплекте ${defaultPackUnits} ед. (${
+      zhLarge: `${cleanTechPackText(
+        concept.techPack?.zh?.waistbandSpec,
+        prodProfile.defaultWaistbandOrTrimZh
+      )} · 每组 ${defaultPackUnits} 件 (${prodProfile.sizeGridLabelZh})`,
+      ruSmall: `${cleanTechPackText(
+        concept.techPack?.ru?.waistbandSpec,
+        prodProfile.defaultWaistbandOrTrimRu
+      )} · В комплекте ${defaultPackUnits} ед. (${
         existingOrder?.packColorComposition ||
         concept.colorCombinations?.join(', ') ||
-        (brandLabel === 'НА ТЕЛЕ'
+        (prodProfile.brandCode === 'NA_TELE'
           ? 'телесный беж, молочный, графит'
           : 'базовая палитра паспорта SKU')
       })`,
@@ -252,9 +243,9 @@ export function PdfConstructorModal({
       id: 'row-4',
       labelZh: '品控标准与水洗测试',
       labelRu: 'Контроль качества и стирка',
-      zhLarge: '执行 AQL 1.5 验货标准 · 40°C 水洗5次缩水率 ≤ 2.5%',
+      zhLarge: '执行 AQL 1.5 验货标准 · 大货严格按确认产前样生产',
       ruSmall:
-        'Инспекция AQL 1.5 перед отгрузкой · Усадка после 5 стирок при 40°C не более 2,5% · Маркировка Честный ЗНАК',
+        'Инспекция AQL 1.5 перед отгрузкой · Строго по утверждённому эталонному образцу · Маркировка Честный ЗНАК',
       highlight: false,
     },
   ]);
@@ -284,7 +275,7 @@ export function PdfConstructorModal({
     const unitCny = unitRub / safeCnyRate;
     const unitUsd = unitRub / safeUsdRate;
 
-    const totalPacks = SIZES.reduce((acc, sz) => acc + (packsBySize[sz] || 0), 0);
+    const totalPacks = orderedSizes.reduce((acc, sz) => acc + (packsBySize[sz] || 0), 0);
     const totalUnits = totalPacks * Math.max(1, unitsPerPack);
 
     const totalRub = Math.round(unitRub * totalUnits);
@@ -301,7 +292,7 @@ export function PdfConstructorModal({
       totalCny,
       totalUsd,
     };
-  }, [primaryCurrency, rateCnyToRub, rateUsdToRub, unitPriceInPrimary, packsBySize, unitsPerPack]);
+  }, [primaryCurrency, rateCnyToRub, rateUsdToRub, unitPriceInPrimary, packsBySize, unitsPerPack, orderedSizes]);
 
   const handleCurrencySwitch = (nextCur: 'CNY' | 'USD' | 'RUB') => {
     if (nextCur === primaryCurrency) return;
@@ -328,7 +319,7 @@ export function PdfConstructorModal({
   const handleDownloadPdf = () => {
     const brandLabel = formatLabBrandLabel(concept.brandId);
 
-    const sizeRows = SIZES.map((sz) => {
+    const sizeRows = orderedSizes.map((sz) => {
       const packs = packsBySize[sz] || 0;
       const pcs = packs * unitsPerPack;
       const sumCny = Math.round(pcs * currencyMetrics.unitCny);
@@ -345,8 +336,8 @@ export function PdfConstructorModal({
 
       const baseRow = [
         sz,
-        `${packs.toLocaleString('ru-RU')} 盒 (наб.)`,
-        `${pcs.toLocaleString('ru-RU')} 件 (шт.)`,
+        `${packs.toLocaleString('ru-RU')} 组 (${prodProfile.packUnitLabelRu})`,
+        `${pcs.toLocaleString('ru-RU')} 件 (${prodProfile.itemsUnitLabelRu})`,
       ];
 
       if (!includePricing) return baseRow;
@@ -381,8 +372,8 @@ export function PdfConstructorModal({
     if (includeSizeMatrix || includePricing) {
       const tableHeadersBase = [
         '尺码 (Размер)',
-        '盒数 (Наборов)',
-        `总件数 (Штук ×${unitsPerPack})`,
+        `组数 (${prodProfile.packUnitLabelRu})`,
+        `总数量 (${prodProfile.itemsUnitLabelRu} ×${unitsPerPack})`,
       ];
       const tableHeaders = !includePricing
         ? tableHeadersBase
@@ -390,14 +381,14 @@ export function PdfConstructorModal({
         ? [
             ...tableHeadersBase,
             showRubInPdf
-              ? '单价 (Цена 1 шт. CNY/USD/RUB)'
-              : '单价 (Цена 1 шт. CNY / USD)',
+              ? '单价 (Цена 1 ед. CNY/USD/RUB)'
+              : '单价 (Цена 1 ед. CNY / USD)',
           ]
         : [
             ...tableHeadersBase,
             showRubInPdf
-              ? '单价 (Цена 1 шт. CNY/USD/RUB)'
-              : '单价 (Цена 1 шт. CNY / USD)',
+              ? '单价 (Цена 1 ед. CNY/USD/RUB)'
+              : '单价 (Цена 1 ед. CNY / USD)',
             showRubInPdf
               ? '合计金额 (Сумма CNY/USD + RUB)'
               : '合计金额 (Сумма CNY / USD)',
@@ -405,8 +396,8 @@ export function PdfConstructorModal({
 
       const tableFooterBase = [
         '合计总订单 (ИТОГО)',
-        `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} 盒 (наб.)`,
-        `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 (шт.)`,
+        `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} 组 (${prodProfile.packUnitLabelRu})`,
+        `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 (${prodProfile.itemsUnitLabelRu})`,
       ];
       const unitFooterCell = showRubInPdf
         ? `¥${currencyMetrics.unitCny} / $${currencyMetrics.unitUsd} (${currencyMetrics.unitRub}₽)`
@@ -421,14 +412,14 @@ export function PdfConstructorModal({
       sectionsToRender.push({
         badge: '02 · 尺码及金额',
         titleZh: includePricing
-          ? '二、大货尺码配比及订单金额明细 (S–4XL)'
-          : '二、大货尺码及数量配比明细表 (S–4XL)',
+          ? `二、大货尺码配比及订单金额明细 (${prodProfile.sizeGridLabelZh})`
+          : `二、大货尺码及数量配比明细表 (${prodProfile.sizeGridLabelZh})`,
         title: includePricing
-          ? `Размерная сетка партии (S–4XL) и расчёт заказа (${
+          ? `${prodProfile.sizeGridLabelRu} и расчёт заказа (${
               showRubInPdf ? 'CNY / USD / RUB' : 'CNY ¥ / USD $ — без рублей'
             })`
-          : 'Размерная сетка партии (S–4XL) без отображения цен',
-        subtitle: `每盒 ${unitsPerPack} 件 (В 1 наборе: ${unitsPerPack} шт.)`,
+          : `${prodProfile.sizeGridLabelRu} без отображения цен`,
+        subtitle: `每组 ${unitsPerPack} 件 (${prodProfile.packUnitLabelRu} · ×${unitsPerPack} — ${prodProfile.itemsUnitLabelRu.toLowerCase()})`,
         table: includeSizeMatrix
           ? {
               headers: tableHeaders,
@@ -496,13 +487,13 @@ export function PdfConstructorModal({
           subValueRu: includeFactoryTerms ? factoryName : 'Скрыто',
         },
         {
-          label: '单价 · Цена 1 шт.',
+          label: '单价 · Цена 1 ед.',
           value: includePricing
             ? `¥${currencyMetrics.unitCny} · $${currencyMetrics.unitUsd}`
             : '隐藏价格',
           subValueRu: includePricing
             ? showRubInPdf
-              ? `${currencyMetrics.unitRub} ₽ / шт.`
+              ? `${currencyMetrics.unitRub} ₽ / ед.`
               : 'За 1 ед. (CNY / USD)'
             : 'Скрыто настройками PDF',
         },
@@ -510,12 +501,12 @@ export function PdfConstructorModal({
           label: '总数量及金额 · Тираж и сумма',
           value: includePricing
             ? `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 · ¥${currencyMetrics.totalCny.toLocaleString('ru-RU')}`
-            : `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 (${currencyMetrics.totalPacks.toLocaleString('ru-RU')} 盒)`,
+            : `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 (${currencyMetrics.totalPacks.toLocaleString('ru-RU')} 组)`,
           subValueRu: includePricing
             ? showRubInPdf
               ? `$${currencyMetrics.totalUsd.toLocaleString('ru-RU')} · ${currencyMetrics.totalRub.toLocaleString('ru-RU')} ₽`
-              : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} наб. · $${currencyMetrics.totalUsd.toLocaleString('ru-RU')}`
-            : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} наборов (${currencyMetrics.totalUnits.toLocaleString('ru-RU')} шт.)`,
+              : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} (${prodProfile.packUnitLabelRu.toLowerCase()}) · $${currencyMetrics.totalUsd.toLocaleString('ru-RU')}`
+            : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} (${prodProfile.packUnitLabelRu.toLowerCase()}) · ${currencyMetrics.totalUnits.toLocaleString('ru-RU')} (${prodProfile.itemsUnitLabelRu.toLowerCase()})`,
         },
       ],
       frontPhotoUrl: includePhotos ? resolvePublicAssetUrl(frontPhotoUrl) : undefined,
@@ -535,23 +526,75 @@ export function PdfConstructorModal({
     });
 
     if (onSaveToConcept) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const updatedOrder = {
+        ...(existingOrder || {
+          id: `po-pdf-${Date.now()}`,
+          orderNumber: 'PO-2027-01',
+          contactPerson: 'Менеджер производства',
+          approvedSampleVersion: concept.samples?.[0]?.versionCode || 'Версия 1',
+          internalStatus: 'order_placed' as const,
+          sizeBreakdown: packsBySize,
+          packColorComposition:
+            concept.colorCombinations?.join(', ') || 'Базовая палитра паспорта SKU',
+          packConfiguration: `${unitsPerPack} ед. в комплекте`,
+          packagingDetails:
+            'Фирменная упаковка со штрихкодом EAN-13 / Честный ЗНАК',
+          orderVersion: 1,
+          approvedAt: todayIso,
+          chineseVerified: true,
+          qcNotes: 'AQL 1.5',
+          logisticsTracking: '',
+        }),
+        factoryName,
+        materialAndColors: cleanTechPackText(
+          bilingualRows[1]?.ruSmall || existingOrder?.materialAndColors,
+          prodProfile.defaultMaterialRu
+        ),
+        packsBySize,
+        unitsPerPack,
+        totalUnits: currencyMetrics.totalUnits,
+        unitPrice:
+          primaryCurrency === 'RUB'
+            ? currencyMetrics.unitRub
+            : primaryCurrency === 'CNY'
+            ? currencyMetrics.unitCny
+            : currencyMetrics.unitUsd,
+        currency: primaryCurrency,
+        plannedReadyDate,
+        paymentTerms,
+      };
+
       onSaveToConcept({
         imageUrl: frontPhotoUrl,
         plannedUnitCost: currencyMetrics.unitRub,
+        packUnitsCount: unitsPerPack,
+        supplierName: factoryName,
         currency: primaryCurrency,
+        productionOrders: [updatedOrder, ...(concept.productionOrders?.slice(1) || [])],
         techPack: {
           ...concept.techPack,
           zh: {
             ...concept.techPack.zh,
-            construction: bilingualRows[0]?.zhLarge || concept.techPack.zh.construction,
-            compositionAndDensity:
+            construction: cleanTechPackText(
+              bilingualRows[0]?.zhLarge || concept.techPack.zh.construction,
+              prodProfile.defaultConstructionZh
+            ),
+            compositionAndDensity: cleanTechPackText(
               bilingualRows[1]?.zhLarge || concept.techPack.zh.compositionAndDensity,
+              prodProfile.defaultMaterialZh
+            ),
           },
           ru: {
             ...concept.techPack.ru,
-            construction: bilingualRows[0]?.ruSmall || concept.techPack.ru.construction,
-            compositionAndDensity:
+            construction: cleanTechPackText(
+              bilingualRows[0]?.ruSmall || concept.techPack.ru.construction,
+              prodProfile.defaultConstructionRu
+            ),
+            compositionAndDensity: cleanTechPackText(
               bilingualRows[1]?.ruSmall || concept.techPack.ru.compositionAndDensity,
+              prodProfile.defaultMaterialRu
+            ),
           },
         },
       });
@@ -714,8 +757,8 @@ export function PdfConstructorModal({
                     onChange: setShowRubInPdf,
                   },
                   {
-                    label: 'Размерная сетка (S–4XL)',
-                    sub: 'Таблица коробов и штук по размерам',
+                    label: `Размерная сетка (${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]})`,
+                    sub: `${prodProfile.packUnitLabelRu} и ${prodProfile.itemsUnitLabelRu.toLowerCase()} по размерам`,
                     checked: includeSizeMatrix,
                     onChange: setIncludeSizeMatrix,
                   },
@@ -1206,7 +1249,7 @@ export function PdfConstructorModal({
                   ШАГ 04 · РАЗМЕРНАЯ СЕТКА И УСЛОВИЯ
                 </span>
                 <h3 className="text-[16px] font-semibold text-[#181715]">
-                  Количество наборов по размерам (S – 4XL) и фабрика
+                  {prodProfile.packUnitLabelRu} по размерам ({prodProfile.sizeGridLabelRu}) и фабрика
                 </h3>
               </div>
 
@@ -1264,11 +1307,13 @@ export function PdfConstructorModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11.5px] text-[#5C5852] mb-1">Штук в 1 наборе:</label>
+                  <label className="block text-[11.5px] text-[#5C5852] mb-1">
+                    {prodProfile.itemsUnitLabelRu} в 1 уп.:
+                  </label>
                   <input
                     type="number"
                     min={1}
-                    max={10}
+                    max={24}
                     value={unitsPerPack}
                     onChange={(e) => setUnitsPerPack(Math.max(1, Number(e.target.value) || 1))}
                     className="w-full rounded-[8px] border border-[#D4CDC2] px-3 py-1.5 text-[13px]"
@@ -1276,8 +1321,8 @@ export function PdfConstructorModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 pt-1">
-                {SIZES.map((sz) => (
+              <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 pt-1">
+                {orderedSizes.map((sz) => (
                   <div
                     key={sz}
                     className="rounded-[8px] border border-[#D4CDC2] bg-[#FAF8F5] p-2 text-center"
@@ -1295,8 +1340,8 @@ export function PdfConstructorModal({
                       }
                       className="mt-1 w-full rounded border border-[#D4CDC2] bg-white px-1.5 py-1 text-center text-[13px] font-semibold"
                     />
-                    <div className="text-[10px] text-[#7A756D] mt-0.5">
-                      {((packsBySize[sz] || 0) * unitsPerPack).toLocaleString('ru-RU')} шт.
+                    <div className="text-[10px] text-[#7A756D] mt-0.5 truncate" title={prodProfile.itemsUnitLabelRu}>
+                      {((packsBySize[sz] || 0) * unitsPerPack).toLocaleString('ru-RU')} ед.
                     </div>
                   </div>
                 ))}
@@ -1368,7 +1413,7 @@ export function PdfConstructorModal({
                           02 · 背面及细节
                         </div>
                         <div className="text-[13px] font-bold text-[#181715] truncate">
-                          腰头与平缝细节
+                          {prodProfile.defaultDetailCaptionZh}
                         </div>
                         <div className="text-[10.5px] text-[#6E6A63] line-clamp-2 leading-tight">
                           {backCaption}

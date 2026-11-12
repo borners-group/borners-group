@@ -4958,9 +4958,9 @@ export function launchBrandStarterMatrix(
     brandCode === 'AKUSHA' &&
     currentModels.some((m) => Boolean(m.plansByScenario?.[202706]));
 
-  // Проверяем, есть ли уже сценарий у этого бренда
+  // Проверяем, есть ли уже выделенный собственный сценарий у этого бренда
   const existingBrandScenarios = getScenariosForBrand(currentScenarios, brandCode, {
-    onlyExplicitForNewBrands: brandCode !== 'NA_TELE',
+    onlyExplicitForNewBrands: true,
   });
 
   let targetScenarioId: number;
@@ -4972,7 +4972,11 @@ export function launchBrandStarterMatrix(
       brandCode,
       year: 2027,
       monthlyTargetMln: template.monthlyTargetMln,
-      copyFromScenarioId: hasOfficialAkushaAssortment ? 202706 : null,
+      copyFromScenarioId: hasOfficialAkushaAssortment
+        ? 202706
+        : brandCode === 'NA_TELE'
+        ? 2
+        : null,
     });
     currentScenarios = created.scenarios;
     currentModels = created.models;

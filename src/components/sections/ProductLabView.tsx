@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -44,7 +44,11 @@ import { MiroBoardView } from '@/components/sections/MiroBoardView';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { ScenarioModelSpec, resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
-import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import {
+  deleteModelFromPortfolio,
+  markModelAsDeletedInStorage,
+  useLiveScenarioPortfolio,
+} from '@/lib/useLiveScenarioPortfolio';
 import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
 import {
   buildConceptPatchFromScenarioModel,
@@ -109,6 +113,8 @@ export function ProductLabView() {
     scenarios: liveScenarios,
     updateModelsBatch,
   } = useLiveScenarioPortfolio();
+
+  const prevBrandFilterRef = useRef(brandFilter);
 
   // Единый список карточек из базы (Сценарии роста + Каталог моделей SKU)
   const unifiedCatalogItems = useMemo(() => {
@@ -232,6 +238,7 @@ export function ProductLabView() {
     }
     const targetImportBrand = normalizeLabBrandCode(patchFromModel?.brandId || item.brandId);
     if (brandFilter !== 'ALL' && normalizeLabBrandCode(brandFilter) !== targetImportBrand) {
+      prevBrandFilterRef.current = targetImportBrand as typeof brandFilter;
       setBrandFilter(targetImportBrand as typeof brandFilter);
     }
     setAddFromCatalogOpen(false);
@@ -717,6 +724,39 @@ export function ProductLabView() {
     return syncRes.model;
   };
 
+  const shouldAutoSyncConcept = (conceptToCheck: ProductConcept): boolean =>
+    conceptToCheck.stage === 'PRODUCTION' ||
+    conceptToCheck.stage === 'LAUNCH' ||
+    conceptToCheck.stage === 'APPROVED' ||
+    Boolean(
+      conceptToCheck.linkedScenarioModelId ||
+        findLinkedScenarioModelForConcept(conceptToCheck, liveScenarioModels)
+    );
+
+  const handleDeleteConceptEverywhere = (concept: ProductConcept) => {
+    const linked =
+      findLinkedScenarioModelForConcept(concept, liveScenarioModels) ||
+      (concept.linkedScenarioModelId
+        ? liveScenarioModels.find((m) => m.id === concept.linkedScenarioModelId) || null
+        : null);
+
+    if (
+      linked &&
+      !linked.id.startsWith('s1-') &&
+      !linked.id.startsWith('liskani-2027-') &&
+      !linked.id.startsWith('akusha-2027-') &&
+      !linked.id.startsWith('fukai-')
+    ) {
+      markModelAsDeletedInStorage(linked);
+      updateModelsBatch((prev) => deleteModelFromPortfolio(prev, linked));
+    }
+
+    if (selectedConceptId === concept.id) {
+      setSelectedConceptId(null);
+    }
+    deleteConcept(concept.id);
+  };
+
   // Быстрое создание новой идеи (Сценарий №1 и №2 со Стр. 10 PDF)
   const handleQuickCreateIdea = (openAfterSave = true) => {
     if (!quickIdeaForm.name.trim() && !quickIdeaForm.comment.trim()) {
@@ -784,6 +824,7 @@ export function ProductLabView() {
     });
 
     if (brandFilter !== 'ALL' && normalizeLabBrandCode(brandFilter) !== cleanBrand) {
+      prevBrandFilterRef.current = cleanBrand as typeof brandFilter;
       setBrandFilter(cleanBrand as typeof brandFilter);
     }
 
@@ -816,6 +857,19 @@ export function ProductLabView() {
     () => concepts.find((c) => !c.isArchived && c.id === selectedConceptId) || null,
     [concepts, selectedConceptId]
   );
+
+  useEffect(() => {
+    if (prevBrandFilterRef.current !== brandFilter) {
+      prevBrandFilterRef.current = brandFilter;
+      if (
+        brandFilter !== 'ALL' &&
+        activeConcept &&
+        normalizeLabBrandCode(activeConcept.brandId) !== normalizeLabBrandCode(brandFilter)
+      ) {
+        setSelectedConceptId(null);
+      }
+    }
+  }, [brandFilter, activeConcept, setSelectedConceptId]);
 
   const activeLinkedScenarioModel = useMemo(
     () =>
@@ -856,10 +910,18 @@ export function ProductLabView() {
       caption: `Фото ${existing.length + idx + 1}`,
     }));
     const nextList = [...existing, ...added];
-    updateConcept(activeConcept.id, {
+    const photoPatch: Partial<ProductConcept> = {
       imageUrl: nextList[0].url,
       galleryPhotos: nextList,
-    });
+    };
+    const updatedSnapshot: ProductConcept = {
+      ...activeConcept,
+      ...photoPatch,
+    };
+    updateConcept(activeConcept.id, photoPatch);
+    if (shouldAutoSyncConcept(updatedSnapshot)) {
+      handleSyncConceptToCatalog(updatedSnapshot, true);
+    }
     notify(
       'success',
       dataUrls.length === 1
@@ -874,10 +936,18 @@ export function ProductLabView() {
     const [picked] = list.splice(idx, 1);
     if (!picked) return;
     const reordered = [picked, ...list];
-    updateConcept(activeConcept.id, {
+    const photoPatch: Partial<ProductConcept> = {
       imageUrl: picked.url,
       galleryPhotos: reordered,
-    });
+    };
+    const updatedSnapshot: ProductConcept = {
+      ...activeConcept,
+      ...photoPatch,
+    };
+    updateConcept(activeConcept.id, photoPatch);
+    if (shouldAutoSyncConcept(updatedSnapshot)) {
+      handleSyncConceptToCatalog(updatedSnapshot, true);
+    }
     setActivePhotoIndex(0);
     notify('success', 'Назначено главным фото (обложкой карточки)');
   };
@@ -890,20 +960,45 @@ export function ProductLabView() {
     const temp = list[idx];
     list[idx] = list[targetIdx];
     list[targetIdx] = temp;
-    updateConcept(activeConcept.id, {
+    const photoPatch: Partial<ProductConcept> = {
       imageUrl: list[0].url,
       galleryPhotos: list,
-    });
+    };
+    const updatedSnapshot: ProductConcept = {
+      ...activeConcept,
+      ...photoPatch,
+    };
+    updateConcept(activeConcept.id, photoPatch);
+    if (shouldAutoSyncConcept(updatedSnapshot)) {
+      handleSyncConceptToCatalog(updatedSnapshot, true);
+    }
     setActivePhotoIndex(targetIdx);
   };
 
   const removePhotoFromGallery = (idx: number) => {
     if (!activeConcept) return;
     const list = activeGalleryPhotos.filter((_, i) => i !== idx);
-    updateConcept(activeConcept.id, {
+    const photoPatch: Partial<ProductConcept> = {
       imageUrl: list[0]?.url || '',
       galleryPhotos: list,
-    });
+    };
+    const updatedSnapshot: ProductConcept = {
+      ...activeConcept,
+      ...photoPatch,
+    };
+    updateConcept(activeConcept.id, photoPatch);
+    if (shouldAutoSyncConcept(updatedSnapshot)) {
+      const synced = handleSyncConceptToCatalog(updatedSnapshot, true);
+      if (
+        list.length === 0 &&
+        !activeConcept.samples?.some((s) => s.photos && s.photos.length > 0)
+      ) {
+        updateModelsBatch((prev) =>
+          prev.map((m) => (m.id === synced.id ? { ...m, gallery: [] } : m))
+        );
+        void saveModelGalleryToIdb(synced.id, []);
+      }
+    }
     setActivePhotoIndex(0);
   };
 
@@ -1158,7 +1253,7 @@ export function ProductLabView() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                deleteConcept(concept.id);
+                                handleDeleteConceptEverywhere(concept);
                               }}
                               title="Удалить карточку"
                               className="opacity-85 group-hover:opacity-100 absolute top-2.5 right-2.5 z-10 h-7 w-7 rounded-[7px] bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#7A756D] hover:text-[#B83E3E] hover:border-[#B83E3E] shadow-2xs transition cursor-pointer"
@@ -1286,7 +1381,7 @@ export function ProductLabView() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      deleteConcept(concept.id);
+                      handleDeleteConceptEverywhere(concept);
                     }}
                     title="Удалить карточку"
                     className=" absolute top-6 right-6 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] shadow-2xs transition cursor-pointer"
@@ -1378,11 +1473,19 @@ export function ProductLabView() {
                     <button
                       type="button"
                       onClick={() => {
-                        updateConcept(activeConcept.id, {
+                        const savePatch: Partial<ProductConcept> = {
                           name: activeConcept.name,
                           whatAttracted: activeConcept.whatAttracted,
                           ideaDescription: activeConcept.ideaDescription,
-                        });
+                        };
+                        const updatedSnapshot: ProductConcept = {
+                          ...activeConcept,
+                          ...savePatch,
+                        };
+                        updateConcept(activeConcept.id, savePatch);
+                        if (shouldAutoSyncConcept(updatedSnapshot)) {
+                          handleSyncConceptToCatalog(updatedSnapshot, true);
+                        }
                         notify(
                           'success',
                           '✓ Карточка сохранена',
@@ -1438,13 +1541,18 @@ export function ProductLabView() {
                   <button
                     type="button"
                     onClick={() => {
-                      updateConcept(activeConcept.id, {
+                      const savePatch: Partial<ProductConcept> = {
                         name: activeConcept.name,
                         whatAttracted: activeConcept.whatAttracted,
                         ideaDescription: activeConcept.ideaDescription,
-                      });
-                      if (activeLinkedScenarioModel) {
-                        handleSyncConceptToCatalog(activeConcept, true);
+                      };
+                      const updatedSnapshot: ProductConcept = {
+                        ...activeConcept,
+                        ...savePatch,
+                      };
+                      updateConcept(activeConcept.id, savePatch);
+                      if (shouldAutoSyncConcept(updatedSnapshot)) {
+                        handleSyncConceptToCatalog(updatedSnapshot, true);
                       }
                       notify(
                         'success',
@@ -1470,9 +1578,7 @@ export function ProductLabView() {
                   <button
                     type="button"
                     onClick={() => {
-                      const idToRemove = activeConcept.id;
-                      setSelectedConceptId(null);
-                      deleteConcept(idToRemove);
+                      handleDeleteConceptEverywhere(activeConcept);
                     }}
                     className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
                   >
@@ -1690,6 +1796,7 @@ export function ProductLabView() {
                             brandFilter !== 'ALL' &&
                             normalizeLabBrandCode(brandFilter) !== nextBrand
                           ) {
+                            prevBrandFilterRef.current = nextBrand as typeof brandFilter;
                             setBrandFilter(nextBrand as typeof brandFilter);
                           }
                           handleSyncConceptToCatalog(
@@ -1908,6 +2015,15 @@ export function ProductLabView() {
               onSyncToScenarioCatalog={(c) => {
                 handleSyncConceptToCatalog(c);
               }}
+              onSyncConcept={(nextConcept) => {
+                if (nextConcept.stage === 'REJECTED') {
+                  if (findLinkedScenarioModelForConcept(nextConcept, liveScenarioModels)) {
+                    handleSyncConceptToCatalog(nextConcept, true);
+                  }
+                  return;
+                }
+                handleSyncConceptToCatalog(nextConcept, true);
+              }}
               onCreateTaskForConcept={(title, assigneeId, deadline) => {
                 createTask({
                   title,
@@ -1930,9 +2046,7 @@ export function ProductLabView() {
               <button
                 type="button"
                 onClick={() => {
-                  const idToRemove = activeConcept.id;
-                  setSelectedConceptId(null);
-                  deleteConcept(idToRemove);
+                  handleDeleteConceptEverywhere(activeConcept);
                 }}
                 className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
               >
@@ -1944,11 +2058,19 @@ export function ProductLabView() {
                 <button
                   type="button"
                   onClick={() => {
-                    updateConcept(activeConcept.id, {
+                    const savePatch: Partial<ProductConcept> = {
                       name: activeConcept.name,
                       whatAttracted: activeConcept.whatAttracted,
                       ideaDescription: activeConcept.ideaDescription,
-                    });
+                    };
+                    const updatedSnapshot: ProductConcept = {
+                      ...activeConcept,
+                      ...savePatch,
+                    };
+                    updateConcept(activeConcept.id, savePatch);
+                    if (shouldAutoSyncConcept(updatedSnapshot)) {
+                      handleSyncConceptToCatalog(updatedSnapshot, true);
+                    }
                     notify(
                       'success',
                       '✓ Карточка сохранена',
@@ -1963,11 +2085,19 @@ export function ProductLabView() {
                 <button
                   type="button"
                   onClick={() => {
-                    updateConcept(activeConcept.id, {
+                    const savePatch: Partial<ProductConcept> = {
                       name: activeConcept.name,
                       whatAttracted: activeConcept.whatAttracted,
                       ideaDescription: activeConcept.ideaDescription,
-                    });
+                    };
+                    const updatedSnapshot: ProductConcept = {
+                      ...activeConcept,
+                      ...savePatch,
+                    };
+                    updateConcept(activeConcept.id, savePatch);
+                    if (shouldAutoSyncConcept(updatedSnapshot)) {
+                      handleSyncConceptToCatalog(updatedSnapshot, true);
+                    }
                     notify(
                       'success',
                       '✓ Карточка сохранена',
@@ -2733,7 +2863,17 @@ export function ProductLabView() {
           concept={activeConcept}
           onClose={() => setPdfConstructorOpen(false)}
           onSaveToConcept={(patch) => {
+            const updatedSnapshot: ProductConcept = {
+              ...activeConcept,
+              ...patch,
+            };
             updateConcept(activeConcept.id, patch);
+            if (
+              shouldAutoSyncConcept(updatedSnapshot) ||
+              Boolean(patch.productionOrders && patch.productionOrders.length > 0)
+            ) {
+              handleSyncConceptToCatalog(updatedSnapshot, true);
+            }
             notify('success', 'PDF-спецификация выгружена, параметры сохранены в карточку');
           }}
         />

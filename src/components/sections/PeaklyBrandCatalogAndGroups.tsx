@@ -59,6 +59,8 @@ import {
   saveProductGroups,
 } from '@/lib/productGroups';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
+import { usePlatform } from '@/context/PlatformContext';
+import type { BrandFilter } from '@/types/platform';
 
 function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
@@ -100,6 +102,7 @@ export function BrandCabinetsMatrixTable({
   onLaunchAllCabinets,
   onResetStarterCabinets,
 }: BrandCabinetsMatrixTableProps) {
+  const { concepts, navigateTo } = usePlatform();
   const gt = multiBrandSummary.groupTotal;
   const activeCount = multiBrandSummary.brands.filter(
     (b) => b.hasScenario && b.hasModels && b.annualRevenueRub > 0
@@ -129,6 +132,11 @@ export function BrandCabinetsMatrixTable({
                 activeBrandFilter !== 'ALL' &&
                 normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
               const isActive = b.hasScenario && b.hasModels;
+              const rndCount = concepts.filter(
+                (c) =>
+                  !c.isArchived &&
+                  normalizePortfolioBrandCode(c.brandId) === b.brandCode
+              ).length;
 
               return (
                 <tr
@@ -150,7 +158,7 @@ export function BrandCabinetsMatrixTable({
                     <div className="flex items-center gap-2.5">
                       <div className={`h-8 w-1.5 rounded-full shrink-0 ${accent.accentBar}`} />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[13.5px] font-extrabold text-[#111827] tracking-tight">
                             {b.displayCode}
                           </span>
@@ -163,6 +171,25 @@ export function BrandCabinetsMatrixTable({
                           >
                             {b.modelsCount} SKU
                           </span>
+                          {rndCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (b.selectedScenarioId !== null) {
+                                  onSelectActiveScenarioId(b.selectedScenarioId, b.brandCode);
+                                }
+                                onSelectBrandFilter(b.brandCode);
+                                navigateTo('product-lab', {
+                                  brandId: b.brandCode as BrandFilter,
+                                });
+                              }}
+                              title={`Открыть Лабораторию R&D бренда ${b.displayCode}`}
+                              className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer"
+                            >
+                              R&D: {rndCount} в работе
+                            </button>
+                          )}
                         </div>
                         <div className="text-[10.5px] text-[#64748B] truncate max-w-[165px]">
                           {unitCfg.categoryDefault} · {b.primaryUnit}
@@ -516,6 +543,7 @@ export function PeaklyMasterCabinetsSummary({
   onOpenStrategySummary,
   onOpenStudioCanvas,
 }: PeaklyMasterCabinetsSummaryProps) {
+  const { concepts, navigateTo } = usePlatform();
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
   const [procurementWavesOpen, setProcurementWavesOpen] = useState(false);
@@ -1803,6 +1831,15 @@ export function PeaklyMasterCabinetsSummary({
                           onNavigateSection('finance');
                         }
                       } else {
+                        const clickedBrand = multiBrandSummary.brands.find(
+                          (b) => b.brandCode === seg.key
+                        );
+                        if (clickedBrand && clickedBrand.selectedScenarioId !== null) {
+                          onSelectActiveScenarioId(
+                            clickedBrand.selectedScenarioId,
+                            clickedBrand.brandCode
+                          );
+                        }
                         onSelectBrandFilter(seg.key);
                       }
                     }}
@@ -1818,6 +1855,42 @@ export function PeaklyMasterCabinetsSummary({
                           <span className="text-[14px] font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate">
                             {seg.label}
                           </span>
+                          {waterfallViewMode === 'brands' &&
+                            (() => {
+                              const rndCount = concepts.filter(
+                                (c) =>
+                                  !c.isArchived &&
+                                  normalizePortfolioBrandCode(c.brandId) === seg.key
+                              ).length;
+                              if (rndCount <= 0) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const clickedBrand = multiBrandSummary.brands.find(
+                                      (b) => b.brandCode === seg.key
+                                    );
+                                    if (
+                                      clickedBrand &&
+                                      clickedBrand.selectedScenarioId !== null
+                                    ) {
+                                      onSelectActiveScenarioId(
+                                        clickedBrand.selectedScenarioId,
+                                        clickedBrand.brandCode
+                                      );
+                                    }
+                                    onSelectBrandFilter(seg.key);
+                                    navigateTo('product-lab', {
+                                      brandId: seg.key as BrandFilter,
+                                    });
+                                  }}
+                                  className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer shrink-0"
+                                >
+                                  R&D: {rndCount} в работе
+                                </button>
+                              );
+                            })()}
                         </div>
                         <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md shrink-0 bg-[#EEF2F6] dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7]">
                           {seg.pct.toFixed(1).replace('.', ',')}%

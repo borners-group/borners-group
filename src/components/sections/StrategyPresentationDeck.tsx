@@ -32,9 +32,85 @@ import {
   formatCurrencyRub,
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
-import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import {
+  GrowthScenarioDef,
+  MONTHS_SHORT_RU,
+  ScenarioModelSpec,
+  computeModelScenarioMetrics,
+  resolvePublicAssetUrl,
+} from '@/lib/scenarioData';
+import { ACTING_2027_SCENARIO_ID, getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
+import {
+  isBrandScenarioExplicitlyNone,
+  resolveEffectiveScenarioForModel,
+} from '@/lib/portfolioPersistence';
+import {
+  computeMultiBrandPortfolioSummary,
+  detectModelBrandPortfolioLabel,
+  matchesBrandFilter,
+  normalizePortfolioBrandCode,
+} from '@/lib/unifiedBusinessEngine';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import { INITIAL_STRATEGIES } from '@/lib/initial-strategies';
+
+const DECK_BRAND_PROFILES = [
+  {
+    code: 'BORNERS' as const,
+    name: 'BORNERS',
+    segment: 'Масс-маркет+ · Мужское и унисекс бельё',
+    tagline: 'Инженерный комфорт на каждый день в мультипаках 3–6 шт.',
+    description:
+      'Флагманский бренд мужского и унисекс базового белья, тканых поплиновых боксеров и подарочных наборов.',
+    targetMarginPct: 72,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    topBorderClass: 'border-t-[#181715]',
+  },
+  {
+    code: 'NA_TELE' as const,
+    name: 'НА ТЕЛЕ',
+    segment: 'Премиум · Архитектура «второй кожи»',
+    tagline: 'Тактильный минимализм, лазерный край Free-Cut и палитра Skin Tone',
+    description:
+      'Женская бесшовная капсула из микромодала Lenzing Air с невидимой посадкой и кашированной упаковкой.',
+    targetMarginPct: 75,
+    heroImage: 'images/products/natele-editorial-hero.jpg',
+    topBorderClass: 'border-t-[#7D7268]',
+  },
+  {
+    code: 'AKUSHA' as const,
+    name: 'AKUSHA',
+    segment: 'Детская анатомическая и босоногая обувь',
+    tagline: 'Широкий анатомический мыс, гибкая подошва zero-drop и натуральная кожа',
+    description:
+      'Всесезонная матрица детской обуви (24 карточки / 31 цветомодель, размеры 18–31): от пинеток и сандалий до ботинок и дутиков.',
+    targetMarginPct: 65,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    topBorderClass: 'border-t-[#2563EB]',
+  },
+  {
+    code: 'LISKANI' as const,
+    name: 'LISKANI',
+    segment: 'Домашний текстиль и интерьерные шторы',
+    tagline: 'Готовые шторы блэкаут, мраморный бархат и тюль отельного качества пошива',
+    description:
+      '33 базовые карточки, развёрнутые в 269 размерных SKU по ширине и высоте под стандартные и панорамные потолки.',
+    targetMarginPct: 62,
+    heroImage: 'images/products/natele-editorial-hero.jpg',
+    topBorderClass: 'border-t-[#0F766E]',
+  },
+  {
+    code: 'FUKAI' as const,
+    name: 'FUKAI',
+    segment: 'Функциональный текстиль и аксессуары для сна',
+    tagline: 'Тактильные товары для глубокого сна и ежедневного восстановления',
+    description:
+      'Высокомаржинальная линейка аксессуаров для сна с высоким процентом выкупа (85%+) и компактной логистикой ФБО.',
+    targetMarginPct: 68,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    topBorderClass: 'border-t-[#4F46E5]',
+  },
+] as const;
 
 interface SlideMeta {
   id: string;
@@ -214,19 +290,96 @@ export function StrategyPresentationDeck({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewLayout, isFullscreen]);
 
-  const activeBrands = useMemo(
-    () => brands.filter((b) => !b.isStrategyInDevelopment),
-    [brands]
+  const livePortfolio = useLiveScenarioPortfolio();
+
+  const holdingSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(
+        livePortfolio.models,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand
+      ),
+    [
+      livePortfolio.models,
+      livePortfolio.scenarios,
+      livePortfolio.selectedScenarioByBrand,
+    ]
   );
-  const upcomingBrands = useMemo(
-    () => brands.filter((b) => b.isStrategyInDevelopment),
-    [brands]
-  );
+
+  const liveScopedEntries = useMemo(() => {
+    const entries: {
+      model: ScenarioModelSpec;
+      scenario: GrowthScenarioDef;
+      metrics: ReturnType<typeof computeModelScenarioMetrics>;
+    }[] = [];
+
+    for (const m of livePortfolio.models) {
+      if (!matchesBrandFilter(m, brandFilter)) continue;
+      const bCode = normalizePortfolioBrandCode(
+        m.customBrandLabel || m.brandId || 'BORNERS'
+      );
+      if (isBrandScenarioExplicitlyNone(bCode, livePortfolio.selectedScenarioByBrand)) {
+        continue;
+      }
+      const selectedScenIdForBrand =
+        bCode !== 'ALL' ? livePortfolio.selectedScenarioByBrand[bCode] : undefined;
+      if (
+        selectedScenIdForBrand === ACTING_2027_SCENARIO_ID &&
+        !getActingSkuByWbOrVendor(m.wbArticle || '', m.code)
+      ) {
+        continue;
+      }
+      const scenario = resolveEffectiveScenarioForModel(
+        m,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand,
+        livePortfolio.currentScenario
+      );
+      const metrics = computeModelScenarioMetrics(m, scenario);
+      entries.push({ model: m, scenario, metrics });
+    }
+
+    return entries.sort(
+      (a, b) =>
+        b.metrics.annualRevenueRub - a.metrics.annualRevenueRub ||
+        b.model.retailPriceRub - a.model.retailPriceRub
+    );
+  }, [
+    livePortfolio.models,
+    livePortfolio.scenarios,
+    livePortfolio.selectedScenarioByBrand,
+    livePortfolio.currentScenario,
+    brandFilter,
+  ]);
+
+  const liveBrandRow = useMemo(() => {
+    if (!brandFilter || brandFilter === 'ALL') return null;
+    const norm = normalizePortfolioBrandCode(brandFilter);
+    return holdingSummary.brands.find((b) => b.brandCode === norm) || null;
+  }, [brandFilter, holdingSummary.brands]);
+
+  const liveBaseRevenueRub =
+    !brandFilter || brandFilter === 'ALL'
+      ? holdingSummary.groupTotal.annualRevenueRub
+      : (liveBrandRow?.annualRevenueRub ?? 0);
+
+  const liveBaseProfitRub =
+    !brandFilter || brandFilter === 'ALL'
+      ? holdingSummary.groupTotal.annualEstimatedOperatingProfitRub
+      : (liveBrandRow?.annualEstimatedOperatingProfitRub ?? 0);
+
+  const liveBaseMonthlyRows =
+    !brandFilter || brandFilter === 'ALL'
+      ? holdingSummary.groupTotal.monthlyRows
+      : (liveBrandRow?.monthlyRows ?? []);
 
   const filteredProducts = useMemo(
     () =>
       products.filter(
-        (p) => !p.isArchived && (brandFilter === 'ALL' || p.brandId === brandFilter)
+        (p) =>
+          !p.isArchived &&
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(p.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [products, brandFilter]
   );
@@ -237,7 +390,8 @@ export function StrategyPresentationDeck({
         (c) =>
           !c.isArchived &&
           !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage) &&
-          (brandFilter === 'ALL' || c.brandId === brandFilter)
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [concepts, brandFilter]
   );
@@ -245,17 +399,68 @@ export function StrategyPresentationDeck({
   const filteredLaunches = useMemo(
     () =>
       launches
-        .filter((l) => !l.isArchived && (brandFilter === 'ALL' || l.brandId === brandFilter))
+        .filter(
+          (l) =>
+            !l.isArchived &&
+            (brandFilter === 'ALL' ||
+              normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
+        )
         .sort((a, b) => a.startDate.localeCompare(b.startDate)),
     [launches, brandFilter]
   );
 
   const monthlyChartData = useMemo(() => {
+    const mult =
+      financialScenario === 'Conservative'
+        ? 0.82
+        : financialScenario === 'Optimistic'
+          ? 1.22
+          : 1.0;
+
     const scenarioRows = financialPlans.filter(
       (r) =>
         r.scenario === financialScenario &&
-        (brandFilter === 'ALL' || r.brandId === brandFilter)
+        (brandFilter === 'ALL' ||
+          normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
     );
+
+    const factByMonth = new Map<string, { rev: number | null; prof: number | null }>();
+    for (const row of scenarioRows) {
+      const prev = factByMonth.get(row.periodMonth) || { rev: null, prof: null };
+      if (row.actualRevenueRub !== null) {
+        prev.rev = (prev.rev ?? 0) + row.actualRevenueRub;
+      }
+      if (row.actualOperatingProfitRub !== null) {
+        prev.prof = (prev.prof ?? 0) + row.actualOperatingProfitRub;
+      }
+      factByMonth.set(row.periodMonth, prev);
+    }
+
+    if (liveBaseMonthlyRows.length > 0 && liveBaseRevenueRub > 0) {
+      const profitRatio =
+        liveBaseRevenueRub > 0 ? liveBaseProfitRub / liveBaseRevenueRub : 0.22;
+      return liveBaseMonthlyRows.map((mRow, idx) => {
+        const periodMonth = `2027-${String(idx + 1).padStart(2, '0')}`;
+        const planRevRaw = Math.round(mRow.grossSalesRub * mult);
+        const planProfRaw = Math.round(planRevRaw * profitRatio);
+        const fact = factByMonth.get(periodMonth);
+        return {
+          periodMonth,
+          periodLabel: MONTHS_SHORT_RU[idx] || mRow.monthLabel,
+          planRevenueM: Number((planRevRaw / 1_000_000).toFixed(2)),
+          factRevenueM:
+            fact && fact.rev !== null ? Number((fact.rev / 1_000_000).toFixed(2)) : null,
+          planProfitM: Number((planProfRaw / 1_000_000).toFixed(2)),
+          factProfitM:
+            fact && fact.prof !== null ? Number((fact.prof / 1_000_000).toFixed(2)) : null,
+          planRevenueRaw: planRevRaw,
+          factRevenueRaw: fact?.rev ?? null,
+          planProfitRaw: planProfRaw,
+          factProfitRaw: fact?.prof ?? null,
+        };
+      });
+    }
+
     const byMonth = new Map<
       string,
       {
@@ -313,14 +518,42 @@ export function StrategyPresentationDeck({
     return Array.from(byMonth.values()).sort((a, b) =>
       a.periodMonth.localeCompare(b.periodMonth)
     );
-  }, [financialPlans, financialScenario, brandFilter]);
+  }, [
+    financialPlans,
+    financialScenario,
+    brandFilter,
+    liveBaseMonthlyRows,
+    liveBaseRevenueRub,
+    liveBaseProfitRub,
+  ]);
 
   // Сводка по всем 3 сценариям для сравнительной таблицы на Слайде 07
   const scenarioSummaryTable = useMemo(() => {
     const scenarios: FinancialScenario[] = ['Conservative', 'Base', 'Optimistic'];
+    if (liveBaseRevenueRub > 0) {
+      return scenarios.map((sc) => {
+        const mult = sc === 'Conservative' ? 0.82 : sc === 'Optimistic' ? 1.22 : 1.0;
+        const rev = Math.round(liveBaseRevenueRub * mult);
+        const prof = Math.round(liveBaseProfitRub * mult);
+        const mkt = Math.round(rev * 0.1);
+        const ros = rev > 0 ? Number(((prof / rev) * 100).toFixed(1)) : 0;
+        return {
+          scenario: sc,
+          label: SCENARIO_LABELS_RU[sc],
+          revenueRub: rev,
+          profitRub: prof,
+          marketingRub: mkt,
+          rosPct: ros,
+        };
+      });
+    }
+
     return scenarios.map((sc) => {
       const rows = financialPlans.filter(
-        (r) => r.scenario === sc && (brandFilter === 'ALL' || r.brandId === brandFilter)
+        (r) =>
+          r.scenario === sc &&
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
       );
       const rev = rows.reduce((s, r) => s + r.plannedRevenueRub, 0);
       const prof = rows.reduce((s, r) => s + r.plannedOperatingProfitRub, 0);
@@ -335,7 +568,7 @@ export function StrategyPresentationDeck({
         rosPct: ros,
       };
     });
-  }, [financialPlans, brandFilter]);
+  }, [financialPlans, brandFilter, liveBaseRevenueRub, liveBaseProfitRub]);
 
   const totalPlanYearRub = useMemo(
     () => monthlyChartData.reduce((acc, m) => acc + m.planRevenueRaw, 0),
@@ -348,13 +581,33 @@ export function StrategyPresentationDeck({
   );
 
   const avgMarginPct = useMemo(() => {
+    if (liveScopedEntries.length > 0) {
+      const sum = liveScopedEntries.reduce((s, { model }) => {
+        const grossPct =
+          model.retailPriceRub > 0
+            ? ((model.retailPriceRub - model.unitCostRub) / model.retailPriceRub) * 100
+            : 0;
+        return s + Math.max(0, Math.min(95, grossPct));
+      }, 0);
+      return Number((sum / liveScopedEntries.length).toFixed(1));
+    }
     if (filteredProducts.length === 0) return 73.5;
     const sum = filteredProducts.reduce(
       (s, p) => s + calculateUnitEconomics(p.economics).marginPct,
       0
     );
     return Number((sum / filteredProducts.length).toFixed(1));
-  }, [filteredProducts]);
+  }, [liveScopedEntries, filteredProducts]);
+
+  const liveSkuCount =
+    liveScopedEntries.length > 0 ? liveScopedEntries.length : filteredProducts.length;
+
+  const liveUnitsSummary = useMemo(() => {
+    if (brandFilter !== 'ALL' && liveBrandRow && liveBrandRow.totalProcurementQuantity > 0) {
+      return `${Math.round(liveBrandRow.totalProcurementQuantity).toLocaleString('ru-RU')} ${liveBrandRow.primaryUnit}`;
+    }
+    return `${holdingSummary.groupTotal.modelsCount} карточек в 5 брендах`;
+  }, [brandFilter, liveBrandRow, holdingSummary.groupTotal.modelsCount]);
 
   const jumpToWorkingSection = (
     section:
@@ -364,8 +617,20 @@ export function StrategyPresentationDeck({
       | 'product-catalog'
       | 'launch-calendar'
       | 'finance',
-    opts?: { productId?: string; conceptId?: string; launchId?: string }
+    opts?: {
+      productId?: string;
+      conceptId?: string;
+      launchId?: string;
+      scenarioModelId?: string;
+    }
   ) => {
+    if (opts?.scenarioModelId && typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem('borners_open_scenario_model_id', opts.scenarioModelId);
+      } catch {
+        // ignore sessionStorage errors
+      }
+    }
     setIsFullscreen(false);
     setPlatformMode('management');
     navigateTo(section, opts);
@@ -410,7 +675,7 @@ export function StrategyPresentationDeck({
                       Чёткое разделение ДНК
                     </div>
                     <div className="text-[12.5px] text-[#6E6A63] mt-0.5 leading-snug">
-                      BORNERS (масс-маркет+) и НА ТЕЛЕ (премиум «вторая кожа»)
+                      5 независимых ниш: BORNERS, НА ТЕЛЕ, AKUSHA, LISKANI и FUKAI
                     </div>
                   </div>
                   <div className="sm:border-l-[1.5px] sm:border-[#DFD8CC] sm:pl-5">
@@ -545,97 +810,118 @@ export function StrategyPresentationDeck({
             </div>
           </div>
 
-          {/* Карточки брендов портфеля — идеальная зеркальная симметрия */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {activeBrands.map((b) => {
-              const bProducts = products.filter(
-                (p) => !p.isArchived && (p.brandId === b.code || p.brandId === b.id)
+          {/* Карточки 5 активных брендов холдинга с живыми планами 2027 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {DECK_BRAND_PROFILES.filter(
+              (bp) =>
+                brandFilter === 'ALL' ||
+                normalizeLabBrandCode(brandFilter) === bp.code
+            ).map((bp) => {
+              const liveRow = holdingSummary.brands.find((r) => r.brandCode === bp.code);
+              const legacyBrand = brands.find(
+                (b) => normalizeLabBrandCode(b.code || b.id) === bp.code
               );
               const bConcepts = concepts.filter(
                 (c) =>
                   !c.isArchived &&
                   !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage) &&
-                  (c.brandId === b.code || c.brandId === b.id)
+                  normalizeLabBrandCode(c.brandId) === bp.code
               );
-              const isNatele = b.code === 'NA_TELE';
+              const firstLiveModelWithPhoto = livePortfolio.models.find(
+                (m) =>
+                  normalizePortfolioBrandCode(m.customBrandLabel || m.brandId || 'BORNERS') ===
+                    bp.code && Boolean(m.gallery?.[0]?.url)
+              );
+              const rawHero =
+                bp.code === 'BORNERS' || bp.code === 'NA_TELE'
+                  ? legacyBrand?.heroImage || bp.heroImage
+                  : firstLiveModelWithPhoto?.gallery?.[0]?.url || bp.heroImage;
+              const resolvedHero =
+                rawHero.startsWith('data:') || rawHero.startsWith('http')
+                  ? rawHero
+                  : resolvePublicAssetUrl(rawHero);
+              const liveRev2027 =
+                liveRow?.annualRevenueRub ?? legacyBrand?.plannedRevenue2027Rub ?? 0;
+              const targetMargin =
+                legacyBrand && !legacyBrand.isStrategyInDevelopment && legacyBrand.targetMarginPct > 0
+                  ? legacyBrand.targetMarginPct
+                  : bp.targetMarginPct;
+              const skuCount = liveRow?.modelsCount ?? 0;
 
               return (
                 <div
-                  key={b.id}
-                  className={`rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] border-t-[3px] ${
-                    isNatele ? 'border-t-[#7D7268]' : 'border-t-[#181715]'
-                  } overflow-hidden flex flex-col justify-between h-full`}
+                  key={bp.code}
+                  className={`rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] border-t-[3px] ${bp.topBorderClass} overflow-hidden flex flex-col justify-between h-full`}
                 >
-                  <div className="h-60 w-full bg-[#F3EFE8] border-b-[1.5px] border-[#CFC8BC] overflow-hidden">
+                  <div className="h-48 w-full bg-[#F3EFE8] border-b-[1.5px] border-[#CFC8BC] overflow-hidden relative">
                     <img
-                      src={resolvePublicAssetUrl(b.heroImage)}
-                      alt={b.name}
+                      src={resolvedHero}
+                      alt={bp.name}
                       className="h-full w-full object-cover object-center"
                     />
+                    <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-[5px] bg-white/95 border border-[#CFC8BC] font-mono text-[10px] font-semibold text-[#181715]">
+                      Активный бренд 2027
+                    </span>
                   </div>
-                  <div className="p-6 flex flex-col justify-between space-y-5 flex-1">
-                    <div className="space-y-2 min-h-[136px]">
-                      <div className="text-[12px] font-medium text-[#7A756D]">
-                        {b.segment}
+                  <div className="p-5 flex flex-col justify-between space-y-4 flex-1">
+                    <div className="space-y-1.5 min-h-[132px]">
+                      <div className="text-[11.5px] font-medium text-[#7A756D]">
+                        {bp.segment}
                       </div>
-                      <h3 className="font-serif-editorial text-[34px] font-medium text-[#181715] leading-none">
-                        {b.name}
+                      <h3 className="font-serif-editorial text-[30px] font-medium text-[#181715] leading-none">
+                        {bp.name}
                       </h3>
-                      <p className="text-[14px] font-semibold text-[#181715]">{b.tagline}</p>
-                      <p className="text-[13.5px] text-[#6E6A63] leading-relaxed">
-                        {b.description}
+                      <p className="text-[13.5px] font-semibold text-[#181715]">
+                        {bp.tagline}
+                      </p>
+                      <p className="text-[13px] text-[#6E6A63] leading-relaxed">
+                        {bp.description}
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-3 divide-x-[1.5px] divide-[#DFD8CC] pt-4 border-t-[1.5px] border-[#CFC8BC]">
-                      <div className="pr-3">
-                        <div className="text-[11.5px] text-[#8C867E]">
-                          План 2027
-                        </div>
-                        {isEditMode ? (
+                    <div className="grid grid-cols-3 divide-x-[1.5px] divide-[#DFD8CC] pt-3.5 border-t-[1.5px] border-[#CFC8BC]">
+                      <div className="pr-2.5">
+                        <div className="text-[11px] text-[#8C867E]">План 2027</div>
+                        {isEditMode && legacyBrand ? (
                           <input
                             type="number"
-                            value={b.plannedRevenue2027Rub}
+                            value={legacyBrand.plannedRevenue2027Rub || Math.round(liveRev2027)}
                             onChange={(e) =>
-                              updateBrand(b.id, {
+                              updateBrand(legacyBrand.id, {
                                 plannedRevenue2027Rub: Math.max(0, Number(e.target.value) || 0),
                               })
                             }
-                            className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[13px] font-mono font-semibold text-[#181715]"
+                            className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[12px] font-mono font-semibold text-[#181715]"
                           />
                         ) : (
-                          <div className="font-serif-editorial text-[22px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                            {hasFinance ? formatCompactRub(b.plannedRevenue2027Rub) : 'Скрыто'}
+                          <div className="font-serif-editorial text-[20px] font-medium text-[#181715] mt-0.5 tabular-nums">
+                            {hasFinance ? formatCompactRub(liveRev2027) : 'Скрыто'}
                           </div>
                         )}
                       </div>
-                      <div className="px-3">
-                        <div className="text-[11.5px] text-[#8C867E]">
-                          Целевая маржа
-                        </div>
-                        {isEditMode ? (
+                      <div className="px-2.5">
+                        <div className="text-[11px] text-[#8C867E]">Целевая маржа</div>
+                        {isEditMode && legacyBrand ? (
                           <input
                             type="number"
-                            value={b.targetMarginPct}
+                            value={targetMargin}
                             onChange={(e) =>
-                              updateBrand(b.id, {
+                              updateBrand(legacyBrand.id, {
                                 targetMarginPct: Math.max(0, Number(e.target.value) || 0),
                               })
                             }
-                            className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[13px] font-mono font-semibold text-[#181715]"
+                            className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[12px] font-mono font-semibold text-[#181715]"
                           />
                         ) : (
-                          <div className="font-serif-editorial text-[22px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                            {hasFinance ? `${b.targetMarginPct}%` : 'Скрыто'}
+                          <div className="font-serif-editorial text-[20px] font-medium text-[#181715] mt-0.5 tabular-nums">
+                            {hasFinance ? `${targetMargin}%` : 'Скрыто'}
                           </div>
                         )}
                       </div>
-                      <div className="pl-3">
-                        <div className="text-[11.5px] text-[#8C867E]">
-                          Матрица / R&amp;D
-                        </div>
-                        <div className="font-serif-editorial text-[22px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                          {bProducts.length} SKU · {bConcepts.length} мод.
+                      <div className="pl-2.5">
+                        <div className="text-[11px] text-[#8C867E]">Матрица / R&amp;D</div>
+                        <div className="font-serif-editorial text-[18px] font-medium text-[#181715] mt-0.5 tabular-nums leading-tight">
+                          {skuCount} SKU{bp.code === 'LISKANI' ? ' (269)' : ''} · {bConcepts.length} R&amp;D
                         </div>
                       </div>
                     </div>
@@ -644,43 +930,6 @@ export function StrategyPresentationDeck({
               );
             })}
           </div>
-
-          {/* Бренды портфеля в разработке (без пометки «Новое направление») */}
-          {upcomingBrands.length > 0 && (
-            <div className="rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b-[1.5px] border-[#CFC8BC] pb-3">
-                <div className="text-[13.5px] font-semibold text-[#181715]">
-                  Бренды портфеля в разработке (2026–2027)
-                </div>
-                <span className="text-[12.5px] text-[#7A756D]">
-                  Исследование ниши, подбор фабрик и расчёт экономики
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {upcomingBrands.map((ub) => (
-                  <div
-                    key={ub.id}
-                    className="rounded-[10px] bg-[#FAF8F5] border-[1.5px] border-[#D8D1C5] p-5 flex items-start justify-between gap-4 min-h-[132px]"
-                  >
-                    <div className="space-y-1">
-                      <div className="text-[11.5px] text-[#8C867E]">
-                        В проработке стратегии
-                      </div>
-                      <div className="font-serif-editorial text-[26px] font-medium text-[#181715] leading-none">
-                        {ub.name}
-                      </div>
-                      <p className="text-[13px] text-[#6E6A63] leading-relaxed pt-1">
-                        {ub.description}
-                      </p>
-                    </div>
-                    <span className="shrink-0 px-2.5 py-1 rounded-[6px] bg-white border-[1.5px] border-[#D4CDC2] text-[11px] font-medium text-[#5C5852]">
-                      В разработке
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       );
     }
@@ -1017,7 +1266,11 @@ export function StrategyPresentationDeck({
                   ДЕЙСТВУЮЩАЯ МАТРИЦА SKU
                 </div>
                 <h3 className="text-[20px] font-semibold text-[#161615] mt-0.5">
-                  Флагманские модели в каталоге ({filteredProducts.length} SKU)
+                  Флагманские модели в каталоге ({liveSkuCount} SKU
+                  {brandFilter !== 'ALL' && normalizeLabBrandCode(brandFilter) === 'LISKANI'
+                    ? ' · 269 размерных вариаций'
+                    : ''}
+                  )
                 </h3>
               </div>
               <button
@@ -1031,64 +1284,150 @@ export function StrategyPresentationDeck({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredProducts.slice(0, 6).map((p) => {
-                const ue = calculateUnitEconomics(p.economics);
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => jumpToWorkingSection('product-catalog', { productId: p.id })}
-                    className="rounded-[6px] border border-[#E5E0D8] hover:border-[#161615] bg-[#F8F6F2] p-4 flex flex-col justify-between gap-4 cursor-pointer transition group"
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <div className="h-20 w-20 rounded-[4px] bg-[#EAE5DC] border border-[#E5E0D8] overflow-hidden shrink-0">
-                        <img
-                          src={resolvePublicAssetUrl(p.imageUrl)}
-                          alt={p.name}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-[#7A756D]">
-                          {formatLabBrandLabel(p.brandId)} · {p.sku}
-                        </div>
-                        <div className="text-[14.5px] font-semibold text-[#161615] group-hover:underline truncate mt-0.5">
-                          {p.name}
-                        </div>
-                        <div className="text-[12px] text-[#6E6A63] truncate mt-0.5">
-                          {p.fabricComposition} · {p.fabricDensityGsm} г/м²
-                        </div>
-                      </div>
-                    </div>
+              {liveScopedEntries.length > 0
+                ? liveScopedEntries.slice(0, 6).map(({ model: m, metrics }) => {
+                    const rawImg =
+                      m.gallery?.[0]?.url ||
+                      'images/products/borners-editorial-hero.jpg';
+                    const resolvedImg =
+                      rawImg.startsWith('data:') || rawImg.startsWith('http')
+                        ? rawImg
+                        : resolvePublicAssetUrl(rawImg);
+                    const grossMarginPct =
+                      m.retailPriceRub > 0
+                        ? Math.round(
+                            Math.max(
+                              0,
+                              ((m.retailPriceRub - m.unitCostRub) / m.retailPriceRub) * 100
+                            )
+                          )
+                        : 0;
 
-                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#E5E0D8] text-[12.5px]">
-                      <div>
-                        <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
-                          Цена МП
-                        </span>
-                        <span className="font-semibold text-[#161615]">
-                          {formatCurrencyRub(p.economics.actualRetailPrice)}
-                        </span>
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() =>
+                          jumpToWorkingSection('product-catalog', {
+                            scenarioModelId: m.id,
+                          })
+                        }
+                        className="rounded-[6px] border border-[#E5E0D8] hover:border-[#161615] bg-[#F8F6F2] p-4 flex flex-col justify-between gap-4 cursor-pointer transition group"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="h-20 w-20 rounded-[4px] bg-[#EAE5DC] border border-[#E5E0D8] overflow-hidden shrink-0">
+                            <img
+                              src={resolvedImg}
+                              alt={m.title}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] uppercase tracking-wider text-[#7A756D]">
+                              {detectModelBrandPortfolioLabel(m)} · {m.code}
+                            </div>
+                            <div className="text-[14.5px] font-semibold text-[#161615] group-hover:underline truncate mt-0.5">
+                              {m.title}
+                            </div>
+                            <div className="text-[12px] text-[#6E6A63] truncate mt-0.5">
+                              {m.fabric?.composition || m.subtitle || 'Базовая матрица 2027'}
+                              {m.unitsInPack > 1 ? ` · Пак ${m.unitsInPack} шт.` : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#E5E0D8] text-[12.5px]">
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              Цена МП
+                            </span>
+                            <span className="font-semibold text-[#161615]">
+                              {formatCurrencyRub(m.retailPriceRub)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              Себест.
+                            </span>
+                            <span className="font-semibold text-[#161615]">
+                              {hasCost ? formatCurrencyRub(m.unitCostRub) : 'Скрыто'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              План 2027
+                            </span>
+                            <span className="font-semibold text-[#1F6E50]">
+                              {hasFinance
+                                ? formatCompactRub(metrics.annualRevenueRub)
+                                : `${grossMarginPct}%`}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
-                          Себест.
-                        </span>
-                        <span className="font-semibold text-[#161615]">
-                          {hasCost ? formatCurrencyRub(p.economics.unitCostPrice) : 'Скрыто'}
-                        </span>
+                    );
+                  })
+                : filteredProducts.slice(0, 6).map((p) => {
+                    const ue = calculateUnitEconomics(p.economics);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() =>
+                          jumpToWorkingSection('product-catalog', { productId: p.id })
+                        }
+                        className="rounded-[6px] border border-[#E5E0D8] hover:border-[#161615] bg-[#F8F6F2] p-4 flex flex-col justify-between gap-4 cursor-pointer transition group"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="h-20 w-20 rounded-[4px] bg-[#EAE5DC] border border-[#E5E0D8] overflow-hidden shrink-0">
+                            <img
+                              src={resolvePublicAssetUrl(p.imageUrl)}
+                              alt={p.name}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] uppercase tracking-wider text-[#7A756D]">
+                              {formatLabBrandLabel(p.brandId)} · {p.sku}
+                            </div>
+                            <div className="text-[14.5px] font-semibold text-[#161615] group-hover:underline truncate mt-0.5">
+                              {p.name}
+                            </div>
+                            <div className="text-[12px] text-[#6E6A63] truncate mt-0.5">
+                              {p.fabricComposition} · {p.fabricDensityGsm} г/м²
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#E5E0D8] text-[12.5px]">
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              Цена МП
+                            </span>
+                            <span className="font-semibold text-[#161615]">
+                              {formatCurrencyRub(p.economics.actualRetailPrice)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              Себест.
+                            </span>
+                            <span className="font-semibold text-[#161615]">
+                              {hasCost
+                                ? formatCurrencyRub(p.economics.unitCostPrice)
+                                : 'Скрыто'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
+                              Маржа
+                            </span>
+                            <span className="font-semibold text-[#1F6E50]">
+                              {hasFinance ? `${ue.marginPct}%` : '—'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="font-mono text-[10px] uppercase text-[#8C867E] block">
-                          Маржа
-                        </span>
-                        <span className="font-semibold text-[#1F6E50]">
-                          {hasFinance ? `${ue.marginPct}%` : '—'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
             </div>
           </div>
         </div>
@@ -1728,7 +2067,7 @@ export function StrategyPresentationDeck({
                 section: 'product-catalog' as const,
                 step: '02 / КАТАЛОГ SKU',
                 title: 'Матрица и себестоимость',
-                desc: `${filteredProducts.length} утверждённых моделей`,
+                desc: `${liveSkuCount} SKU · ${liveUnitsSummary}`,
               },
               {
                 section: 'launch-calendar' as const,
@@ -1740,7 +2079,9 @@ export function StrategyPresentationDeck({
                 section: 'finance' as const,
                 step: '04 / ФИНАНСЫ 2027',
                 title: 'План / Факт и P&L',
-                desc: 'Юнит-экономика и 3 сценария',
+                desc: hasFinance
+                  ? `${formatCompactRub(totalPlanYearRub)} · Прибыль ${formatCompactRub(totalPlanProfitYearRub)}`
+                  : 'Юнит-экономика и 3 сценария',
               },
             ].map((item) => (
               <button

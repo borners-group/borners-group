@@ -48,7 +48,7 @@ import {
 } from '@/lib/unifiedBusinessEngine';
 import {
   loadAllModelGalleriesFromIdb,
-  loadPortfolioSnapshotFromIdb,
+  loadPortfolioSnapshotWithMetaFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
@@ -71,12 +71,15 @@ import {
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getDeletedModelsRegistry,
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
+  isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
+  resolveEffectiveScenarioForModel,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup,
@@ -96,12 +99,15 @@ export {
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getDeletedModelsRegistry,
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
+  isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
+  resolveEffectiveScenarioForModel,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup,
@@ -141,6 +147,63 @@ export function useLiveScenarioPortfolio() {
 
   const brandFilterRef = useRef(brandFilter);
   brandFilterRef.current = brandFilter;
+  const modelsRef = useRef(models);
+  modelsRef.current = models;
+  const scenariosRef = useRef(scenarios);
+  scenariosRef.current = scenarios;
+  const selectedScenarioByBrandRef = useRef(selectedScenarioByBrand);
+  selectedScenarioByBrandRef.current = selectedScenarioByBrand;
+  const includeGroupRef = useRef(includeGroupPortfolioInS1);
+  includeGroupRef.current = includeGroupPortfolioInS1;
+
+  const cloudDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleCompleteCloudPush = useCallback(
+    (
+      overrides?: {
+        models?: ScenarioModelSpec[];
+        scenarios?: GrowthScenarioDef[];
+        selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>>;
+        includeGroupPortfolioInS1?: boolean;
+      },
+      immediate = false
+    ) => {
+      if (overrides?.models) modelsRef.current = overrides.models;
+      if (overrides?.scenarios) scenariosRef.current = overrides.scenarios;
+      if (overrides?.selectedScenarioByBrand) {
+        selectedScenarioByBrandRef.current = overrides.selectedScenarioByBrand;
+      }
+      if (typeof overrides?.includeGroupPortfolioInS1 === 'boolean') {
+        includeGroupRef.current = overrides.includeGroupPortfolioInS1;
+      }
+
+      const runPush = () => {
+        const byBrandRecord: Record<string, number | null> = {};
+        for (const [k, v] of Object.entries(selectedScenarioByBrandRef.current || {})) {
+          if (v === null || typeof v === 'number') {
+            byBrandRecord[k] = v;
+          }
+        }
+        void pushPortfolioCoreToSupabase({
+          models: modelsRef.current,
+          scenarios: scenariosRef.current,
+          selectedScenarioByBrand: byBrandRecord,
+          includeGroupPortfolioInS1: includeGroupRef.current,
+          deletedModelIds: getDeletedModelsRegistry(),
+        });
+      };
+
+      if (cloudDebounceTimerRef.current) {
+        clearTimeout(cloudDebounceTimerRef.current);
+        cloudDebounceTimerRef.current = null;
+      }
+      if (immediate || typeof window === 'undefined') {
+        runPush();
+      } else {
+        cloudDebounceTimerRef.current = setTimeout(runPush, 350);
+      }
+    },
+    []
+  );
 
   const ignoreSelfEventsRef = useRef(0);
   const dispatchCrossHookEvent = useCallback((eventName: string) => {
@@ -156,7 +219,26 @@ export function useLiveScenarioPortfolio() {
   const syncFromStorage = useCallback(() => {
     if (ignoreSelfEventsRef.current > 0) return;
     const hydratedModels = hydratePortfolioModelsFromStorage();
-    setModels(hydratedModels);
+    setModels((prev) => {
+      // Сохраняем уже загруженные в память base64-фотографии из IndexedDB, если в localStorage они были облегчены
+      const prevById = new Map<string, ScenarioModelSpec>();
+      for (const pm of prev) {
+        prevById.set(pm.id, pm);
+      }
+      return hydratedModels.map((hm) => {
+        const pm = prevById.get(hm.id);
+        if (!pm || !Array.isArray(pm.gallery) || pm.gallery.length === 0) return hm;
+        const hmValidCount = Array.isArray(hm.gallery)
+          ? hm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length
+          : 0;
+        const pmValidCount = pm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length;
+        const isExplicitEmptyInStorage = Array.isArray(hm.gallery) && hm.gallery.length === 0;
+        if (!isExplicitEmptyInStorage && pmValidCount > hmValidCount) {
+          return { ...hm, gallery: pm.gallery };
+        }
+        return hm;
+      });
+    });
 
     const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
     let effectiveScenList = DEFAULT_SCENARIOS_LIST;
@@ -248,73 +330,108 @@ export function useLiveScenarioPortfolio() {
 
   useEffect(() => {
     syncFromStorage();
-    // 1. Восстанавливаем полный слепок моделей и фотогалерей из IndexedDB, если localStorage был переполнен
-    void Promise.all([
-      loadPortfolioSnapshotFromIdb<ScenarioModelSpec>(),
-      loadAllModelGalleriesFromIdb(),
-    ]).then(([idbSnapshot, idbGalleries]) => {
-      setModels((prev) => {
-        let changed = false;
-        let next = [...prev];
 
-        // А) Если в IndexedDB-слепке есть модели, которых нет в localStorage — восстанавливаем их (кроме старых черновиков AKUSHA без официального плана 202706)
-        if (Array.isArray(idbSnapshot) && idbSnapshot.length > 0) {
-          for (const snapMod of idbSnapshot) {
-            if (!snapMod || !snapMod.id || !snapMod.code) continue;
-            if (isModelMarkedDeleted(snapMod)) continue;
-            const isOldAkushaDraft =
-              ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
-                snapMod.code.toUpperCase().startsWith('AKU-') ||
-                snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
-              !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
-            if (isOldAkushaDraft) continue;
-            const exists = next.some(
-              (m) =>
-                m.id === snapMod.id ||
-                m.code.trim().toUpperCase() === snapMod.code.trim().toUpperCase()
+    let cancelled = false;
+    // 1. Сначала дожидаемся восстановления слепка моделей и фотогалерей из IndexedDB,
+    // и только затем сверяемся с облаком Supabase (исключает затирание облака облегчённым localStorage)
+    void (async () => {
+      const [idbSnapMeta, idbGalleries] = await Promise.all([
+        loadPortfolioSnapshotWithMetaFromIdb<ScenarioModelSpec>(),
+        loadAllModelGalleriesFromIdb(),
+      ]);
+      if (cancelled) return;
+
+      let workingModels = hydratePortfolioModelsFromStorage();
+      let localChangedFromIdb = false;
+
+      const localIsoBeforeIdb = getPortfolioUpdatedAt();
+      const localTsBeforeIdb = localIsoBeforeIdb ? Date.parse(localIsoBeforeIdb) : NaN;
+      const idbTs = idbSnapMeta?.updatedAtIso ? Date.parse(idbSnapMeta.updatedAtIso) : NaN;
+      const isIdbNewerThanLocalStorage =
+        Number.isFinite(idbTs) && (!Number.isFinite(localTsBeforeIdb) || idbTs > localTsBeforeIdb);
+
+      if (idbSnapMeta && Array.isArray(idbSnapMeta.models) && idbSnapMeta.models.length > 0) {
+        for (const snapMod of idbSnapMeta.models) {
+          if (!snapMod || !snapMod.id || !snapMod.code) continue;
+          if (isModelMarkedDeleted(snapMod)) continue;
+          const isOldAkushaDraft =
+            ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
+              snapMod.code.toUpperCase().startsWith('AKU-') ||
+              snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
+            !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
+          if (isOldAkushaDraft) continue;
+
+          const existingIdx = workingModels.findIndex(
+            (m) =>
+              m.id === snapMod.id ||
+              m.code.trim().toUpperCase() === snapMod.code.trim().toUpperCase()
+          );
+          if (existingIdx < 0) {
+            workingModels.push(ensureModelUnifiedV11(applyCategoryWbUnitEconomics(snapMod)));
+            localChangedFromIdb = true;
+          } else if (isIdbNewerThanLocalStorage) {
+            workingModels[existingIdx] = ensureModelUnifiedV11(
+              applyCategoryWbUnitEconomics(snapMod)
             );
-            if (!exists) {
-              next.push(ensureModelUnifiedV11(applyCategoryWbUnitEconomics(snapMod)));
-              changed = true;
-            }
+            localChangedFromIdb = true;
           }
         }
+      }
 
-        // Б) Подтягиваем фотогалереи из IndexedDB для всех моделей
-        const galleryKeys = Object.keys(idbGalleries || {});
-        if (galleryKeys.length > 0) {
-          next = next.map((m) => {
-            const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
-              | GalleryMediaItem[]
-              | undefined;
-            if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
-            const hasValidLocalPhoto =
-              Array.isArray(m.gallery) &&
-              m.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0);
-            if (!hasValidLocalPhoto) {
-              changed = true;
-              return { ...m, gallery: idbGal };
-            }
-            return m;
-          });
-        }
+      const galleryKeys = Object.keys(idbGalleries || {});
+      if (galleryKeys.length > 0) {
+        workingModels = workingModels.map((m) => {
+          const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
+            | GalleryMediaItem[]
+            | undefined;
+          if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
+          const idbValidCount = idbGal.filter(
+            (g) => typeof g?.url === 'string' && g.url.length > 0
+          ).length;
+          const localValidCount = Array.isArray(m.gallery)
+            ? m.gallery.filter((g) => typeof g?.url === 'string' && g.url.length > 0).length
+            : 0;
+          const isExplicitEmpty = Array.isArray(m.gallery) && m.gallery.length === 0;
+          if (!isExplicitEmpty && idbValidCount > localValidCount) {
+            localChangedFromIdb = true;
+            return { ...m, gallery: idbGal };
+          }
+          return m;
+        });
+      }
 
-        if (changed) {
-          safeSetStorageJson(STORAGE_KEY_MODELS, next);
-          syncUserPlansBackup(next);
-          void savePortfolioSnapshotToIdb(next);
-        }
-        return changed ? next : prev;
-      });
-    });
+      if (localChangedFromIdb) {
+        const effectiveIso =
+          isIdbNewerThanLocalStorage && idbSnapMeta?.updatedAtIso
+            ? idbSnapMeta.updatedAtIso
+            : localIsoBeforeIdb || undefined;
+        safeSetStorageJson(STORAGE_KEY_MODELS, workingModels);
+        syncUserPlansBackup(workingModels);
+        void savePortfolioSnapshotToIdb(workingModels, effectiveIso);
+        modelsRef.current = workingModels;
+        setModels(workingModels);
+      }
 
-    void pullPortfolioFromSupabase().then((cloud) => {
-      if (!cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) return;
+      const cloud = await pullPortfolioFromSupabase();
+      if (cancelled || !cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) {
+        return;
+      }
 
-      const localHydrated = hydratePortfolioModelsFromStorage();
       const localUpdatedAtIso = getPortfolioUpdatedAt();
+      const localTs = localUpdatedAtIso ? Date.parse(localUpdatedAtIso) : NaN;
+      const cloudTs = cloud.updatedAtIso ? Date.parse(cloud.updatedAtIso) : NaN;
+      const isCloudNewer =
+        Number.isFinite(cloudTs) && (!Number.isFinite(localTs) || cloudTs > localTs);
+
+      if (isCloudNewer && Array.isArray(cloud.deletedModelIds) && cloud.deletedModelIds.length > 0) {
+        const unionDeleted = Array.from(
+          new Set([...getDeletedModelsRegistry(), ...cloud.deletedModelIds])
+        );
+        safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, unionDeleted);
+      }
+
       const mergeRes = mergeCloudPortfolioSnapshot({
-        localModels: localHydrated,
+        localModels: workingModels,
         cloudModels: cloud.models,
         localUpdatedAtIso,
         cloudUpdatedAtIso: cloud.updatedAtIso,
@@ -331,21 +448,24 @@ export function useLiveScenarioPortfolio() {
 
       safeSetStorageJson(STORAGE_KEY_MODELS, mergeRes.models);
       syncUserPlansBackup(mergeRes.models);
-      void savePortfolioSnapshotToIdb(mergeRes.models);
+      void savePortfolioSnapshotToIdb(
+        mergeRes.models,
+        isCloudNewer && cloud.updatedAtIso ? cloud.updatedAtIso : localUpdatedAtIso || undefined
+      );
+      modelsRef.current = mergeRes.models;
       setModels(mergeRes.models);
 
       let nextScen =
         safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || DEFAULT_SCENARIOS_LIST;
       if (Array.isArray(cloud.scenarios) && cloud.scenarios.length > 0) {
         const localScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || [];
-        const localTs = localUpdatedAtIso ? Date.parse(localUpdatedAtIso) : NaN;
-        const cloudTs = cloud.updatedAtIso ? Date.parse(cloud.updatedAtIso) : NaN;
         const preferLocalScenarios =
           Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
 
-        nextScen = preferLocalScenarios && localScenarios.length > 0
-          ? [...localScenarios]
-          : [...cloud.scenarios];
+        nextScen =
+          preferLocalScenarios && localScenarios.length > 0
+            ? [...localScenarios]
+            : [...cloud.scenarios];
 
         const secondaryScenarios = preferLocalScenarios ? cloud.scenarios : localScenarios;
         for (const extra of secondaryScenarios) {
@@ -363,30 +483,45 @@ export function useLiveScenarioPortfolio() {
           nextScen = [...nextScen, AKUSHA_2027_SCENARIO_DEF];
         }
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
+        scenariosRef.current = nextScen;
         setScenarios(nextScen);
       }
 
+      if (isCloudNewer && cloud.selectedScenarioByBrand && typeof cloud.selectedScenarioByBrand === 'object') {
+        const sanitizedCloudMap = sanitizeSelectedScenarioByBrand(
+          cloud.selectedScenarioByBrand as Partial<Record<CanonicalBrandCode, number | null>>,
+          nextScen
+        );
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedCloudMap);
+        selectedScenarioByBrandRef.current = sanitizedCloudMap;
+        setSelectedScenarioByBrandState(sanitizedCloudMap);
+      }
+
+      if (isCloudNewer && typeof cloud.includeGroupPortfolioInS1 === 'boolean') {
+        safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, cloud.includeGroupPortfolioInS1);
+        includeGroupRef.current = cloud.includeGroupPortfolioInS1;
+        setIncludeGroupState(cloud.includeGroupPortfolioInS1);
+      }
+
       if (mergeRes.shouldPushLocalToCloud) {
-        void pushPortfolioCoreToSupabase({
-          models: mergeRes.models,
-          scenarios: nextScen,
-        });
+        scheduleCompleteCloudPush({ models: mergeRes.models, scenarios: nextScen }, true);
       } else if (cloud.updatedAtIso) {
         touchPortfolioUpdatedAt(cloud.updatedAtIso);
       }
-    });
+    })();
 
     window.addEventListener('borners-scenario-models-changed', syncFromStorage);
     window.addEventListener('borners-scenarios-changed', syncFromStorage);
     window.addEventListener('borners-active-scenario-changed', syncFromStorage);
     window.addEventListener('storage', syncFromStorage);
     return () => {
+      cancelled = true;
       window.removeEventListener('borners-scenario-models-changed', syncFromStorage);
       window.removeEventListener('borners-scenarios-changed', syncFromStorage);
       window.removeEventListener('borners-active-scenario-changed', syncFromStorage);
       window.removeEventListener('storage', syncFromStorage);
     };
-  }, [syncFromStorage]);
+  }, [syncFromStorage, scheduleCompleteCloudPush]);
 
   const setSelectedScenarioId = useCallback(
     (nextId: number, explicitBrandOverride?: string) => {
@@ -416,6 +551,8 @@ export function useLiveScenarioPortfolio() {
                 scenarios
               );
               safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+              touchPortfolioUpdatedAt();
+              scheduleCompleteCloudPush({ selectedScenarioByBrand: next });
               return next;
             });
           }
@@ -423,16 +560,18 @@ export function useLiveScenarioPortfolio() {
       }
       dispatchCrossHookEvent('borners-active-scenario-changed');
     },
-    [brandFilter, scenarios, dispatchCrossHookEvent]
+    [brandFilter, scenarios, dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const setIncludeGroupPortfolioInS1 = useCallback(
     (nextVal: boolean) => {
       setIncludeGroupState(nextVal);
       safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, nextVal);
+      touchPortfolioUpdatedAt();
+      scheduleCompleteCloudPush({ includeGroupPortfolioInS1: nextVal });
       dispatchCrossHookEvent('borners-active-scenario-changed');
     },
-    [dispatchCrossHookEvent]
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const setSelectedScenarioForBrand = useCallback(
@@ -460,6 +599,8 @@ export function useLiveScenarioPortfolio() {
           scenarios
         );
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+        touchPortfolioUpdatedAt();
+        scheduleCompleteCloudPush({ selectedScenarioByBrand: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-active-scenario-changed');
@@ -468,7 +609,7 @@ export function useLiveScenarioPortfolio() {
         return next;
       });
     },
-    [scenarios, dispatchCrossHookEvent]
+    [scenarios, dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const updateScenariosBatch = useCallback(
@@ -477,10 +618,8 @@ export function useLiveScenarioPortfolio() {
         const next = updater(prev);
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
         touchPortfolioUpdatedAt();
-        const currentModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
-        if (Array.isArray(currentModels) && currentModels.length > 0) {
-          void pushPortfolioCoreToSupabase({ models: currentModels, scenarios: next });
-        }
+        scenariosRef.current = next;
+        scheduleCompleteCloudPush({ scenarios: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenarios-changed');
@@ -489,7 +628,7 @@ export function useLiveScenarioPortfolio() {
         return next;
       });
     },
-    [dispatchCrossHookEvent]
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const updateModelSpec = useCallback(
@@ -500,11 +639,12 @@ export function useLiveScenarioPortfolio() {
       }
       setModels((prev) => {
         const next = prev.map((m) => (m.id === updated.id ? updated : m));
+        const iso = touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
-        touchPortfolioUpdatedAt();
-        void savePortfolioSnapshotToIdb(next);
-        void pushPortfolioCoreToSupabase({ models: next });
+        void savePortfolioSnapshotToIdb(next, iso);
+        modelsRef.current = next;
+        scheduleCompleteCloudPush({ models: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenario-models-changed');
@@ -513,7 +653,7 @@ export function useLiveScenarioPortfolio() {
         return next;
       });
     },
-    [dispatchCrossHookEvent]
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const updateModelsBatch = useCallback(
@@ -521,19 +661,24 @@ export function useLiveScenarioPortfolio() {
       setModels((prev) => {
         const next = updater(prev);
         for (const m of next) {
-          if (
-            Array.isArray(m.gallery) &&
-            m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
-          ) {
-            void saveModelGalleryToIdb(m.id, m.gallery);
-            void pushModelGalleryToSupabase(m.id, m.gallery);
+          if (Array.isArray(m.gallery)) {
+            if (m.gallery.length === 0) {
+              void saveModelGalleryToIdb(m.id, []);
+              void pushModelGalleryToSupabase(m.id, []);
+            } else if (
+              m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+            ) {
+              void saveModelGalleryToIdb(m.id, m.gallery);
+              void pushModelGalleryToSupabase(m.id, m.gallery);
+            }
           }
         }
+        const iso = touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
-        touchPortfolioUpdatedAt();
-        void savePortfolioSnapshotToIdb(next);
-        void pushPortfolioCoreToSupabase({ models: next });
+        void savePortfolioSnapshotToIdb(next, iso);
+        modelsRef.current = next;
+        scheduleCompleteCloudPush({ models: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenario-models-changed');
@@ -542,7 +687,7 @@ export function useLiveScenarioPortfolio() {
         return next;
       });
     },
-    [dispatchCrossHookEvent]
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
   const currentScenario = useMemo(() => {
@@ -712,42 +857,51 @@ export function useLiveScenarioPortfolio() {
     };
   }, [eligibleModels, currentScenario]);
 
-  const applyIndustryNormsToAllModels = useCallback((fillMissingCost: boolean = true) => {
-    setModels((prev) => {
-      const next = applyCategoryWbUnitEconomicsToPortfolio(prev, {
-        fillMissingCost,
-        forceOverwriteRates: false,
+  const applyIndustryNormsToAllModels = useCallback(
+    (fillMissingCost: boolean = true) => {
+      setModels((prev) => {
+        const next = applyCategoryWbUnitEconomicsToPortfolio(prev, {
+          fillMissingCost,
+          forceOverwriteRates: false,
+        });
+        const iso = touchPortfolioUpdatedAt();
+        safeSetStorageJson(STORAGE_KEY_MODELS, next);
+        syncUserPlansBackup(next);
+        void savePortfolioSnapshotToIdb(next, iso);
+        modelsRef.current = next;
+        scheduleCompleteCloudPush({ models: next });
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+          }, 0);
+        }
+        return next;
       });
-      safeSetStorageJson(STORAGE_KEY_MODELS, next);
-      syncUserPlansBackup(next);
-      touchPortfolioUpdatedAt();
-      void savePortfolioSnapshotToIdb(next);
-      void pushPortfolioCoreToSupabase({ models: next });
-      if (typeof window !== 'undefined') {
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
-        }, 0);
-      }
-      return next;
-    });
-  }, []);
+    },
+    [scheduleCompleteCloudPush]
+  );
 
   const launchStarterCabinet = useCallback(
     (bCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
       const res = launchBrandStarterMatrix(models, scenarios, bCode);
+      const nextByBrand = { ...selectedScenarioByBrandRef.current, [bCode]: res.scenarioId };
       setModels(res.models);
       setScenarios(res.scenarios);
+      setSelectedScenarioByBrandState(nextByBrand);
+      const iso = touchPortfolioUpdatedAt();
       safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
       syncUserPlansBackup(res.models);
-      touchPortfolioUpdatedAt();
-      void savePortfolioSnapshotToIdb(res.models);
+      void savePortfolioSnapshotToIdb(res.models, iso);
       safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
-      void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
-      setSelectedScenarioByBrandState((prev) => {
-        const next = { ...prev, [bCode]: res.scenarioId };
-        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
-        return next;
-      });
+      safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
+      scheduleCompleteCloudPush(
+        {
+          models: res.models,
+          scenarios: res.scenarios,
+          selectedScenarioByBrand: nextByBrand,
+        },
+        true
+      );
       setSelectedScenarioIdState(res.scenarioId);
       safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, res.scenarioId);
       if (typeof window !== 'undefined') {
@@ -759,7 +913,7 @@ export function useLiveScenarioPortfolio() {
       }
       return res;
     },
-    [models, scenarios]
+    [models, scenarios, scheduleCompleteCloudPush]
   );
 
   const launchAllCabinets = useCallback(() => {
@@ -771,13 +925,20 @@ export function useLiveScenarioPortfolio() {
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    const iso = touchPortfolioUpdatedAt();
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     syncUserPlansBackup(res.models);
-    touchPortfolioUpdatedAt();
-    void savePortfolioSnapshotToIdb(res.models);
+    void savePortfolioSnapshotToIdb(res.models, iso);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
-    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
+    scheduleCompleteCloudPush(
+      {
+        models: res.models,
+        scenarios: res.scenarios,
+        selectedScenarioByBrand: res.selectedScenarioByBrand,
+      },
+      true
+    );
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -786,7 +947,7 @@ export function useLiveScenarioPortfolio() {
       }, 0);
     }
     return res;
-  }, [models, scenarios, selectedScenarioByBrand]);
+  }, [models, scenarios, selectedScenarioByBrand, scheduleCompleteCloudPush]);
 
   const resetStarterCabinets = useCallback(() => {
     const res = resetStarterCabinetsFromHolding(
@@ -808,13 +969,20 @@ export function useLiveScenarioPortfolio() {
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(nextByBrand);
+    const iso = touchPortfolioUpdatedAt();
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     syncUserPlansBackup(res.models);
-    touchPortfolioUpdatedAt();
-    void savePortfolioSnapshotToIdb(res.models);
+    void savePortfolioSnapshotToIdb(res.models, iso);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
-    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
+    scheduleCompleteCloudPush(
+      {
+        models: res.models,
+        scenarios: res.scenarios,
+        selectedScenarioByBrand: nextByBrand,
+      },
+      true
+    );
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -823,7 +991,7 @@ export function useLiveScenarioPortfolio() {
       }, 0);
     }
     return res;
-  }, [models, scenarios, selectedScenarioByBrand]);
+  }, [models, scenarios, selectedScenarioByBrand, scheduleCompleteCloudPush]);
 
   return {
     scenarios,

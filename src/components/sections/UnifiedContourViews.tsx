@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
+  GrowthScenarioDef,
   MONTHS_SHORT_RU,
   PRIORITY_WEIGHTS,
   ScenarioModelSpec,
@@ -10,6 +11,10 @@ import {
   getModelPriority,
 } from '@/lib/scenarioData';
 import { ACTING_2027_SCENARIO_ID, getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
+import {
+  isBrandScenarioExplicitlyNone,
+  resolveEffectiveScenarioForModel,
+} from '@/lib/portfolioPersistence';
 import {
   ApprovedPurchaseOrder,
   PO_STATUS_LABELS_RU,
@@ -48,6 +53,46 @@ import { FinanceView } from '@/components/sections/FinanceAndImportViews';
 
 function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
+}
+
+function buildHoldingScopedModelEntries(
+  models: ScenarioModelSpec[],
+  scenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Partial<Record<string, number | null>>,
+  fallbackScenario: GrowthScenarioDef,
+  multiBrandSummary: ReturnType<typeof computeMultiBrandPortfolioSummary>
+): { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] {
+  const seen = new Set<string>();
+  const list: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] = [];
+  for (const bRow of multiBrandSummary.brands) {
+    if (isBrandScenarioExplicitlyNone(bRow.brandCode, selectedScenarioByBrand)) continue;
+    if (!bRow.hasScenario || !bRow.hasModels || bRow.selectedScenarioId === null) continue;
+    const bScen =
+      scenarios.find((s) => s.id === bRow.selectedScenarioId && !s.isArchived) ||
+      fallbackScenario;
+    for (const rm of models) {
+      if (!rm || rm.launchStatus === 'В архиве') continue;
+      if (
+        ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(rm.id) ||
+        ['№001', '№002', '№003', '№004'].includes(rm.code)
+      ) {
+        continue;
+      }
+      if (!matchesBrandFilter(rm, bRow.brandCode)) continue;
+      if (
+        bScen.id === ACTING_2027_SCENARIO_ID &&
+        !getActingSkuByWbOrVendor(rm.code, rm.title) &&
+        !rm.plansByScenario?.[ACTING_2027_SCENARIO_ID]
+      ) {
+        continue;
+      }
+      const key = rm.id || rm.code;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push({ model: rm, scenario: bScen });
+    }
+  }
+  return list;
 }
 
 function BufferedInlineNumberInput({
@@ -312,10 +357,12 @@ function ScenarioContourHeader({
 export function SalesMatrixContourView() {
   const { navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
+    models,
     scenarios,
     orderedScenarios,
     currentScenario,
     selectedScenarioId,
+    selectedScenarioByBrand,
     setSelectedScenarioId,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
@@ -325,21 +372,96 @@ export function SalesMatrixContourView() {
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
+  const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
   const [unitMode, setUnitMode] = useState<'rub' | 'packs'>('rub');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'default' | 'dec_desc' | 'year_desc' | 'priority'>('dec_desc');
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
-  const visibleModels = useMemo(() => {
+  useEffect(() => {
+    if (brandFilter === 'ALL') {
+      setHoldingScopeMode(true);
+    }
+  }, [brandFilter]);
+
+  const isHoldingAllBrandsActive = brandFilter === 'ALL' && holdingScopeMode;
+
+  const multiBrandSummary = useMemo(
+    () => computeMultiBrandPortfolioSummary(models, scenarios, selectedScenarioByBrand),
+    [models, scenarios, selectedScenarioByBrand]
+  );
+
+  const scopedEntries = useMemo(() => {
+    if (!isHoldingAllBrandsActive) {
+      return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+    }
+    const holdingList = buildHoldingScopedModelEntries(
+      models,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      multiBrandSummary
+    );
+    return holdingList.length > 0
+      ? holdingList
+      : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+  }, [
+    isHoldingAllBrandsActive,
+    eligibleModels,
+    currentScenario,
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    multiBrandSummary,
+  ]);
+
+  const effectiveTotals = useMemo(() => {
+    if (!isHoldingAllBrandsActive) return totals;
+    const monthlyRevRub = Array(12).fill(0) as number[];
+    const monthlyPacks = Array(12).fill(0) as number[];
+    let annualRevenueRub = 0;
+    let decRevenueRub = 0;
+    let annualPacks = 0;
+    let annualOrdersPacks = 0;
+    let annualOrdersRub = 0;
+
+    for (const { model, scenario } of scopedEntries) {
+      const met = computeModelScenarioMetrics(model, scenario);
+      annualRevenueRub += met.annualRevenueRub;
+      decRevenueRub += met.targetMonthRevenueRub;
+      annualPacks += met.annualPacks;
+      annualOrdersPacks += met.annualOrdersPacks;
+      annualOrdersRub += met.annualOrdersRub;
+      for (let idx = 0; idx < 12; idx++) {
+        monthlyRevRub[idx] += met.monthlyRevenuesRub[idx] || 0;
+        monthlyPacks[idx] += met.plan.monthlyPacks[idx] || 0;
+      }
+    }
+
+    return {
+      ...totals,
+      monthlyRevRub,
+      monthlyPacks,
+      annualRevenueRub,
+      decRevenueRub,
+      annualPacks,
+      annualOrdersPacks,
+      annualOrdersRub,
+    };
+  }, [isHoldingAllBrandsActive, totals, scopedEntries]);
+
+  const visibleEntries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filtered = !q
-      ? [...eligibleModels]
-      : eligibleModels.filter((m) => {
+      ? [...scopedEntries]
+      : scopedEntries.filter(({ model: m }) => {
           const acting = getActingSkuByWbOrVendor(m.code, m.title);
           return (
             m.code.toLowerCase().includes(q) ||
             m.title.toLowerCase().includes(q) ||
             m.subtitle.toLowerCase().includes(q) ||
+            (m.wbArticle || '').toLowerCase().includes(q) ||
+            detectModelBrandPortfolioLabel(m).toLowerCase().includes(q) ||
             Boolean(acting?.wbSku.includes(q))
           );
         });
@@ -347,44 +469,67 @@ export function SalesMatrixContourView() {
     if (sortBy === 'dec_desc') {
       filtered.sort(
         (a, b) =>
-          computeModelScenarioMetrics(b, currentScenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).targetMonthRevenueRub
+          computeModelScenarioMetrics(b.model, b.scenario).targetMonthRevenueRub -
+          computeModelScenarioMetrics(a.model, a.scenario).targetMonthRevenueRub
       );
     } else if (sortBy === 'year_desc') {
       filtered.sort(
         (a, b) =>
-          computeModelScenarioMetrics(b, currentScenario).annualRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).annualRevenueRub
+          computeModelScenarioMetrics(b.model, b.scenario).annualRevenueRub -
+          computeModelScenarioMetrics(a.model, a.scenario).annualRevenueRub
       );
     } else if (sortBy === 'priority') {
       filtered.sort((a, b) => {
         const wDiff =
-          PRIORITY_WEIGHTS[getModelPriority(b)] - PRIORITY_WEIGHTS[getModelPriority(a)];
+          PRIORITY_WEIGHTS[getModelPriority(b.model)] - PRIORITY_WEIGHTS[getModelPriority(a.model)];
         if (wDiff !== 0) return wDiff;
         return (
-          computeModelScenarioMetrics(b, currentScenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).targetMonthRevenueRub
+          computeModelScenarioMetrics(b.model, b.scenario).targetMonthRevenueRub -
+          computeModelScenarioMetrics(a.model, a.scenario).targetMonthRevenueRub
         );
       });
     }
 
     return filtered;
-  }, [eligibleModels, searchQuery, sortBy, currentScenario]);
+  }, [scopedEntries, searchQuery, sortBy]);
 
-  const switcherModels = visibleModels.length > 0 ? visibleModels : eligibleModels;
+  const switcherEntries = visibleEntries.length > 0 ? visibleEntries : scopedEntries;
 
-  const editingModel = useMemo(
-    () => eligibleModels.find((m) => m.id === editingModelId) || null,
-    [eligibleModels, editingModelId]
-  );
+  const editingEntry = useMemo(() => {
+    if (!editingModelId) return null;
+    const fromScoped = scopedEntries.find((e) => e.model.id === editingModelId);
+    if (fromScoped) return fromScoped;
+    const fromAll = models.find((m) => m.id === editingModelId);
+    if (!fromAll) return null;
+    return {
+      model: fromAll,
+      scenario: resolveEffectiveScenarioForModel(
+        fromAll,
+        scenarios,
+        selectedScenarioByBrand,
+        currentScenario,
+        includeGroupPortfolioInS1
+      ),
+    };
+  }, [
+    editingModelId,
+    scopedEntries,
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    currentScenario,
+    includeGroupPortfolioInS1,
+  ]);
+
+  const editingModel = editingEntry?.model || null;
 
   const editingIdx = useMemo(
-    () => (editingModel ? switcherModels.findIndex((m) => m.id === editingModel.id) : -1),
-    [editingModel, switcherModels]
+    () => (editingModel ? switcherEntries.findIndex((e) => e.model.id === editingModel.id) : -1),
+    [editingModel, switcherEntries]
   );
 
   useEffect(() => {
-    if (!editingModel || switcherModels.length <= 1) return;
+    if (!editingModel || switcherEntries.length <= 1) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -392,29 +537,40 @@ export function SalesMatrixContourView() {
       if (e.key === '[') {
         e.preventDefault();
         const prevIdx =
-          (Math.max(0, editingIdx) - 1 + switcherModels.length) % switcherModels.length;
-        setEditingModelId(switcherModels[prevIdx].id);
+          (Math.max(0, editingIdx) - 1 + switcherEntries.length) % switcherEntries.length;
+        setEditingModelId(switcherEntries[prevIdx].model.id);
       } else if (e.key === ']') {
         e.preventDefault();
-        const nextIdx = (Math.max(0, editingIdx) + 1) % switcherModels.length;
-        setEditingModelId(switcherModels[nextIdx].id);
+        const nextIdx = (Math.max(0, editingIdx) + 1) % switcherEntries.length;
+        setEditingModelId(switcherEntries[nextIdx].model.id);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editingModel, editingIdx, switcherModels]);
+  }, [editingModel, editingIdx, switcherEntries]);
 
   const handleExportCsv = () => {
-    const rows = exportStructuredScenarioPlan(eligibleModels, currentScenario);
+    const rows = isHoldingAllBrandsActive
+      ? scopedEntries.flatMap(({ model, scenario }) =>
+          exportStructuredScenarioPlan([model], scenario)
+        )
+      : exportStructuredScenarioPlan(eligibleModels, currentScenario);
     const csv = serializeStructuredPlanToCsv(rows);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `borners_sales_matrix_s${currentScenario.id}_2027.csv`;
+    a.download = isHoldingAllBrandsActive
+      ? 'borners_sales_matrix_holding_5brands_2027.csv'
+      : `borners_sales_matrix_s${currentScenario.id}_2027.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    notify('success', `Выгружена матрица продаж «${currentScenario.title}» (${rows.length} строк)`);
+    notify(
+      'success',
+      isHoldingAllBrandsActive
+        ? `Выгружена матрица продаж холдинга (${rows.length} строк)`
+        : `Выгружена матрица продаж «${currentScenario.title}» (${rows.length} строк)`
+    );
   };
 
   const openSkuPassportOnDashboard = (modelId: string) => {
@@ -426,11 +582,11 @@ export function SalesMatrixContourView() {
     navigateTo('dashboard');
   };
 
-  if (editingModel) {
+  if (editingModel && editingEntry) {
     const safeIdx = editingIdx >= 0 ? editingIdx : 0;
     const prevMod =
-      switcherModels[(safeIdx - 1 + switcherModels.length) % switcherModels.length];
-    const nextMod = switcherModels[(safeIdx + 1) % switcherModels.length];
+      switcherEntries[(safeIdx - 1 + switcherEntries.length) % switcherEntries.length]?.model;
+    const nextMod = switcherEntries[(safeIdx + 1) % switcherEntries.length]?.model;
 
     return (
       <div className="space-y-5 pb-16">
@@ -440,11 +596,11 @@ export function SalesMatrixContourView() {
             onClick={() => setEditingModelId(null)}
             className="h-8.5 px-3.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12.5px] font-semibold cursor-pointer"
           >
-            ← Ко всей матрице ({eligibleModels.length} SKU)
+            ← Ко всей матрице ({scopedEntries.length} SKU)
           </button>
 
           {/* Мгновенное переключение между SKU без возврата в таблицу */}
-          {switcherModels.length > 1 && (
+          {switcherEntries.length > 1 && (
             <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] p-1">
               <button
                 type="button"
@@ -459,11 +615,11 @@ export function SalesMatrixContourView() {
                 onChange={(e) => setEditingModelId(e.target.value)}
                 className="h-7 px-2 rounded-[6px] bg-white border border-[#CECDC4] text-[12px] font-bold text-[#141413] max-w-[260px] sm:max-w-[340px] cursor-pointer"
               >
-                {switcherModels.map((m, idx) => {
-                  const met = computeModelScenarioMetrics(m, currentScenario);
+                {switcherEntries.map(({ model: m, scenario: mScen }, idx) => {
+                  const met = computeModelScenarioMetrics(m, mScen);
                   return (
                     <option key={m.id} value={m.id}>
-                      {idx + 1}/{switcherModels.length} · {m.code} — {m.title} (
+                      {idx + 1}/{switcherEntries.length} · {m.code} — {m.title} (
                       {(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн/дек)
                     </option>
                   );
@@ -491,11 +647,15 @@ export function SalesMatrixContourView() {
 
         <ScenarioSalesPlanScreen
           model={editingModel}
-          scenario={currentScenario}
+          scenario={editingEntry.scenario}
           allScenarios={orderedScenarios}
-          onSelectScenario={(id) =>
-            setSelectedScenarioId(id, detectModelBrandPortfolioLabel(editingModel))
-          }
+          onSelectScenario={(id) => {
+            if (isHoldingAllBrandsActive) {
+              setSelectedScenarioId(id, detectModelBrandPortfolioLabel(editingModel));
+            } else {
+              setSelectedScenarioId(id, detectModelBrandPortfolioLabel(editingModel));
+            }
+          }}
           onBackToModel={() => setEditingModelId(null)}
           onUpdateModel={updateModelSpec}
           notify={notify}
@@ -508,16 +668,51 @@ export function SalesMatrixContourView() {
     <div className="space-y-6 pb-16">
       <ScenarioContourHeader
         stepCode="02 · Продажи · Помесячная матрица портфеля"
-        title="План продаж на 12 месяцев (все SKU сценария)"
+        title={
+          isHoldingAllBrandsActive
+            ? 'План продаж холдинга на 12 месяцев (все 5 брендов)'
+            : 'План продаж на 12 месяцев (все SKU сценария)'
+        }
         subtitle="Сводная таблица выкупов и выручки по каждому артикулу на 2027 год. Нажмите на строку SKU для помесячного редактирования."
         selectedScenarioId={selectedScenarioId}
         orderedScenarios={orderedScenarios}
-        onSelectScenario={setSelectedScenarioId}
+        onSelectScenario={(id, explicitBrand) => {
+          if (brandFilter === 'ALL' && !explicitBrand) {
+            setHoldingScopeMode(false);
+          }
+          setSelectedScenarioId(id, explicitBrand);
+        }}
         includeGroupPortfolioInS1={includeGroupPortfolioInS1}
         onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
-        eligibleCount={eligibleModels.length}
+        eligibleCount={scopedEntries.length}
         rightSlot={
           <>
+            {brandFilter === 'ALL' && (
+              <div className="inline-flex rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[12px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setHoldingScopeMode(true)}
+                  className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                    holdingScopeMode
+                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+                  }`}
+                >
+                  Все 5 брендов холдинга
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHoldingScopeMode(false)}
+                  className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                    !holdingScopeMode
+                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+                  }`}
+                >
+                  Только выбранный сценарий
+                </button>
+              </div>
+            )}
             <div className="inline-flex rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[12px] font-medium">
               <button
                 type="button"
@@ -553,11 +748,11 @@ export function SalesMatrixContourView() {
         }
       />
 
-      {eligibleModels.length === 0 && (
+      {scopedEntries.length === 0 && (
         <div className="rounded-[14px] bg-white dark:bg-[#121620] border border-[#D8D7CF] dark:border-[#222938] p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1 max-w-2xl">
             <div className="text-[14.5px] font-bold text-[#141413] dark:text-[#EDF0F7]">
-              В сценарии «{currentScenario.title}» пока нет моделей бренда {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}
+              В сценарии «{currentScenario.title}» пока нет моделей бренда {formatLabBrandLabel(brandFilter)}
             </div>
             <p className="text-[12.5px] text-[#5E5D58] dark:text-[#94A3B8]">
               {brandFilter === 'NA_TELE'
@@ -591,7 +786,7 @@ export function SalesMatrixContourView() {
                   );
                   notify(
                     'success',
-                    `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
+                    `Кабинет ${formatLabBrandLabel(brandFilter)} запущен (${res.addedCount} SKU)`
                   );
                 }}
                 className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer transition"
@@ -637,10 +832,10 @@ export function SalesMatrixContourView() {
             Годовая выручка 2027
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {formatMln(totals.annualRevenueRub)}
+            {formatMln(effectiveTotals.annualRevenueRub)}
           </div>
           <div className="text-[11.5px] text-[#64748B]">
-            {totals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.
+            {effectiveTotals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
         </div>
@@ -650,10 +845,12 @@ export function SalesMatrixContourView() {
             Выручка в декабре 2027
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {formatMln(totals.decRevenueRub)}
+            {formatMln(effectiveTotals.decRevenueRub)}
           </div>
           <div className="text-[11.5px] text-emerald-600 dark:text-emerald-400 font-medium">
-            Цель сценария: {currentScenario.monthlyTargetMln} млн ₽ / мес
+            {isHoldingAllBrandsActive
+              ? 'Сводный план всех активных брендов группы'
+              : `Цель сценария: ${currentScenario.monthlyTargetMln} млн ₽ / мес`}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
         </div>
@@ -663,14 +860,14 @@ export function SalesMatrixContourView() {
             Выкупы и заказы за 2027 год
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {totals.annualPacks.toLocaleString('ru-RU')} вык.
+            {effectiveTotals.annualPacks.toLocaleString('ru-RU')} вык.
           </div>
           <div className="text-[11.5px] text-[#64748B]">
             Заказы (до выкупа):{' '}
             <strong className="font-mono text-emerald-700 dark:text-emerald-400">
-              {totals.annualOrdersPacks.toLocaleString('ru-RU')}
+              {effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')}
             </strong>{' '}
-            · {formatMln(totals.annualOrdersRub)}
+            · {formatMln(effectiveTotals.annualOrdersRub)}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
         </div>
@@ -680,12 +877,12 @@ export function SalesMatrixContourView() {
             Моделей в матрице
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {eligibleModels.length} SKU
+            {scopedEntries.length} SKU
           </div>
           <div className="text-[11.5px] text-[#64748B]">
             Средний чек:{' '}
-            {totals.annualPacks > 0
-              ? `${Math.round(totals.annualRevenueRub / totals.annualPacks).toLocaleString('ru-RU')} ₽`
+            {effectiveTotals.annualPacks > 0
+              ? `${Math.round(effectiveTotals.annualRevenueRub / effectiveTotals.annualPacks).toLocaleString('ru-RU')} ₽`
               : '—'}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
@@ -696,7 +893,7 @@ export function SalesMatrixContourView() {
       <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            Помесячная матрица ({unitMode === 'rub' ? 'млн ₽' : 'комплектов'} · {visibleModels.length} SKU)
+            Помесячная матрица ({unitMode === 'rub' ? 'млн ₽' : 'комплектов'} · {visibleEntries.length} SKU)
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -750,8 +947,8 @@ export function SalesMatrixContourView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EEF2F6] dark:divide-[#222938]">
-              {visibleModels.map((mod) => {
-                const met = computeModelScenarioMetrics(mod, currentScenario);
+              {visibleEntries.map(({ model: mod, scenario: rowScenario }) => {
+                const met = computeModelScenarioMetrics(mod, rowScenario);
                 const acting = getActingSkuByWbOrVendor(mod.code, mod.title);
                 return (
                   <tr
@@ -784,7 +981,7 @@ export function SalesMatrixContourView() {
                           value={met.buyoutRatePct}
                           onCommit={(nextVal) => {
                             const updated = updateModelBuyoutRatePct(mod, nextVal, {
-                              scenarioId: currentScenario.id,
+                              scenarioId: rowScenario.id,
                             });
                             updateModelSpec(updated);
                           }}
@@ -840,12 +1037,12 @@ export function SalesMatrixContourView() {
             <tfoot>
               <tr className="bg-[#F8FAFC] dark:bg-[#181D2A] font-bold text-[#0F172A] dark:text-[#EDF0F7] border-t border-[#E2E6EE] dark:border-[#222938]">
                 <td className="py-3 px-3 sticky left-0 z-10 bg-[#F8FAFC] dark:bg-[#181D2A] border-r border-[#E2E6EE] dark:border-[#222938]">
-                  ИТОГО ({eligibleModels.length} SKU)
+                  ИТОГО ({scopedEntries.length} SKU)
                 </td>
                 <td className="py-3 px-2 text-right">—</td>
                 <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
-                  {totals.annualOrdersPacks > 0
-                    ? `${Math.round((totals.annualPacks / totals.annualOrdersPacks) * 100)}%`
+                  {effectiveTotals.annualOrdersPacks > 0
+                    ? `${Math.round((effectiveTotals.annualPacks / effectiveTotals.annualOrdersPacks) * 100)}%`
                     : '—'}
                 </td>
                 {MONTHS_SHORT_RU.map((_, mIdx) => (
@@ -858,14 +1055,14 @@ export function SalesMatrixContourView() {
                     }`}
                   >
                     {unitMode === 'rub'
-                      ? (totals.monthlyRevRub[mIdx] / 1_000_000).toFixed(1).replace('.', ',')
-                      : totals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
+                      ? (effectiveTotals.monthlyRevRub[mIdx] / 1_000_000).toFixed(1).replace('.', ',')
+                      : effectiveTotals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
                   </td>
                 ))}
                 <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
                   {unitMode === 'rub'
-                    ? (totals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
-                    : totals.annualPacks.toLocaleString('ru-RU')}
+                    ? (effectiveTotals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
+                    : effectiveTotals.annualPacks.toLocaleString('ru-RU')}
                 </td>
               </tr>
             </tfoot>
@@ -900,6 +1097,12 @@ export function ProcurementContourView() {
 
   const [wavesCalendarOpen, setWavesCalendarOpen] = useState(false);
   const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (brandFilter === 'ALL') {
+      setHoldingScopeMode(true);
+    }
+  }, [brandFilter]);
 
   const [subTab, setSubTab] = useState<'batches' | 'crm'>(() => {
     if (typeof window !== 'undefined') {
@@ -988,22 +1191,13 @@ export function ProcurementContourView() {
     if (!isHoldingAllBrandsActive) {
       return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
     }
-    const seen = new Set<string>();
-    const list: { model: ScenarioModelSpec; scenario: typeof currentScenario }[] = [];
-    for (const bRow of multiBrandSummary.brands) {
-      if (!bRow.hasScenario || !bRow.hasModels || bRow.selectedScenarioId === null) continue;
-      const bScen =
-        scenarios.find((s) => s.id === bRow.selectedScenarioId && !s.isArchived) ||
-        currentScenario;
-      for (const rm of models) {
-        if (!rm || rm.launchStatus === 'В архиве') continue;
-        if (!matchesBrandFilter(rm, bRow.brandCode)) continue;
-        const key = rm.id || rm.code;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        list.push({ model: rm, scenario: bScen });
-      }
-    }
+    const list = buildHoldingScopedModelEntries(
+      models,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      multiBrandSummary
+    );
     return list.length > 0
       ? list
       : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
@@ -1011,7 +1205,8 @@ export function ProcurementContourView() {
     isHoldingAllBrandsActive,
     eligibleModels,
     currentScenario,
-    multiBrandSummary.brands,
+    multiBrandSummary,
+    selectedScenarioByBrand,
     scenarios,
     models,
   ]);
@@ -1075,7 +1270,7 @@ export function ProcurementContourView() {
         firstWavePrepaymentRub += firstDraft.prepaymentRub;
       }
 
-      return { model: m, plan };
+      return { model: m, plan, scenario: modelScen };
     });
 
     const totalScenarioPacks = approvedPacks + recPacks;
@@ -2466,7 +2661,7 @@ export function ProcurementContourView() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EEF2F6]">
-                          {filteredSummarySkus.map(({ model: m, plan }) => {
+                          {filteredSummarySkus.map(({ model: m, plan, scenario: rowScenario }) => {
                             const isExp = expandedSummaryModelIds.includes(m.id);
                             const toggleExpand = () => {
                               setExpandedSummaryModelIds((prev) =>
@@ -2531,9 +2726,15 @@ export function ProcurementContourView() {
 
                             const restPacks = Math.max(0, totalModelPacks - w1Packs);
                             const restRub = Math.max(0, totalModelBudgetRub - w1Rub);
+                            const baselineVariantBuyoutsSum = hasLiskaniSizes
+                              ? m.liskaniSizeVariants!.reduce(
+                                  (s, v) => s + (v.annualBuyoutsUnits || 0),
+                                  0
+                                )
+                              : plan.annualDemandPacks;
                             const supplyScaleRatio =
-                              plan.annualDemandPacks > 0
-                                ? totalModelPacks / plan.annualDemandPacks
+                              baselineVariantBuyoutsSum > 0
+                                ? totalModelPacks / baselineVariantBuyoutsSum
                                 : 1;
 
                             return (
@@ -2596,8 +2797,11 @@ export function ProcurementContourView() {
                                           ariaLabel={`Процент выкупа ${m.code}`}
                                           value={plan.buyoutRatePct}
                                           onCommit={(nextPct) => {
-                                            const activeScn = scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0];
-                                            updateModelSpec(updateModelBuyoutRatePct(m, nextPct, { scenarioId: activeScn?.id }));
+                                            updateModelSpec(
+                                              updateModelBuyoutRatePct(m, nextPct, {
+                                                scenarioId: rowScenario.id,
+                                              })
+                                            );
                                           }}
                                           className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 focus:outline-none"
                                         />
@@ -2914,10 +3118,16 @@ export function ProcurementContourView() {
           )}
 
           {/* ГЛАВНЫЙ ИНТЕРФЕЙС ЗАКУПОК ВЫБРАННОЙ МОДЕЛИ (отображается только в режиме «По товару», без наложения сводных блоков сверху) */}
-          {activeSkuModel && !wavesCalendarOpen && scenarioDrawerTab === 'none' && (
+          {activeSkuModel && !wavesCalendarOpen && scenarioDrawerTab === 'none' && (() => {
+            const activeSkuEntry = scopedModelEntries.find(
+              (entry) => entry.model.id === activeSkuModel.id
+            );
+            const effectiveWorkbenchScenario = activeSkuEntry?.scenario || currentScenario;
+            return (
             <SkuProcurementMvpWorkbench
               model={activeSkuModel}
-              currentScenario={currentScenario}
+              scenario={effectiveWorkbenchScenario}
+              currentScenario={effectiveWorkbenchScenario}
               onUpdateModel={updateModelSpec}
               onNotify={(title, message, type = 'success') => notify(type, title, message)}
               onOpenSalesMatrix={() => navigateTo('launch-calendar')}
@@ -2975,7 +3185,8 @@ export function ProcurementContourView() {
                 </div>
               }
             />
-          )}
+            );
+          })()}
         </>
       )}
     </div>
@@ -3052,7 +3263,10 @@ export function FinanceContourView() {
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
 
-  const investmentSummary = useMemo(
+  const isHoldingAllBrands = brandFilter === 'ALL';
+  const holdingSourceModels = models.length > 0 ? models : scenarioAllEligibleModels;
+
+  const singleScenarioInvestmentSummary = useMemo(
     () =>
       computeScenarioInvestmentSummary(eligibleModels, currentScenario, {
         initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
@@ -3062,21 +3276,42 @@ export function FinanceContourView() {
     [eligibleModels, currentScenario, initialCashMln, wbLagMonths]
   );
 
+  const holdingSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(
+        holdingSourceModels,
+        scenarios,
+        selectedScenarioByBrand,
+        {
+          initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+          settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+          wbPayoutScheduleSpecified: wbLagMonths >= 0,
+        }
+      ),
+    [
+      holdingSourceModels,
+      scenarios,
+      selectedScenarioByBrand,
+      initialCashMln,
+      wbLagMonths,
+    ]
+  );
+
   const brandsReport = useMemo(
     () =>
       computeGroupBrandsInvestmentReport(
-        models.length > 0 ? models : scenarioAllEligibleModels,
+        holdingSourceModels,
         currentScenario,
         {
           initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-          settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
+          settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+          wbPayoutScheduleSpecified: wbLagMonths >= 0,
           allScenarios: scenarios,
           selectedScenarioByBrand,
         }
       ),
     [
-      models,
-      scenarioAllEligibleModels,
+      holdingSourceModels,
       currentScenario,
       initialCashMln,
       wbLagMonths,
@@ -3085,6 +3320,27 @@ export function FinanceContourView() {
     ]
   );
 
+  const scopedFinanceEntries = useMemo(() => {
+    if (isHoldingAllBrands) {
+      return buildHoldingScopedModelEntries(
+        holdingSourceModels,
+        scenarios,
+        selectedScenarioByBrand,
+        currentScenario,
+        holdingSummary
+      );
+    }
+    return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+  }, [
+    isHoldingAllBrands,
+    holdingSourceModels,
+    scenarios,
+    selectedScenarioByBrand,
+    currentScenario,
+    holdingSummary,
+    eligibleModels,
+  ]);
+
   const finSummary = useMemo(() => {
     let totalCogsRub = 0;
     let totalGrossProfitRub = 0;
@@ -3092,15 +3348,32 @@ export function FinanceContourView() {
     let filledOpCount = 0;
     let unfilledOpCount = 0;
     let peakCapitalRub = 0;
+    let totalFirstWavePacks = 0;
 
     const monthlyInflow = Array(12).fill(0) as number[];
     const monthlyProcOutflow = Array(12).fill(0) as number[];
     const monthlyVarOpexOutflow = Array(12).fill(0) as number[];
     const monthlyNet = Array(12).fill(0) as number[];
 
-    const perSku = eligibleModels.map((m) => {
-      const proc = computeProcurementPlan(m, currentScenario);
-      const pnl = computeFinancialPnL(m, currentScenario, proc);
+    const perSku = scopedFinanceEntries.map(({ model: m, scenario: modelScen }) => {
+      const proc = computeProcurementPlan(m, modelScen);
+      const pnl = computeFinancialPnL(m, modelScen, proc);
+
+      const confirmedPos = proc.approvedOrders.filter(
+        (o) => o.confirmedByFactory !== false
+      );
+      const earliestPo = [...confirmedPos].sort(
+        (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
+      )[0];
+      const firstDraft = proc.recommendedBatches[0];
+      if (
+        earliestPo &&
+        (!firstDraft || earliestPo.arrivalMonthIdx <= firstDraft.firstCoveredMonthIdx)
+      ) {
+        totalFirstWavePacks += earliestPo.packsQty;
+      } else if (firstDraft) {
+        totalFirstWavePacks += firstDraft.recommendedPacks;
+      }
 
       totalCogsRub += pnl.annualCogsRub || 0;
       totalGrossProfitRub += pnl.annualGrossProfitRub || 0;
@@ -3119,7 +3392,7 @@ export function FinanceContourView() {
         monthlyNet[idx] += row.netCashFlowRub;
       });
 
-      return { model: m, pnl };
+      return { model: m, scenario: modelScen, pnl };
     });
 
     const cumulativeCash: number[] = [];
@@ -3136,6 +3409,7 @@ export function FinanceContourView() {
       filledOpCount,
       unfilledOpCount,
       peakCapitalRub,
+      totalFirstWavePacks,
       monthlyInflow,
       monthlyProcOutflow,
       monthlyVarOpexOutflow,
@@ -3143,7 +3417,32 @@ export function FinanceContourView() {
       cumulativeCash,
       perSku,
     };
-  }, [eligibleModels, currentScenario]);
+  }, [scopedFinanceEntries]);
+
+  const investmentSummary = useMemo(
+    () =>
+      isHoldingAllBrands
+        ? {
+            ...brandsReport.groupTotal,
+            monthlyRows: holdingSummary.groupTotal.monthlyRows,
+            firstWavePacks:
+              brandsReport.groupTotal.firstWavePacks > 0
+                ? brandsReport.groupTotal.firstWavePacks
+                : finSummary.totalFirstWavePacks,
+          }
+        : singleScenarioInvestmentSummary,
+    [
+      isHoldingAllBrands,
+      brandsReport.groupTotal,
+      holdingSummary.groupTotal.monthlyRows,
+      finSummary.totalFirstWavePacks,
+      singleScenarioInvestmentSummary,
+    ]
+  );
+
+  const effectiveAnnualRevenueRub = isHoldingAllBrands
+    ? holdingSummary.groupTotal.annualRevenueRub
+    : totals.annualRevenueRub;
 
   if (!hasFinance) {
     return (
@@ -3214,10 +3513,10 @@ export function FinanceContourView() {
             onSelectScenario={setSelectedScenarioId}
             includeGroupPortfolioInS1={includeGroupPortfolioInS1}
             onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
-            eligibleCount={eligibleModels.length}
+            eligibleCount={scopedFinanceEntries.length}
           />
 
-          {eligibleModels.length === 0 && (
+          {scopedFinanceEntries.length === 0 && (
             <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1 max-w-2xl">
                 <div className="text-[14.5px] font-bold text-[#141413]">
@@ -3356,7 +3655,7 @@ export function FinanceContourView() {
                 +{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}
               </div>
               <div className="text-[11.5px] text-[#64748B]">
-                Выручка: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(totals.annualRevenueRub)}</strong> · Рентабельность:{' '}
+                Выручка: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(effectiveAnnualRevenueRub)}</strong> · Рентабельность:{' '}
                 <strong className="text-emerald-600 dark:text-emerald-400">{investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%</strong>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
@@ -3367,7 +3666,7 @@ export function FinanceContourView() {
           {(() => {
             const sim = computeWhatIfSensitivitySimulation(
               {
-                annualRevenueRub: totals.annualRevenueRub,
+                annualRevenueRub: effectiveAnnualRevenueRub,
                 annualSoldGoodsCostRub: investmentSummary.annualSoldGoodsCostRub,
                 annualEstimatedOperatingProfitRub:
                   investmentSummary.annualEstimatedOperatingProfitRub,
@@ -3397,7 +3696,11 @@ export function FinanceContourView() {
                         🎛️ Симулятор чувствительности · Что если?
                       </div>
                       <h2 className="text-[14.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7] group-hover:text-emerald-600 transition">
-                        Стресс-тест и точки роста прибыли сценария «{currentScenario.title}» {whatIfOpen ? '▴' : '▾'}
+                        Стресс-тест и точки роста прибыли{' '}
+                        {isHoldingAllBrands
+                          ? 'всех 5 брендов холдинга'
+                          : `сценария «${currentScenario.title}»`}{' '}
+                        {whatIfOpen ? '▴' : '▾'}
                       </h2>
                     </button>
                   </div>
@@ -3590,7 +3893,15 @@ export function FinanceContourView() {
                   {brandsReport.brands.map((b) => (
                     <tr
                       key={b.brandCode}
-                      onClick={() => setBrandFilter(b.brandCode)}
+                      onClick={() => {
+                        const mb = holdingSummary.brands.find(
+                          (hb) => hb.brandCode === b.brandCode
+                        );
+                        if (mb && typeof mb.selectedScenarioId === 'number') {
+                          setSelectedScenarioId(mb.selectedScenarioId, b.brandCode);
+                        }
+                        setBrandFilter(b.brandCode);
+                      }}
                       className={`hover:bg-[#FAFAF7] cursor-pointer transition ${
                         brandFilter === b.brandCode ? 'bg-amber-50/60 font-semibold' : ''
                       }`}

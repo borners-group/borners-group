@@ -59,6 +59,7 @@ export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
 export const STORAGE_KEY_PORTFOLIO_UPDATED_AT = 'borners_portfolio_updated_at_v1';
+export const STORAGE_KEY_BACKUP_UPDATED_AT = 'borners_backup_updated_at_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
 export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
 export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_repair_v1';
@@ -616,6 +617,23 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
   for (const raw of modelsList) {
     if (isModelMarkedDeleted(raw, deletedReg)) continue;
     const m = ensureModelUnifiedV11(raw);
+    const rawGal = Array.isArray(raw.gallery) ? raw.gallery : m.gallery;
+    const isExplicitEmptyGal = Array.isArray(raw.gallery) && raw.gallery.length === 0;
+    const hasBase64InGal =
+      Array.isArray(rawGal) &&
+      rawGal.some(
+        (g) =>
+          (typeof g?.url === 'string' && g.url.startsWith('data:image/')) ||
+          (typeof g?.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
+      );
+    // Никогда не дублируем base64-фото в резервном ключе borners_user_saved_plans_v1,
+    // чтобы не удваивать расход квоты localStorage (5 МБ) и не затирать фото при stripOversizedDataUrls
+    const backupGallery = isExplicitEmptyGal
+      ? []
+      : hasBase64InGal
+      ? undefined
+      : m.gallery;
+
     backup[m.id] = {
       id: m.id,
       code: m.code,
@@ -639,7 +657,7 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       procureByOrdersVolume: m.procureByOrdersVolume,
       priority: m.priority,
       launchStatus: m.launchStatus,
-      gallery: Array.isArray(raw.gallery) && raw.gallery.length === 0 ? [] : m.gallery,
+      gallery: backupGallery,
       palettes: Array.isArray(raw.palettes) && raw.palettes.length === 0 ? [] : m.palettes,
       fabric: m.fabric,
       construction: m.construction,
@@ -650,22 +668,37 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       sharedSupplyAndFact: m.sharedSupplyAndFact,
     };
   }
-  safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup);
+  if (safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup)) {
+    safeSetStorageJson(STORAGE_KEY_BACKUP_UPDATED_AT, new Date().toISOString());
+  }
 }
 
 export function overlayBackupOntoModels(
-  modelsList: ScenarioModelSpec[]
+  modelsList: ScenarioModelSpec[],
+  options?: { fromExistingModelsStorage?: boolean }
 ): ScenarioModelSpec[] {
   const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
     STORAGE_KEY_USER_PLANS_BACKUP
   );
   const deletedReg = getDeletedModelsRegistry();
 
+  // Если основной ключ borners_tz_models_v1 присутствует и свежее резервного ключа
+  // (например, резервный ключ не смог перезаписаться из-за квоты), не откатываем поля моделей назад
+  const portfolioIso = getPortfolioUpdatedAt();
+  const backupIso = safeGetStorageJson<string>(STORAGE_KEY_BACKUP_UPDATED_AT);
+  const portfolioTs = portfolioIso ? Date.parse(portfolioIso) : NaN;
+  const backupTs = backupIso ? Date.parse(backupIso) : NaN;
+  const isBackupStaleVsPrimary =
+    Boolean(options?.fromExistingModelsStorage) &&
+    Number.isFinite(portfolioTs) &&
+    Number.isFinite(backupTs) &&
+    portfolioTs > backupTs + 1000;
+
   const overlaid = modelsList
     .filter((m) => !isModelMarkedDeleted(m, deletedReg))
     .map((rawM) => {
       const m = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
-      if (!backup || typeof backup !== 'object') return m;
+      if (!backup || typeof backup !== 'object' || isBackupStaleVsPrimary) return m;
 
       const saved =
         backup[m.id] ||
@@ -691,9 +724,25 @@ export function overlayBackupOntoModels(
       }
 
       const explicitEmptyGallery =
-        Array.isArray(saved.gallery) && saved.gallery.length === 0;
+        Array.isArray(saved.gallery) &&
+        saved.gallery.length === 0 &&
+        (!Array.isArray(rawM.gallery) || rawM.gallery.length === 0);
       const explicitEmptyPalettes =
         Array.isArray(saved.palettes) && saved.palettes.length === 0;
+
+      const savedValidPhotos = Array.isArray(saved.gallery)
+        ? saved.gallery.filter((g) => Boolean(g?.url && g.url.trim().length > 0))
+        : null;
+      const mValidPhotosCount = Array.isArray(m.gallery)
+        ? m.gallery.filter((g) => Boolean(g?.url && g.url.trim().length > 0)).length
+        : 0;
+      const resolvedGallery = explicitEmptyGallery
+        ? []
+        : savedValidPhotos &&
+          savedValidPhotos.length > 0 &&
+          savedValidPhotos.length >= mValidPhotosCount
+        ? savedValidPhotos
+        : m.gallery;
 
       const mergedRaw: ScenarioModelSpec = {
         ...m,
@@ -721,7 +770,7 @@ export function overlayBackupOntoModels(
             : m.procureByOrdersVolume,
         priority: saved.priority ?? m.priority,
         launchStatus: saved.launchStatus ?? m.launchStatus,
-        gallery: Array.isArray(saved.gallery) ? saved.gallery : m.gallery,
+        gallery: resolvedGallery,
         palettes: Array.isArray(saved.palettes) ? saved.palettes : m.palettes,
         fabric: saved.fabric || m.fabric,
         construction: saved.construction || m.construction,
@@ -938,7 +987,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       }
     }
 
-    const hydrated = overlayBackupOntoModels(merged);
+    const hydrated = overlayBackupOntoModels(merged, { fromExistingModelsStorage: true });
     if (hydrated.length !== parsedModels.length) {
       safeSetStorageJson(STORAGE_KEY_MODELS, hydrated);
     }
@@ -1132,6 +1181,9 @@ export function filterModelsForScenario(
       if (modelBrand === 'FUKAI') {
         return includeGroupPortfolioInS1 || normFilter === 'FUKAI';
       }
+      if (modelBrand === 'NA_TELE') {
+        return includeGroupPortfolioInS1 || normFilter === 'NA_TELE';
+      }
       if (modelBrand !== 'BORNERS') {
         return false;
       }
@@ -1272,4 +1324,79 @@ export function mergeCloudPortfolioSnapshot(params: {
     models: merged,
     shouldPushLocalToCloud: addedLocalMissingInCloud,
   };
+}
+
+export function isBrandScenarioExplicitlyNone(
+  brandInput: string,
+  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>> | Record<string, number | null> | null
+): boolean {
+  if (!selectedScenarioByBrand) return false;
+  const code = normalizePortfolioBrandCode(brandInput);
+  if (code === 'ALL') return false;
+  return (
+    Object.prototype.hasOwnProperty.call(selectedScenarioByBrand, code) &&
+    (selectedScenarioByBrand as Record<string, number | null | undefined>)[code] === null
+  );
+}
+
+export function resolveEffectiveScenarioForModel(
+  model: ScenarioModelSpec,
+  scenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>> | Record<string, number | null> | undefined,
+  fallbackScenario: GrowthScenarioDef,
+  includeGroupPortfolioInS1 = false
+): GrowthScenarioDef {
+  const modelBrand = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const activeScenarios = scenarios.filter((s) => !s.isArchived);
+
+  // Если текущий fallbackScenario явно принадлежит бренду модели или является единым сценарием,
+  // в котором модель уже проходит строгую фильтрацию без подмены чужого бренда
+  if (
+    fallbackScenario &&
+    !fallbackScenario.isArchived &&
+    filterModelsForScenario([model], fallbackScenario, includeGroupPortfolioInS1, 'ALL').length > 0
+  ) {
+    const ownerNorm = fallbackScenario.ownerBrandCode
+      ? normalizePortfolioBrandCode(fallbackScenario.ownerBrandCode)
+      : 'ALL';
+    if (
+      modelBrand === 'BORNERS' ||
+      ownerNorm === modelBrand ||
+      (fallbackScenario.id !== 1 && isScenarioCompatibleWithBrand(fallbackScenario, modelBrand))
+    ) {
+      return fallbackScenario;
+    }
+  }
+
+  if (modelBrand !== 'ALL' && selectedScenarioByBrand) {
+    const mappedId = (selectedScenarioByBrand as Record<string, number | null | undefined>)[modelBrand];
+    if (typeof mappedId === 'number') {
+      const mapped = activeScenarios.find((s) => s.id === mappedId);
+      if (mapped && isScenarioCompatibleWithBrand(mapped, modelBrand)) {
+        return mapped;
+      }
+    }
+  }
+
+  if (modelBrand === 'AKUSHA') {
+    return activeScenarios.find((s) => s.id === AKUSHA_2027_SCENARIO_ID) || fallbackScenario;
+  }
+  if (modelBrand === 'LISKANI') {
+    return activeScenarios.find((s) => s.id === LISKANI_2027_SCENARIO_ID) || fallbackScenario;
+  }
+  if (modelBrand === 'FUKAI') {
+    return activeScenarios.find((s) => s.id === ACTING_2027_SCENARIO_ID) || fallbackScenario;
+  }
+  if (modelBrand === 'NA_TELE') {
+    return (
+      activeScenarios.find(
+        (s) => s.ownerBrandCode && normalizePortfolioBrandCode(s.ownerBrandCode) === 'NA_TELE'
+      ) ||
+      activeScenarios.find((s) => s.id === 2) ||
+      activeScenarios.find((s) => isScenarioCompatibleWithBrand(s, 'NA_TELE')) ||
+      fallbackScenario
+    );
+  }
+
+  return activeScenarios.find((s) => s.id === 1) || fallbackScenario;
 }

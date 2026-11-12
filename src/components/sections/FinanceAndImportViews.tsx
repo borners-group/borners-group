@@ -23,7 +23,7 @@ import {
   validateAndCheckDuplicates,
   ParsedImportRow,
 } from '@/lib/finance';
-import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 export function FinanceView() {
   const {
@@ -65,7 +65,8 @@ export function FinanceView() {
       financialPlans.filter(
         (r) =>
           r.scenario === financialScenario &&
-          (brandFilter === 'ALL' || r.brandId === brandFilter)
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [financialPlans, financialScenario, brandFilter]
   );
@@ -73,7 +74,10 @@ export function FinanceView() {
   const filteredProducts = useMemo(
     () =>
       products.filter(
-        (p) => !p.isArchived && (brandFilter === 'ALL' || p.brandId === brandFilter)
+        (p) =>
+          !p.isArchived &&
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(p.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [products, brandFilter]
   );
@@ -81,7 +85,10 @@ export function FinanceView() {
   const filteredCampaigns = useMemo(
     () =>
       campaigns.filter(
-        (c) => brandFilter === 'ALL' || c.brandId === 'ALL' || c.brandId === brandFilter
+        (c) =>
+          brandFilter === 'ALL' ||
+          c.brandId === 'ALL' ||
+          normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter)
       ),
     [campaigns, brandFilter]
   );
@@ -89,7 +96,10 @@ export function FinanceView() {
   const filteredLaunches = useMemo(
     () =>
       launches.filter(
-        (l) => !l.isArchived && (brandFilter === 'ALL' || l.brandId === brandFilter)
+        (l) =>
+          !l.isArchived &&
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [launches, brandFilter]
   );
@@ -290,7 +300,7 @@ export function FinanceView() {
                       {row.periodLabel}
                     </td>
                     <td className="py-4 px-4 font-semibold">
-                      {row.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                      {formatLabBrandLabel(row.brandId)}
                     </td>
                     <td className="py-4 px-4 text-right">
                       {formatCurrencyRub(row.plannedRevenueRub)}
@@ -368,7 +378,7 @@ export function FinanceView() {
                   <tr key={p.id} className="hover:bg-[#F7F7F5]/60 transition">
                     <td className="py-4 px-6">
                       <div className="text-[13px] font-semibold text-[#737373]">
-                        {p.sku} · {p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                        {p.sku} · {formatLabBrandLabel(p.brandId)}
                       </div>
                       <div className="font-semibold text-[16px] text-[#171717]">{p.name}</div>
                     </td>
@@ -428,7 +438,7 @@ export function FinanceView() {
                   <tr key={r.id}>
                     <td className="py-4 px-4 font-semibold">{r.periodLabel}</td>
                     <td className="py-4 px-4 font-semibold">
-                      {r.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                      {formatLabBrandLabel(r.brandId)}
                     </td>
                     <td className="py-4 px-4 text-right">
                       {r.plannedBuyoutUnits.toLocaleString('ru-RU')} шт.
@@ -466,7 +476,7 @@ export function FinanceView() {
                 <tr key={c.id}>
                   <td className="py-4 px-6 font-semibold text-[16px]">{c.name}</td>
                   <td className="py-4 px-4 text-[#737373]">
-                    {c.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : c.brandId} · {c.channel}
+                    {c.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(c.brandId)} · {c.channel}
                   </td>
                   <td className="py-4 px-4 text-right">
                     {formatCurrencyRub(c.plannedBudgetRub)}
@@ -500,7 +510,7 @@ export function FinanceView() {
               className="bg-white rounded-2xl border border-[#E8E8E5] p-7 space-y-4"
             >
               <div className="text-[13px] font-semibold uppercase text-[#737373]">
-                {l.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {l.startDate}
+                {formatLabBrandLabel(l.brandId)} · {l.startDate}
               </div>
               <h3 className="text-[22px] font-bold">{l.name}</h3>
               <div className="space-y-2 pt-3 border-t border-[#E8E8E5] text-[14px]">
@@ -525,7 +535,8 @@ export function FinanceView() {
             const rows = financialPlans.filter(
               (r) =>
                 r.scenario === sc &&
-                (brandFilter === 'ALL' || r.brandId === brandFilter)
+                (brandFilter === 'ALL' ||
+                  normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
             );
             const rev = rows.reduce((s, r) => s + r.plannedRevenueRub, 0);
             const prof = rows.reduce((s, r) => s + r.plannedOperatingProfitRub, 0);

@@ -80,7 +80,12 @@ export function LaunchCalendarView() {
   const filteredLaunches = useMemo(
     () =>
       launches
-        .filter((l) => !l.isArchived && (brandFilter === 'ALL' || l.brandId === brandFilter))
+        .filter(
+          (l) =>
+            !l.isArchived &&
+            (brandFilter === 'ALL' ||
+              normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
+        )
         .sort((a, b) => a.startDate.localeCompare(b.startDate)),
     [launches, brandFilter]
   );
@@ -413,7 +418,7 @@ export function LaunchCalendarView() {
                             color: l.brandId === 'BORNERS' ? '#D97745' : '#8B8078',
                           }}
                         >
-                          {l.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                          {formatLabBrandLabel(l.brandId)}
                         </span>
                         <span className="text-[#737373]">{l.startDate}</span>
                       </div>
@@ -455,7 +460,7 @@ export function LaunchCalendarView() {
                     <div className="text-[13px] text-[#737373]">{l.collectionName}</div>
                   </td>
                   <td className="py-4 px-4 font-semibold">
-                    {l.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                    {formatLabBrandLabel(l.brandId)}
                   </td>
                   <td className="py-4 px-4 font-semibold">{l.startDate}</td>
                   <td className="py-4 px-4 text-right font-bold text-[#16805D]">
@@ -526,7 +531,7 @@ export function LaunchCalendarView() {
                       <div className="flex items-center justify-between text-[13px] font-semibold">
                         <span className="inline-flex items-center gap-1.5">
                           <GripVertical className="h-4 w-4 text-[#737373]" />
-                          {l.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                          {formatLabBrandLabel(l.brandId)}
                         </span>
                         <span className="text-[#737373]">{l.startDate}</span>
                       </div>
@@ -635,7 +640,7 @@ export function LaunchCalendarView() {
             <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-6">
               <div>
                 <div className="text-[13px] font-semibold uppercase text-[#737373]">
-                  {activeLaunch.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · Старт:{' '}
+                  {formatLabBrandLabel(activeLaunch.brandId)} · Старт:{' '}
                   {activeLaunch.startDate}
                 </div>
                 <h2 className="text-[28px] font-bold text-[#171717] mt-1">
@@ -685,7 +690,7 @@ export function LaunchCalendarView() {
                       )
                       .map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.sku} · {p.name} ({p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'})
+                          {p.sku} · {p.name} ({formatLabBrandLabel(p.brandId)})
                         </option>
                       ))}
                   </select>
@@ -1010,7 +1015,7 @@ export function MarketingGrowthView() {
 
   const [expForm, setExpForm] = useState({
     hypothesis: '',
-    brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    brandId: brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : 'BORNERS',
     rationale: '',
     method: 'A/B тест карточек и видеообложек',
     successCriteria: 'Рост CTR на +1.2 п.п.',
@@ -1019,7 +1024,7 @@ export function MarketingGrowthView() {
 
   const [campForm, setCampForm] = useState({
     name: '',
-    brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    brandId: brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : 'BORNERS',
     channel: 'Wildberries' as MarketingChannel,
     goal: 'Масштабирование выкупов базовой капсулы',
     periodLabel: 'Февраль — Март 2027',
@@ -1034,7 +1039,9 @@ export function MarketingGrowthView() {
       campaigns.filter(
         (c) =>
           !c.isArchived &&
-          (brandFilter === 'ALL' || c.brandId === 'ALL' || c.brandId === brandFilter)
+          (brandFilter === 'ALL' ||
+            c.brandId === 'ALL' ||
+            normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [campaigns, brandFilter]
   );
@@ -1042,7 +1049,10 @@ export function MarketingGrowthView() {
   const filteredExperiments = useMemo(
     () =>
       experiments.filter(
-        (e) => brandFilter === 'ALL' || e.brandId === 'ALL' || e.brandId === brandFilter
+        (e) =>
+          brandFilter === 'ALL' ||
+          e.brandId === 'ALL' ||
+          normalizeLabBrandCode(e.brandId) === normalizeLabBrandCode(brandFilter)
       ),
     [experiments, brandFilter]
   );
@@ -1123,7 +1133,7 @@ export function MarketingGrowthView() {
                     <div className="text-[13px] text-[#737373]">{c.goal}</div>
                   </td>
                   <td className="py-4 px-4 font-semibold">
-                    {c.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : c.brandId} · {c.channel}
+                    {c.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(c.brandId)} · {c.channel}
                   </td>
                   <td className="py-4 px-4 text-[#737373]">{c.periodLabel}</td>
                   <td className="py-4 px-4 text-right font-semibold">
@@ -1167,7 +1177,7 @@ export function MarketingGrowthView() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3 text-[13px]">
                   <span className="font-semibold text-[#737373]">
-                    {exp.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : exp.brandId} · {exp.timeframe}
+                    {exp.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(exp.brandId)} · {exp.timeframe}
                   </span>
                   <span className="font-semibold px-2.5 py-0.5 rounded-lg bg-[#F7F7F5] border border-[#E8E8E5]">
                     {EXPERIMENT_STATUS_LABELS_RU[exp.status]}
@@ -1506,11 +1516,19 @@ export function MarketingGrowthView() {
                   <label className="block font-semibold mb-1.5">Бренд</label>
                   <select
                     value={campForm.brandId}
-                    onChange={(e) => setCampForm({ ...campForm, brandId: e.target.value })}
+                    onChange={(e) =>
+                      setCampForm({
+                        ...campForm,
+                        brandId: normalizeLabBrandCode(e.target.value),
+                      })
+                    }
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                   >
                     <option value="BORNERS">BORNERS</option>
                     <option value="NA_TELE">НА ТЕЛЕ</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISKANI">LISKANI</option>
+                    <option value="FUKAI">FUKAI</option>
                   </select>
                 </div>
                 <div>
@@ -1576,6 +1594,25 @@ export function MarketingGrowthView() {
               Запуск маркетингового теста
             </h3>
             <div className="space-y-4 text-[14px]">
+              <div>
+                <label className="block font-semibold mb-1.5">Бренд</label>
+                <select
+                  value={expForm.brandId}
+                  onChange={(e) =>
+                    setExpForm({
+                      ...expForm,
+                      brandId: normalizeLabBrandCode(e.target.value),
+                    })
+                  }
+                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                >
+                  <option value="BORNERS">BORNERS</option>
+                  <option value="NA_TELE">НА ТЕЛЕ</option>
+                  <option value="AKUSHA">AKUSHA</option>
+                  <option value="LISKANI">LISKANI</option>
+                  <option value="FUKAI">FUKAI</option>
+                </select>
+              </div>
               <div>
                 <label className="block font-semibold mb-1.5">Формулировка гипотезы</label>
                 <input

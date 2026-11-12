@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
+  GalleryMediaItem,
   GrowthScenarioDef,
   INITIAL_SCENARIOS,
   INITIAL_SCENARIO_MODELS,
@@ -72,6 +73,8 @@ import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCard
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
 import {
+  loadAllModelGalleriesFromIdb,
+  loadPortfolioSnapshotWithMetaFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
@@ -87,10 +90,13 @@ import {
   STORAGE_KEY_USER_PLANS_BACKUP,
   clearDeletedModelsRegistry,
   filterModelsForScenario,
+  getDeletedModelsRegistry,
+  getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
   overlayBackupOntoModels as overlayUserPlansBackup,
+  resolveEffectiveScenarioForModel,
   sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup as saveUserPlansBackup,
   unmarkModelAsDeletedInStorage,
@@ -122,6 +128,7 @@ import {
   renameBrandScenario,
   resetStarterCabinetsFromHolding,
   serializeStructuredPlanToCsv,
+  updateModelScenarioMonthBuyouts,
 } from '@/lib/unifiedBusinessEngine';
 import { touchPortfolioUpdatedAt } from '@/lib/portfolioPersistence';
 import {
@@ -540,7 +547,7 @@ export function GrowthScenariosShowcase({
         placeholder: 'Например: Кроссовки кожаные AKUSHA Urban Cloud',
         defaultPrice: 4490,
         defaultCost: 1480,
-        defaultUnits: 8,
+        defaultUnits: 1,
       },
       LISKANI: {
         prefix: 'LSC',
@@ -614,6 +621,19 @@ export function GrowthScenariosShowcase({
 
   const hydratedRef = useRef(false);
 
+  const buildCloudByBrandRecord = useCallback(
+    (mapInput?: Partial<Record<CanonicalBrandCode, number | null>>) => {
+      const out: Record<string, number | null> = {};
+      for (const [k, v] of Object.entries(mapInput || selectedScenarioByBrand || {})) {
+        if (v === null || typeof v === 'number') {
+          out[k] = v;
+        }
+      }
+      return out;
+    },
+    [selectedScenarioByBrand]
+  );
+
   const commitModels = useCallback(
     (updater: ScenarioModelSpec[] | ((prev: ScenarioModelSpec[]) => ScenarioModelSpec[])) => {
       setModels((prev) => {
@@ -637,7 +657,13 @@ export function GrowthScenariosShowcase({
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next);
-        void pushPortfolioCoreToSupabase({ models: next, scenarios });
+        void pushPortfolioCoreToSupabase({
+          models: next,
+          scenarios,
+          selectedScenarioByBrand: buildCloudByBrandRecord(),
+          includeGroupPortfolioInS1,
+          deletedModelIds: getDeletedModelsRegistry(),
+        });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -646,7 +672,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    [scenarios]
+    [scenarios, buildCloudByBrandRecord, includeGroupPortfolioInS1]
   );
 
   const commitScenarios = useCallback(
@@ -655,7 +681,13 @@ export function GrowthScenariosShowcase({
         const next = typeof updater === 'function' ? updater(prev) : updater;
         touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
-        void pushPortfolioCoreToSupabase({ models, scenarios: next });
+        void pushPortfolioCoreToSupabase({
+          models,
+          scenarios: next,
+          selectedScenarioByBrand: buildCloudByBrandRecord(),
+          includeGroupPortfolioInS1,
+          deletedModelIds: getDeletedModelsRegistry(),
+        });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
@@ -664,7 +696,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    [models]
+    [models, buildCloudByBrandRecord, includeGroupPortfolioInS1]
   );
 
   // Мгновенный запуск стартовой матрицы пустого кабинета (AKUSHA / LISKANI / НА ТЕЛЕ · 3 SKU + сценарий 2027)
@@ -684,7 +716,13 @@ export function GrowthScenariosShowcase({
       void savePortfolioSnapshotToIdb(res.models);
       safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
       safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
-      void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
+      void pushPortfolioCoreToSupabase({
+        models: res.models,
+        scenarios: res.scenarios,
+        selectedScenarioByBrand: buildCloudByBrandRecord(nextByBrand),
+        includeGroupPortfolioInS1,
+        deletedModelIds: getDeletedModelsRegistry(),
+      });
       if (res.scenarioId) {
         setSelectedScenarioId(res.scenarioId, brandCode);
       }
@@ -702,7 +740,15 @@ export function GrowthScenariosShowcase({
         `Активировано 3 флагманских SKU и сценарий развития 2027`
       );
     },
-    [models, scenarios, selectedScenarioByBrand, setSelectedScenarioId, notify]
+    [
+      models,
+      scenarios,
+      selectedScenarioByBrand,
+      buildCloudByBrandRecord,
+      includeGroupPortfolioInS1,
+      setSelectedScenarioId,
+      notify,
+    ]
   );
 
   // Запуск всех 5 кабинетов холдинга в 1 клик
@@ -721,7 +767,13 @@ export function GrowthScenariosShowcase({
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
-    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
+    void pushPortfolioCoreToSupabase({
+      models: res.models,
+      scenarios: res.scenarios,
+      selectedScenarioByBrand: buildCloudByBrandRecord(res.selectedScenarioByBrand),
+      includeGroupPortfolioInS1,
+      deletedModelIds: getDeletedModelsRegistry(),
+    });
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -734,9 +786,16 @@ export function GrowthScenariosShowcase({
       'Все 5 кабинетов холдинга подключены',
       'Стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ активированы в сводке 2027'
     );
-  }, [models, scenarios, selectedScenarioByBrand, notify]);
+  }, [
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    buildCloudByBrandRecord,
+    includeGroupPortfolioInS1,
+    notify,
+  ]);
 
-  // Возврат к 3 базовым кабинетам (BORNERS + FUKAI + LISKANI)
+  // Возврат от демо-матриц к эталонным портфелям холдинга
   const handleResetStarterCabinets = useCallback(() => {
     const res = resetStarterCabinetsFromHolding(
       models,
@@ -763,9 +822,15 @@ export function GrowthScenariosShowcase({
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
-    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
+    void pushPortfolioCoreToSupabase({
+      models: res.models,
+      scenarios: res.scenarios,
+      selectedScenarioByBrand: buildCloudByBrandRecord(nextByBrand),
+      includeGroupPortfolioInS1,
+      deletedModelIds: getDeletedModelsRegistry(),
+    });
     if (
-      brandFilterLocal === 'AKUSHA' ||
+      (brandFilterLocal === 'AKUSHA' && !hasOfficialAkusha) ||
       brandFilterLocal === 'NA_TELE'
     ) {
       setBrandFilterLocal('ALL');
@@ -781,21 +846,24 @@ export function GrowthScenariosShowcase({
     }
     notify(
       'success',
-      'Возвращены 2 базовых кабинета холдинга',
-      'Активны эталонные кабинеты BORNERS и FUKAI (+312,80 млн ₽ прибыли)'
+      'Демо-матрицы сброшены · официальные портфели сохранены',
+      'Официальные кабинеты BORNERS, AKUSHA (105,79 млн ₽), LISKANI (500 млн ₽) и FUKAI (90,55 млн ₽) остаются в силе.'
     );
   }, [
     models,
     scenarios,
     selectedScenarioByBrand,
+    buildCloudByBrandRecord,
+    includeGroupPortfolioInS1,
     brandFilterLocal,
     setBrandFilter,
     setSelectedScenarioId,
     notify,
   ]);
 
-  // Загрузка сохранённых данных из localStorage без перезаписи пользовательских правок продаж
+  // Загрузка сохранённых данных из localStorage + догидратация base64-фотогалерей из IndexedDB без перезаписи пользовательских правок продаж
   useEffect(() => {
+    let cancelled = false;
     const syncFromStorage = () => {
       // 1. Сначала запускаем единую гидратацию моделей (включая миграцию LISKANI 269 SKU / 33 модели)
       const hydratedModels = hydratePortfolioModelsFromStorage();
@@ -804,7 +872,28 @@ export function GrowthScenariosShowcase({
         safeSetStorageJson(STORAGE_KEY_MODELS, hydratedModels);
         saveUserPlansBackup(hydratedModels);
       }
-      setModels(hydratedModels);
+      setModels((prev) => {
+        const prevById = new Map<string, ScenarioModelSpec>();
+        for (const pm of prev) {
+          prevById.set(pm.id, pm);
+        }
+        return hydratedModels.map((hm) => {
+          const pm = prevById.get(hm.id);
+          if (!pm || !Array.isArray(pm.gallery) || pm.gallery.length === 0) return hm;
+          const hmValidCount = Array.isArray(hm.gallery)
+            ? hm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length
+            : 0;
+          const pmValidCount = pm.gallery.filter((g) =>
+            Boolean(g?.url && g.url.length > 0)
+          ).length;
+          const isExplicitEmptyInStorage =
+            Array.isArray(hm.gallery) && hm.gallery.length === 0;
+          if (!isExplicitEmptyInStorage && pmValidCount > hmValidCount) {
+            return { ...hm, gallery: pm.gallery };
+          }
+          return hm;
+        });
+      });
 
       // 2. Загружаем сценарии и гарантируем наличие ACTING 2027, LISKANI 2027 (500 млн ₽) и AKUSHA 2027 (105,79 млн ₽)
       const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
@@ -892,11 +981,78 @@ export function GrowthScenariosShowcase({
     };
 
     syncFromStorage();
+    void (async () => {
+      const [idbSnapMeta, idbGalleries] = await Promise.all([
+        loadPortfolioSnapshotWithMetaFromIdb<ScenarioModelSpec>(),
+        loadAllModelGalleriesFromIdb(),
+      ]);
+      if (cancelled) return;
+      setModels((prev) => {
+        let working = [...prev];
+        let changed = false;
+        const localIso = getPortfolioUpdatedAt();
+        const localTs = localIso ? Date.parse(localIso) : NaN;
+        const idbTs = idbSnapMeta?.updatedAtIso ? Date.parse(idbSnapMeta.updatedAtIso) : NaN;
+        const isIdbNewer =
+          Number.isFinite(idbTs) && (!Number.isFinite(localTs) || idbTs > localTs);
+
+        if (idbSnapMeta && Array.isArray(idbSnapMeta.models) && idbSnapMeta.models.length > 0) {
+          for (const snapMod of idbSnapMeta.models) {
+            if (!snapMod || !snapMod.id || !snapMod.code) continue;
+            if (isModelMarkedDeleted(snapMod)) continue;
+            const isOldAkushaDraft =
+              ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
+                snapMod.code.toUpperCase().startsWith('AKU-') ||
+                snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
+              !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
+            if (isOldAkushaDraft) continue;
+
+            const idx = working.findIndex(
+              (m) =>
+                m.id === snapMod.id ||
+                m.code.trim().toUpperCase() === snapMod.code.trim().toUpperCase()
+            );
+            if (idx < 0) {
+              working.push(ensureModelUnifiedV11(applyCategoryWbUnitEconomics(snapMod)));
+              changed = true;
+            } else if (isIdbNewer) {
+              working[idx] = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(snapMod));
+              changed = true;
+            }
+          }
+        }
+
+        const galleryKeys = Object.keys(idbGalleries || {});
+        if (galleryKeys.length > 0) {
+          working = working.map((m) => {
+            const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
+              | GalleryMediaItem[]
+              | undefined;
+            if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
+            const idbValidCount = idbGal.filter(
+              (g) => typeof g?.url === 'string' && g.url.length > 0
+            ).length;
+            const localValidCount = Array.isArray(m.gallery)
+              ? m.gallery.filter((g) => typeof g?.url === 'string' && g.url.length > 0).length
+              : 0;
+            const isExplicitEmpty = Array.isArray(m.gallery) && m.gallery.length === 0;
+            if (!isExplicitEmpty && idbValidCount > localValidCount) {
+              changed = true;
+              return { ...m, gallery: idbGal };
+            }
+            return m;
+          });
+        }
+
+        return changed ? working : prev;
+      });
+    })();
     window.addEventListener('borners-scenario-models-changed', syncFromStorage);
     window.addEventListener('borners-scenarios-changed', syncFromStorage);
     window.addEventListener('borners-active-scenario-changed', syncFromStorage);
     window.addEventListener('storage', syncFromStorage);
     return () => {
+      cancelled = true;
       window.removeEventListener('borners-scenario-models-changed', syncFromStorage);
       window.removeEventListener('borners-scenarios-changed', syncFromStorage);
       window.removeEventListener('borners-active-scenario-changed', syncFromStorage);
@@ -955,6 +1111,26 @@ export function GrowthScenariosShowcase({
 
   const activeModel =
     models.find((m) => m.id === selectedModelId) || models[0] || INITIAL_SCENARIO_MODELS[0];
+
+  const effectiveSelectedModelScenario = useMemo(
+    () =>
+      activeModel
+        ? resolveEffectiveScenarioForModel(
+            activeModel,
+            scenarios,
+            selectedScenarioByBrand,
+            currentScenario,
+            includeGroupPortfolioInS1
+          )
+        : currentScenario,
+    [
+      activeModel,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      includeGroupPortfolioInS1,
+    ]
+  );
 
   // Расчёт показателей каждого сценария снизу вверх из планов моделей (п. 8 ТЗ)
   const scenarioAggregates = useMemo(() => {
@@ -1169,8 +1345,12 @@ export function GrowthScenariosShowcase({
       currentScenario
     );
     const brandsReport = computeGroupBrandsInvestmentReport(
-      eligible,
-      currentScenario
+      brandFilterLocal === 'ALL' ? models : eligible,
+      currentScenario,
+      {
+        allScenarios: scenarios,
+        selectedScenarioByBrand,
+      }
     );
     const multiBrandSummary = computeMultiBrandPortfolioSummary(
       models,
@@ -1401,7 +1581,7 @@ export function GrowthScenariosShowcase({
     );
   };
 
-  // Быстрое изменение объёма декабря прямо на карточке на Экране №1 (с пропорциональным пересчётом месяцев)
+  // Быстрое изменение объёма декабря прямо на карточке на Экране №1 (с пропорциональным пересчётом месяцев и заказов)
   const handleQuickAdjustDecPacks = (
     mod: ScenarioModelSpec,
     nextDecPacksRaw: number,
@@ -1409,10 +1589,17 @@ export function GrowthScenariosShowcase({
   ) => {
     if (e) e.stopPropagation();
     const nextDecPacks = Math.max(0, Math.round(nextDecPacksRaw));
+    const targetScen = resolveEffectiveScenarioForModel(
+      mod,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      includeGroupPortfolioInS1
+    );
     const curPlan =
-      mod.plansByScenario[currentScenario.id] ||
+      mod.plansByScenario[targetScen.id] ||
       mod.plansByScenario[1] || {
-        scenarioId: currentScenario.id,
+        scenarioId: targetScen.id,
         monthlyPacks: Array(12).fill(0),
         monthlyPricesRub: Array(12).fill(mod.retailPriceRub),
         monthlyReceiptsPacks: Array(12).fill(0),
@@ -1434,18 +1621,28 @@ export function GrowthScenariosShowcase({
       const activeMonths = Math.max(1, 11 - startIdx);
       return Math.max(0, Math.round((nextDecPacks * (mIdx - startIdx + 1)) / (activeMonths + 1)));
     });
-    const updated: ScenarioModelSpec = {
-      ...mod,
-      plansByScenario: {
-        ...mod.plansByScenario,
-        [currentScenario.id]: {
-          ...curPlan,
-          scenarioId: currentScenario.id,
-          monthlyPacks: nextMonthlyPacks,
-          monthlyReceiptsPacks: [...nextMonthlyPacks],
+    let updated = updateModelScenarioMonthBuyouts(mod, targetScen.id, 11, nextDecPacks);
+    for (let mIdx = 0; mIdx < 11; mIdx++) {
+      updated = updateModelScenarioMonthBuyouts(
+        updated,
+        targetScen.id,
+        mIdx,
+        nextMonthlyPacks[mIdx]
+      );
+    }
+    const syncedPlan = updated.plansByScenario[targetScen.id];
+    if (syncedPlan) {
+      updated = {
+        ...updated,
+        plansByScenario: {
+          ...updated.plansByScenario,
+          [targetScen.id]: {
+            ...syncedPlan,
+            monthlyReceiptsPacks: [...nextMonthlyPacks],
+          },
         },
-      },
-    };
+      };
+    }
     commitModels((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
   };
 
@@ -1489,6 +1686,14 @@ export function GrowthScenariosShowcase({
 
   // Сброс к эталону 28-страничного PDF (15,04 млн WB + 85,11 млн 16 новых = 100,15 млн ₽ в дек)
   const handleResetToPdfBaseline = () => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        'Сбросить план продаж к исходному эталону PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)? Несохранённые ручные правки плана BORNERS будут перезаписаны.'
+      )
+    ) {
+      return;
+    }
     clearDeletedModelsRegistry();
     const preservedNaTeleModels = models.filter(
       (m) => normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'NA_TELE'
@@ -1644,6 +1849,38 @@ export function GrowthScenariosShowcase({
     setNewModelModalOpen(false);
     setDraftTitle('');
     setDraftImageUrl('');
+
+    // Если активный сценарий или фильтр бренда несовместим с созданной моделью (например, создали SKU НА ТЕЛЕ или AKUSHA при активном Сценарии №1) — переключаем на совместимый сценарий/бренд, чтобы карточка сразу отображалась
+    const isVisibleInCurrent =
+      filterModelsForScenario(
+        [created],
+        currentScenario,
+        includeGroupPortfolioInS1,
+        brandFilterLocal
+      ).length > 0;
+    if (!isVisibleInCurrent) {
+      const targetEffScen = resolveEffectiveScenarioForModel(
+        created,
+        workingScenarios,
+        selectedScenarioByBrand,
+        currentScenario,
+        includeGroupPortfolioInS1
+      );
+      setSelectedScenarioForBrand(bCode, targetEffScen.id);
+      setSelectedScenarioId(targetEffScen.id, bCode);
+      const visibleUnderCurrentBrandFilter =
+        isScenarioCompatibleWithBrand(targetEffScen, 'ALL') &&
+        filterModelsForScenario(
+          [created],
+          targetEffScen,
+          includeGroupPortfolioInS1,
+          brandFilterLocal
+        ).length > 0;
+      if (!visibleUnderCurrentBrandFilter) {
+        setBrandFilterLocal(bCode);
+        setBrandFilter(bCode);
+      }
+    }
 
     // Автоматически синхронизируем созданную модель с разделом «Модели (SKU)»
     syncScenarioModelToCatalog(created);
@@ -1873,7 +2110,7 @@ export function GrowthScenariosShowcase({
               onClick={() => navigateScreen('scenarios')}
               className="h-7.5 px-3 rounded-[7px] text-[#3F3E3A] hover:text-[#141413] hover:bg-white font-semibold transition cursor-pointer"
             >
-              ← 1. Сценарии ({currentScenario.title})
+              ← 1. Сценарии ({effectiveSelectedModelScenario.title})
             </button>
             <div className="h-3.5 w-[1px] bg-[#CECDC4]" />
             <button
@@ -1926,7 +2163,14 @@ export function GrowthScenariosShowcase({
                 className="h-7 px-2 rounded-[6px] bg-white border border-[#CECDC4] text-[12px] font-bold text-[#141413] max-w-[230px] sm:max-w-[320px] cursor-pointer"
               >
                 {switcherModels.map((m, idx) => {
-                  const met = computeModelScenarioMetrics(m, currentScenario);
+                  const mEffScen = resolveEffectiveScenarioForModel(
+                    m,
+                    scenarios,
+                    selectedScenarioByBrand,
+                    currentScenario,
+                    includeGroupPortfolioInS1
+                  );
+                  const met = computeModelScenarioMetrics(m, mEffScen);
                   const acting = getActingSkuByWbOrVendor(m.code, m.title);
                   const codeLbl = acting ? `WB ${acting.wbSku}` : m.code;
                   return (
@@ -1961,7 +2205,7 @@ export function GrowthScenariosShowcase({
       {screen === 'model' && (
         <ScenarioModelCardScreen
           model={activeModel}
-          scenario={currentScenario}
+          scenario={effectiveSelectedModelScenario}
           allScenarios={scenarios}
           onSelectScenario={(id) =>
             setSelectedScenarioId(id, detectModelBrandPortfolioLabel(activeModel))
@@ -1980,7 +2224,7 @@ export function GrowthScenariosShowcase({
       {screen === 'sales-plan' && (
         <ScenarioSalesPlanScreen
           model={activeModel}
-          scenario={currentScenario}
+          scenario={effectiveSelectedModelScenario}
           allScenarios={scenarios}
           onSelectScenario={(id) =>
             setSelectedScenarioId(id, detectModelBrandPortfolioLabel(activeModel))
@@ -2643,7 +2887,9 @@ export function GrowthScenariosShowcase({
                         </div>
                         {holdingCombinedMln && (
                           <div className="flex items-center justify-between gap-1 text-[11px]">
-                            <span className="text-[#64748B] truncate">+ FUKAI 90,55 млн</span>
+                            <span className="text-[#64748B] truncate">
+                              + FUKAI {(fukaiAnnualRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                            </span>
                             <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
                               Холдинг: {holdingCombinedMln} млн ₽
                             </span>

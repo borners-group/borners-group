@@ -13,6 +13,7 @@ import type {
 } from '@/types/platform';
 import { resolvePublicAssetUrl } from './scenarioData.ts';
 import { formatLabBrandLabel, normalizeLabBrandCode } from './rndCatalogSync.ts';
+import { cleanTechPackText, getBrandProductionProfile } from './brandProductionConfig.ts';
 
 // -----------------------------------------------------------------------------
 // 1. НИЗКОУРОВНЕВЫЙ СБОРЩИК НАСТОЯЩЕГО .XLSX (OpenXML ZIP БЕЗ ЗАВИСИМОСТЕЙ)
@@ -597,11 +598,14 @@ export async function compressImageFileToDataUrl(
         };
 
         let encoded = renderAt(maxDim, quality);
-        if (encoded.length > 90_000) {
-          encoded = renderAt(600, 0.7);
+        if (encoded.length > 64_000) {
+          encoded = renderAt(560, 0.68);
         }
-        if (encoded.length > 80_000) {
-          encoded = renderAt(480, 0.64);
+        if (encoded.length > 64_000) {
+          encoded = renderAt(460, 0.6);
+        }
+        if (encoded.length > 64_000) {
+          encoded = renderAt(380, 0.54);
         }
         resolve(encoded);
       };
@@ -661,56 +665,78 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
     const H = 2339;
     const PAD = 104;
     const CONTENT_W = W - PAD * 2;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const MAX_CONTENT_Y = H - 150;
 
     const sansFont =
       '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", "Heiti SC", sans-serif';
     const serifFont = 'Georgia, "Cormorant Garamond", "Times New Roman", serif';
     const monoFont = 'ui-monospace, "SF Mono", Menlo, monospace';
 
-    // Background: warm paper #FAF8F5
-    ctx.fillStyle = '#FAF8F5';
-    ctx.fillRect(0, 0, W, H);
-
-    // Top dark editorial accent bar
-    ctx.fillStyle = '#181715';
-    ctx.fillRect(0, 0, W, 14);
-
-    // Outer architectural frame
-    ctx.strokeStyle = '#CFC8BC';
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(56, 56, W - 112, H - 112);
-
+    const pageCanvases: HTMLCanvasElement[] = [];
+    let ctx!: CanvasRenderingContext2D;
     let y = 108;
 
-    // Header row: Brand & Doc Code
-    ctx.fillStyle = '#8C867E';
-    ctx.font = `600 18px ${monoFont}`;
-    ctx.fillText(
-      `BORNERS GROUP  ·  ${spec.categoryLabel.toUpperCase()}  ·  ${spec.docCode}`,
-      PAD,
-      y
-    );
+    const startPage = (isContinuation: boolean): boolean => {
+      const pageCanvas = document.createElement('canvas');
+      pageCanvas.width = W;
+      pageCanvas.height = H;
+      const nextCtx = pageCanvas.getContext('2d');
+      if (!nextCtx) return false;
+      ctx = nextCtx;
+      pageCanvases.push(pageCanvas);
 
-    // Right pill: Brand
-    const brandPillText = spec.titleZh
-      ? `品牌 / БРЕНД: ${spec.brandLabel}`
-      : `БРЕНД: ${spec.brandLabel}`;
-    ctx.font = `600 17px ${sansFont}`;
-    const pillW = ctx.measureText(brandPillText).width + 36;
-    ctx.fillStyle = spec.brandLabel.includes('НА ТЕЛЕ') ? '#8C7A6B' : '#181715';
-    ctx.beginPath();
-    ctx.roundRect(W - PAD - pillW, y - 24, pillW, 34, 6);
-    ctx.fill();
-    ctx.fillStyle = '#FAF8F5';
-    ctx.fillText(brandPillText, W - PAD - pillW + 18, y - 1);
+      // Background: warm paper #FAF8F5
+      ctx.fillStyle = '#FAF8F5';
+      ctx.fillRect(0, 0, W, H);
 
-    y += 48;
+      // Top dark editorial accent bar
+      ctx.fillStyle = '#181715';
+      ctx.fillRect(0, 0, W, 14);
+
+      // Outer architectural frame
+      ctx.strokeStyle = '#CFC8BC';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(56, 56, W - 112, H - 112);
+
+      y = 108;
+
+      // Header row: Brand & Doc Code
+      ctx.fillStyle = '#8C867E';
+      ctx.font = `600 18px ${monoFont}`;
+      const headerCodeSuffix = isContinuation
+        ? `${spec.docCode}  ·  续页 / ПРОДОЛЖЕНИЕ`
+        : spec.docCode;
+      ctx.fillText(
+        `BORNERS GROUP  ·  ${spec.categoryLabel.toUpperCase()}  ·  ${headerCodeSuffix}`,
+        PAD,
+        y
+      );
+
+      // Right pill: Brand
+      const brandPillText = spec.titleZh
+        ? `品牌 / БРЕНД: ${spec.brandLabel}`
+        : `БРЕНД: ${spec.brandLabel}`;
+      ctx.font = `600 17px ${sansFont}`;
+      const pillW = ctx.measureText(brandPillText).width + 36;
+      ctx.fillStyle = spec.brandLabel.includes('НА ТЕЛЕ') ? '#8C7A6B' : '#181715';
+      ctx.beginPath();
+      ctx.roundRect(W - PAD - pillW, y - 24, pillW, 34, 6);
+      ctx.fill();
+      ctx.fillStyle = '#FAF8F5';
+      ctx.fillText(brandPillText, W - PAD - pillW + 18, y - 1);
+
+      y += 48;
+      return true;
+    };
+
+    if (!startPage(false)) return;
+
+    const ensureVerticalSpace = (neededH: number, onNewPage?: () => void) => {
+      if (y + neededH > MAX_CONTENT_Y) {
+        startPage(true);
+        if (onNewPage) onNewPage();
+      }
+    };
 
     // Main Document Title (If titleZh is provided: LARGE CHINESE on top + small Russian title underneath)
     if (spec.titleZh) {
@@ -894,10 +920,10 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
 
     // Sections
     for (const sec of spec.sections) {
-      if (y > H - 200) break;
+      const secHeaderH = sec.titleZh ? 56 : 42;
+      ensureVerticalSpace(secHeaderH + 110);
 
       // Section card calculation & header (supports titleZh large + small Russian title underneath)
-      const secHeaderH = sec.titleZh ? 56 : 42;
       ctx.fillStyle = '#EFECE6';
       ctx.beginPath();
       ctx.roundRect(PAD, y, CONTENT_W, secHeaderH, 8);
@@ -938,9 +964,9 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
       if (sec.bilingualSpecs && sec.bilingualSpecs.length > 0) {
         const colWidth = (CONTENT_W - 24) / 2;
         for (let i = 0; i < sec.bilingualSpecs.length; i += 2) {
-          if (y > H - 175) break;
-          const pair = [sec.bilingualSpecs[i], sec.bilingualSpecs[i + 1]].filter(Boolean);
           const boxH = 104;
+          ensureVerticalSpace(boxH + 12);
+          const pair = [sec.bilingualSpecs[i], sec.bilingualSpecs[i + 1]].filter(Boolean);
 
           pair.forEach((item, pIdx) => {
             const rx = PAD + pIdx * (colWidth + 24);
@@ -980,7 +1006,7 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
       if (sec.rows && sec.rows.length > 0) {
         const colWidth = (CONTENT_W - 24) / 2;
         for (let i = 0; i < sec.rows.length; i += 2) {
-          if (y > H - 180) break;
+          ensureVerticalSpace(98);
           const pair = [sec.rows[i], sec.rows[i + 1]].filter(Boolean);
           let maxRowH = 66;
 
@@ -1020,6 +1046,7 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
       if (sec.swatches && sec.swatches.length > 0) {
         const swW = (CONTENT_W - (sec.swatches.length - 1) * 16) / sec.swatches.length;
         const swH = 128;
+        ensureVerticalSpace(swH + 22);
         sec.swatches.forEach((sw, idx) => {
           const sx = PAD + idx * (swW + 16);
           ctx.fillStyle = '#FFFFFF';
@@ -1052,27 +1079,32 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
 
       // Table
       if (sec.table) {
-        const colsCount = sec.table.headers.length;
+        const tableSpec = sec.table;
+        const colsCount = tableSpec.headers.length;
         const cellW = CONTENT_W / colsCount;
         const headerH = 40;
 
-        // Table Header
-        ctx.fillStyle = '#181715';
-        ctx.beginPath();
-        ctx.roundRect(PAD, y, CONTENT_W, headerH, 6);
-        ctx.fill();
+        const drawTableHeader = () => {
+          ctx.fillStyle = '#181715';
+          ctx.beginPath();
+          ctx.roundRect(PAD, y, CONTENT_W, headerH, 6);
+          ctx.fill();
 
-        ctx.fillStyle = '#FAF8F5';
-        ctx.font = `600 15px ${sansFont}`;
-        sec.table.headers.forEach((h, cIdx) => {
-          ctx.fillText(h, PAD + cIdx * cellW + 16, y + 26);
-        });
-        y += headerH;
+          ctx.fillStyle = '#FAF8F5';
+          ctx.font = `600 15px ${sansFont}`;
+          tableSpec.headers.forEach((h, cIdx) => {
+            ctx.fillText(h, PAD + cIdx * cellW + 16, y + 26);
+          });
+          y += headerH;
+        };
+
+        ensureVerticalSpace(headerH + 40);
+        drawTableHeader();
 
         // Table Rows
-        sec.table.rows.forEach((r, rIdx) => {
-          if (y > H - 165) return;
+        tableSpec.rows.forEach((r, rIdx) => {
           const rowH = 36;
+          ensureVerticalSpace(rowH, drawTableHeader);
           ctx.fillStyle = rIdx % 2 === 0 ? '#FFFFFF' : '#F4F1EA';
           ctx.fillRect(PAD, y, CONTENT_W, rowH);
           ctx.strokeStyle = '#EAE6DF';
@@ -1088,16 +1120,17 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
           y += rowH;
         });
 
-        if (sec.table.footer) {
+        if (tableSpec.footer) {
           const footH = 40;
+          ensureVerticalSpace(footH, drawTableHeader);
           ctx.fillStyle = '#FBF3EE';
           ctx.fillRect(PAD, y, CONTENT_W, footH);
           ctx.strokeStyle = '#B85D35';
           ctx.lineWidth = 1.5;
           ctx.strokeRect(PAD, y, CONTENT_W, footH);
 
-          sec.table.footer.forEach((val, cIdx) => {
-            ctx.fillStyle = cIdx === sec.table!.footer!.length - 1 ? '#B85D35' : '#181715';
+          tableSpec.footer.forEach((val, cIdx) => {
+            ctx.fillStyle = cIdx === tableSpec.footer!.length - 1 ? '#B85D35' : '#181715';
             ctx.font = `700 16px ${sansFont}`;
             ctx.fillText(val, PAD + cIdx * cellW + 16, y + 26);
           });
@@ -1107,7 +1140,8 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
         y += 20;
       }
 
-      if ((sec.noteZh || sec.note) && y < H - 155) {
+      if (sec.noteZh || sec.note) {
+        ensureVerticalSpace(96);
         if (sec.noteZh) {
           ctx.fillStyle = '#181715';
           ctx.font = `700 16px ${sansFont}`;
@@ -1130,33 +1164,44 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
       }
     }
 
-    // Footer
-    const footerY = H - 94;
-    ctx.strokeStyle = '#DCD6CC';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(PAD, footerY - 24);
-    ctx.lineTo(W - PAD, footerY - 24);
-    ctx.stroke();
+    // Draw Footer on every page & collect JPEG pages
+    const totalPages = pageCanvases.length;
+    const pdfPages = pageCanvases.map((pageCanvas, pageIdx) => {
+      const pCtx = pageCanvas.getContext('2d')!;
+      const footerY = H - 94;
+      pCtx.strokeStyle = '#DCD6CC';
+      pCtx.lineWidth = 1.5;
+      pCtx.beginPath();
+      pCtx.moveTo(PAD, footerY - 24);
+      pCtx.lineTo(W - PAD, footerY - 24);
+      pCtx.stroke();
 
-    ctx.fillStyle = '#8C867E';
-    ctx.font = `500 14.5px ${sansFont}`;
-    ctx.fillText(
-      spec.titleZh
-        ? 'BORNERS GROUP (borners-group.ru) · 生产工艺及大货采购确认单 (Официальная производственная спецификация)'
-        : 'BORNERS GROUP (borners-group.ru)  ·  Официальный документ рабочей платформы (2026–2027)',
-      PAD,
-      footerY + 6
-    );
+      pCtx.fillStyle = '#8C867E';
+      pCtx.font = `500 14.5px ${sansFont}`;
+      pCtx.fillText(
+        spec.titleZh
+          ? 'BORNERS GROUP (borners-group.ru) · 生产工艺及大货采购确认单 (Официальная производственная спецификация)'
+          : 'BORNERS GROUP (borners-group.ru)  ·  Официальный документ рабочей платформы (2026–2027)',
+        PAD,
+        footerY + 6
+      );
 
-    ctx.fillStyle = '#181715';
-    ctx.font = `600 15.5px ${monoFont}`;
-    const rightW = ctx.measureText(spec.footerRight).width;
-    ctx.fillText(spec.footerRight, W - PAD - rightW, footerY + 6);
+      const pageTag = totalPages > 1 ? `  ·  Стр. ${pageIdx + 1} / ${totalPages}` : '';
+      const footerRightText = `${spec.footerRight}${pageTag}`;
+      pCtx.fillStyle = '#181715';
+      pCtx.font = `600 15.5px ${monoFont}`;
+      const rightW = pCtx.measureText(footerRightText).width;
+      pCtx.fillText(footerRightText, W - PAD - rightW, footerY + 6);
 
-    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    const jpegBytes = dataUrlToUint8Array(jpegDataUrl);
-    const pdfBytes = buildPdfFromJpegPages([{ jpegBytes, widthPx: W, heightPx: H }]);
+      const jpegDataUrl = pageCanvas.toDataURL('image/jpeg', 0.92);
+      return {
+        jpegBytes: dataUrlToUint8Array(jpegDataUrl),
+        widthPx: W,
+        heightPx: H,
+      };
+    });
+
+    const pdfBytes = buildPdfFromJpegPages(pdfPages);
 
     const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
@@ -1207,11 +1252,9 @@ export function exportDocumentAsPdf(
   }
 ): void {
   const brandLabel =
-    doc.brandId === 'NA_TELE'
-      ? 'НА ТЕЛЕ'
-      : doc.brandId === 'ALL'
+    doc.brandId === 'ALL'
       ? 'BORNERS GROUP'
-      : 'BORNERS';
+      : formatLabBrandLabel(doc.brandId);
 
   const linkedConcept = opts?.concepts?.find((c) => c.id === doc.conceptId);
   const linkedProduct = opts?.products?.find((p) => p.id === doc.productId);
@@ -1483,11 +1526,9 @@ export function exportDocumentAsExcel(
   }
 ): void {
   const brandLabel =
-    doc.brandId === 'NA_TELE'
-      ? 'НА ТЕЛЕ'
-      : doc.brandId === 'ALL'
+    doc.brandId === 'ALL'
       ? 'BORNERS GROUP'
-      : 'BORNERS';
+      : formatLabBrandLabel(doc.brandId);
 
   const linkedConcept = opts?.concepts?.find((c) => c.id === doc.conceptId);
 
@@ -1844,6 +1885,7 @@ export function exportConceptProductionPdf(
 ): void {
   const normBrand = normalizeLabBrandCode(concept.brandId);
   const brandLabel = formatLabBrandLabel(concept.brandId);
+  const profile = getBrandProductionProfile(concept.brandId, concept.name);
   const factoryZh =
     normBrand === 'AKUSHA'
       ? '温州阿库莎童鞋制造厂 (温州)'
@@ -1859,16 +1901,20 @@ export function exportConceptProductionPdf(
       ? `LISKANI 家居窗帘套装 · ${concept.name}`
       : normBrand === 'NA_TELE'
       ? `НА ТЕЛЕ 无痕贴身内衣 · ${concept.name}`
-      : `BORNERS 男士莫代尔内裤 · ${concept.name}`;
-  const defaultBackCaption =
-    normBrand === 'AKUSHA'
-      ? `Профиль подошвы, застёжка и анатомическая колодка (${orderInfo.approvedSampleVersion})`
-      : normBrand === 'LISKANI'
-      ? `Шторная лента, фактура ткани и обработка нижнего края (${orderInfo.approvedSampleVersion})`
-      : normBrand === 'NA_TELE'
-      ? `Бесшовный срез Free-Cut, ластовица и посадка сзади (${orderInfo.approvedSampleVersion})`
-      : `Вид сзади, резинка пояса и плоские швы (${orderInfo.approvedSampleVersion})`;
-  const sizes = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
+      : `${brandLabel} 男士莫代尔内裤 · ${concept.name}`;
+  const defaultBackCaption = `${profile.defaultDetailCaptionRu} (${orderInfo.approvedSampleVersion})`;
+
+  const extraSizeKeys = Object.keys(orderInfo.packsBySize || {}).filter(
+    (k) => !profile.sizes.includes(k) && (orderInfo.packsBySize[k] || 0) > 0
+  );
+  const sizes = [...profile.sizes, ...extraSizeKeys];
+  const sizeRangeShort =
+    sizes.length > 0 ? `${sizes[0]} – ${sizes[sizes.length - 1]}` : profile.sizeGridLabelRu;
+  const packShortRu =
+    normBrand === 'AKUSHA' ? 'пар' : normBrand === 'LISKANI' ? 'компл.' : 'наб.';
+  const pcsShortRu =
+    normBrand === 'AKUSHA' ? 'пар' : normBrand === 'LISKANI' ? 'полот.' : 'шт.';
+
   let totalPacks = 0;
   let totalPcs = 0;
 
@@ -1880,8 +1926,8 @@ export function exportConceptProductionPdf(
     const sum = pcs * (orderInfo.unitPrice || 0);
     return [
       sz,
-      `${packs.toLocaleString('ru-RU')} наб.`,
-      `${pcs.toLocaleString('ru-RU')} шт.`,
+      `${packs.toLocaleString('ru-RU')} ${packShortRu}`,
+      `${pcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
       `${orderInfo.unitPrice} ${orderInfo.currency}`,
       `${sum.toLocaleString('ru-RU')} ${orderInfo.currency}`,
     ];
@@ -1894,12 +1940,30 @@ export function exportConceptProductionPdf(
     concept.samples?.[0]?.photos?.[0] ||
     concept.imageUrl;
 
+  const resolvedTitleZh = cleanTechPackText(concept.techPack?.zh?.modelName, defaultTitleZh);
+  const resolvedConstructionZh = cleanTechPackText(
+    concept.techPack?.zh?.construction,
+    profile.defaultConstructionZh
+  );
+  const resolvedConstructionRu = cleanTechPackText(
+    concept.techPack?.ru?.construction,
+    profile.defaultConstructionRu
+  );
+  const resolvedCompZh = cleanTechPackText(
+    concept.techPack?.zh?.compositionAndDensity,
+    profile.defaultMaterialZh
+  );
+  const resolvedCompRu = cleanTechPackText(
+    orderInfo.materialAndColors || concept.techPack?.ru?.compositionAndDensity,
+    profile.defaultMaterialRu
+  );
+
   downloadEditorialPdfDocument({
     fileName: `ТЗ_Заказ_Фабрика_${concept.code}_v${orderInfo.orderVersion}.pdf`,
     docCode: `${concept.code} · v${orderInfo.orderVersion}`,
     categoryLabel: '生产工艺及采购单 (PRODUCTION ORDER)',
     brandLabel,
-    titleZh: `生产工艺单及大货采购订单：${concept.techPack?.zh?.modelName || defaultTitleZh} (${concept.code})`,
+    titleZh: `生产工艺单及大货采购订单：${resolvedTitleZh} (${concept.code})`,
     title: `Спецификация и заказ на производство: ${concept.name} (${concept.code})`,
     subtitleZh: `承接生产工厂：${factoryZh} · 交货期：${orderInfo.plannedReadyDate}`,
     subtitle: `Фабрика: ${orderInfo.factoryName} · Срок готовности партии: ${orderInfo.plannedReadyDate}`,
@@ -1923,55 +1987,55 @@ export function exportConceptProductionPdf(
           {
             labelZh: '款式名称与版型',
             labelRu: 'Модель и конструкция',
-            zhLarge: concept.techPack?.zh?.construction || '男士3D立体囊袋平角内裤 · 四针六线无骨缝制',
-            ruSmall: `${concept.name} · ${concept.techPack?.ru?.construction || 'Анатомический 3D-крой, плоские швы 4 иглы 6 нитей'}`,
+            zhLarge: resolvedConstructionZh,
+            ruSmall: `${concept.name} · ${resolvedConstructionRu}`,
             highlight: true,
           },
           {
             labelZh: '面料成分与克重',
-            labelRu: 'Состав ткани и плотность',
-            zhLarge: concept.techPack?.zh?.compositionAndDensity || '95% 精梳棉 + 5% 氨纶 · 克重 180g/m²',
-            ruSmall: orderInfo.materialAndColors || concept.techPack?.ru?.compositionAndDensity || '95% хлопок + 5% эластан · 180 г/м²',
+            labelRu: 'Состав материала и плотность',
+            zhLarge: resolvedCompZh,
+            ruSmall: resolvedCompRu,
             highlight: true,
           },
           {
             labelZh: '礼盒颜色配比',
-            labelRu: 'Комплектация набора по цветам',
-            zhLarge: `每盒 ${orderInfo.unitsPerPack} 条装 · 颜色按确认色卡配比`,
-            ruSmall: `${orderInfo.unitsPerPack} шт. в наборе: ${orderInfo.packColorComposition}`,
+            labelRu: 'Комплектация и палитра',
+            zhLarge: `每组 ${orderInfo.unitsPerPack} 件装 · 颜色按确认色卡配比`,
+            ruSmall: `${orderInfo.unitsPerPack} ед. в упаковке: ${orderInfo.packColorComposition}`,
           },
           {
-            labelZh: '品控标准与水洗缩率',
-            labelRu: 'Контроль качества и стирка',
-            zhLarge: '执行 AQL 1.5 标准 · 40°C 水洗缩水率 ≤ 2.5%',
-            ruSmall: 'Приёмка AQL 1.5 · Усадка после стирки 40°C не более 2,5% · Маркировка Честный ЗНАК',
+            labelZh: '品控标准与检验',
+            labelRu: 'Контроль качества и маркировка',
+            zhLarge: '执行 AQL 1.5 验货标准 · 每件粘贴俄罗斯诚实标签 (DataMatrix)',
+            ruSmall: 'Приёмка AQL 1.5 перед отгрузкой · Маркировка Честный ЗНАК (DataMatrix) и EAN-13',
           },
         ],
       },
       {
         badge: '02 · 尺码明细',
-        titleZh: '二、大货尺码配比及订单金额明细 (S – 4XL)',
-        title: 'Размерная сетка заказа (S – 4XL) и расчёт стоимости партии',
-        subtitle: `每盒 ${orderInfo.unitsPerPack} 件 (В 1 наборе: ${orderInfo.unitsPerPack} шт.)`,
+        titleZh: `二、大货尺码配比及订单金额明细 (${profile.sizeGridLabelZh})`,
+        title: `${profile.sizeGridLabelRu} (${sizeRangeShort}) и расчёт стоимости партии`,
+        subtitle: `每组 ${orderInfo.unitsPerPack} 件 (В 1 упаковке: ${orderInfo.unitsPerPack} ед.)`,
         table: {
           headers: [
             '尺码 (Размер)',
-            '盒数 (Наборов)',
-            '总件数 (Штук)',
-            `单价 (Цена 1 шт. ${orderInfo.currency})`,
+            `包装数 (${profile.packUnitLabelRu})`,
+            `总数量 (${profile.itemsUnitLabelRu})`,
+            `单价 (Цена 1 ед. ${orderInfo.currency})`,
             `合计金额 (Сумма ${orderInfo.currency})`,
           ],
           rows: sizeRows,
           footer: [
             '合计总订单 (ИТОГО)',
-            `${totalPacks.toLocaleString('ru-RU')} 盒 (наб.)`,
-            `${totalPcs.toLocaleString('ru-RU')} 件 (шт.)`,
+            `${totalPacks.toLocaleString('ru-RU')} ${packShortRu}`,
+            `${totalPcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
             `${orderInfo.unitPrice} ${orderInfo.currency}`,
             `${totalSum.toLocaleString('ru-RU')} ${orderInfo.currency}`,
           ],
         },
-        noteZh: '验货标准：出货前执行 AQL 1.5 抽检 · 40°C 水洗5次缩水率 ≤ 2.5% · 每盒粘贴 EAN-13 及俄罗斯诚实标签 (DataMatrix)',
-        note: 'Контроль качества AQL 1.5 перед отгрузкой. Усадка после стирки 40°C не более 2,5%. Маркировка Честный ЗНАК и EAN-13 на каждой упаковке.',
+        noteZh: '验货标准：出货前执行 AQL 1.5 抽检 · 包装粘贴 EAN-13 及俄罗斯诚实标签 (DataMatrix)',
+        note: 'Контроль качества AQL 1.5 перед отгрузкой. Маркировка Честный ЗНАК и EAN-13 на каждой индивидуальной упаковке.',
       },
     ],
     footerRight: `ORDER v${orderInfo.orderVersion} · ${brandLabel}`,
@@ -1995,7 +2059,11 @@ export function exportConceptProductionExcel(
   }
 ): void {
   const brandLabel = formatLabBrandLabel(concept.brandId);
-  const sizes = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
+  const profile = getBrandProductionProfile(concept.brandId, concept.name);
+  const extraSizeKeys = Object.keys(orderInfo.packsBySize || {}).filter(
+    (k) => !profile.sizes.includes(k) && (orderInfo.packsBySize[k] || 0) > 0
+  );
+  const sizes = [...profile.sizes, ...extraSizeKeys];
   let totalPacks = 0;
   let totalPcs = 0;
   let totalSum = 0;
@@ -2025,10 +2093,10 @@ export function exportConceptProductionExcel(
     {
       height: 28,
       cells: [
-        { value: 'Размер (Size / 尺码)', style: 4 },
-        { value: 'Наборов (Packs / 盒)', style: 4 },
-        { value: `Штук белья (× ${orderInfo.unitsPerPack} шт.)`, style: 4 },
-        { value: `Цена за 1 шт. (${orderInfo.currency})`, style: 4 },
+        { value: `Размер (${profile.sizeGridLabelEn})`, style: 4 },
+        { value: `${profile.packUnitLabelRu} (Packs / 盒)`, style: 4 },
+        { value: `${profile.itemsUnitLabelRu} (× ${orderInfo.unitsPerPack})`, style: 4 },
+        { value: `Цена за 1 ед. (${orderInfo.currency})`, style: 4 },
         { value: `Сумма (${orderInfo.currency})`, style: 4 },
       ],
     },

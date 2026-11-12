@@ -70,6 +70,7 @@ import {
   savePlatformRichStateToIdb,
   stripOversizedDataUrls,
 } from '@/lib/safeStorage';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 
 const STORAGE_KEY = 'borners_group_platform_state_ru_v9_editorial';
 const AUTH_STORAGE_KEY = 'borners_group_auth_session_ru_v4';
@@ -371,6 +372,130 @@ function deduplicateAndHealProducts(products: Product[]): Product[] {
   return result;
 }
 
+const ACTIVE_HOLDING_BRAND_CODES = new Set(['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI']);
+
+function normalizeAndMergeHydratedPlatformState(
+  prev: PersistedState,
+  incoming: Partial<PersistedState>,
+  overrideProducts?: Product[]
+): PersistedState {
+  const baseBrands =
+    Array.isArray(incoming.brands) && incoming.brands.length > 0 ? incoming.brands : prev.brands;
+  const mergedBrands = [...baseBrands].map((b) => {
+    const initMatch = INITIAL_BRANDS.find(
+      (ib) => ib.id === b.id || ib.code.toUpperCase() === (b.code || '').toUpperCase()
+    );
+    const upperCode = (b.code || '').toUpperCase();
+    const isHoldingActive = ACTIVE_HOLDING_BRAND_CODES.has(upperCode);
+    return {
+      ...b,
+      ...(upperCode === 'BORNERS'
+        ? { heroImage: 'images/products/borners-editorial-hero.jpg' }
+        : upperCode === 'NA_TELE'
+        ? { heroImage: 'images/products/natele-editorial-hero.jpg' }
+        : {}),
+      ...(isHoldingActive
+        ? {
+            isStrategyInDevelopment: false,
+            statusNote: 'Активен',
+            activeModelsCount: b.activeModelsCount || initMatch?.activeModelsCount || 0,
+            plannedRevenue2027Rub: b.plannedRevenue2027Rub || initMatch?.plannedRevenue2027Rub || 0,
+          }
+        : {}),
+    };
+  });
+
+  for (const initBrand of INITIAL_BRANDS) {
+    if (
+      !mergedBrands.some(
+        (b) => b.id === initBrand.id || (b.code || '').toUpperCase() === initBrand.code.toUpperCase()
+      )
+    ) {
+      mergedBrands.push(initBrand);
+    }
+  }
+
+  const baseUsers =
+    Array.isArray(incoming.users) && incoming.users.length > 0 ? incoming.users : prev.users;
+  const allHoldingBrandIds = mergedBrands.map((b) => b.id);
+  const mergedUsers = baseUsers.map((u) =>
+    u.role === 'Owner' || u.role === 'Admin' || u.role === 'Viewer' || u.role === 'Partner'
+      ? {
+          ...u,
+          assignedBrandIds: Array.from(
+            new Set([...(u.assignedBrandIds || []), ...allHoldingBrandIds])
+          ),
+        }
+      : u
+  );
+
+  const rawProducts =
+    overrideProducts !== undefined
+      ? overrideProducts
+      : Array.isArray(incoming.products)
+      ? incoming.products
+      : prev.products;
+
+  const baseConcepts = Array.isArray(incoming.concepts) ? [...incoming.concepts] : [...prev.concepts];
+  for (const initConcept of INITIAL_CONCEPTS) {
+    if (
+      !baseConcepts.some(
+        (c) =>
+          c.id === initConcept.id ||
+          (c.code && initConcept.code && c.code.toUpperCase() === initConcept.code.toUpperCase())
+      )
+    ) {
+      baseConcepts.push(initConcept);
+    }
+  }
+
+  const mergedStrategies = (() => {
+    const rawStrats =
+      Array.isArray(incoming.strategies) && incoming.strategies.length > 0
+        ? incoming.strategies
+        : prev.strategies;
+    const base = rawStrats.map((s, idx) => ({
+      ...s,
+      deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
+    }));
+    for (const initStrat of INITIAL_STRATEGIES) {
+      if (!base.some((s) => s.id === initStrat.id)) {
+        base.push({
+          ...initStrat,
+          deadline: initStrat.deadline || '2027-01-15',
+        });
+      }
+    }
+    return base;
+  })();
+
+  const mergedMiroItems = Array.isArray(incoming.miroItems)
+    ? incoming.miroItems.map((m) => {
+        if (m.connectedToIds) return m;
+        const fallback = INITIAL_MIRO_ITEMS.find((init) => init.id === m.id);
+        return { ...m, connectedToIds: fallback?.connectedToIds || [] };
+      })
+    : prev.miroItems;
+
+  return {
+    ...prev,
+    ...incoming,
+    users: mergedUsers,
+    brands: mergedBrands,
+    concepts: baseConcepts,
+    products: deduplicateAndHealProducts(rawProducts),
+    strategies: mergedStrategies,
+    miroItems: mergedMiroItems,
+    launches: Array.isArray(incoming.launches) ? incoming.launches : prev.launches,
+    tasks: Array.isArray(incoming.tasks) ? incoming.tasks : prev.tasks,
+    documents: Array.isArray(incoming.documents) ? incoming.documents : prev.documents,
+    financialPlans: Array.isArray(incoming.financialPlans)
+      ? incoming.financialPlans
+      : prev.financialPlans,
+    presentationOverrides: incoming.presentationOverrides || prev.presentationOverrides || {},
+  };
+}
+
 const PlatformContext = createContext<PlatformContextValue | null>(null);
 
 export function PlatformProvider({ children }: { children: React.ReactNode }) {
@@ -466,67 +591,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             // ignore
           }
         }
-        setState((prev) => {
-          const baseBrands = parsed.brands || prev.brands;
-          const mergedBrands = [...baseBrands].map((b) =>
-            b.code === 'BORNERS'
-              ? { ...b, heroImage: 'images/products/borners-editorial-hero.jpg' }
-              : b.code === 'NA_TELE'
-              ? { ...b, heroImage: 'images/products/natele-editorial-hero.jpg' }
-              : b.code === 'AKUSHA' || b.code === 'LISKANI'
-              ? { ...b, isStrategyInDevelopment: false, statusNote: 'Активен' }
-              : b
-          );
-          for (const initBrand of INITIAL_BRANDS) {
-            if (!mergedBrands.some((b) => b.id === initBrand.id || b.code === initBrand.code)) {
-              mergedBrands.push(initBrand);
-            }
-          }
-
-          const baseUsers = parsed.users || prev.users;
-          const allHoldingBrandIds = mergedBrands.map((b) => b.id);
-          const mergedUsers = baseUsers.map((u) =>
-            u.role === 'Owner' || u.role === 'Admin' || u.role === 'Viewer' || u.role === 'Partner'
-              ? {
-                  ...u,
-                  assignedBrandIds: Array.from(
-                    new Set([...(u.assignedBrandIds || []), ...allHoldingBrandIds])
-                  ),
-                }
-              : u
-          );
-
-          return {
-            ...prev,
-            ...parsed,
-            users: mergedUsers,
-            products: deduplicateAndHealProducts(nextProducts),
-            brands: mergedBrands,
-            strategies: (() => {
-              const base = (parsed.strategies || prev.strategies).map((s, idx) => ({
-                ...s,
-                deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
-              }));
-              for (const initStrat of INITIAL_STRATEGIES) {
-                if (!base.some((s) => s.id === initStrat.id)) {
-                  base.push({
-                    ...initStrat,
-                    deadline: initStrat.deadline || '2027-01-15',
-                  });
-                }
-              }
-              return base;
-            })(),
-            miroItems: parsed.miroItems !== undefined
-              ? parsed.miroItems.map((m) => {
-                  if (m.connectedToIds) return m;
-                  const fallback = INITIAL_MIRO_ITEMS.find((init) => init.id === m.id);
-                  return { ...m, connectedToIds: fallback?.connectedToIds || [] };
-                })
-              : prev.miroItems,
-            presentationOverrides: parsed.presentationOverrides || {},
-          };
-        });
+        setState((prev) =>
+          normalizeAndMergeHydratedPlatformState(prev, parsed, nextProducts)
+        );
       }
       const savedAuth = window.localStorage.getItem(AUTH_STORAGE_KEY);
       if (savedAuth) {
@@ -1092,47 +1159,53 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
           },
         ],
         comments: [],
-        techPack: input.techPack || {
-          zh: {
-            modelName: `${input.name} (${code})`,
-            construction: input.keyDifferentiators || '待定 (Определяется)',
-            material: '待定 (Определяется)',
-            compositionAndDensity: '待定',
-            colorAndPantone: (input.colorCombinations || []).join(' / ') || '待定',
-            sizeGrading: 'S, M, L, XL, XXL',
-            waistbandSpec: '待定',
-            seamsSpec: '待定',
-            packagingSpec: '待定',
-            qualityRequirements: 'AQL 1.5',
-            referencesNote: input.referencesNotes || '',
-          },
-          en: {
-            modelName: `${input.name} (${code})`,
-            construction: input.keyDifferentiators || 'TBD',
-            material: 'TBD',
-            compositionAndDensity: 'TBD',
-            colorAndPantone: (input.colorCombinations || []).join(' / ') || 'TBD',
-            sizeGrading: 'S, M, L, XL, XXL',
-            waistbandSpec: 'TBD',
-            seamsSpec: 'TBD',
-            packagingSpec: 'TBD',
-            qualityRequirements: 'AQL 1.5',
-            referencesNote: input.referencesNotes || '',
-          },
-          ru: {
-            modelName: `${input.name} (${code})`,
-            construction: input.keyDifferentiators || 'Уточняется после анализа',
-            material: 'Уточняется на этапе образца',
-            compositionAndDensity: 'Нет данных',
-            colorAndPantone: (input.colorCombinations || []).join(' / ') || 'Нет данных',
-            sizeGrading: 'S, M, L, XL, XXL',
-            waistbandSpec: 'Уточняется',
-            seamsSpec: 'Плоские швы',
-            packagingSpec: 'Уточняется',
-            qualityRequirements: 'AQL 1.5',
-            referencesNote: input.referencesNotes || '',
-          },
-        },
+        techPack: (() => {
+          if (input.techPack) return input.techPack;
+          const profile = getBrandProductionProfile(input.brandId, input.name);
+          const sizeStr = profile.sizes.join(', ');
+          const paletteStr = (input.colorCombinations || []).filter(Boolean).join(' / ');
+          return {
+            zh: {
+              modelName: `${input.name} (${code})`,
+              construction: input.keyDifferentiators || profile.defaultConstructionZh,
+              material: profile.defaultMaterialZh,
+              compositionAndDensity: profile.defaultMaterialZh,
+              colorAndPantone: paletteStr || '按确认色卡生产',
+              sizeGrading: sizeStr,
+              waistbandSpec: profile.defaultWaistbandOrTrimZh,
+              seamsSpec: profile.defaultDetailCaptionZh,
+              packagingSpec: '独立品牌防尘包装袋 + EAN-13及俄罗斯诚实标签 (DataMatrix)',
+              qualityRequirements: 'AQL 1.5',
+              referencesNote: input.referencesNotes || '',
+            },
+            en: {
+              modelName: `${input.name} (${code})`,
+              construction: input.keyDifferentiators || profile.defaultConstructionEn,
+              material: profile.defaultMaterialEn,
+              compositionAndDensity: profile.defaultMaterialEn,
+              colorAndPantone: paletteStr || 'Per Approved Swatch Card',
+              sizeGrading: sizeStr,
+              waistbandSpec: profile.defaultConstructionEn,
+              seamsSpec: 'Reinforced Precision Stitching',
+              packagingSpec: 'Individual Branded Packaging + EAN-13 & DataMatrix',
+              qualityRequirements: 'AQL 1.5',
+              referencesNote: input.referencesNotes || '',
+            },
+            ru: {
+              modelName: `${input.name} (${code})`,
+              construction: input.keyDifferentiators || profile.defaultConstructionRu,
+              material: profile.defaultMaterialRu,
+              compositionAndDensity: profile.defaultMaterialRu,
+              colorAndPantone: paletteStr || 'По утверждённой палитре',
+              sizeGrading: sizeStr,
+              waistbandSpec: profile.defaultWaistbandOrTrimRu,
+              seamsSpec: profile.defaultDetailCaptionRu,
+              packagingSpec: 'Индивидуальная фирменная упаковка + EAN-13 и Честный ЗНАК',
+              qualityRequirements: 'AQL 1.5',
+              referencesNote: input.referencesNotes || '',
+            },
+          };
+        })(),
         isDemo: false,
         isArchived: false,
         createdAt: now,
@@ -1202,6 +1275,14 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => ({
         ...prev,
         concepts: prev.concepts.map((c) => (c.id === id ? { ...c, isArchived: true } : c)),
+        products: prev.products.map((p) =>
+          p.conceptId === id || (target?.linkedProductId && p.id === target.linkedProductId)
+            ? { ...p, isArchived: true }
+            : p
+        ),
+        miroItems: prev.miroItems.map((m) =>
+          m.linkedConceptId === id ? { ...m, linkedConceptId: undefined } : m
+        ),
         auditLog: [
           appendAudit('concept', id, 'deleted', `Перемещена в Корзину удалений карточка «${target?.code || id} · ${target?.name || ''}»`),
           ...prev.auditLog,
@@ -2186,25 +2267,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     (snapshot: Partial<PersistedState>) => {
       if (!snapshot || typeof snapshot !== 'object') return;
       setState((prev) => {
-        const next: PersistedState = {
-          ...prev,
-          ...snapshot,
-          users: Array.isArray(snapshot.users) && snapshot.users.length > 0 ? snapshot.users : prev.users,
-          brands: Array.isArray(snapshot.brands) && snapshot.brands.length > 0 ? snapshot.brands : prev.brands,
-          concepts: Array.isArray(snapshot.concepts) ? snapshot.concepts : prev.concepts,
-          products: Array.isArray(snapshot.products)
-            ? deduplicateAndHealProducts(snapshot.products)
-            : prev.products,
-          miroItems: Array.isArray(snapshot.miroItems) ? snapshot.miroItems : prev.miroItems,
-          launches: Array.isArray(snapshot.launches) ? snapshot.launches : prev.launches,
-          tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : prev.tasks,
-          strategies: Array.isArray(snapshot.strategies) ? snapshot.strategies : prev.strategies,
-          documents: Array.isArray(snapshot.documents) ? snapshot.documents : prev.documents,
-          financialPlans: Array.isArray(snapshot.financialPlans)
-            ? snapshot.financialPlans
-            : prev.financialPlans,
-          presentationOverrides: snapshot.presentationOverrides || prev.presentationOverrides,
-        };
+        const next = normalizeAndMergeHydratedPlatformState(prev, snapshot);
         safeSetStorageJson(STORAGE_KEY, next);
         void savePlatformRichStateToIdb(next.concepts, next.miroItems);
         return next;

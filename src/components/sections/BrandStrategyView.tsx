@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Edit3,
   Lock,
@@ -8,7 +8,7 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { ApprovalStatus, StrategyBlock } from '@/types/platform';
+import { ApprovalStatus, BrandFilter, StrategyBlock } from '@/types/platform';
 import {
   canUserEditApprovedStrategy,
   canUserEditBrand,
@@ -20,6 +20,72 @@ import { useDraftModules } from '@/lib/draftModules';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import { INITIAL_STRATEGIES } from '@/lib/initial-strategies';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import {
+  computeMultiBrandPortfolioSummary,
+  matchesBrandFilter,
+} from '@/lib/unifiedBusinessEngine';
+
+const HOLDING_BRAND_TABS = [
+  {
+    code: 'BORNERS' as const,
+    label: 'BORNERS',
+    segment: 'Масс-маркет+ · Мужское и унисекс бельё',
+    tagline: 'Инженерный комфорт на каждый день в мультипаках 3–6 шт.',
+    description:
+      'Флагманский бренд мужского и унисекс базового белья, тканых поплиновых боксеров и подарочных наборов.',
+    targetMarginPct: 72,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    accentColor: '#141413',
+  },
+  {
+    code: 'NA_TELE' as const,
+    label: 'НА ТЕЛЕ',
+    segment: 'Премиум · Бесшовная архитектура «второй кожи»',
+    tagline: 'Тактильный минимализм, лазерный край Free-Cut и палитра Skin Tone',
+    description:
+      'Женская бесшовная капсула из микромодала Lenzing Air с невидимой посадкой и кашированной упаковкой.',
+    targetMarginPct: 75,
+    heroImage: 'images/products/natele-editorial-hero.jpg',
+    accentColor: '#7D7268',
+  },
+  {
+    code: 'AKUSHA' as const,
+    label: 'AKUSHA',
+    segment: 'Детская анатомическая и босоногая обувь',
+    tagline: 'Широкий анатомический мыс, подошва zero-drop и натуральные материалы',
+    description:
+      '24 всесезонные карточки (31 цветомодель) детской обуви размеров 18–31: пинетки, сандалии, кроссовки, ботинки и дутики.',
+    targetMarginPct: 65,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    accentColor: '#2563EB',
+  },
+  {
+    code: 'LISKANI' as const,
+    label: 'LISKANI',
+    segment: 'Домашний текстиль и интерьерные шторы',
+    tagline: 'Готовые интерьерные шторы блэкаут, бархат и тюль отельного качества пошива',
+    description:
+      '33 базовые карточки, развёрнутые в 269 размерных SKU по ширине и высоте под стандартные и панорамные потолки.',
+    targetMarginPct: 62,
+    heroImage: 'images/products/natele-editorial-hero.jpg',
+    accentColor: '#0F766E',
+  },
+  {
+    code: 'FUKAI' as const,
+    label: 'FUKAI',
+    segment: 'Функциональный текстиль и аксессуары для сна',
+    tagline: 'Тактильные аксессуары для глубокого сна и восстановления',
+    description:
+      'Действующая линейка товаров для сна с высокой оборачиваемостью, высоким процентом выкупа (85%+) и компактной логистикой ФБО.',
+    targetMarginPct: 68,
+    heroImage: 'images/products/borners-editorial-hero.jpg',
+    accentColor: '#4F46E5',
+  },
+] as const;
+
+type HoldingBrandCode = (typeof HOLDING_BRAND_TABS)[number]['code'];
+const HOLDING_BRAND_CODES: readonly HoldingBrandCode[] = HOLDING_BRAND_TABS.map((b) => b.code);
 
 const STATUS_LABELS: Record<ApprovalStatus, { label: string; dotColor: string }> = {
   draft: {
@@ -63,8 +129,108 @@ export function BrandPortfolioView() {
     platformMode === 'management' &&
     (currentUser.role === 'Owner' || currentUser.role === 'Admin');
 
-  const activeBrands = brands.filter((b) => !b.isStrategyInDevelopment);
-  const upcomingBrands = brands.filter((b) => b.isStrategyInDevelopment);
+  const livePortfolio = useLiveScenarioPortfolio();
+  const multiBrandSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(
+        livePortfolio.models,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand
+      ),
+    [
+      livePortfolio.models,
+      livePortfolio.scenarios,
+      livePortfolio.selectedScenarioByBrand,
+    ]
+  );
+
+  const portfolioBrandCards = useMemo(() => {
+    const coreCards = HOLDING_BRAND_TABS.map((meta) => {
+      const ctxBrand = brands.find(
+        (b) => normalizeLabBrandCode(b.code) === meta.code || b.id === meta.code
+      );
+      const liveRow = multiBrandSummary.brands.find((r) => r.brandCode === meta.code);
+      const firstLiveModel = livePortfolio.models.find(
+        (m) =>
+          m.launchStatus !== 'В архиве' &&
+          matchesBrandFilter(m, meta.code) &&
+          Boolean(m.gallery?.[0]?.url)
+      );
+      const heroImage =
+        (ctxBrand?.heroImage && !ctxBrand.isStrategyInDevelopment
+          ? ctxBrand.heroImage
+          : firstLiveModel?.gallery?.[0]?.url) ||
+        meta.heroImage;
+      const legacyProducts = products.filter(
+        (p) => !p.isArchived && normalizeLabBrandCode(p.brandId) === meta.code
+      );
+      const skuCount =
+        liveRow && liveRow.modelsCount > 0 ? liveRow.modelsCount : legacyProducts.length;
+      const plannedRevenue2027Rub =
+        liveRow && liveRow.annualRevenueRub > 0
+          ? liveRow.annualRevenueRub
+          : ctxBrand?.plannedRevenue2027Rub || 0;
+      const bConcepts = concepts.filter(
+        (c) => !c.isArchived && normalizeLabBrandCode(c.brandId) === meta.code
+      );
+      const bLaunches = launches.filter(
+        (l) => !l.isArchived && normalizeLabBrandCode(l.brandId) === meta.code
+      );
+
+      return {
+        id: ctxBrand?.id || `brand-${meta.code.toLowerCase()}`,
+        code: meta.code as BrandFilter,
+        name: meta.label,
+        segment: ctxBrand?.segment || meta.segment,
+        tagline: ctxBrand?.tagline || meta.tagline,
+        description: ctxBrand?.description || meta.description,
+        targetMarginPct: ctxBrand?.targetMarginPct || meta.targetMarginPct,
+        heroImage,
+        accentColor: ctxBrand?.accentColor || meta.accentColor,
+        plannedRevenue2027Rub,
+        skuCount,
+        rndCount: bConcepts.length,
+        launchesCount: bLaunches.length,
+      };
+    });
+
+    const extraCustomBrands = brands
+      .filter(
+        (b) =>
+          !b.isStrategyInDevelopment &&
+          !(HOLDING_BRAND_CODES as readonly string[]).includes(
+            normalizeLabBrandCode(b.code)
+          )
+      )
+      .map((b) => {
+        const bProducts = products.filter(
+          (p) => !p.isArchived && (p.brandId === b.code || p.brandId === b.id)
+        );
+        const bConcepts = concepts.filter(
+          (c) => !c.isArchived && (c.brandId === b.code || c.brandId === b.id)
+        );
+        const bLaunches = launches.filter(
+          (l) => !l.isArchived && (l.brandId === b.code || l.brandId === b.id)
+        );
+        return {
+          id: b.id,
+          code: b.code as BrandFilter,
+          name: b.name,
+          segment: b.segment,
+          tagline: b.tagline,
+          description: b.description,
+          targetMarginPct: b.targetMarginPct,
+          heroImage: b.heroImage,
+          accentColor: b.accentColor || '#141413',
+          plannedRevenue2027Rub: b.plannedRevenue2027Rub,
+          skuCount: bProducts.length,
+          rndCount: bConcepts.length,
+          launchesCount: bLaunches.length,
+        };
+      });
+
+    return [...coreCards, ...extraCustomBrands];
+  }, [brands, concepts, launches, livePortfolio.models, multiBrandSummary.brands, products]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -72,7 +238,8 @@ export function BrandPortfolioView() {
       <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
         <div>
           <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
-            Сводка и стратегия · {activeBrands.length} активных бренда + {upcomingBrands.length} в проработке
+            Сводка и стратегия · {portfolioBrandCards.length} активных брендов холдинга · План 2027:{' '}
+            {hasFinance ? formatCompactRub(multiBrandSummary.groupTotal.annualRevenueRub) : 'Скрыто'}
           </div>
           <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
             ДНК и стратегия брендов
@@ -89,27 +256,17 @@ export function BrandPortfolioView() {
         )}
       </div>
 
-      {/* Крупные карточки брендов со студийной съёмкой — строгая зеркальная симметрия */}
+      {/* Крупные карточки всех 5 активных брендов холдинга */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        {activeBrands.map((brand) => {
+        {portfolioBrandCards.map((brand) => {
           const isBorners = brand.code === 'BORNERS';
-          const accentColor = isBorners ? '#141413' : '#52514C';
-          const bProducts = products.filter(
-            (p) => !p.isArchived && (p.brandId === brand.code || p.brandId === brand.id)
-          );
-          const bConcepts = concepts.filter(
-            (c) => !c.isArchived && (c.brandId === brand.code || c.brandId === brand.id)
-          );
-          const bLaunches = launches.filter(
-            (l) => !l.isArchived && (l.brandId === brand.code || l.brandId === brand.id)
-          );
+          const accentColor = brand.accentColor || (isBorners ? '#141413' : '#52514C');
 
           return (
             <div
               key={brand.id}
-              className={`bg-white rounded-[18px] border-[1.5px] border-[#C8C7BE] border-t-[3px] ${
-                isBorners ? 'border-t-[#141413]' : 'border-t-[#52514C]'
-              } overflow-hidden flex flex-col justify-between h-full shadow-[0_2px_10px_rgba(20,20,19,0.03)]`}
+              className="bg-white rounded-[18px] border-[1.5px] border-[#C8C7BE] border-t-[3px] overflow-hidden flex flex-col justify-between h-full shadow-[0_2px_10px_rgba(20,20,19,0.03)]"
+              style={{ borderTopColor: accentColor }}
             >
               <div>
                 {/* Студийный кадр коллекции фиксированной высоты h-60 */}
@@ -177,7 +334,7 @@ export function BrandPortfolioView() {
                         В каталоге
                       </div>
                       <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
-                        {bProducts.length} SKU
+                        {brand.skuCount} SKU
                       </div>
                     </div>
                     <div className="pl-3">
@@ -185,7 +342,7 @@ export function BrandPortfolioView() {
                         R&D / Запуски
                       </div>
                       <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
-                        {bConcepts.length} / {bLaunches.length}
+                        {brand.rndCount} / {brand.launchesCount}
                       </div>
                     </div>
                   </div>
@@ -211,7 +368,7 @@ export function BrandPortfolioView() {
                   }}
                   className="h-11 px-3 text-[#161615] text-[12.5px] font-semibold hover:bg-[#EFECE6] transition cursor-pointer"
                 >
-                  Каталог ({bProducts.length})
+                  Каталог ({brand.skuCount})
                 </button>
                 <button
                   onClick={() => {
@@ -220,65 +377,13 @@ export function BrandPortfolioView() {
                   }}
                   className="h-11 px-3 text-[#161615] text-[12.5px] font-semibold hover:bg-[#EFECE6] transition cursor-pointer"
                 >
-                  R&D ({bConcepts.length})
+                  R&D ({brand.rndCount})
                 </button>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* БРЕНДЫ В РАЗРАБОТКЕ: АКУША И LISKANI */}
-      {upcomingBrands.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-2">
-            <h3 className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#7A756D]">
-              БРЕНДЫ ПОРТФЕЛЯ В РАЗРАБОТКЕ (2026–2027)
-            </h3>
-            <span className="text-[12px] text-[#7A756D]">
-              Формирование позиционирования и ассортиментной матрицы
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {upcomingBrands.map((brand) => (
-              <div
-                key={brand.id}
-                className="bg-[#FDFCFA] rounded-[8px] border border-[#E5E0D8] p-6 flex flex-col justify-between space-y-4"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[#7A756D]">
-                      <span className="h-2 w-2 rounded-full bg-[#A3A39E]" />
-                      <span>В ПРОРАБОТКЕ СТРАТЕГИИ</span>
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-[#F8F6F2] border border-[#E5E0D8] font-mono text-[10px] uppercase text-[#6E6A63]">
-                      <span>В разработке</span>
-                    </span>
-                  </div>
-
-                  <div>
-                    <h2 className="font-serif-editorial text-[28px] font-semibold text-[#161615] leading-none">
-                      {brand.name}
-                    </h2>
-                    <p className="text-[14px] font-medium text-[#161615] mt-1.5">
-                      {brand.tagline}
-                    </p>
-                    <p className="text-[13px] text-[#6E6A63] mt-2 leading-relaxed">
-                      {brand.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-3.5 border-t border-[#E5E0D8] flex items-center justify-between text-[12px] text-[#7A756D]">
-                  <span>Каталог SKU и финплан: в разработке</span>
-                  <span className="font-mono">2026–2027</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Сравнительная таблица разграничения брендов */}
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
@@ -417,29 +522,42 @@ export function BrandStrategyView() {
   } = usePlatform();
 
   const { draftModules } = useDraftModules();
-  const activeBrands = brands.filter((b) => !b.isStrategyInDevelopment);
-  const normFilter =
-    brandFilter && brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : null;
-  const activeBrandCode =
-    normFilter &&
-    activeBrands.some(
-      (b) => normalizeLabBrandCode(b.code) === normFilter || b.id === brandFilter
-    )
-      ? normFilter
-      : activeBrands[0]?.code || 'BORNERS';
+  const [selectedBrand, setSelectedBrand] = useState<HoldingBrandCode>(() => {
+    if (brandFilter && brandFilter !== 'ALL') {
+      const norm = normalizeLabBrandCode(brandFilter);
+      if ((HOLDING_BRAND_CODES as readonly string[]).includes(norm)) {
+        return norm as HoldingBrandCode;
+      }
+    }
+    return 'BORNERS';
+  });
 
-  const activeBrand = useMemo(
-    () =>
-      activeBrands.find(
-        (b) =>
-          normalizeLabBrandCode(b.code) === normalizeLabBrandCode(activeBrandCode) ||
-          b.id === activeBrandCode
-      ) || activeBrands[0],
-    [activeBrands, activeBrandCode]
-  );
+  useEffect(() => {
+    if (brandFilter && brandFilter !== 'ALL') {
+      const norm = normalizeLabBrandCode(brandFilter);
+      if ((HOLDING_BRAND_CODES as readonly string[]).includes(norm)) {
+        setSelectedBrand(norm as HoldingBrandCode);
+      }
+    }
+  }, [brandFilter]);
+
+  const activeBrand = useMemo(() => {
+    const meta =
+      HOLDING_BRAND_TABS.find((t) => t.code === selectedBrand) || HOLDING_BRAND_TABS[0];
+    const ctxBrand = brands.find(
+      (b) => normalizeLabBrandCode(b.code) === meta.code || b.id === meta.code
+    );
+    return {
+      id: ctxBrand?.id || `brand-${meta.code.toLowerCase()}`,
+      code: meta.code,
+      name: meta.label,
+      tagline: ctxBrand?.tagline || meta.tagline,
+      targetMarginPct: ctxBrand?.targetMarginPct || meta.targetMarginPct,
+    };
+  }, [brands, selectedBrand]);
 
   const brandBlocks = useMemo(() => {
-    const targetCode = activeBrand ? normalizeLabBrandCode(activeBrand.code) : 'BORNERS';
+    const targetCode = selectedBrand;
     const matched = strategies
       .filter(
         (s) =>
@@ -451,7 +569,7 @@ export function BrandStrategyView() {
     return INITIAL_STRATEGIES.filter(
       (s) => normalizeLabBrandCode(s.brandId) === targetCode
     ).sort((a, b) => a.sectionOrder - b.sectionOrder);
-  }, [strategies, activeBrand]);
+  }, [strategies, selectedBrand, activeBrand]);
 
   const [strategyTab, setStrategyTab] = useState<'scenarios' | 'dna'>('scenarios');
   const [editingBlock, setEditingBlock] = useState<StrategyBlock | null>(null);
@@ -581,13 +699,38 @@ export function BrandStrategyView() {
         <GrowthScenariosShowcase />
       ) : (
         <>
-          <div>
-            <h1 className="text-[24px] font-bold text-[#1D1D1F] tracking-tight">
-              Стратегия бренда: {activeBrand.name} (14 блоков ДНК)
-            </h1>
-            <p className="text-[13.5px] text-[#6E6E73] mt-1">
-              {activeBrand.tagline} · целевая валовая маржа {activeBrand.targetMarginPct}%
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[12px] bg-[#FDFCFA] border border-[#E5E0D8] p-4">
+            <div>
+              <h1 className="text-[24px] font-bold text-[#1D1D1F] tracking-tight">
+                Стратегия бренда: {activeBrand.name} (14 блоков ДНК)
+              </h1>
+              <p className="text-[13.5px] text-[#6E6E73] mt-1">
+                {activeBrand.tagline} · целевая валовая маржа {activeBrand.targetMarginPct}%
+              </p>
+            </div>
+
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F2EFE9] p-1 border border-[#E5E0D8]">
+              {HOLDING_BRAND_TABS.map((tab) => {
+                const isSelected = selectedBrand === tab.code;
+                return (
+                  <button
+                    key={tab.code}
+                    type="button"
+                    onClick={() => {
+                      setSelectedBrand(tab.code);
+                      setBrandFilter(tab.code as BrandFilter);
+                    }}
+                    className={`h-8 px-3.5 rounded-[6px] text-[12.5px] font-semibold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#161615] text-white shadow-2xs'
+                        : 'text-[#6E6A63] hover:text-[#161615]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Сетка 14 блоков стратегии */}

@@ -186,7 +186,7 @@ export interface RnDProductionOrder {
   approvedSampleVersion: string;
   internalStatus: RnDProductionInternalStatus;
   materialAndColors: string;
-  sizeBreakdown: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
+  sizeBreakdown: Record<string, number>;
   totalUnits: number;
   packConfiguration: string;
   packagingDetails: string;
@@ -199,7 +199,7 @@ export interface RnDProductionOrder {
   hasDelayRisk?: boolean;
   packColorComposition?: string;
   unitsPerPack?: number;
-  packsBySize?: Record<'S' | 'M' | 'L' | 'XL' | '2XL' | '3XL' | '4XL', number>;
+  packsBySize?: Record<string, number>;
   paymentTerms?: string;
   orderVersion?: number;
   approvedAt?: string;

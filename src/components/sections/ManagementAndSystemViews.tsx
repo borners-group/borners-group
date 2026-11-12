@@ -11,11 +11,13 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
   DocumentCategory,
+  Product,
   TaskItem,
   TaskPriority,
   TaskStatus,
@@ -34,6 +36,133 @@ import {
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { DRAFT_MODULES_META, useDraftModules } from '@/lib/draftModules';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import {
+  GrowthScenarioDef,
+  ScenarioModelSpec,
+  computeModelScenarioMetrics,
+} from '@/lib/scenarioData';
+import {
+  detectModelBrandPortfolioLabel,
+  normalizePortfolioBrandCode,
+} from '@/lib/unifiedBusinessEngine';
+import {
+  STORAGE_KEY_MODELS,
+  STORAGE_KEY_S1_GROUP_PORTFOLIO,
+  STORAGE_KEY_SCENARIO_BY_BRAND,
+  STORAGE_KEY_SCENARIOS,
+  buildFullPlatformBackupBundle,
+  getDeletedModelsRegistry,
+  parseFullPlatformBackupBundle,
+  resolveEffectiveScenarioForModel,
+  syncUserPlansBackup,
+  touchPortfolioUpdatedAt,
+  unmarkModelAsDeletedInStorage,
+} from '@/lib/portfolioPersistence';
+import {
+  deleteModelGalleryFromIdb,
+  safeGetStorageJson,
+  safeSetStorageJson,
+  saveModelGalleryToIdb,
+  savePortfolioSnapshotToIdb,
+} from '@/lib/safeStorage';
+import { pushPortfolioCoreToSupabase } from '@/lib/supabaseCloudSync';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+
+function buildLiveCatalogProductsForExport(
+  liveModels: ScenarioModelSpec[],
+  liveScenarios: GrowthScenarioDef[],
+  selectedScenarioByBrand: Record<string, number | null | undefined>,
+  fallbackScenario: GrowthScenarioDef,
+  legacyProducts: Product[]
+): Product[] {
+  const seenSkus = new Set<string>();
+  const seenNames = new Set<string>();
+  const converted: Product[] = liveModels.map((m) => {
+    const skuNorm = (m.code || '').trim().toUpperCase();
+    const nameNorm = (m.title || '').trim().toLowerCase();
+    if (skuNorm) seenSkus.add(skuNorm);
+    if (nameNorm) seenNames.add(nameNorm);
+
+    const brandLabel = detectModelBrandPortfolioLabel(m);
+    const brandCode = normalizePortfolioBrandCode(
+      m.customBrandLabel || m.brandId || 'BORNERS'
+    );
+    const effSc = resolveEffectiveScenarioForModel(
+      m,
+      liveScenarios,
+      selectedScenarioByBrand,
+      fallbackScenario
+    );
+    const metrics = computeModelScenarioMetrics(m, effSc);
+
+    return {
+      id: m.id,
+      sku: m.code,
+      name: m.title,
+      brandId: brandCode,
+      category: m.categoryLabel || m.construction?.type || 'Базовая модель',
+      productType: 'Базовая коллекция',
+      collection: `${brandLabel} · ${m.subtitle || '2027'}`,
+      priceSegment: brandCode === 'NA_TELE' ? 'Premium' : 'Mass-Market+',
+      status: 'active',
+      description: m.description || m.subtitle || '',
+      ownerId: 'user-owner',
+      imageUrl: m.gallery?.[0]?.url || '',
+      galleryUrls: (m.gallery || [])
+        .map((g) => g.url)
+        .filter((u): u is string => Boolean(u)),
+      colorCombinations: (m.palettes || []).map((p) => p.title),
+      materials: m.fabric?.composition || '',
+      fabricComposition: m.fabric?.composition || '',
+      fabricDensityGsm: parseInt(m.fabric?.density || '180', 10) || 180,
+      waistbandType: m.waistband?.type || '',
+      fitType: m.construction?.fit || '',
+      constructionDetails: m.construction?.seams || '',
+      sizes: ['S', 'M', 'L', 'XL', 'XXL'],
+      supplierName: 'Фабрика BORNERS GROUP',
+      supplierCountry: 'КНР / РФ',
+      moq: 500,
+      productionLeadDays: 35,
+      deliveryLeadDays: 18,
+      techFiles: [],
+      economics: {
+        currency: 'RUB',
+        plannedRetailPrice: m.retailPriceRub,
+        actualRetailPrice: m.retailPriceRub,
+        discountPct: 0,
+        vatPct: 0,
+        returnRatePct: Math.max(0, 100 - (m.buyoutRatePct ?? 85)),
+        unitCostPrice: m.unitCostRub,
+        marketplaceCommissionRub: Math.round(
+          m.retailPriceRub * ((m.marketplaceFeePct || 30) / 100)
+        ),
+        logisticsRub: m.logisticsRub || 0,
+        advertisingRub: Math.round(m.retailPriceRub * ((m.adsPct || 10) / 100)),
+        otherVariableRub: 0,
+      },
+      unitsSold: Math.round(metrics.annualPacks),
+      revenueRub: Math.round(metrics.annualRevenueRub),
+      operatingProfitRub: Math.round(metrics.annualProfitRub),
+      monthlyDynamicsPct: 0,
+      salesChannels: ['Wildberries', 'Ozon'],
+      variants: [],
+      isDemo: false,
+      isArchived: m.launchStatus === 'В архиве',
+      createdAt: '2026-01-01',
+      updatedAt: '2027-01-01',
+    };
+  });
+
+  const extraLegacy = legacyProducts.filter((p) => {
+    const s = (p.sku || '').trim().toUpperCase();
+    const n = (p.name || '').trim().toLowerCase();
+    if (s && seenSkus.has(s)) return false;
+    if (n && seenNames.has(n)) return false;
+    return true;
+  });
+
+  return [...converted, ...extraLegacy];
+}
 
 // =============================================================================
 // РЫНОК И КОНКУРЕНТЫ (п. 11 ТЗ)
@@ -79,7 +208,10 @@ export function MarketIntelligenceView() {
   const filteredResearch = useMemo(
     () =>
       research.filter(
-        (i) => brandFilter === 'ALL' || i.brandId === 'ALL' || i.brandId === brandFilter
+        (i) =>
+          brandFilter === 'ALL' ||
+          i.brandId === 'ALL' ||
+          normalizeLabBrandCode(i.brandId) === normalizeLabBrandCode(brandFilter)
       ),
     [research, brandFilter]
   );
@@ -87,7 +219,10 @@ export function MarketIntelligenceView() {
   const filteredOpportunities = useMemo(
     () =>
       opportunities.filter(
-        (o) => brandFilter === 'ALL' || o.brandId === 'ALL' || o.brandId === brandFilter
+        (o) =>
+          brandFilter === 'ALL' ||
+          o.brandId === 'ALL' ||
+          normalizeLabBrandCode(o.brandId) === normalizeLabBrandCode(brandFilter)
       ),
     [opportunities, brandFilter]
   );
@@ -282,7 +417,10 @@ export function MarketIntelligenceView() {
                 className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-3"
               >
                 <div className="flex items-center justify-between text-[13px] font-semibold text-[#737373] border-b border-[#E8E8E5] pb-3">
-                  <span>Рыночная ниша · {opp.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : opp.brandId}</span>
+                  <span>
+                    Рыночная ниша ·{' '}
+                    {opp.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(opp.brandId)}
+                  </span>
                   <span>Конкуренция: {opp.competitionLevel}</span>
                 </div>
                 <h4 className="text-[20px] font-bold text-[#171717] dark:text-white">
@@ -518,7 +656,9 @@ export function RoadmapTasksView() {
     return tasks.filter(
       (t) =>
         !t.isArchived &&
-        (brandFilter === 'ALL' || t.brandId === 'ALL' || t.brandId === brandFilter) &&
+        (brandFilter === 'ALL' ||
+          t.brandId === 'ALL' ||
+          normalizeLabBrandCode(t.brandId) === normalizeLabBrandCode(brandFilter)) &&
         t.deadline < todayStr &&
         t.status !== 'Done'
     ).length;
@@ -527,7 +667,11 @@ export function RoadmapTasksView() {
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.isArchived) return false;
-      if (brandFilter !== 'ALL' && t.brandId !== 'ALL' && t.brandId !== brandFilter) {
+      if (
+        brandFilter !== 'ALL' &&
+        t.brandId !== 'ALL' &&
+        normalizeLabBrandCode(t.brandId) !== normalizeLabBrandCode(brandFilter)
+      ) {
         return false;
       }
       if (assigneeFilter !== 'ALL' && t.assigneeId !== assigneeFilter) {
@@ -782,7 +926,9 @@ export function RoadmapTasksView() {
                                     : '#737373',
                               }}
                             >
-                              {task.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : task.brandId}
+                              {task.brandId === 'ALL'
+                                ? 'Вся группа'
+                                : formatLabBrandLabel(task.brandId)}
                             </span>
                           </div>
                           <span
@@ -910,7 +1056,9 @@ export function RoadmapTasksView() {
                       <div className="text-[13px] text-[#737373] mt-0.5">{task.description}</div>
                     </td>
                     <td className="py-4 px-4 font-semibold">
-                      {task.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : task.brandId}
+                      {task.brandId === 'ALL'
+                        ? 'Вся группа'
+                        : formatLabBrandLabel(task.brandId)}
                     </td>
                     <td className="py-4 px-4 font-semibold">
                       {TASK_PRIORITY_LABELS_RU[task.priority]}
@@ -979,7 +1127,9 @@ export function RoadmapTasksView() {
             {strategicGoals
               .filter(
                 (g) =>
-                  brandFilter === 'ALL' || g.brandId === 'ALL' || g.brandId === brandFilter
+                  brandFilter === 'ALL' ||
+                  g.brandId === 'ALL' ||
+                  normalizeLabBrandCode(g.brandId) === normalizeLabBrandCode(brandFilter)
               )
               .map((goal) => {
                 const goalProjects = projects.filter((p) => {
@@ -1002,7 +1152,9 @@ export function RoadmapTasksView() {
                       <div>
                         <div className="text-[12px] font-semibold uppercase tracking-wider text-[#737373]">
                           Стратегическая цель · {goal.periodQuarter} ({goal.periodYear}) ·{' '}
-                          {goal.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : goal.brandId}
+                          {goal.brandId === 'ALL'
+                            ? 'Вся группа'
+                            : formatLabBrandLabel(goal.brandId)}
                         </div>
                         <h3 className="text-[22px] font-bold text-[#171717] dark:text-white mt-1">
                           {goal.title}
@@ -1334,7 +1486,10 @@ export function RoadmapTasksView() {
                   >
                     <option value="BORNERS">BORNERS</option>
                     <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="ALL">Общая задача</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISKANI">LISKANI</option>
+                    <option value="FUKAI">FUKAI</option>
+                    <option value="ALL">Общая задача холдинга</option>
                   </select>
                 </div>
                 <div>
@@ -1495,11 +1650,35 @@ export function DocumentsView() {
     notify('success', `Пакетно загружено файлов в реестр: ${files.length} шт.`);
   };
 
+  const livePortfolio = useLiveScenarioPortfolio();
+
+  const mergedCatalogProducts = useMemo(
+    () =>
+      buildLiveCatalogProductsForExport(
+        livePortfolio.models,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand,
+        livePortfolio.currentScenario,
+        products
+      ),
+    [
+      livePortfolio.models,
+      livePortfolio.scenarios,
+      livePortfolio.selectedScenarioByBrand,
+      livePortfolio.currentScenario,
+      products,
+    ]
+  );
+
   const filteredDocs = useMemo(() => {
     return documents.filter((d) => {
       if (d.isArchived) return false;
       if (d.isFinancialRestricted && !hasFinanceAccess) return false;
-      if (brandFilter !== 'ALL' && d.brandId !== 'ALL' && d.brandId !== brandFilter) {
+      if (
+        brandFilter !== 'ALL' &&
+        d.brandId !== 'ALL' &&
+        normalizeLabBrandCode(d.brandId) !== normalizeLabBrandCode(brandFilter)
+      ) {
         return false;
       }
       if (categoryFilter !== 'ALL' && d.category !== categoryFilter) {
@@ -1524,7 +1703,11 @@ export function DocumentsView() {
       notify('success', `PDF «${doc.fileName}» выгружен`);
       return;
     }
-    exportDocumentAsPdf(doc, { products, concepts, financialPlans });
+    exportDocumentAsPdf(doc, {
+      products: mergedCatalogProducts,
+      concepts,
+      financialPlans,
+    });
     notify(
       'success',
       `Сформирован брендированный PDF`,
@@ -1545,7 +1728,11 @@ export function DocumentsView() {
       notify('success', `Таблица «${doc.fileName}» выгружена`);
       return;
     }
-    exportDocumentAsExcel(doc, { products, concepts, financialPlans });
+    exportDocumentAsExcel(doc, {
+      products: mergedCatalogProducts,
+      concepts,
+      financialPlans,
+    });
     notify(
       'success',
       `Сформирована таблица Excel (.xlsx)`,
@@ -2224,17 +2411,46 @@ export function TeamView() {
 // =============================================================================
 export function SettingsView() {
   const {
+    users,
     brands,
+    strategies,
     documents,
     products,
     concepts,
+    launches,
     financialPlans,
+    projects,
+    tasks,
+    competitors,
+    miroItems,
+    presentationOverrides,
+    restorePlatformBackupState,
     updateBrandPalette,
     resetToDemoDefaults,
     navigateTo,
     setPlatformMode,
     notify,
   } = usePlatform();
+
+  const livePortfolio = useLiveScenarioPortfolio();
+
+  const mergedCatalogProducts = useMemo(
+    () =>
+      buildLiveCatalogProductsForExport(
+        livePortfolio.models,
+        livePortfolio.scenarios,
+        livePortfolio.selectedScenarioByBrand,
+        livePortfolio.currentScenario,
+        products
+      ),
+    [
+      livePortfolio.models,
+      livePortfolio.scenarios,
+      livePortfolio.selectedScenarioByBrand,
+      livePortfolio.currentScenario,
+      products,
+    ]
+  );
 
   const {
     draftModules,
@@ -2371,7 +2587,7 @@ export function SettingsView() {
             Borners Group · <span className="font-mono text-[#1F6E50]">borners-group.ru</span>
           </div>
           <div className="text-[13px] text-[#5C5852]">
-            Единый защищённый контур управления портфелем брендов BORNERS и НА ТЕЛЕ (2026–2027)
+            Единый защищённый контур управления портфелем 5 брендов: BORNERS, НА ТЕЛЕ, AKUSHA, LISKANI и FUKAI (2026–2027)
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -2449,8 +2665,16 @@ export function SettingsView() {
                     isDemo: false,
                     isArchived: false,
                   };
-                  exportDocumentAsExcel(finDoc, { products, concepts, financialPlans });
-                  notify('success', 'Сводная таблица Excel (.xlsx) выгружена');
+                  exportDocumentAsExcel(finDoc, {
+                    products: mergedCatalogProducts,
+                    concepts,
+                    financialPlans,
+                  });
+                  notify(
+                    'success',
+                    'Сводная таблица Excel (.xlsx) выгружена',
+                    `В выгрузку включено ${mergedCatalogProducts.length} позиций каталога всех 5 брендов.`
+                  );
                 }}
                 className="inline-flex items-center gap-2 h-10 rounded-[8px] bg-[#181715] text-white px-4 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
               >
@@ -2461,23 +2685,139 @@ export function SettingsView() {
               <button
                 type="button"
                 onClick={() => {
-                  const raw =
-                    window.localStorage.getItem('borners_group_platform_state_ru_v9_editorial') ||
-                    '{}';
-                  const blob = new Blob([raw], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  notify('success', 'Резервная копия JSON скачана');
+                  try {
+                    const payload = buildFullPlatformBackupBundle({
+                      scenarios: livePortfolio.scenarios,
+                      models: livePortfolio.models,
+                      selectedScenarioByBrand: livePortfolio.selectedScenarioByBrand,
+                      includeGroupPortfolioInS1: livePortfolio.includeGroupPortfolioInS1,
+                      productGroups: safeGetStorageJson('borners_product_groups_v1'),
+                      platformState: {
+                        users,
+                        brands,
+                        strategies,
+                        concepts,
+                        products,
+                        launches,
+                        financialPlans,
+                        projects,
+                        tasks,
+                        documents,
+                        competitors,
+                        miroItems,
+                        presentationOverrides,
+                      },
+                    });
+                    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                      type: 'application/json;charset=utf-8',
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    notify(
+                      'success',
+                      '✓ Полная резервная копия JSON скачана',
+                      `Сохранены ${livePortfolio.models.length} SKU, сценарии 2027, товарные группы и Лаборатория R&D (${concepts.length}).`
+                    );
+                  } catch {
+                    notify('error', 'Ошибка сохранения резервной копии JSON');
+                  }
                 }}
                 className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer"
               >
                 <Download className="h-4 w-4" />
                 <span>Экспорт базы JSON</span>
               </button>
+
+              <label className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer">
+                <Upload className="h-4 w-4" />
+                <span>Импорт базы JSON</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!file) return;
+                    try {
+                      const text = await file.text();
+                      const parsed = parseFullPlatformBackupBundle(text);
+                      if (!parsed.valid || !parsed.bundle) {
+                        notify(
+                          'error',
+                          'Ошибка восстановления из файла',
+                          parsed.error || 'Некорректный формат резервной копии JSON'
+                        );
+                        return;
+                      }
+                      const b = parsed.bundle;
+                      for (const m of b.models) {
+                        unmarkModelAsDeletedInStorage(m);
+                        if (Array.isArray(m.gallery) && m.gallery.length > 0) {
+                          await saveModelGalleryToIdb(m.id, m.gallery);
+                        } else {
+                          await deleteModelGalleryFromIdb(m.id);
+                        }
+                      }
+                      const restoredIso = touchPortfolioUpdatedAt();
+                      safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
+                      syncUserPlansBackup(b.models);
+                      await savePortfolioSnapshotToIdb(b.models, restoredIso);
+                      safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
+                      safeSetStorageJson(
+                        STORAGE_KEY_SCENARIO_BY_BRAND,
+                        b.selectedScenarioByBrand
+                      );
+                      if (typeof b.includeGroupPortfolioInS1 === 'boolean') {
+                        safeSetStorageJson(
+                          STORAGE_KEY_S1_GROUP_PORTFOLIO,
+                          b.includeGroupPortfolioInS1
+                        );
+                      }
+                      if (b.productGroups !== undefined) {
+                        safeSetStorageJson('borners_product_groups_v1', b.productGroups);
+                        if (typeof window !== 'undefined') {
+                          window.dispatchEvent(new Event('borners-product-groups-changed'));
+                        }
+                      }
+                      livePortfolio.updateModelsBatch(() => b.models);
+                      livePortfolio.updateScenariosBatch(() => b.scenarios);
+                      if (b.platformState) {
+                        restorePlatformBackupState(b.platformState);
+                      }
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new Event('borners-scenario-models-changed'));
+                        window.dispatchEvent(new Event('borners-scenarios-changed'));
+                        window.dispatchEvent(new Event('borners-active-scenario-changed'));
+                      }
+                      const byBrandRecord: Record<string, number | null> = {};
+                      for (const [k, v] of Object.entries(b.selectedScenarioByBrand || {})) {
+                        if (v === null || typeof v === 'number') {
+                          byBrandRecord[k] = v;
+                        }
+                      }
+                      void pushPortfolioCoreToSupabase({
+                        models: b.models,
+                        scenarios: b.scenarios,
+                        selectedScenarioByBrand: byBrandRecord,
+                        includeGroupPortfolioInS1: b.includeGroupPortfolioInS1,
+                        deletedModelIds: getDeletedModelsRegistry(),
+                      });
+                      notify(
+                        'success',
+                        '✓ Резервная копия JSON восстановлена',
+                        `Загружено ${b.models.length} карточек SKU, сценарии 2027 и данные Лаборатории R&D.`
+                      );
+                    } catch {
+                      notify('error', 'Не удалось импортировать резервную копию JSON');
+                    }
+                  }}
+                />
+              </label>
 
               <button
                 type="button"

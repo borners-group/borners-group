@@ -8,9 +8,24 @@ export const SUPABASE_GALLERY_KEY_PREFIX = 'photo_gallery:';
 export interface CloudPortfolioCorePayload {
   models: ScenarioModelSpec[];
   scenarios?: GrowthScenarioDef[];
-  selectedScenarioByBrand?: Record<string, number>;
+  selectedScenarioByBrand?: Record<string, number | null>;
+  includeGroupPortfolioInS1?: boolean;
+  deletedModelIds?: string[];
   customBrands?: string[];
   updatedAtIso: string;
+}
+
+const lastSyncedGalleryFingerprintByModelId = new Map<string, string>();
+let latestCorePushSeq = 0;
+
+function computeGalleryFingerprint(gallery: ScenarioModelSpec['gallery'] | undefined): string {
+  if (!Array.isArray(gallery) || gallery.length === 0) return 'EMPTY';
+  return gallery
+    .map((g) => {
+      const u = typeof g?.url === 'string' ? g.url : '';
+      return `${g?.id || ''}:${u.length}:${u.slice(0, 28)}:${u.slice(-16)}:${g?.isMain ? 1 : 0}`;
+    })
+    .join('|');
 }
 
 function stripBase64FromModelForCoreRow(model: ScenarioModelSpec): ScenarioModelSpec {
@@ -47,6 +62,8 @@ export async function pushModelGalleryToSupabase(
   const client = getActiveSupabaseClient();
   if (!client || !modelId || !Array.isArray(gallery)) return false;
 
+  const nextFp = computeGalleryFingerprint(gallery);
+
   if (gallery.length === 0) {
     try {
       const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
@@ -57,6 +74,9 @@ export async function pushModelGalleryToSupabase(
         },
         { onConflict: 'key' }
       );
+      if (!error) {
+        lastSyncedGalleryFingerprintByModelId.set(modelId, nextFp);
+      }
       return !error;
     } catch {
       return false;
@@ -69,6 +89,10 @@ export async function pushModelGalleryToSupabase(
       (typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
   );
   if (!hasDataImage) return false;
+
+  if (lastSyncedGalleryFingerprintByModelId.get(modelId) === nextFp) {
+    return true;
+  }
 
   const cleanGallery = gallery.map((g) => ({
     ...g,
@@ -89,6 +113,9 @@ export async function pushModelGalleryToSupabase(
       },
       { onConflict: 'key' }
     );
+    if (!error) {
+      lastSyncedGalleryFingerprintByModelId.set(modelId, nextFp);
+    }
     return !error;
   } catch {
     return false;
@@ -101,8 +128,10 @@ export async function pushPortfolioCoreToSupabase(
   const client = getActiveSupabaseClient();
   if (!client) return false;
 
+  const mySeq = ++latestCorePushSeq;
+
   try {
-    // Сначала сохраняем base64-фотогалереи в отдельные ключи photo_gallery:<modelId>
+    // Синхронизируем только те base64-фотогалереи, чей слепок реально изменился (O(1) для неизменённых SKU)
     const galleryPromises: Promise<boolean>[] = [];
     for (const m of input.models) {
       if (
@@ -111,11 +140,19 @@ export async function pushPortfolioCoreToSupabase(
           (g) => typeof g.url === 'string' && g.url.startsWith('data:image/')
         )
       ) {
-        galleryPromises.push(pushModelGalleryToSupabase(m.id, m.gallery));
+        const fp = computeGalleryFingerprint(m.gallery);
+        if (lastSyncedGalleryFingerprintByModelId.get(m.id) !== fp) {
+          galleryPromises.push(pushModelGalleryToSupabase(m.id, m.gallery));
+        }
       }
     }
     if (galleryPromises.length > 0) {
       await Promise.allSettled(galleryPromises);
+    }
+
+    // Защита от гонки: если пока шли сетевые запросы пользователь ввёл более свежее значение — не затираем новым старое
+    if (mySeq < latestCorePushSeq) {
+      return true;
     }
 
     const compactModels = input.models.map(stripBase64FromModelForCoreRow);
@@ -172,7 +209,7 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
       ) {
         const modelId = row.key.slice(SUPABASE_GALLERY_KEY_PREFIX.length);
         const gal = (row.payload as { gallery?: ScenarioModelSpec['gallery'] }).gallery;
-        if (modelId && Array.isArray(gal) && gal.length > 0) {
+        if (modelId && Array.isArray(gal)) {
           galleriesByModelId.set(modelId, gal);
         }
       }
@@ -184,12 +221,19 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
         m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
       const cloudGal = galleriesByModelId.get(m.id);
       if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !Array.isArray(m.gallery))) {
+        lastSyncedGalleryFingerprintByModelId.set(m.id, computeGalleryFingerprint(cloudGal));
         return {
           ...m,
           gallery: cloudGal,
         };
       }
-      // Очищаем маркер __SUPABASE_GALLERY_REF__, если отдельной строки не нашлось
+      if (cloudGal && cloudGal.length === 0) {
+        lastSyncedGalleryFingerprintByModelId.set(m.id, 'EMPTY');
+        return {
+          ...m,
+          gallery: [],
+        };
+      }
       if (hasGalleryRef) {
         return {
           ...m,

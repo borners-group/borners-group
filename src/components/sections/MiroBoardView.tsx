@@ -19,10 +19,16 @@ import {
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { MiroBoardItem } from '@/types/platform';
+import { MiroBoardItem, ProductConcept } from '@/types/platform';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
-import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { saveModelGalleryToIdb } from '@/lib/safeStorage';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import {
+  formatLabBrandLabel,
+  normalizeLabBrandCode,
+  syncConceptToScenarioPortfolio,
+} from '@/lib/rndCatalogSync';
 
 const STICKY_COLORS = [
   { hex: '#FFF8D6', label: 'Тёплый жёлтый' },
@@ -160,10 +166,116 @@ export function MiroBoardView() {
     updateMiroItem,
     deleteMiroItem,
     concepts,
+    createConcept,
+    updateConcept,
+    setSelectedConceptId,
+    currentUser,
     brandFilter,
     navigateTo,
     notify,
   } = usePlatform();
+
+  const {
+    models: liveScenarioModels,
+    scenarios: liveScenarios,
+    updateModelsBatch,
+  } = useLiveScenarioPortfolio();
+
+  const handlePromoteMiroItemToRnD = (item: MiroBoardItem) => {
+    const rawBrand =
+      item.brandId && item.brandId !== 'ALL'
+        ? item.brandId
+        : brandFilter && brandFilter !== 'ALL'
+        ? brandFilter
+        : 'NA_TELE';
+    const targetBrand = normalizeLabBrandCode(rawBrand);
+    const conceptName =
+      item.title?.trim() ||
+      item.content?.trim().slice(0, 48) ||
+      'Новая идея с доски Miro';
+
+    const collectedUrls = Array.from(
+      new Set(
+        [item.imageUrl, ...(item.galleryUrls || [])]
+          .map((u) => (u || '').trim())
+          .filter((u) => u.length > 0)
+      )
+    );
+    const primaryPhoto = collectedUrls[0] || undefined;
+    const galleryPhotos =
+      collectedUrls.length > 0
+        ? collectedUrls.map((u, idx) => ({
+            id: `gp-miro-${Date.now()}-${idx}`,
+            url: u,
+            caption: `Референс Miro #${idx + 1}`,
+          }))
+        : undefined;
+
+    const categoryLabel =
+      targetBrand === 'NA_TELE'
+        ? 'Женское бесшовное бельё'
+        : targetBrand === 'AKUSHA'
+        ? 'Детская и женская обувь'
+        : targetBrand === 'LISKANI'
+        ? 'Интерьерные шторы'
+        : 'Базовое бельё';
+
+    const voiceTranscript = (item as MiroBoardItem & { voiceTranscript?: string })
+      .voiceTranscript;
+    const rawDescription = (item.content || voiceTranscript || item.title || '').trim();
+
+    const created = createConcept({
+      name: conceptName,
+      brandId: targetBrand,
+      collectionName: categoryLabel,
+      stage: 'IDEA',
+      developmentType: 'new_construction',
+      imageUrl: primaryPhoto,
+      whatAttracted: rawDescription
+        ? `${rawDescription} · Перенесено с визуальной доски Miro R&D`
+        : 'Перенесено с визуальной доски Miro R&D',
+      ideaDescription: rawDescription || conceptName,
+      ownerId: currentUser.id,
+      targetLaunchDate: '2027-02-15',
+      galleryPhotos,
+    });
+
+    if (galleryPhotos && galleryPhotos.length > 0) {
+      updateConcept(created.id, {
+        ...(primaryPhoto ? { imageUrl: primaryPhoto } : {}),
+        galleryPhotos,
+      });
+    }
+
+    updateMiroItem(item.id, { linkedConceptId: created.id });
+
+    const conceptWithMedia: ProductConcept = {
+      ...created,
+      brandId: targetBrand,
+      collectionName: categoryLabel,
+      ...(primaryPhoto ? { imageUrl: primaryPhoto } : {}),
+      ...(galleryPhotos ? { galleryPhotos } : {}),
+    };
+
+    const synced = syncConceptToScenarioPortfolio(
+      conceptWithMedia,
+      liveScenarioModels,
+      liveScenarios
+    );
+    updateModelsBatch(() => synced.models);
+    if (synced.model.gallery?.length) {
+      void saveModelGalleryToIdb(synced.model.id, synced.model.gallery);
+    }
+    updateConcept(created.id, { linkedScenarioModelId: synced.model.id });
+
+    setSelectedConceptId(created.id);
+    navigateTo('product-lab', { conceptId: created.id });
+    notify(
+      'success',
+      `✓ Передано в разработку R&D: ${created.code}`,
+      `${formatLabBrandLabel(targetBrand)} · «${conceptName}» синхронизировано с Каталогом (${synced.model.code})`
+    );
+  };
 
   // Состояние бесконечного холста (панорамирование pan + зум)
   const [zoom, setZoom] = useState<number>(1);
@@ -925,6 +1037,14 @@ export function MiroBoardView() {
             const isConnectTargetCandidate =
               Boolean(connectingSourceId && connectingSourceId !== item.id) ||
               Boolean(draggingArrowFromId && draggingArrowFromId !== item.id);
+            const linkedConcept = item.linkedConceptId
+              ? concepts.find((c) => c.id === item.linkedConceptId) || null
+              : null;
+            const hasActiveLinkedConcept = Boolean(
+              linkedConcept && !linkedConcept.isArchived
+            );
+            const hasArchivedOrMissingConcept =
+              Boolean(item.linkedConceptId) && !hasActiveLinkedConcept;
 
             return (
               <div
@@ -1133,13 +1253,16 @@ export function MiroBoardView() {
                   </div>
                 )}
 
-                {/* Переход в привязанную карточку R&D */}
-                {item.linkedConceptId && (
+                {/* Переход в привязанную карточку R&D или создание новой разработки */}
+                {hasActiveLinkedConcept && linkedConcept && (
                   <button
                     type="button"
-                    onClick={() =>
-                      navigateTo('product-lab', { conceptId: item.linkedConceptId })
-                    }
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedConceptId(linkedConcept.id);
+                      navigateTo('product-lab', { conceptId: linkedConcept.id });
+                    }}
                     className="w-full rounded-[8px] bg-[#181715] hover:bg-[#B85D35] text-white py-1.5 px-3 text-[11.5px] font-semibold transition cursor-pointer flex items-center justify-between"
                   >
                     <span className="inline-flex items-center gap-1.5">
@@ -1149,6 +1272,46 @@ export function MiroBoardView() {
                     <span>→</span>
                   </button>
                 )}
+
+                {hasArchivedOrMissingConcept && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      notify(
+                        'warning',
+                        'Карточка R&D находится в архиве',
+                        'Создайте новую разработку или восстановите карточку из Корзины'
+                      );
+                    }}
+                    className="w-full rounded-[8px] bg-[#FAF8F5] hover:bg-[#FCE8DF] border border-[#D4CDC2] text-[#7A756D] hover:text-[#9E4622] py-1.5 px-3 text-[11px] font-semibold transition cursor-pointer flex items-center justify-between"
+                  >
+                    <span>Карточка R&amp;D в архиве</span>
+                    <span>!</span>
+                  </button>
+                )}
+
+                {!hasActiveLinkedConcept &&
+                  (item.type === 'sticky' ||
+                    item.type === 'photo' ||
+                    item.type === 'voice' ||
+                    hasArchivedOrMissingConcept) && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePromoteMiroItemToRnD(item);
+                      }}
+                      className="w-full rounded-[8px] bg-[#181715] hover:bg-[#B85D35] text-white py-1.5 px-3 text-[11.5px] font-semibold transition cursor-pointer flex items-center justify-between"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3" />
+                        <span>В разработку R&amp;D →</span>
+                      </span>
+                    </button>
+                  )}
 
                 <div className="flex items-center justify-between text-[10.5px] text-[#6E6A63] pt-1.5 border-t border-black/10">
                   <span>

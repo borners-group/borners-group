@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { NavSectionId, PeriodFilter } from '@/types/platform';
+import { BrandFilter, NavSectionId, PeriodFilter } from '@/types/platform';
 import {
   CONCEPT_STAGE_LABELS_RU,
   ROLE_LABELS_RU,
@@ -57,6 +57,8 @@ import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
   computeMultiBrandPortfolioSummary,
   detectModelBrandPortfolioLabel,
+  matchesBrandFilter,
+  normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 import {
   STORAGE_KEY_MODELS,
@@ -64,16 +66,22 @@ import {
   STORAGE_KEY_SCENARIO_BY_BRAND,
   STORAGE_KEY_SCENARIOS,
   buildFullPlatformBackupBundle,
+  getDeletedModelsRegistry,
   parseFullPlatformBackupBundle,
+  resolveEffectiveScenarioForModel,
   syncUserPlansBackup,
+  touchPortfolioUpdatedAt,
+  unmarkModelAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import {
+  deleteModelGalleryFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
   savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
+import { pushPortfolioCoreToSupabase } from '@/lib/supabaseCloudSync';
 
 interface NavGroup {
   groupTitle: string;
@@ -267,6 +275,24 @@ export function AppShell() {
 
   const openScenarioSkuPassport = React.useCallback(
     (modelId: string, modelLabel?: string) => {
+      const targetModel = livePortfolio.models.find((item) => item.id === modelId);
+      if (targetModel) {
+        const effSc = resolveEffectiveScenarioForModel(
+          targetModel,
+          livePortfolio.scenarios,
+          livePortfolio.selectedScenarioByBrand,
+          livePortfolio.currentScenario,
+          livePortfolio.includeGroupPortfolioInS1
+        );
+        const modelBrandNorm = normalizePortfolioBrandCode(
+          detectModelBrandPortfolioLabel(targetModel) || targetModel.brandId || 'BORNERS'
+        );
+        const targetBrandSlot = modelBrandNorm === 'ALL' ? 'BORNERS' : modelBrandNorm;
+        livePortfolio.setSelectedScenarioId(effSc.id, targetBrandSlot);
+        if (brandFilter !== 'ALL' && !matchesBrandFilter(targetModel, brandFilter)) {
+          setBrandFilter(targetBrandSlot as BrandFilter);
+        }
+      }
       try {
         sessionStorage.setItem('borners_open_scenario_model_id', modelId);
       } catch {
@@ -289,7 +315,14 @@ export function AppShell() {
         notify('success', `Открыт паспорт SKU 2027`, modelLabel);
       }
     },
-    [navigateTo, notify, setPlatformMode]
+    [
+      brandFilter,
+      livePortfolio,
+      navigateTo,
+      notify,
+      setBrandFilter,
+      setPlatformMode,
+    ]
   );
 
   const topScenarioDrivers = useMemo(() => {
@@ -704,13 +737,39 @@ export function AppShell() {
       }
     }
 
-    // 1. Живые SKU портфеля 2027 (23 модели сценариев + WB артикулы)
+    // 1. Живые SKU портфеля 2027 (все 5 брендов холдинга + WB артикулы)
+    const seenLiveSkus = new Set<string>();
+    const seenLiveTitles = new Set<string>();
     for (const m of livePortfolio.models) {
       if (m.launchStatus === 'В архиве') continue;
       const acting = getActingSkuByWbOrVendor(m.code, m.title);
+      if (m.code) seenLiveSkus.add(m.code.trim().toLowerCase());
+      if (m.wbArticle) seenLiveSkus.add(m.wbArticle.trim().toLowerCase());
+      if (acting?.wbSku) seenLiveSkus.add(acting.wbSku.trim().toLowerCase());
+      if (m.title) seenLiveTitles.add(m.title.trim().toLowerCase());
+
       const portfolioBrand = detectModelBrandPortfolioLabel(m);
-      const wbStr = acting ? `wb ${acting.wbSku}` : '';
-      const brandRu = m.brandId === 'NA_TELE' ? 'на теле' : portfolioBrand.toLowerCase();
+      const modelBrandNorm = normalizePortfolioBrandCode(
+        portfolioBrand || m.brandId || 'BORNERS'
+      );
+      const wbArtLower = (m.wbArticle || '').trim().toLowerCase();
+      const wbStr = [
+        acting ? `wb ${acting.wbSku}` : '',
+        wbArtLower ? `wb ${wbArtLower} ${wbArtLower}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const brandAliases =
+        modelBrandNorm === 'AKUSHA'
+          ? 'akusha акуша'
+          : modelBrandNorm === 'LISKANI'
+          ? 'liskani liscani лискани'
+          : modelBrandNorm === 'FUKAI'
+          ? 'fukai фукай'
+          : modelBrandNorm === 'NA_TELE'
+          ? 'na_tele на теле natele'
+          : 'borners борнерс';
+      const brandRu = `${portfolioBrand.toLowerCase()} ${brandAliases}`;
       if (
         m.code.toLowerCase().includes(q) ||
         m.title.toLowerCase().includes(q) ||
@@ -718,8 +777,19 @@ export function AppShell() {
         wbStr.includes(q) ||
         brandRu.includes(q)
       ) {
-        const met = computeModelScenarioMetrics(m, livePortfolio.currentScenario);
-        const displayCode = acting ? `WB ${acting.wbSku}` : m.code;
+        const effSc = resolveEffectiveScenarioForModel(
+          m,
+          livePortfolio.scenarios,
+          livePortfolio.selectedScenarioByBrand,
+          livePortfolio.currentScenario,
+          livePortfolio.includeGroupPortfolioInS1
+        );
+        const met = computeModelScenarioMetrics(m, effSc);
+        const displayCode = acting
+          ? `WB ${acting.wbSku}`
+          : m.wbArticle
+          ? `${m.code} · WB ${m.wbArticle}`
+          : m.code;
         results.push({
           id: `scen-sku-${m.id}`,
           category: 'SKU 2027',
@@ -736,6 +806,12 @@ export function AppShell() {
 
     for (const p of products) {
       if (p.isArchived) continue;
+      if (
+        seenLiveSkus.has((p.sku || '').trim().toLowerCase()) ||
+        seenLiveTitles.has((p.name || '').trim().toLowerCase())
+      ) {
+        continue;
+      }
       const brandDisplay = formatLabBrandLabel(p.brandId);
       const brandSearch = `${brandDisplay.toLowerCase()} ${p.brandId.toLowerCase()}`;
       if (
@@ -1583,14 +1659,18 @@ export function AppShell() {
                                   return;
                                 }
                                 const b = parsed.bundle;
-                                safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
-                                syncUserPlansBackup(b.models);
-                                void savePortfolioSnapshotToIdb(b.models);
                                 for (const m of b.models) {
+                                  unmarkModelAsDeletedInStorage(m);
                                   if (Array.isArray(m.gallery) && m.gallery.length > 0) {
-                                    void saveModelGalleryToIdb(m.id, m.gallery);
+                                    await saveModelGalleryToIdb(m.id, m.gallery);
+                                  } else {
+                                    await deleteModelGalleryFromIdb(m.id);
                                   }
                                 }
+                                const restoredIso = touchPortfolioUpdatedAt();
+                                safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
+                                syncUserPlansBackup(b.models);
+                                await savePortfolioSnapshotToIdb(b.models, restoredIso);
                                 safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
                                 safeSetStorageJson(
                                   STORAGE_KEY_SCENARIO_BY_BRAND,
@@ -1607,6 +1687,11 @@ export function AppShell() {
                                     'borners_product_groups_v1',
                                     b.productGroups
                                   );
+                                  if (typeof window !== 'undefined') {
+                                    window.dispatchEvent(
+                                      new Event('borners-product-groups-changed')
+                                    );
+                                  }
                                 }
                                 livePortfolio.updateModelsBatch(() => b.models);
                                 livePortfolio.updateScenariosBatch(() => b.scenarios);
@@ -1615,15 +1700,30 @@ export function AppShell() {
                                 }
                                 if (typeof window !== 'undefined') {
                                   window.dispatchEvent(
-                                    new CustomEvent('borners-scenario-models-changed')
+                                    new Event('borners-scenario-models-changed')
                                   );
                                   window.dispatchEvent(
-                                    new CustomEvent('borners-scenarios-changed')
+                                    new Event('borners-scenarios-changed')
                                   );
                                   window.dispatchEvent(
-                                    new CustomEvent('borners-active-scenario-changed')
+                                    new Event('borners-active-scenario-changed')
                                   );
                                 }
+                                const byBrandRecord: Record<string, number | null> = {};
+                                for (const [k, v] of Object.entries(
+                                  b.selectedScenarioByBrand || {}
+                                )) {
+                                  if (v === null || typeof v === 'number') {
+                                    byBrandRecord[k] = v;
+                                  }
+                                }
+                                void pushPortfolioCoreToSupabase({
+                                  models: b.models,
+                                  scenarios: b.scenarios,
+                                  selectedScenarioByBrand: byBrandRecord,
+                                  includeGroupPortfolioInS1: b.includeGroupPortfolioInS1,
+                                  deletedModelIds: getDeletedModelsRegistry(),
+                                });
                                 setProfileMenuOpen(false);
                                 notify(
                                   'success',

@@ -19,6 +19,7 @@ import { usePlatform } from '@/context/PlatformContext';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { formatCurrencyRub } from '@/lib/finance';
 import {
+  GrowthScenarioDef,
   ScenarioModelSpec,
   MONTHS_SHORT_RU,
   computeModelScenarioMetrics,
@@ -50,7 +51,11 @@ import {
   normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
-import { getModelBrandAccentStyles } from '@/lib/productGroups';
+import {
+  isBrandScenarioExplicitlyNone,
+  resolveEffectiveScenarioForModel,
+} from '@/lib/portfolioPersistence';
+import { getModelBrandAccentStyles, loadProductGroups } from '@/lib/productGroups';
 import {
   buildPdfConceptFromScenarioModel,
   formatLabBrandLabel,
@@ -207,6 +212,7 @@ export function ProductCatalogView() {
     models: rawScenarioModels,
     scenarios,
     currentScenario,
+    includeGroupPortfolioInS1,
     selectedScenarioByBrand,
     setSelectedScenarioForBrand,
     setSelectedScenarioId,
@@ -221,6 +227,49 @@ export function ProductCatalogView() {
     () => rawScenarioModels.map((m) => ensureModelUnifiedV11(m)),
     [rawScenarioModels]
   );
+
+  const [productGroupsReloadTick, setProductGroupsReloadTick] = useState(0);
+  useEffect(() => {
+    const handleGroupsChanged = () => {
+      loadProductGroups(scenarioModels);
+      setProductGroupsReloadTick((v) => v + 1);
+    };
+    window.addEventListener('borners-product-groups-changed', handleGroupsChanged);
+    return () =>
+      window.removeEventListener('borners-product-groups-changed', handleGroupsChanged);
+  }, [scenarioModels]);
+
+  const emptyNoneScenario: GrowthScenarioDef = useMemo(
+    () => ({
+      ...(scenarios[0] || currentScenario),
+      id: -1,
+      title: 'Нет активного сценария',
+      monthlyTargetMln: 0,
+    }),
+    [scenarios, currentScenario]
+  );
+
+  const resolveCatalogModelScenario = (mod: ScenarioModelSpec) => {
+    const modBrandCode = normalizePortfolioBrandCode(
+      detectModelBrandPortfolioLabel(mod) || mod.brandId || 'BORNERS'
+    );
+    const fallbackValidScenario = resolveEffectiveScenarioForModel(
+      mod,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      includeGroupPortfolioInS1
+    );
+    const explicitlyNone =
+      isBrandScenarioExplicitlyNone(brandFilter, selectedScenarioByBrand) ||
+      isBrandScenarioExplicitlyNone(modBrandCode, selectedScenarioByBrand);
+    return {
+      modBrandCode,
+      explicitlyNone,
+      effectiveScenario: explicitlyNone ? emptyNoneScenario : fallbackValidScenario,
+      fallbackValidScenario,
+    };
+  };
 
   const activeLabConceptsForFilter = useMemo(
     () =>
@@ -637,15 +686,11 @@ export function ProductCatalogView() {
 
   // ЕСЛИ ОТКРЫТ ПАСПОРТ МОДЕЛИ — ПОКАЗЫВАЕМ ЕГО ПРЯМО ВНУТРИ 01 · ПРОДУКТ (СО ВСЕМИ ПОЛЯМИ РЕДАКТИРОВАНИЯ)
   if (activePassportModel) {
-    const modBrandCode = normalizePortfolioBrandCode(
-      detectModelBrandPortfolioLabel(activePassportModel)
-    );
-    const activeBrandScenarioId =
-      modBrandCode !== 'ALL' ? selectedScenarioByBrand[modBrandCode] : undefined;
-    const effectiveScenario =
-      (typeof activeBrandScenarioId === 'number'
-        ? scenarios.find((s) => s.id === activeBrandScenarioId)
-        : undefined) || currentScenario;
+    const {
+      modBrandCode,
+      effectiveScenario,
+      fallbackValidScenario: modelEffectiveScenario,
+    } = resolveCatalogModelScenario(activePassportModel);
 
     return (
       <div className="space-y-4 pb-20">
@@ -693,7 +738,29 @@ export function ProductCatalogView() {
             }
           }}
           onBackToScenarios={() => setActivePassportModelId(null)}
-          onOpenSalesPlan={() => navigateTo('launch-calendar')}
+          onOpenSalesPlan={() => {
+            const targetBrand = normalizePortfolioBrandCode(
+              detectModelBrandPortfolioLabel(activePassportModel) ||
+                activePassportModel.brandId ||
+                'BORNERS'
+            );
+            if (targetBrand !== 'ALL') {
+              setBrandFilter(targetBrand);
+              setSelectedScenarioId(modelEffectiveScenario.id, targetBrand);
+              if (isBrandScenarioExplicitlyNone(targetBrand, selectedScenarioByBrand)) {
+                setSelectedScenarioForBrand(targetBrand, modelEffectiveScenario.id);
+              }
+              navigateTo('launch-calendar', {
+                brandId: targetBrand,
+                scenarioModelId: activePassportModel.id,
+              });
+            } else {
+              setSelectedScenarioId(modelEffectiveScenario.id);
+              navigateTo('launch-calendar', {
+                scenarioModelId: activePassportModel.id,
+              });
+            }
+          }}
           onUpdateModel={updateModelSpec}
           onDuplicateModel={(m) => {
             const copyBrand: CanonicalBrandCode =
@@ -1125,16 +1192,11 @@ export function ProductCatalogView() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {filteredModels.map((mod) => {
                 const displayBrand = detectModelBrandPortfolioLabel(mod);
-                const modBrandCode = normalizePortfolioBrandCode(displayBrand);
-                const activeScenId =
-                  modBrandCode !== 'ALL'
-                    ? selectedScenarioByBrand[modBrandCode]
-                    : undefined;
-                const activeScen =
-                  (typeof activeScenId === 'number'
-                    ? scenarios.find((s) => s.id === activeScenId)
-                    : undefined) || currentScenario;
-                const met = computeModelScenarioMetrics(mod, activeScen);
+                const { effectiveScenario: activeScen, explicitlyNone } =
+                  resolveCatalogModelScenario(mod);
+                const met = explicitlyNone
+                  ? computeModelScenarioMetrics({ ...mod, plansByScenario: {} }, activeScen)
+                  : computeModelScenarioMetrics(mod, activeScen);
                 const unitCfg = getBrandUnitConfig(mod);
                 const accent = getModelBrandAccentStyles(displayBrand);
                 const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
@@ -1306,6 +1368,7 @@ export function ProductCatalogView() {
       {viewMode === 'groups' && (
         <div className="rounded-2xl bg-white border border-[#CBD5E1] p-5 md:p-6 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
           <PeaklyCatalogGroupsAndBrandsView
+            key={`groups-${productGroupsReloadTick}`}
             models={scenarioModels}
             filteredModels={filteredModels}
             currentScenario={currentScenario}
@@ -1352,15 +1415,12 @@ export function ProductCatalogView() {
             <tbody className="divide-y divide-[#E2E8F0]">
               {filteredModels.map((mod) => {
                 const displayBrand = detectModelBrandPortfolioLabel(mod);
-                const modBrandCode = normalizePortfolioBrandCode(displayBrand);
-                const activeBrandScenId =
-                  modBrandCode !== 'ALL' ? selectedScenarioByBrand[modBrandCode] : undefined;
-                const activeScen =
-                  (typeof activeBrandScenId === 'number'
-                    ? scenarios.find((s) => s.id === activeBrandScenId)
-                    : undefined) || currentScenario;
+                const { effectiveScenario: activeScen, explicitlyNone } =
+                  resolveCatalogModelScenario(mod);
                 const unitCfg = getBrandUnitConfig(mod);
-                const met = computeModelScenarioMetrics(mod, activeScen);
+                const met = explicitlyNone
+                  ? computeModelScenarioMetrics({ ...mod, plansByScenario: {} }, activeScen)
+                  : computeModelScenarioMetrics(mod, activeScen);
                 const accent = getModelBrandAccentStyles(displayBrand);
                 return (
                   <tr

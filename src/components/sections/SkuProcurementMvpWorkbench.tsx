@@ -47,7 +47,10 @@ import {
   approveRecommendedBatch,
   computeProcurementPlan,
   createCustomPurchaseOrder,
+  detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
+  getBrandUnitConfig,
+  normalizePortfolioBrandCode,
   recalculateDraftProcurementPlan,
   removeApprovedPurchaseOrder,
   serializeSingleBatchFactoryOrderDocumentCsv,
@@ -57,6 +60,18 @@ import {
   updateModelSizeVariantUnitCost,
   updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
+
+function getModelUnitLabels(model: ScenarioModelSpec): {
+  primaryShort: string;
+  secondaryShort: string;
+} {
+  const cfg = getBrandUnitConfig(model);
+  return {
+    primaryShort: model.primaryUnitLabel || cfg.primaryUnit || 'компл.',
+    secondaryShort: model.secondaryUnitLabel || cfg.secondaryUnit || 'изд.',
+  };
+}
 
 const SIZES_LIST: ('S' | 'M' | 'L' | 'XL' | 'XXL')[] = ['S', 'M', 'L', 'XL', 'XXL'];
 
@@ -163,7 +178,8 @@ function NumericInput({
 
 export interface SkuProcurementMvpWorkbenchProps {
   model: ScenarioModelSpec;
-  currentScenario: GrowthScenarioDef;
+  scenario?: GrowthScenarioDef;
+  currentScenario?: GrowthScenarioDef;
   onUpdateModel: (updated: ScenarioModelSpec) => void;
   onNotify?: (title: string, message: string, type?: 'success' | 'warning' | 'error') => void;
   onOpenSalesMatrix?: () => void;
@@ -172,15 +188,98 @@ export interface SkuProcurementMvpWorkbenchProps {
 
 export function SkuProcurementMvpWorkbench({
   model: rawModel,
-  currentScenario,
+  scenario: scenarioProp,
+  currentScenario: currentScenarioProp,
   onUpdateModel,
   onNotify,
   onOpenSalesMatrix,
   headerLeftSlot,
 }: SkuProcurementMvpWorkbenchProps) {
+  const currentScenario = (scenarioProp || currentScenarioProp)!;
   const model = useMemo(() => ensureModelUnifiedV11(rawModel), [rawModel]);
+  const unitLabels = useMemo(() => getModelUnitLabels(model), [model]);
+  const modelBrandCode = useMemo(
+    () =>
+      normalizePortfolioBrandCode(
+        detectModelBrandPortfolioLabel(model) || model.brandId || 'BORNERS'
+      ),
+    [model]
+  );
+  const brandProdProfile = useMemo(
+    () =>
+      getBrandProductionProfile(
+        detectModelBrandPortfolioLabel(model) || model.brandId,
+        `${model.title || ''} ${model.categoryLabel || ''}`
+      ),
+    [model]
+  );
   const shared = model.sharedSupplyAndFact!;
   const fp = shared.factoryParams;
+
+  const isGenericSizeShares =
+    fp.sizeSharesPct.S === 10 &&
+    fp.sizeSharesPct.M === 25 &&
+    fp.sizeSharesPct.L === 35 &&
+    fp.sizeSharesPct.XL === 20 &&
+    fp.sizeSharesPct.XXL === 10;
+
+  const displaySizeSlotLabels = useMemo(() => {
+    if (
+      (modelBrandCode === 'NA_TELE' ||
+        modelBrandCode === 'AKUSHA' ||
+        modelBrandCode === 'LISKANI') &&
+      brandProdProfile.sizes.length >= 5
+    ) {
+      return brandProdProfile.sizes.length === 5
+        ? brandProdProfile.sizes
+        : [
+            ...brandProdProfile.sizes.slice(0, 4),
+            brandProdProfile.sizes.slice(4).join('/'),
+          ];
+    }
+    return SIZES_LIST as string[];
+  }, [modelBrandCode, brandProdProfile.sizes]);
+
+  const brandMappedFiveShares = useMemo(() => {
+    if (
+      isGenericSizeShares &&
+      (modelBrandCode === 'NA_TELE' ||
+        modelBrandCode === 'AKUSHA' ||
+        modelBrandCode === 'LISKANI') &&
+      brandProdProfile.sizes.length >= 5
+    ) {
+      const sharesArr =
+        brandProdProfile.sizes.length === 5
+          ? brandProdProfile.sizes.map((sz) => brandProdProfile.sizeSharesPct[sz] || 20)
+          : [
+              brandProdProfile.sizeSharesPct[brandProdProfile.sizes[0]] || 15,
+              brandProdProfile.sizeSharesPct[brandProdProfile.sizes[1]] || 20,
+              brandProdProfile.sizeSharesPct[brandProdProfile.sizes[2]] || 25,
+              brandProdProfile.sizeSharesPct[brandProdProfile.sizes[3]] || 20,
+              brandProdProfile.sizes
+                .slice(4)
+                .reduce((s, sz) => s + (brandProdProfile.sizeSharesPct[sz] || 10), 0),
+            ];
+      return {
+        S: sharesArr[0] || 10,
+        M: sharesArr[1] || 25,
+        L: sharesArr[2] || 35,
+        XL: sharesArr[3] || 20,
+        XXL: sharesArr[4] || 10,
+      };
+    }
+    return fp.sizeSharesPct;
+  }, [isGenericSizeShares, modelBrandCode, brandProdProfile, fp.sizeSharesPct]);
+
+  const sizeRangeLabel = useMemo(() => {
+    if (model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0) {
+      return `${model.liskaniSizeVariants.length} разм.`;
+    }
+    if (brandProdProfile.sizes.length > 0) {
+      return `${brandProdProfile.sizes[0]}–${brandProdProfile.sizes[brandProdProfile.sizes.length - 1]}`;
+    }
+    return 'S–XXL';
+  }, [model.liskaniSizeVariants, brandProdProfile.sizes]);
   const proc = useMemo(
     () => computeProcurementPlan(model, currentScenario),
     [model, currentScenario]
@@ -853,7 +952,11 @@ export function SkuProcurementMvpWorkbench({
     const cleanPacks = Math.max(1, Math.round(newBatchPacks || 1000));
 
     if (newBatchApproveImmediately) {
-      const updated = createCustomPurchaseOrder(model, {
+      const customBreakdown = allocatePacksBySizeLargestRemainder(
+        cleanPacks,
+        brandMappedFiveShares
+      );
+      const created = createCustomPurchaseOrder(model, {
         packsQty: cleanPacks,
         unitCostRub: model.unitCostRub,
         arrivalMonthIdx: startM,
@@ -864,6 +967,13 @@ export function SkuProcurementMvpWorkbench({
             : `${MONTHS_SHORT[startM]}–${MONTHS_SHORT[endM]} 2027`
         }`,
       });
+      const createdOrders = created.sharedSupplyAndFact?.approvedOrders || [];
+      const lastPo = createdOrders[createdOrders.length - 1];
+      const updated = lastPo
+        ? updateApprovedPurchaseOrder(created, lastPo.id, {
+            sizeBreakdownPacks: customBreakdown,
+          })
+        : created;
       onUpdateModel(updated);
       setShowAddCustomModal(false);
       triggerSavedIndicator('Добавлен PO');
@@ -879,6 +989,7 @@ export function SkuProcurementMvpWorkbench({
         endMonthIdx: endM,
         customPacksQty: cleanPacks,
         customOrderDateIso: newBatchOrderDate,
+        customSizeSharesPct: isGenericSizeShares ? brandMappedFiveShares : null,
       },
     ].sort((a, b) => a.startMonthIdx - b.startMonthIdx);
 
@@ -1014,7 +1125,7 @@ export function SkuProcurementMvpWorkbench({
                 {model.title}
               </h3>
               <span className="rounded-md border border-[#DFDED6] bg-white px-2.5 py-0.5 font-mono text-[11.5px] font-semibold text-[#52514C]">
-                {model.code} · {model.unitsInPack} изд./компл.
+                {model.code} · {model.unitsInPack} {unitLabels.secondaryShort}/{unitLabels.primaryShort}
               </span>
             </div>
           )}
@@ -1055,10 +1166,7 @@ export function SkuProcurementMvpWorkbench({
             >
               <span>Параметры:</span>
               <span className="font-mono font-bold">
-                {model.unitCostRub || 0} ₽ · {proc.totalLeadDays} дн. ·{' '}
-                {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
-                  ? `${model.liskaniSizeVariants.length} разм.`
-                  : 'S–XXL'}
+                {model.unitCostRub || 0} ₽ · {proc.totalLeadDays} дн. · {sizeRangeLabel}
               </span>
               <span className="text-[10px] text-[#686762]">
                 {showAdvancedSettings ? '▴' : '▾'}
@@ -1120,7 +1228,7 @@ export function SkuProcurementMvpWorkbench({
                 </button>
               </div>
               <span className="text-[12px] font-semibold text-[#686762]">
-                {model.primaryUnitLabel || 'компл.'}
+                {unitLabels.primaryShort}
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11.5px] text-[#686762]">
@@ -1158,7 +1266,7 @@ export function SkuProcurementMvpWorkbench({
               )}
             </div>
             <div className="mt-2 font-mono text-[22px] font-extrabold tracking-[-0.02em] text-[#141413]">
-              {totalModelSupplyPacks.toLocaleString('ru-RU')} {model.primaryUnitLabel || 'компл.'}
+              {totalModelSupplyPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[#686762]">
               <div className="inline-flex items-center gap-1">
@@ -1205,7 +1313,7 @@ export function SkuProcurementMvpWorkbench({
               {formatRubMillions(firstStartWave.totalRub)}
             </div>
             <div className="mt-1.5 text-[11.5px] text-[#686762]">
-              Аванс {fp.prepaymentPct}% сейчас: <strong className="text-[#141413]">{formatRubMillions(firstStartWave.prepayRub)}</strong> · {firstStartWave.packs.toLocaleString('ru-RU')} компл.
+              Аванс {fp.prepaymentPct}% сейчас: <strong className="text-[#141413]">{formatRubMillions(firstStartWave.prepayRub)}</strong> · {firstStartWave.packs.toLocaleString('ru-RU')} {unitLabels.primaryShort}
             </div>
           </div>
 
@@ -1229,7 +1337,7 @@ export function SkuProcurementMvpWorkbench({
                 : 'Укажите себест.'}
             </div>
             <div className="mt-1.5 text-[11.5px] text-[#686762]">
-              По <button type="button" onClick={() => setShowAdvancedSettings((v) => !v)} className="font-semibold text-[#141413] underline decoration-[#C8C7BE] hover:decoration-[#141413] cursor-pointer">{model.unitCostRub} ₽/компл.</button> · Q2–Q4 из оборота WB
+              По <button type="button" onClick={() => setShowAdvancedSettings((v) => !v)} className="font-semibold text-[#141413] underline decoration-[#C8C7BE] hover:decoration-[#141413] cursor-pointer">{model.unitCostRub} ₽/{unitLabels.primaryShort}</button> · Q2–Q4 из оборота WB
             </div>
           </div>
         </div>
@@ -1432,7 +1540,7 @@ export function SkuProcurementMvpWorkbench({
               <div className="rounded-[10px] border border-[#E4E3DC] bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11.5px] font-semibold text-[#141413]">
-                    Базовая пропорция размеров S–XXL (применяется ко всем партиям модели, сумма = 100%)
+                    Базовая пропорция размеров ({sizeRangeLabel}, применяется ко всем партиям модели, сумма = 100%)
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -1475,15 +1583,17 @@ export function SkuProcurementMvpWorkbench({
                   </div>
                 </div>
                 <div className="mt-2 grid grid-cols-5 gap-2">
-                  {SIZES_LIST.map((sz) => (
+                  {SIZES_LIST.map((sz, szIdx) => {
+                    const displaySz = displaySizeSlotLabels[szIdx] || sz;
+                    return (
                     <label
                       key={sz}
                       className="flex items-center justify-between rounded-[8px] border border-[#DEDDD5] bg-[#FAF9F6] px-3 py-1.5"
                     >
-                      <span className="text-[11.5px] font-bold text-[#141413]">{sz}</span>
+                      <span className="text-[11.5px] font-bold text-[#141413]">{displaySz}</span>
                       <div className="inline-flex items-center gap-1">
                         <NumericInput
-                          ariaLabel={`Доля размера ${sz}, %`}
+                          ariaLabel={`Доля размера ${displaySz}, %`}
                           value={fp.sizeSharesPct[sz] ?? 20}
                           min={0}
                           max={100}
@@ -1493,7 +1603,8 @@ export function SkuProcurementMvpWorkbench({
                         <span className="text-[11px] text-[#686762]">%</span>
                       </div>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1505,16 +1616,35 @@ export function SkuProcurementMvpWorkbench({
       {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 && (() => {
         const totalModelOrderPacks =
           proc.totalApprovedReceiptsPacks + proc.totalRecommendedPacks;
+        const baselineVariantSum = model.liskaniSizeVariants.reduce(
+          (s, v) => s + (v.annualOrdersUnits || v.annualBuyoutsUnits || 0),
+          0
+        );
         const scaleRatio =
-          proc.annualDemandPacks > 0 ? totalModelOrderPacks / proc.annualDemandPacks : 1;
+          baselineVariantSum > 0 ? totalModelOrderPacks / baselineVariantSum : 1;
+
+        const exactVariantOrders = model.liskaniSizeVariants.map(
+          (sv) => (sv.annualOrdersUnits || sv.annualBuyoutsUnits || 0) * scaleRatio
+        );
+        const allocatedVariantOrders = exactVariantOrders.map((v) => Math.floor(v));
+        let variantRem =
+          totalModelOrderPacks - allocatedVariantOrders.reduce((s, v) => s + v, 0);
+        const fracOrder = exactVariantOrders
+          .map((v, idx) => ({ idx, frac: v - Math.floor(v) }))
+          .sort((a, b) => b.frac - a.frac);
+        for (let i = 0; i < fracOrder.length && variantRem > 0; i++) {
+          allocatedVariantOrders[fracOrder[i].idx] += 1;
+          variantRem -= 1;
+        }
+
         const totalVariantsSoldCogsRub = model.liskaniSizeVariants.reduce(
           (acc, sv) => acc + sv.annualBuyoutsUnits * sv.unitCostRub,
           0
         );
-        const totalVariantsOrderRub = model.liskaniSizeVariants.reduce((acc, sv) => {
-          const szOrder = Math.round(sv.annualBuyoutsUnits * scaleRatio);
-          return acc + szOrder * sv.unitCostRub;
-        }, 0);
+        const totalVariantsOrderRub = model.liskaniSizeVariants.reduce(
+          (acc, sv, idx) => acc + (allocatedVariantOrders[idx] || 0) * sv.unitCostRub,
+          0
+        );
 
         return (
           <div className="rounded-[16px] border border-[#D8D7CE] bg-white p-5 shadow-[0_1px_3px_rgba(20,20,19,0.03)] space-y-3">
@@ -1524,7 +1654,7 @@ export function SkuProcurementMvpWorkbench({
                   Поразмерная детализация закупки «{model.title}» ({model.liskaniSizeVariants.length} разм. SKU)
                 </h4>
                 <p className="mt-0.5 text-[12px] text-[#686762]">
-                  Каждый размер имеет собственную закупочную себестоимость и объём комплектов по 4 квартальным волнам (Q1–Q4)
+                  Каждый размер имеет собственную закупочную себестоимость и объём ({unitLabels.primaryShort}) по 4 квартальным волнам (Q1–Q4)
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-mono">
@@ -1542,7 +1672,7 @@ export function SkuProcurementMvpWorkbench({
                 <thead>
                   <tr className="border-b border-[#E2E1D8] bg-[#FAF9F6] text-[10.5px] font-bold uppercase tracking-wider text-[#686762]">
                     <th className="py-2.5 px-3">Размер полотна / SKU</th>
-                    <th className="py-2.5 px-2.5 text-right">Себест. 1 компл.</th>
+                    <th className="py-2.5 px-2.5 text-right">Себест. 1 {unitLabels.primaryShort}</th>
                     <th className="py-2.5 px-2.5 text-right">План выкупов</th>
                     <th className="py-2.5 px-2.5 text-right">Себест. выкупов</th>
                     <th className="py-2.5 px-2.5 text-right bg-[#EAF6F0]/60 text-[#146C43]">
@@ -1556,23 +1686,28 @@ export function SkuProcurementMvpWorkbench({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAE9E2]">
-                  {model.liskaniSizeVariants.map((sv) => {
+                  {model.liskaniSizeVariants.map((sv, svIdx) => {
+                    const variantAnnualBase = Math.max(
+                      1,
+                      sv.annualOrdersUnits || sv.annualBuyoutsUnits || 1
+                    );
+                    const totalOrd = allocatedVariantOrders[svIdx] || 0;
+                    const variantScale = totalOrd / variantAnnualBase;
                     const q1Dem =
-                      (sv.monthlyBuyoutsUnits[0] || 0) +
-                      (sv.monthlyBuyoutsUnits[1] || 0) +
-                      (sv.monthlyBuyoutsUnits[2] || 0);
+                      (sv.monthlyOrdersUnits?.[0] ?? sv.monthlyBuyoutsUnits[0] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[1] ?? sv.monthlyBuyoutsUnits[1] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[2] ?? sv.monthlyBuyoutsUnits[2] ?? 0);
                     const q2Dem =
-                      (sv.monthlyBuyoutsUnits[3] || 0) +
-                      (sv.monthlyBuyoutsUnits[4] || 0) +
-                      (sv.monthlyBuyoutsUnits[5] || 0);
+                      (sv.monthlyOrdersUnits?.[3] ?? sv.monthlyBuyoutsUnits[3] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[4] ?? sv.monthlyBuyoutsUnits[4] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[5] ?? sv.monthlyBuyoutsUnits[5] ?? 0);
                     const q3Dem =
-                      (sv.monthlyBuyoutsUnits[6] || 0) +
-                      (sv.monthlyBuyoutsUnits[7] || 0) +
-                      (sv.monthlyBuyoutsUnits[8] || 0);
-                    const q1Ord = Math.round(q1Dem * scaleRatio);
-                    const q2Ord = Math.round(q2Dem * scaleRatio);
-                    const q3Ord = Math.round(q3Dem * scaleRatio);
-                    const totalOrd = Math.round(sv.annualBuyoutsUnits * scaleRatio);
+                      (sv.monthlyOrdersUnits?.[6] ?? sv.monthlyBuyoutsUnits[6] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[7] ?? sv.monthlyBuyoutsUnits[7] ?? 0) +
+                      (sv.monthlyOrdersUnits?.[8] ?? sv.monthlyBuyoutsUnits[8] ?? 0);
+                    const q1Ord = Math.round(q1Dem * variantScale);
+                    const q2Ord = Math.round(q2Dem * variantScale);
+                    const q3Ord = Math.round(q3Dem * variantScale);
                     const q4Ord = Math.max(0, totalOrd - q1Ord - q2Ord - q3Ord);
                     const soldCogs = sv.annualBuyoutsUnits * sv.unitCostRub;
                     const orderSumRub = totalOrd * sv.unitCostRub;
@@ -1769,7 +1904,7 @@ export function SkuProcurementMvpWorkbench({
               </label>
 
               <label className="flex flex-col text-[11px] font-semibold text-[#52514C]">
-                Количество, компл.
+                Количество, {unitLabels.primaryShort}
                 <NumericInput
                   value={newBatchPacks}
                   min={1}
@@ -1811,15 +1946,15 @@ export function SkuProcurementMvpWorkbench({
           </div>
         )}
 
-        {/* Утверждённые заказы PO (хронологически отсортированные, с прямым инлайн-редактированием объёма, дат, цены и размеров S–XXL!) */}
+        {/* Утверждённые заказы PO (хронологически отсортированные, с прямым инлайн-редактированием объёма, дат, цены и размеров!) */}
         {sortedApprovedOrders.length > 0 && (
           <div className="mb-4 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 px-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[#157347]">
-                Утверждённые заказы PO ({sortedApprovedOrders.length} шт. · {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.)
+                Утверждённые заказы PO ({sortedApprovedOrders.length} шт. · {proc.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort})
               </span>
               <span className="text-[11.5px] text-[#52514C]">
-                Все поля в строке и внутри размеров S–XXL можно редактировать напрямую
+                Все поля в строке и внутри размерной сетки ({sizeRangeLabel}) можно редактировать напрямую
               </span>
             </div>
 
@@ -1830,8 +1965,18 @@ export function SkuProcurementMvpWorkbench({
               const discrepancy = proc.orderDiscrepancies.find((d) => d.orderId === po.id);
               const poSizes =
                 po.sizeBreakdownPacks ||
-                allocatePacksBySizeLargestRemainder(po.packsQty, fp.sizeSharesPct);
+                allocatePacksBySizeLargestRemainder(po.packsQty, brandMappedFiveShares);
               const poSizeTotal = SIZES_LIST.reduce((s, sz) => s + (poSizes[sz] || 0), 0);
+              const poLiskaniVariants =
+                (po as { liskaniSizeVariants?: ScenarioModelSpec['liskaniSizeVariants'] })
+                  .liskaniSizeVariants &&
+                (po as { liskaniSizeVariants?: ScenarioModelSpec['liskaniSizeVariants'] })
+                  .liskaniSizeVariants!.length > 0
+                  ? (po as { liskaniSizeVariants?: ScenarioModelSpec['liskaniSizeVariants'] })
+                      .liskaniSizeVariants!
+                  : model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
+                  ? model.liskaniSizeVariants
+                  : null;
 
               return (
                 <div
@@ -1941,7 +2086,7 @@ export function SkuProcurementMvpWorkbench({
                           className="h-7 w-20 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:outline-none"
                         />
                         <span className="pr-1.5 text-[11px] font-medium text-[#686762]">
-                          компл.
+                          {unitLabels.primaryShort}
                         </span>
                         <button
                           type="button"
@@ -1965,7 +2110,7 @@ export function SkuProcurementMvpWorkbench({
                           {formatRubMillions(po.totalOrderRub)}
                         </div>
                         <div className="font-mono text-[10.5px] text-[#52514C]">
-                          {(po.packsQty * po.unitsInPack).toLocaleString('ru-RU')} изд.
+                          {(po.packsQty * po.unitsInPack).toLocaleString('ru-RU')} {unitLabels.secondaryShort}
                         </div>
                       </div>
 
@@ -1974,7 +2119,11 @@ export function SkuProcurementMvpWorkbench({
                         onClick={() => setExpandedKey(isExpanded ? null : rowKey)}
                         className="h-8 rounded-[8px] border border-[#CBEAD9] bg-white px-2.5 text-[11.5px] font-semibold text-[#141413] hover:bg-[#EAF6F0] cursor-pointer"
                       >
-                        {isExpanded ? 'Скрыть ▴' : 'Размеры S–XXL ▾'}
+                        {isExpanded
+                          ? 'Скрыть ▴'
+                          : poLiskaniVariants
+                          ? `Размеры (${poLiskaniVariants.length}) ▾`
+                          : `Размеры (${sizeRangeLabel}) ▾`}
                       </button>
 
                       <button
@@ -1996,7 +2145,9 @@ export function SkuProcurementMvpWorkbench({
                     <div className="border-t border-[#CBEAD9] bg-white px-4 py-3.5 rounded-b-[11px]">
                       <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
                         <span className="text-[12.5px] font-bold text-[#141413]">
-                          Размерная сетка S–XXL и параметры заказа {po.orderNumber} (нажмите на любой размер для ввода количества)
+                          {poLiskaniVariants
+                            ? `Поразмерная разбивка полотен (${poLiskaniVariants.length} SKU) и параметры заказа ${po.orderNumber}`
+                            : `Размерная сетка (${sizeRangeLabel}) и параметры заказа ${po.orderNumber} (нажмите на любой размер для ввода количества)`}
                         </span>
                         <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-[#141413]">
                           <input
@@ -2022,78 +2173,181 @@ export function SkuProcurementMvpWorkbench({
                         </div>
                       )}
 
-                      {/* ИНТЕРАКТИВНЫЕ РАЗМЕРЫ S–XXL УТВЕРЖДЁННОГО PO */}
+                      {/* РАЗМЕРНАЯ СЕТКА УТВЕРЖДЁННОГО PO (для LISKANI — полотна по размерам см, для остальных брендов — интерактивная сетка по профилю бренда) */}
                       <div className="rounded-lg border border-[#E4E3DC] bg-[#F8F8F5] p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-[11.5px] font-semibold text-[#52514C]">
-                            Количество комплектов по размерам S–XXL ({po.unitsInPack} изд. в 1 компл.) — меняйте любое поле, итог пересчитается сразу:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const redistributed = allocatePacksBySizeLargestRemainder(
-                                po.packsQty,
-                                fp.sizeSharesPct
-                              );
-                              const updated = updateApprovedPurchaseOrder(model, po.id, {
-                                sizeBreakdownPacks: redistributed,
-                              });
-                              onUpdateModel(updated);
-                              triggerSavedIndicator('Размеры выровнены по %');
-                            }}
-                            className="rounded border border-[#CFCEC6] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
-                          >
-                            Пересчитать по пропорции % ({fp.sizeSharesPct.S}/{fp.sizeSharesPct.M}/{fp.sizeSharesPct.L}/{fp.sizeSharesPct.XL}/{fp.sizeSharesPct.XXL})
-                          </button>
-                        </div>
+                        {poLiskaniVariants ? (
+                          (() => {
+                            const poStartM = Math.max(0, Math.min(11, po.arrivalMonthIdx || 0));
+                            const poEndM = Math.max(
+                              poStartM,
+                              Math.min(11, po.coveredEndMonthIdx ?? poStartM + 2)
+                            );
+                            const variantWeights = poLiskaniVariants.map((sv) => {
+                              let periodOrd = 0;
+                              for (let mIdx = poStartM; mIdx <= poEndM; mIdx++) {
+                                periodOrd +=
+                                  sv.monthlyOrdersUnits?.[mIdx] ??
+                                  sv.monthlyBuyoutsUnits[mIdx] ??
+                                  0;
+                              }
+                              return periodOrd > 0
+                                ? periodOrd
+                                : sv.annualOrdersUnits || sv.annualBuyoutsUnits || 1;
+                            });
+                            const totalWeight = variantWeights.reduce((s, w) => s + w, 0);
+                            const exactPoVariantPacks = variantWeights.map((w) =>
+                              totalWeight > 0
+                                ? (po.packsQty * w) / totalWeight
+                                : po.packsQty / poLiskaniVariants.length
+                            );
+                            const allocPoVariantPacks = exactPoVariantPacks.map((v) =>
+                              Math.floor(v)
+                            );
+                            let poVarRem =
+                              po.packsQty -
+                              allocPoVariantPacks.reduce((s, v) => s + v, 0);
+                            const poFrac = exactPoVariantPacks
+                              .map((v, idx) => ({ idx, frac: v - Math.floor(v) }))
+                              .sort((a, b) => b.frac - a.frac);
+                            for (let i = 0; i < poFrac.length && poVarRem > 0; i++) {
+                              allocPoVariantPacks[poFrac[i].idx] += 1;
+                              poVarRem -= 1;
+                            }
 
-                        <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
-                          {SIZES_LIST.map((sz) => {
-                            const szPacks = poSizes[sz] || 0;
-                            const sharePct =
-                              poSizeTotal > 0 ? Math.round((szPacks / poSizeTotal) * 100) : 0;
                             return (
-                              <label
-                                key={sz}
-                                className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 py-2 hover:border-[#141413] focus-within:border-[#141413] focus-within:ring-1 focus-within:ring-[#141413]"
-                              >
-                                <div className="flex items-center justify-between text-[11px]">
-                                  <span className="font-bold text-[#141413]">{sz}</span>
-                                  <span className="font-mono text-[10px] text-[#686762]">
-                                    {sharePct}%
+                              <>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-[11.5px] font-semibold text-[#52514C]">
+                                    Распределение заказа {po.orderNumber} по размерам штор ({poLiskaniVariants.length} разм. SKU · ширина × высота, см):
+                                  </span>
+                                  <span className="font-mono text-[11px] font-bold text-[#146C43]">
+                                    Итого в PO: {po.packsQty.toLocaleString('ru-RU')} {unitLabels.primaryShort}
                                   </span>
                                 </div>
-                                <div className="my-1 flex items-center justify-center gap-1">
-                                  <NumericInput
-                                    ariaLabel={`Размер ${sz} в комплектах для ${po.orderNumber}`}
-                                    value={szPacks}
-                                    min={0}
-                                    step={10}
-                                    onChangeValue={(val) =>
-                                      handleUpdatePoSizePacks(po, poSizes, sz, val)
-                                    }
-                                    className="w-full rounded border border-[#E4E3DC] bg-[#FAF9F6] py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:bg-white focus:border-[#141413] focus:outline-none"
-                                  />
+                                <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2 text-left text-[11px]">
+                                  {poLiskaniVariants.map((sv, idx) => {
+                                    const [widthCm, heightCm] = sv.sizeCm.split(/[×xX*]/);
+                                    const dimLabel =
+                                      widthCm && heightCm
+                                        ? `${widthCm.trim()} × ${heightCm.trim()} см`
+                                        : `${sv.sizeCm} см`;
+                                    const szPoQty = allocPoVariantPacks[idx] || 0;
+                                    const sharePct =
+                                      po.packsQty > 0
+                                        ? Math.round((szPoQty / po.packsQty) * 100)
+                                        : 0;
+                                    return (
+                                      <div
+                                        key={sv.sellerSku}
+                                        className="rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 py-2 space-y-1"
+                                      >
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="font-bold text-[#141413] truncate">
+                                            {dimLabel}
+                                          </span>
+                                          <span className="font-mono text-[10px] text-[#686762]">
+                                            {sharePct}%
+                                          </span>
+                                        </div>
+                                        <div className="font-mono text-[10px] text-[#686762] truncate">
+                                          {sv.sellerSku}
+                                        </div>
+                                        <div className="font-mono text-[13.5px] font-extrabold text-[#141413]">
+                                          {szPoQty.toLocaleString('ru-RU')} {unitLabels.primaryShort}
+                                        </div>
+                                        <div className="flex items-center justify-between font-mono text-[9.5px] text-[#52514C]">
+                                          <span>
+                                            План: {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} вык. / {sv.annualOrdersUnits.toLocaleString('ru-RU')} зак.
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between font-mono text-[10px] text-[#52514C] pt-0.5 border-t border-[#ECEBE4]">
+                                          <span>по {sv.unitCostRub} ₽</span>
+                                          <strong className="text-[#146C43]">
+                                            {(szPoQty * sv.unitCostRub).toLocaleString('ru-RU')} ₽
+                                          </strong>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
-                                <div className="font-mono text-[10px] text-[#686762]">
-                                  компл. · {(szPacks * po.unitsInPack).toLocaleString('ru-RU')} изд.
-                                </div>
-                              </label>
+                              </>
                             );
-                          })}
-                          <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-[#146C43]">ИТОГО</span>
-                              <span className="font-mono text-[10px] text-[#146C43]">100%</span>
+                          })()
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[11.5px] font-semibold text-[#52514C]">
+                                Количество ({unitLabels.primaryShort}) по размерам {sizeRangeLabel} ({po.unitsInPack} {unitLabels.secondaryShort} в 1 {unitLabels.primaryShort}) — меняйте любое поле, итог пересчитается сразу:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const redistributed = allocatePacksBySizeLargestRemainder(
+                                    po.packsQty,
+                                    brandMappedFiveShares
+                                  );
+                                  const updated = updateApprovedPurchaseOrder(model, po.id, {
+                                    sizeBreakdownPacks: redistributed,
+                                  });
+                                  onUpdateModel(updated);
+                                  triggerSavedIndicator('Размеры выровнены по %');
+                                }}
+                                className="rounded border border-[#CFCEC6] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#141413] hover:border-[#141413] cursor-pointer"
+                              >
+                                Пересчитать по пропорции % ({brandMappedFiveShares.S}/{brandMappedFiveShares.M}/{brandMappedFiveShares.L}/{brandMappedFiveShares.XL}/{brandMappedFiveShares.XXL})
+                              </button>
                             </div>
-                            <div className="my-1 font-mono text-[15px] font-extrabold text-[#141413]">
-                              {poSizeTotal.toLocaleString('ru-RU')} компл.
+
+                            <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
+                              {SIZES_LIST.map((sz, szIdx) => {
+                                const szPacks = poSizes[sz] || 0;
+                                const displaySz = displaySizeSlotLabels[szIdx] || sz;
+                                const sharePct =
+                                  poSizeTotal > 0 ? Math.round((szPacks / poSizeTotal) * 100) : 0;
+                                return (
+                                  <label
+                                    key={sz}
+                                    className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 py-2 hover:border-[#141413] focus-within:border-[#141413] focus-within:ring-1 focus-within:ring-[#141413]"
+                                  >
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-[#141413]">{displaySz}</span>
+                                      <span className="font-mono text-[10px] text-[#686762]">
+                                        {sharePct}%
+                                      </span>
+                                    </div>
+                                    <div className="my-1 flex items-center justify-center gap-1">
+                                      <NumericInput
+                                        ariaLabel={`Размер ${displaySz} для ${po.orderNumber}`}
+                                        value={szPacks}
+                                        min={0}
+                                        step={10}
+                                        onChangeValue={(val) =>
+                                          handleUpdatePoSizePacks(po, poSizes, sz, val)
+                                        }
+                                        className="w-full rounded border border-[#E4E3DC] bg-[#FAF9F6] py-1 text-center font-mono text-[13.5px] font-bold text-[#141413] focus:bg-white focus:border-[#141413] focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="font-mono text-[10px] text-[#686762]">
+                                      {unitLabels.primaryShort} · {(szPacks * po.unitsInPack).toLocaleString('ru-RU')} {unitLabels.secondaryShort}
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                              <div className="flex flex-col justify-between rounded-[8px] border border-[#BCE3CF] bg-[#F3FAF6] px-2.5 py-2 text-[#141413]">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-bold text-[#146C43]">ИТОГО</span>
+                                  <span className="font-mono text-[10px] text-[#146C43]">100%</span>
+                                </div>
+                                <div className="my-1 font-mono text-[15px] font-extrabold text-[#141413]">
+                                  {poSizeTotal.toLocaleString('ru-RU')} {unitLabels.primaryShort}
+                                </div>
+                                <div className="font-mono text-[10px] text-[#52514C]">
+                                  {(poSizeTotal * po.unitsInPack).toLocaleString('ru-RU')} {unitLabels.secondaryShort}
+                                </div>
+                              </div>
                             </div>
-                            <div className="font-mono text-[10px] text-[#52514C]">
-                              {(poSizeTotal * po.unitsInPack).toLocaleString('ru-RU')} изд.
-                            </div>
-                          </div>
-                        </div>
+                          </>
+                        )}
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -2482,26 +2736,26 @@ export function SkuProcurementMvpWorkbench({
 
                             <div className="rounded-[9px] border border-[#E4E3DC] bg-white px-3.5 py-2.5 text-[12px] text-[#52514C]">
                               <span className="font-semibold text-[#141413]">Формула партии: </span>
-                              Выкупы ({batch.periodDemandPacks.toLocaleString('ru-RU')} компл.) +
-                              Запас ({batch.safetyStockPacks.toLocaleString('ru-RU')} компл.) −
-                              Остаток к началу ({batch.openingAvailableAtStartPacks.toLocaleString('ru-RU')} компл.) −
-                              Утверждённые PO ({batch.confirmedReceiptsInPeriodPacks.toLocaleString('ru-RU')} компл.) ={' '}
+                              Выкупы ({batch.periodDemandPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}) +
+                              Запас ({batch.safetyStockPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}) −
+                              Остаток к началу ({batch.openingAvailableAtStartPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}) −
+                              Утверждённые PO ({batch.confirmedReceiptsInPeriodPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}) ={' '}
                               <strong className="text-[#141413]">
-                                чистая потребность {batch.rawNetNeedPacks.toLocaleString('ru-RU')} компл.
+                                чистая потребность {batch.rawNetNeedPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}
                               </strong>{' '}
                               → к заказу:{' '}
                               <strong className="font-mono text-[#141413]">
-                                {batch.recommendedPacks.toLocaleString('ru-RU')} компл. ({batch.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
+                                {batch.recommendedPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort} ({batch.physicalUnitsQty.toLocaleString('ru-RU')} {unitLabels.secondaryShort})
                               </strong>
                             </div>
 
-                            {/* ПОРАЗМЕРНАЯ СЕТКА ЧЕРНОВОЙ ПАРТИИ (для LISKANI — реальные размеры полотен 300×240..600×270, для одежды — S–XXL!) */}
+                            {/* ПОРАЗМЕРНАЯ СЕТКА ЧЕРНОВОЙ ПАРТИИ (для LISKANI — реальные размеры полотен 300×240..600×270, для остальных — по профилю бренда!) */}
                             <div className="mt-3 rounded-[9px] border border-[#E4E3DC] bg-white p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-[11.5px] font-semibold text-[#141413]">
                                   {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
                                     ? `Распределение партии №${bIdx + 1} (${batch.coverageMonthsLabel}) по размерам полотен (${model.liskaniSizeVariants.length} SKU):`
-                                    : 'Размеры партии S–XXL (нажмите на любое число комплектов или %, чтобы изменить напрямую):'}
+                                    : `Размеры партии (${sizeRangeLabel}, нажмите на любое число или %, чтобы изменить напрямую):`}
                                 </span>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
@@ -2578,7 +2832,7 @@ export function SkuProcurementMvpWorkbench({
                                               </span>
                                             </div>
                                             <div className="font-mono text-[13.5px] font-extrabold text-[#141413]">
-                                              {szBatchPacks.toLocaleString('ru-RU')} компл.
+                                              {szBatchPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}
                                             </div>
                                             <div className="flex items-center justify-between font-mono text-[10px] text-[#52514C]">
                                               <span>по {sv.unitCostRub} ₽</span>
@@ -2594,19 +2848,20 @@ export function SkuProcurementMvpWorkbench({
                                 })()
                               ) : (
                                 <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-[11px]">
-                                  {SIZES_LIST.map((sz) => {
+                                  {SIZES_LIST.map((sz, szIdx) => {
                                     const packsForSize = batch.sizeBreakdownPacks[sz] || 0;
                                     const unitsForSize = packsForSize * model.unitsInPack;
+                                    const displaySz = displaySizeSlotLabels[szIdx] || sz;
                                     return (
                                       <div
                                         key={sz}
                                         className="flex flex-col justify-between rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-2.5 py-2 hover:border-[#B8B7AE] focus-within:border-[#9E9D95] focus-within:bg-white"
                                       >
                                         <div className="flex items-center justify-between gap-1 text-[11px]">
-                                          <span className="font-bold text-[#141413]">{sz}</span>
+                                          <span className="font-bold text-[#141413]">{displaySz}</span>
                                           <div className="inline-flex items-center gap-0.5">
                                             <NumericInput
-                                              ariaLabel={`Доля размера ${sz} в % для партии №${bIdx + 1}`}
+                                              ariaLabel={`Доля размера ${displaySz} в % для партии №${bIdx + 1}`}
                                               value={batch.sizeSharesPct[sz]}
                                               min={0}
                                               max={100}
@@ -2621,7 +2876,7 @@ export function SkuProcurementMvpWorkbench({
 
                                         <div className="my-1.5">
                                           <NumericInput
-                                            ariaLabel={`Количество комплектов размера ${sz} в партии №${bIdx + 1}`}
+                                            ariaLabel={`Количество ${unitLabels.primaryShort} размера ${displaySz} в партии №${bIdx + 1}`}
                                             value={packsForSize}
                                             min={0}
                                             step={10}
@@ -2633,7 +2888,7 @@ export function SkuProcurementMvpWorkbench({
                                         </div>
 
                                         <div className="font-mono text-[10px] text-[#686762]">
-                                          компл. · {unitsForSize.toLocaleString('ru-RU')} изд.
+                                          {unitLabels.primaryShort} · {unitsForSize.toLocaleString('ru-RU')} {unitLabels.secondaryShort}
                                         </div>
                                       </div>
                                     );
@@ -2644,10 +2899,10 @@ export function SkuProcurementMvpWorkbench({
                                       <span>100%</span>
                                     </div>
                                     <div className="my-1.5 font-mono text-[15px] font-extrabold text-[#141413]">
-                                      {sizeTotalPacks.toLocaleString('ru-RU')} компл.
+                                      {sizeTotalPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}
                                     </div>
                                     <div className="font-mono text-[10px] text-[#52514C]">
-                                      {(sizeTotalPacks * model.unitsInPack).toLocaleString('ru-RU')} изд.
+                                      {(sizeTotalPacks * model.unitsInPack).toLocaleString('ru-RU')} {unitLabels.secondaryShort}
                                     </div>
                                   </div>
                                 </div>
@@ -2666,12 +2921,12 @@ export function SkuProcurementMvpWorkbench({
                     <span>Итого по модели ({proc.recommendedBatches.length} парт.)</span>
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-[#686762]">
-                    {proc.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                    {proc.annualDemandPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}
                   </td>
                   <td className="px-3 py-3 text-right font-mono">
-                    {proc.totalRecommendedPacks.toLocaleString('ru-RU')} компл.{' '}
+                    {proc.totalRecommendedPacks.toLocaleString('ru-RU')} {unitLabels.primaryShort}{' '}
                     <span className="text-[11px] font-normal text-[#686762]">
-                      ({proc.totalRecommendedUnits.toLocaleString('ru-RU')} изд.)
+                      ({proc.totalRecommendedUnits.toLocaleString('ru-RU')} {unitLabels.secondaryShort})
                     </span>
                   </td>
                   <td className="px-3 py-3 text-right font-mono">

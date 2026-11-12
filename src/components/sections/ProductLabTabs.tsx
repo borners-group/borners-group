@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
@@ -29,6 +29,10 @@ import {
 } from '@/types/platform';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import {
+  cleanTechPackText,
+  getBrandProductionProfile,
+} from '@/lib/brandProductionConfig';
 import {
   canUserApproveProduction,
   canUserViewCostPrice,
@@ -100,9 +104,6 @@ export const PRODUCTION_INTERNAL_STATUSES: {
   { code: 'received', label: 'Принято на склад' },
 ];
 
-type SevenSizeKey = 'S' | 'M' | 'L' | 'XL' | '2XL' | '3XL' | '4XL';
-const SEVEN_SIZES: SevenSizeKey[] = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
-
 export interface ProductLabCardBodyProps {
   concept: ProductConcept;
   activeTab: RnDCardTabId;
@@ -120,6 +121,7 @@ export interface ProductLabCardBodyProps {
   onCreateProductFromConcept: (conceptId: string) => void;
   linkedScenarioModelCode?: string | null;
   onSyncToScenarioCatalog?: (concept: ProductConcept) => void;
+  onSyncConcept?: (nextConcept: ProductConcept) => void;
   onCreateTaskForConcept: (title: string, assigneeId: string, deadline: string) => void;
   onNavigateToSection: (
     section:
@@ -145,11 +147,23 @@ export function ProductLabCardBody({
   onCreateProductFromConcept,
   linkedScenarioModelCode,
   onSyncToScenarioCatalog,
+  onSyncConcept,
   onNavigateToSection,
   notify,
 }: ProductLabCardBodyProps) {
   const hasCostAccess = canUserViewCostPrice(currentUser);
   const canApproveProd = canUserApproveProduction(currentUser, concept.brandId);
+  const prodProfile = getBrandProductionProfile(concept.brandId, concept.name);
+
+  const defaultBrandFactoryName =
+    concept.supplierName?.trim() ||
+    (prodProfile.brandCode === 'NA_TELE'
+      ? 'Shantou Seamless Intimate Co.'
+      : prodProfile.brandCode === 'AKUSHA'
+      ? 'Wenzhou Akusha Footwear Co.'
+      : prodProfile.brandCode === 'LISKANI'
+      ? 'Shaoxing Keqiao Home Textile'
+      : 'Guangdong Apex Intimate');
 
   const [newRefLink, setNewRefLink] = useState('');
   const [showExtraAnalysis, setShowExtraAnalysis] = useState(false);
@@ -170,8 +184,9 @@ export function ProductLabCardBody({
     { material: 'Эластан', pct: '5' },
   ]);
 
+  const [isUploadingSamplePhotos, setIsUploadingSamplePhotos] = useState(false);
   const [sampleForm, setSampleForm] = useState({
-    factoryName: FACTORY_DIRECTORY[0].name,
+    factoryName: defaultBrandFactoryName,
     customFactory: '',
     receivedAt: new Date().toISOString().slice(0, 10),
     sampleCostRub: '3500',
@@ -180,6 +195,18 @@ export function ProductLabCardBody({
     comments: '',
     photos: [] as string[],
   });
+
+  useEffect(() => {
+    setSampleForm((prev) => ({
+      ...prev,
+      factoryName: defaultBrandFactoryName,
+      estimatedUnitProductionPrice: concept.plannedUnitCost
+        ? String(concept.plannedUnitCost)
+        : prev.estimatedUnitProductionPrice,
+      photos: [],
+      comments: '',
+    }));
+  }, [concept.id, defaultBrandFactoryName, concept.plannedUnitCost]);
 
   // 05 Решение — комментарий и возврат на этап
   const [decisionReason, setDecisionReason] = useState('');
@@ -251,13 +278,8 @@ export function ProductLabCardBody({
     (p) => p.id === concept.linkedProductId || p.conceptId === concept.id
   );
 
-  // Расчёт комплекта и 1 пары (Важное правило расчёта со Стр. 5 PDF)
-  const defaultPackUnits = normalizeLabBrandCode(concept.brandId) === 'NA_TELE' ||
-    normalizeLabBrandCode(concept.brandId) === 'AKUSHA' ||
-    normalizeLabBrandCode(concept.brandId) === 'LISKANI' ||
-    normalizeLabBrandCode(concept.brandId) === 'FUKAI'
-      ? 1
-      : 3;
+  // Расчёт комплекта и 1 единицы (Важное правило расчёта со Стр. 5 PDF)
+  const defaultPackUnits = prodProfile.defaultPackUnits;
   const packUnits =
     concept.packUnitsCount && concept.packUnitsCount > 0 ? concept.packUnitsCount : defaultPackUnits;
   const packRetailPrice = concept.plannedRetailPrice || 2600;
@@ -905,14 +927,38 @@ export function ProductLabCardBody({
                   </div>
 
                   {s.photos && s.photos.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto py-1">
+                    <div className="flex flex-wrap gap-2 py-1">
                       {s.photos.map((ph, idx) => (
-                        <img
-                          key={idx}
-                          src={resolvePublicAssetUrl(ph)}
-                          alt={s.versionCode}
-                          className="h-16 w-16 rounded-xl object-cover border border-[#E8E8E5] bg-white"
-                        />
+                        <div key={idx} className="relative group h-16 w-16 shrink-0">
+                          <img
+                            src={resolvePublicAssetUrl(ph)}
+                            alt={s.versionCode}
+                            className="h-full w-full rounded-xl object-cover border border-[#E8E8E5] bg-white"
+                          />
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextSamples = samples.map((item) =>
+                                  item.id === s.id
+                                    ? {
+                                        ...item,
+                                        photos: (item.photos || []).filter((_, pIdx) => pIdx !== idx),
+                                      }
+                                    : item
+                                );
+                                onUpdateConcept(concept.id, { samples: nextSamples });
+                                if (linkedScenarioModelCode) {
+                                  onSyncConcept?.({ ...concept, samples: nextSamples });
+                                }
+                              }}
+                              title="Удалить фото образца"
+                              className="opacity-0 group-hover:opacity-100 absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-black/80 hover:bg-[#DC2626] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer transition"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1087,11 +1133,25 @@ export function ProductLabCardBody({
                     }
                     className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-semibold"
                   >
-                    {FACTORY_DIRECTORY.map((f) => (
-                      <option key={f.name} value={`${f.name} (${f.country})`}>
-                        {f.name} ({f.country})
-                      </option>
-                    ))}
+                    <option value={defaultBrandFactoryName}>{defaultBrandFactoryName}</option>
+                    {FACTORY_DIRECTORY.map((f) => {
+                      const label = `${f.name} (${f.country})`;
+                      if (label === defaultBrandFactoryName) return null;
+                      return (
+                        <option key={f.name} value={label}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                    {sampleForm.factoryName &&
+                      sampleForm.factoryName !== defaultBrandFactoryName &&
+                      !FACTORY_DIRECTORY.some(
+                        (f) => `${f.name} (${f.country})` === sampleForm.factoryName
+                      ) && (
+                        <option value={sampleForm.factoryName}>
+                          {sampleForm.factoryName}
+                        </option>
+                      )}
                   </select>
                 </div>
 
@@ -1148,35 +1208,77 @@ export function ProductLabCardBody({
                 </div>
               </div>
 
+              {sampleForm.photos.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                  {sampleForm.photos.map((ph, idx) => (
+                    <div key={idx} className="relative h-16 w-16 shrink-0">
+                      <img
+                        src={resolvePublicAssetUrl(ph)}
+                        alt={`Фото образца ${idx + 1}`}
+                        className="h-full w-full rounded-xl object-cover border border-[#E8E8E5] bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSampleForm((prev) => ({
+                            ...prev,
+                            photos: prev.photos.filter((_, pIdx) => pIdx !== idx),
+                          }))
+                        }
+                        title="Убрать фото"
+                        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-black/80 hover:bg-[#DC2626] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer transition"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <label className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[13px] font-semibold cursor-pointer">
+                <label
+                  className={`inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[13px] font-semibold transition ${
+                    isUploadingSamplePhotos ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+                  }`}
+                >
                   <Upload className="h-4 w-4 text-[#D97745]" />
                   <span>
-                    + Фото образца {sampleForm.photos.length > 0 ? `(${sampleForm.photos.length})` : ''}
+                    {isUploadingSamplePhotos
+                      ? 'Загрузка фото...'
+                      : `+ Фото образца ${sampleForm.photos.length > 0 ? `(${sampleForm.photos.length})` : ''}`}
                   </span>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
+                    disabled={isUploadingSamplePhotos}
                     className="hidden"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const files = Array.from(e.target.files || []);
-                      files.forEach((f) => {
-                        void compressImageFileToDataUrl(f, 680, 0.78).then((compressedUrl) => {
-                          if (compressedUrl) {
-                            setSampleForm((prev) => ({
-                              ...prev,
-                              photos: [...prev.photos, compressedUrl],
-                            }));
-                          }
-                        });
-                      });
+                      e.target.value = '';
+                      if (files.length === 0) return;
+                      setIsUploadingSamplePhotos(true);
+                      try {
+                        const urls = await Promise.all(
+                          files.map((f) => compressImageFileToDataUrl(f, 680, 0.78))
+                        );
+                        const validUrls = urls.filter((u): u is string => Boolean(u));
+                        if (validUrls.length > 0) {
+                          setSampleForm((prev) => ({
+                            ...prev,
+                            photos: [...prev.photos, ...validUrls],
+                          }));
+                        }
+                      } finally {
+                        setIsUploadingSamplePhotos(false);
+                      }
                     }}
                   />
                 </label>
 
                 <button
                   type="button"
+                  disabled={isUploadingSamplePhotos}
                   onClick={() => {
                     if (!isCompositionValid) {
                       notify(
@@ -1189,7 +1291,7 @@ export function ProductLabCardBody({
                     const newSample: RnDSampleItem = {
                       id: `smp-${Date.now()}`,
                       versionCode: `Версия ${samples.length + 1}`,
-                      factoryName: sampleForm.factoryName,
+                      factoryName: sampleForm.factoryName || defaultBrandFactoryName,
                       country: 'Справочник',
                       orderedAt: sampleForm.receivedAt,
                       receivedAt: sampleForm.receivedAt,
@@ -1201,7 +1303,7 @@ export function ProductLabCardBody({
                         pct: parseCleanNumber(r.pct) || 0,
                       })),
                       densityGsm: 180,
-                      sizeTested: 'M / L',
+                      sizeTested: prodProfile.sizes[Math.floor(prodProfile.sizes.length / 2)] || 'M',
                       color: 'Базовый',
                       measurementsNote: 'По спецификации',
                       sampleCostRub: parseCleanNumber(sampleForm.sampleCostRub) || 0,
@@ -1213,18 +1315,23 @@ export function ProductLabCardBody({
                       comments: sampleForm.comments.trim() || 'Образец принят на тестирование',
                       isSelectedForProduction: true,
                     };
-                    onUpdateConcept(concept.id, {
+                    const nextSamples = [
+                      ...samples.map((s) => ({ ...s, isSelectedForProduction: false })),
+                      newSample,
+                    ];
+                    const samplePatch: Partial<ProductConcept> = {
                       supplierName: newSample.factoryName,
                       plannedUnitCost: newSample.estimatedUnitProductionPrice,
-                      samples: [
-                        ...samples.map((s) => ({ ...s, isSelectedForProduction: false })),
-                        newSample,
-                      ],
-                    });
+                      samples: nextSamples,
+                    };
+                    onUpdateConcept(concept.id, samplePatch);
+                    if (linkedScenarioModelCode) {
+                      onSyncConcept?.({ ...concept, ...samplePatch });
+                    }
                     setSampleForm((prev) => ({ ...prev, photos: [], comments: '' }));
                     notify('success', `${newSample.versionCode} (${compositionLabel}) сохранена`);
                   }}
-                  className="h-10 px-6 rounded-xl bg-[#111111] text-white text-[13px] font-bold cursor-pointer"
+                  className="h-10 px-6 rounded-xl bg-[#111111] disabled:opacity-50 text-white text-[13px] font-bold cursor-pointer"
                 >
                   Сохранить версию образца
                 </button>
@@ -1504,7 +1611,7 @@ export function ProductLabCardBody({
       const resolvedSupplier =
         concept.supplierName?.trim() ||
         selectedSample?.factoryName ||
-        `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`;
+        defaultBrandFactoryName;
 
       const decisionPatch: Partial<ProductConcept> = {
         stage: targetStage,
@@ -1551,8 +1658,10 @@ export function ProductLabCardBody({
       onUpdateConcept(concept.id, decisionPatch);
       if (outcome === 'approve') {
         onSyncToScenarioCatalog?.(updatedConcept);
+        onSyncConcept?.(updatedConcept);
       }
       if (outcome === 'reject') {
+        onSyncConcept?.({ ...updatedConcept, stage: 'REJECTED' });
         notify('warning', 'Карточка отклонена и перенесена в архив');
         return;
       }
@@ -1731,30 +1840,56 @@ export function ProductLabCardBody({
   // ===========================================================================
   if (activeTab === 'production') {
     const orders = concept.productionOrders || [];
+    const starterTotalPacks =
+      prodProfile.brandCode === 'AKUSHA'
+        ? 600
+        : prodProfile.brandCode === 'LISKANI'
+        ? 500
+        : prodProfile.brandCode === 'NA_TELE'
+        ? 1000
+        : 1800;
+    const defaultStarterPacks: Record<string, number> = {};
+    for (const sz of prodProfile.sizes) {
+      const share =
+        prodProfile.sizeSharesPct[sz] ??
+        Math.round(100 / Math.max(1, prodProfile.sizes.length));
+      defaultStarterPacks[sz] = Math.max(10, Math.round((starterTotalPacks * share) / 100));
+    }
+
+    const defaultColorComp =
+      concept.colorCombinations?.join(' + ') ||
+      (prodProfile.brandCode === 'NA_TELE'
+        ? 'Телесный беж / Молочный / Графит'
+        : prodProfile.brandCode === 'AKUSHA'
+        ? 'Молочный нубук / Песочный / Тёмно-синий'
+        : prodProfile.brandCode === 'LISKANI'
+        ? 'Тёплый лён / Графит блэкаут'
+        : '2 × тёмно-синие + 1 × чёрные + 1 × терракотовые');
+
+    const defaultMaterialRu =
+      concept.samples?.[0]?.materialAndComposition ||
+      cleanTechPackText(
+        concept.techPack?.ru?.compositionAndDensity,
+        prodProfile.defaultMaterialRu
+      );
+
+    const starterPacksSum = Object.values(defaultStarterPacks).reduce((s, v) => s + v, 0);
+
     const currentOrder = orders[0] || {
       id: 'po-default',
       orderNumber: `PO-2027-01`,
-      factoryName: concept.supplierName || FACTORY_DIRECTORY[0].name,
+      factoryName: defaultBrandFactoryName,
       contactPerson: 'Менеджер производства',
       approvedSampleVersion: concept.samples?.[0]?.versionCode || 'Версия 1',
       internalStatus: 'order_prep' as const,
-      materialAndColors:
-        concept.samples?.[0]?.materialAndComposition || 'Хлопок 95% + Эластан 5%',
-      sizeBreakdown: { S: 150, M: 450, L: 750, XL: 600, XXL: 450 },
-      packsBySize: {
-        S: 150,
-        M: 450,
-        L: 750,
-        XL: 600,
-        '2XL': 450,
-        '3XL': 300,
-        '4XL': 300,
-      },
+      materialAndColors: defaultMaterialRu,
+      sizeBreakdown: defaultStarterPacks,
+      packsBySize: defaultStarterPacks,
       unitsPerPack: packUnits,
-      packColorComposition: '2 × тёмно-синие + 1 × чёрные + 1 × терракотовые',
-      totalUnits: 12000,
-      packConfiguration: `${packUnits} шт. в наборе`,
-      packagingDetails: 'Матовый зип-пакет 180 мкм со штрихкодом EAN-13 / Честный Знак',
+      packColorComposition: defaultColorComp,
+      totalUnits: starterPacksSum * packUnits,
+      packConfiguration: `${packUnits} ед. в комплекте`,
+      packagingDetails: 'Фирменная упаковка со штрихкодом EAN-13 / Честный Знак',
       unitPrice: concept.plannedUnitCost || 320,
       currency: 'RUB' as const,
       plannedReadyDate: concept.targetLaunchDate || '2027-02-15',
@@ -1766,24 +1901,43 @@ export function ProductLabCardBody({
       logisticsTracking: '',
     };
 
-    const packsMap: Record<SevenSizeKey, number> = currentOrder.packsBySize || {
-      S: 150,
-      M: 450,
-      L: 750,
-      XL: 600,
-      '2XL': 450,
-      '3XL': 300,
-      '4XL': 300,
-    };
+    const packsMap: Record<string, number> =
+      currentOrder.packsBySize && Object.keys(currentOrder.packsBySize).length > 0
+        ? currentOrder.packsBySize
+        : defaultStarterPacks;
+
+    const effectiveSizes: string[] = [
+      ...prodProfile.sizes,
+      ...Object.keys(packsMap).filter(
+        (k) => !prodProfile.sizes.includes(k) && (packsMap[k] || 0) > 0
+      ),
+    ];
 
     const unitsInOnePack =
       currentOrder.unitsPerPack && currentOrder.unitsPerPack > 0
         ? currentOrder.unitsPerPack
         : packUnits;
 
-    const totalPacks = SEVEN_SIZES.reduce((sum, sz) => sum + (packsMap[sz] || 0), 0);
+    const totalPacks = effectiveSizes.reduce((sum, sz) => sum + (packsMap[sz] || 0), 0);
     const totalPieces = totalPacks * unitsInOnePack;
     const totalOrderSum = totalPieces * (currentOrder.unitPrice || 0);
+
+    const enMaterial = cleanTechPackText(
+      concept.techPack?.en?.compositionAndDensity,
+      prodProfile.defaultMaterialEn
+    );
+    const enConstruction = cleanTechPackText(
+      concept.techPack?.en?.construction,
+      prodProfile.defaultConstructionEn
+    );
+    const zhMaterial = cleanTechPackText(
+      concept.techPack?.zh?.compositionAndDensity,
+      prodProfile.defaultMaterialZh
+    );
+    const zhConstruction = cleanTechPackText(
+      concept.techPack?.zh?.construction,
+      prodProfile.defaultConstructionZh
+    );
 
     const saveOrderPatch = (patch: Partial<typeof currentOrder>) => {
       const updated = {
@@ -1792,13 +1946,44 @@ export function ProductLabCardBody({
       };
       const nextPacks = updated.packsBySize || packsMap;
       const nextUnitsPerPack = updated.unitsPerPack || unitsInOnePack;
-      const calcPacks = SEVEN_SIZES.reduce((s, sz) => s + (nextPacks[sz] || 0), 0);
+      const nextSizeKeys = [
+        ...prodProfile.sizes,
+        ...Object.keys(nextPacks).filter(
+          (k) => !prodProfile.sizes.includes(k) && (nextPacks[k] || 0) > 0
+        ),
+      ];
+      const calcPacks = nextSizeKeys.reduce((s, sz) => s + (nextPacks[sz] || 0), 0);
       updated.totalUnits = calcPacks * nextUnitsPerPack;
 
-      onUpdateConcept(concept.id, {
+      const orderConceptPatch: Partial<ProductConcept> = {
         supplierName: updated.factoryName,
+        packUnitsCount: nextUnitsPerPack,
         productionOrders: [updated, ...orders.slice(1)],
+      };
+      const nextConceptSnapshot: ProductConcept = {
+        ...concept,
+        ...orderConceptPatch,
+      };
+      onUpdateConcept(concept.id, orderConceptPatch);
+      onSyncConcept?.(nextConceptSnapshot);
+    };
+
+    const handleConfirmProductionBatch = () => {
+      const today = new Date().toISOString().slice(0, 10);
+      saveOrderPatch({
+        internalStatus:
+          currentOrder.internalStatus === 'order_prep'
+            ? 'order_placed'
+            : currentOrder.internalStatus,
+        approvedAt: today,
+        packsBySize: packsMap,
+        unitsPerPack: unitsInOnePack,
       });
+      notify(
+        'success',
+        `✓ Производственная партия подтверждена и синхронизирована с Планом 2027`,
+        `${totalPacks.toLocaleString('ru-RU')} (${prodProfile.packUnitLabelRu.toLowerCase()}) · ${totalPieces.toLocaleString('ru-RU')} (${prodProfile.itemsUnitLabelRu.toLowerCase()})`
+      );
     };
 
     const handleExportFactoryPdf = () => {
@@ -1813,9 +1998,7 @@ export function ProductLabCardBody({
         factoryName: currentOrder.factoryName,
         approvedSampleVersion: currentOrder.approvedSampleVersion,
         materialAndColors: currentOrder.materialAndColors,
-        packColorComposition:
-          currentOrder.packColorComposition ||
-          '2 × тёмно-синие + 1 × чёрные + 1 × терракотовые',
+        packColorComposition: currentOrder.packColorComposition || defaultColorComp,
         unitsPerPack: unitsInOnePack,
         packsBySize: packsMap,
         unitPrice: currentOrder.unitPrice || 320,
@@ -1827,7 +2010,7 @@ export function ProductLabCardBody({
       notify(
         'success',
         `Выгружен PDF заказа v${nextVer} (RU / EN / ZH)`,
-        `Итого: ${totalPacks.toLocaleString('ru-RU')} наборов (${totalPieces.toLocaleString('ru-RU')} шт. белья)`
+        `Итого: ${totalPacks.toLocaleString('ru-RU')} (${prodProfile.packUnitLabelRu.toLowerCase()}) · ${totalPieces.toLocaleString('ru-RU')} (${prodProfile.itemsUnitLabelRu.toLowerCase()})`
       );
     };
 
@@ -1837,9 +2020,7 @@ export function ProductLabCardBody({
         factoryName: currentOrder.factoryName,
         approvedSampleVersion: currentOrder.approvedSampleVersion,
         materialAndColors: currentOrder.materialAndColors,
-        packColorComposition:
-          currentOrder.packColorComposition ||
-          '2 × тёмно-синие + 1 × чёрные + 1 × терракотовые',
+        packColorComposition: currentOrder.packColorComposition || defaultColorComp,
         unitsPerPack: unitsInOnePack,
         packsBySize: packsMap,
         unitPrice: currentOrder.unitPrice || 320,
@@ -1851,7 +2032,7 @@ export function ProductLabCardBody({
       notify(
         'success',
         `Выгружена таблица Excel заказа v${ver} (.xlsx)`,
-        `Размерная сетка S–4XL и расчёт партии`
+        `${prodProfile.sizeGridLabelRu} и расчёт партии`
       );
     };
 
@@ -1862,17 +2043,26 @@ export function ProductLabCardBody({
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E8E8E5] pb-5">
             <div>
               <div className="text-[12px] font-bold uppercase tracking-widest text-[#737373]">
-                PRODUCTION ORDER / {currentOrder.internalStatus === 'order_prep' ? 'ЧЕРНОВИК' : 'УТВЕРЖДЁН'} · ВЕРСИЯ v{currentOrder.orderVersion || 1}
+                PRODUCTION ORDER / {currentOrder.internalStatus === 'order_prep' ? 'ЧЕРНОВИК' : 'УТВЕРЖДЁН'} · ВЕРСИЯ v{currentOrder.orderVersion || 1} · {prodProfile.sizeGridLabelRu}
               </div>
               <h3 className="text-[24px] font-bold text-[#171717] mt-1">
-                {formatLabBrandLabel(concept.brandId)} · {concept.name} ({unitsInOnePack} шт.)
+                {formatLabBrandLabel(concept.brandId)} · {concept.name} ({unitsInOnePack} ед.)
               </h3>
               <p className="text-[13px] text-[#737373] mt-0.5">
                 Образец: <b>{currentOrder.approvedSampleVersion}</b> · Состав: <b>{currentOrder.materialAndColors}</b> · Дата согласования: <b>{currentOrder.approvedAt || '—'}</b>
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={handleConfirmProductionBatch}
+                  className="h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
+                >
+                  ✓ Подтвердить партию в План 2027
+                </button>
+              )}
               {concept.imageUrl && (
                 <img
                   src={resolvePublicAssetUrl(concept.imageUrl)}
@@ -1895,12 +2085,23 @@ export function ProductLabCardBody({
                 onChange={(e) => saveOrderPatch({ factoryName: e.target.value })}
                 className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
               >
-                {FACTORY_DIRECTORY.map((f) => (
-                  <option key={f.name} value={`${f.name} (${f.country})`}>
-                    {f.name} ({f.country})
-                  </option>
-                ))}
-                <option value={currentOrder.factoryName}>{currentOrder.factoryName}</option>
+                <option value={defaultBrandFactoryName}>{defaultBrandFactoryName}</option>
+                {FACTORY_DIRECTORY.map((f) => {
+                  const label = `${f.name} (${f.country})`;
+                  if (label === defaultBrandFactoryName) return null;
+                  return (
+                    <option key={f.name} value={label}>
+                      {label}
+                    </option>
+                  );
+                })}
+                {currentOrder.factoryName &&
+                  currentOrder.factoryName !== defaultBrandFactoryName &&
+                  !FACTORY_DIRECTORY.some(
+                    (f) => `${f.name} (${f.country})` === currentOrder.factoryName
+                  ) && (
+                    <option value={currentOrder.factoryName}>{currentOrder.factoryName}</option>
+                  )}
               </select>
             </div>
 
@@ -1919,7 +2120,7 @@ export function ProductLabCardBody({
 
             <div>
               <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
-                Цена фабрики за 1 шт. и валюта
+                Цена фабрики за 1 ед. и валюта
               </label>
               <div className="flex gap-1.5">
                 <input
@@ -1968,14 +2169,11 @@ export function ProductLabCardBody({
           <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
             <div className="md:col-span-9">
               <label className="block text-[12px] font-bold text-[#737373] mb-1">
-                Состав набора по цветам
+                Состав комплекта по цветам
               </label>
               <input
                 disabled={!canEdit}
-                value={
-                  currentOrder.packColorComposition ||
-                  '2 × тёмно-синие + 1 × чёрные + 1 × терракотовые'
-                }
+                value={currentOrder.packColorComposition || defaultColorComp}
                 onChange={(e) =>
                   saveOrderPatch({ packColorComposition: e.target.value })
                 }
@@ -1985,7 +2183,7 @@ export function ProductLabCardBody({
 
             <div className="md:col-span-3">
               <label className="block text-[12px] font-bold text-[#737373] mb-1">
-                Штук белья в 1 наборе
+                {prodProfile.itemsUnitLabelRu} в 1 наборе
               </label>
               <input
                 type="text"
@@ -2001,18 +2199,18 @@ export function ProductLabCardBody({
             </div>
           </div>
 
-          {/* ТАБЛИЦА РАЗМЕРОВ S — 4XL (Один в один со Стр. 7 PDF: Размер | Наборов | Штук белья) */}
+          {/* ТАБЛИЦА РАЗМЕРОВ БРЕНДА */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-[14px]">
               <thead>
                 <tr className="border-b border-[#E8E8E5] text-[13px] font-bold text-[#171717]">
-                  <th className="py-3 px-4">Размер</th>
-                  <th className="py-3 px-4">Наборов</th>
-                  <th className="py-3 px-4">Штук белья (× {unitsInOnePack} шт.)</th>
+                  <th className="py-3 px-4">Размер ({prodProfile.sizeGridLabelRu})</th>
+                  <th className="py-3 px-4">{prodProfile.packUnitLabelRu}</th>
+                  <th className="py-3 px-4">{prodProfile.itemsUnitLabelRu} (× {unitsInOnePack})</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8E8E5]">
-                {SEVEN_SIZES.map((sz, idx) => {
+                {effectiveSizes.map((sz, idx) => {
                   const packsCount = packsMap[sz] ?? 0;
                   const piecesCount = packsCount * unitsInOnePack;
                   return (
@@ -2053,10 +2251,10 @@ export function ProductLabCardBody({
                 <tr className="border-t-2 border-[#171717] text-[15px] font-bold text-[#171717] bg-[#F7F7F5]">
                   <td className="py-3.5 px-4">ИТОГО</td>
                   <td className="py-3.5 px-4">
-                    {totalPacks.toLocaleString('ru-RU')} наборов
+                    {totalPacks.toLocaleString('ru-RU')} ({prodProfile.packUnitLabelRu.toLowerCase()})
                   </td>
                   <td className="py-3.5 px-4 text-[#D97745]">
-                    {totalPieces.toLocaleString('ru-RU')} штук белья · Сумма:{' '}
+                    {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()}) · Сумма:{' '}
                     {totalOrderSum.toLocaleString('ru-RU')} {currentOrder.currency}
                   </td>
                 </tr>
@@ -2127,7 +2325,10 @@ export function ProductLabCardBody({
                 { key: 'zhSection' as const, label: 'Секция ZH (Крупный 中文)' },
                 { key: 'photosFrontBack' as const, label: 'Фото (Спереди + Сзади)' },
                 { key: 'multiCurrency' as const, label: 'Валюты (CNY / USD / RUB)' },
-                { key: 'sizeMatrix' as const, label: 'Размеры (S–4XL)' },
+                {
+                  key: 'sizeMatrix' as const,
+                  label: `Размеры (${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]})`,
+                },
               ].map((item) => (
                 <label
                   key={item.key}
@@ -2167,10 +2368,11 @@ export function ProductLabCardBody({
                 <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
                   <div>Модель: <b>{concept.name}</b> ({currentOrder.approvedSampleVersion})</div>
                   <div>Фабрика: <b>{currentOrder.factoryName}</b></div>
-                  <div>Состав: <b>{currentOrder.materialAndColors}</b></div>
-                  <div>Комплект: <b>{currentOrder.packColorComposition}</b></div>
+                  <div>Состав: <b>{cleanTechPackText(currentOrder.materialAndColors, prodProfile.defaultMaterialRu)}</b></div>
+                  <div>Сетка: <b>{prodProfile.sizeGridLabelRu}</b></div>
+                  <div>Комплект: <b>{currentOrder.packColorComposition || defaultColorComp}</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div>Тираж: <b>{totalPacks.toLocaleString('ru-RU')} наб. / {totalPieces.toLocaleString('ru-RU')} шт.</b></div>
+                    <div>Тираж: <b>{totalPacks.toLocaleString('ru-RU')} ({prodProfile.packUnitLabelRu.toLowerCase()}) / {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()})</b></div>
                   )}
                   <div>Готовность: <b>{currentOrder.plannedReadyDate}</b></div>
                 </div>
@@ -2188,11 +2390,12 @@ export function ProductLabCardBody({
                 </div>
                 <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
                   <div>Style: <b>{concept.code} · {concept.name}</b></div>
+                  <div>Construction: <b>{enConstruction}</b></div>
                   <div>Factory: <b>{currentOrder.factoryName}</b></div>
-                  <div>Fabric: <b>95% Cotton + 5% Elastane (180 GSM)</b></div>
-                  <div>Pack Ratio: <b>{unitsInOnePack}-Pack Assorted Colors</b></div>
+                  <div>Fabric: <b>{enMaterial}</b></div>
+                  <div>Size Grid: <b>{prodProfile.sizeGridLabelEn} ({unitsInOnePack}-Pack)</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div>Total Qty: <b>{totalPacks.toLocaleString('en-US')} packs / {totalPieces.toLocaleString('en-US')} pcs</b></div>
+                    <div>Total Qty: <b>{totalPacks.toLocaleString('en-US')} packs / {totalPieces.toLocaleString('en-US')} units</b></div>
                   )}
                   <div>Ready Date: <b>{currentOrder.plannedReadyDate}</b></div>
                 </div>
@@ -2210,11 +2413,12 @@ export function ProductLabCardBody({
                 </div>
                 <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
                   <div className="text-[14px] font-bold text-[#171717]">款号: {concept.code} ({currentOrder.approvedSampleVersion})</div>
+                  <div>版型工艺: <b>{zhConstruction}</b></div>
                   <div>工厂: <b>{currentOrder.factoryName}</b></div>
-                  <div className="text-[13.5px] font-bold text-[#171717]">面料成分: 95% 棉 + 5% 氨纶 (180克重)</div>
-                  <div>包装配比: <b>{unitsInOnePack}条装礼盒/袋装 (S–4XL)</b></div>
+                  <div className="text-[13.5px] font-bold text-[#171717]">面料成分: {zhMaterial}</div>
+                  <div>尺码及包装: <b>{prodProfile.sizeGridLabelZh} · 每组 {unitsInOnePack} 件</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div className="text-[13.5px] font-bold text-[#B85D35]">订单总量: {totalPacks} 盒 / 共 {totalPieces} 件</div>
+                    <div className="text-[13.5px] font-bold text-[#B85D35]">订单总量: {totalPacks} 组 / 共 {totalPieces} 件</div>
                   )}
                   <div>交货日期: <b>{currentOrder.plannedReadyDate}</b></div>
                 </div>
@@ -2250,6 +2454,7 @@ export function ProductLabCardBody({
                   };
                   onUpdateConcept(concept.id, orderPatch);
                 }
+                onSyncConcept?.(updatedConcept);
                 onChangeStageWithGate(updatedConcept, 'LAUNCH');
               }}
               className="h-10 px-5 rounded-xl bg-[#111111] text-white font-bold cursor-pointer"
@@ -2265,7 +2470,12 @@ export function ProductLabCardBody({
             concept={concept}
             onClose={() => setInlinePdfConstructorOpen(false)}
             onSaveToConcept={(patch) => {
+              const nextConceptSnapshot: ProductConcept = {
+                ...concept,
+                ...patch,
+              };
               onUpdateConcept(concept.id, patch);
+              onSyncConcept?.(nextConceptSnapshot);
               notify('success', 'PDF-спецификация настроена и скачана');
             }}
           />

@@ -209,7 +209,11 @@ export async function saveModelGalleryToIdb(
     return await new Promise<boolean>((resolve) => {
       const tx = db.transaction(IDB_PHOTO_STORE, 'readwrite');
       const store = tx.objectStore(IDB_PHOTO_STORE);
-      store.put(compactGalleryDataUrls(gallery), modelId);
+      if (Array.isArray(gallery) && gallery.length === 0) {
+        store.delete(modelId);
+      } else {
+        store.put(compactGalleryDataUrls(gallery), modelId);
+      }
       tx.oncomplete = () => {
         db.close();
         resolve(true);
@@ -224,18 +228,31 @@ export async function saveModelGalleryToIdb(
   }
 }
 
+export async function deleteModelGalleryFromIdb(modelId: string): Promise<boolean> {
+  return saveModelGalleryToIdb(modelId, []);
+}
+
 const IDB_FULL_PORTFOLIO_KEY = '__FULL_PORTFOLIO_SNAPSHOT_V1__';
 const IDB_PLATFORM_CONCEPTS_KEY = '__PLATFORM_CONCEPTS_SNAPSHOT_V1__';
 const IDB_PLATFORM_MIRO_KEY = '__PLATFORM_MIRO_SNAPSHOT_V1__';
 
-export async function savePortfolioSnapshotToIdb(models: unknown[]): Promise<boolean> {
+export async function savePortfolioSnapshotToIdb(
+  models: unknown[],
+  updatedAtIso?: string
+): Promise<boolean> {
   if (!Array.isArray(models) || models.length === 0) return false;
   try {
     const db = await openFilesDb();
     return await new Promise<boolean>((resolve) => {
       const tx = db.transaction(IDB_PHOTO_STORE, 'readwrite');
       const store = tx.objectStore(IDB_PHOTO_STORE);
-      store.put(compactGalleryDataUrls(models), IDB_FULL_PORTFOLIO_KEY);
+      store.put(
+        {
+          models: compactGalleryDataUrls(models),
+          updatedAtIso: updatedAtIso || new Date().toISOString(),
+        },
+        IDB_FULL_PORTFOLIO_KEY
+      );
       tx.oncomplete = () => {
         db.close();
         resolve(true);
@@ -370,6 +387,15 @@ export function rehydrateConceptsFromIdbSnapshot<T extends Record<string, any>>(
           return richAtt?.url ? { ...att, url: richAtt.url } : att;
         })
       : rich.attachments;
+    const nextDesignVersions = Array.isArray(c.designVersions)
+      ? c.designVersions.map((dv: any, idx: number) => {
+          if (dv?.imageUrl) return dv;
+          const richDv =
+            rich.designVersions?.find((r: any) => r.version === dv?.version) ||
+            rich.designVersions?.[idx];
+          return richDv?.imageUrl ? { ...dv, imageUrl: richDv.imageUrl } : dv;
+        })
+      : rich.designVersions;
     return {
       ...c,
       imageUrl: nextImageUrl,
@@ -377,6 +403,7 @@ export function rehydrateConceptsFromIdbSnapshot<T extends Record<string, any>>(
       samples: nextSamples,
       fourChecksTest: nextFourChecks,
       attachments: nextAttachments,
+      designVersions: nextDesignVersions,
     };
   });
 }
@@ -409,17 +436,39 @@ export function rehydrateMiroItemsFromIdbSnapshot<T extends Record<string, any>>
   });
 }
 
-export async function loadPortfolioSnapshotFromIdb<T = unknown>(): Promise<T[] | null> {
+export async function loadPortfolioSnapshotWithMetaFromIdb<T = unknown>(): Promise<{
+  models: T[];
+  updatedAtIso: string | null;
+} | null> {
   try {
     const db = await openFilesDb();
-    return await new Promise<T[] | null>((resolve) => {
+    return await new Promise<{ models: T[]; updatedAtIso: string | null } | null>((resolve) => {
       const tx = db.transaction(IDB_PHOTO_STORE, 'readonly');
       const store = tx.objectStore(IDB_PHOTO_STORE);
       const req = store.get(IDB_FULL_PORTFOLIO_KEY);
       req.onsuccess = () => {
         db.close();
         const res = req.result;
-        resolve(Array.isArray(res) && res.length > 0 ? (res as T[]) : null);
+        if (Array.isArray(res) && res.length > 0) {
+          resolve({ models: res as T[], updatedAtIso: null });
+          return;
+        }
+        if (
+          res &&
+          typeof res === 'object' &&
+          Array.isArray((res as { models?: unknown[] }).models) &&
+          (res as { models: unknown[] }).models.length > 0
+        ) {
+          resolve({
+            models: (res as { models: T[] }).models,
+            updatedAtIso:
+              typeof (res as { updatedAtIso?: unknown }).updatedAtIso === 'string'
+                ? (res as { updatedAtIso: string }).updatedAtIso
+                : null,
+          });
+          return;
+        }
+        resolve(null);
       };
       req.onerror = () => {
         db.close();
@@ -429,6 +478,11 @@ export async function loadPortfolioSnapshotFromIdb<T = unknown>(): Promise<T[] |
   } catch {
     return null;
   }
+}
+
+export async function loadPortfolioSnapshotFromIdb<T = unknown>(): Promise<T[] | null> {
+  const snap = await loadPortfolioSnapshotWithMetaFromIdb<T>();
+  return snap ? snap.models : null;
 }
 
 export async function loadAllModelGalleriesFromIdb(): Promise<Record<string, unknown[]>> {

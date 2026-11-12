@@ -608,6 +608,7 @@ export function ScenarioSalesPlanScreen({
                         [scenario.id]: {
                           ...plan,
                           monthlyPacks: Array(12).fill(0),
+                          monthlyReceiptsPacks: Array(12).fill(0),
                           monthlyOrdersPacks: Array(12).fill(0),
                           monthlyOrdersRub: Array(12).fill(0),
                           monthlyRevenuesRubOverride: undefined,
