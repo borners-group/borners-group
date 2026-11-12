@@ -196,23 +196,39 @@ export function useLiveScenarioPortfolio() {
         liveFilter && liveFilter !== 'ALL'
           ? normalizePortfolioBrandCode(liveFilter)
           : 'ALL';
+      const foundSavedScen = effectiveScenList.find((s) => s.id === savedScenId && !s.isArchived);
       const isForeignForBornersOrAll =
         (normActiveBrand === 'ALL' || normActiveBrand === 'BORNERS') &&
-        (savedScenId === AKUSHA_2027_SCENARIO_ID ||
+        (!foundSavedScen ||
+          !isScenarioCompatibleWithBrand(foundSavedScen, 'BORNERS') ||
+          savedScenId === AKUSHA_2027_SCENARIO_ID ||
           savedScenId === LISKANI_2027_SCENARIO_ID ||
           (savedScenId === ACTING_2027_SCENARIO_ID &&
             effectiveBornersScen !== ACTING_2027_SCENARIO_ID));
-      const foundSavedScen = effectiveScenList.find((s) => s.id === savedScenId && !s.isArchived);
-      const isIncompatibleForNaTele =
-        normActiveBrand === 'NA_TELE' &&
-        (!foundSavedScen || !isScenarioCompatibleWithBrand(foundSavedScen, 'NA_TELE'));
+      const isIncompatibleForBrand =
+        normActiveBrand !== 'ALL' &&
+        normActiveBrand !== 'BORNERS' &&
+        (!foundSavedScen || !isScenarioCompatibleWithBrand(foundSavedScen, normActiveBrand));
+      const fallbackBrandScen =
+        normActiveBrand !== 'ALL' && typeof sanitizedByBrand[normActiveBrand] === 'number'
+          ? (sanitizedByBrand[normActiveBrand] as number)
+          : normActiveBrand === 'NA_TELE'
+          ? 2
+          : normActiveBrand === 'AKUSHA'
+          ? AKUSHA_2027_SCENARIO_ID
+          : normActiveBrand === 'LISKANI'
+          ? LISKANI_2027_SCENARIO_ID
+          : normActiveBrand === 'FUKAI'
+          ? ACTING_2027_SCENARIO_ID
+          : effectiveBornersScen;
       const syncedScenId = isForeignForBornersOrAll
         ? effectiveBornersScen
-        : isIncompatibleForNaTele
-        ? typeof sanitizedByBrand.NA_TELE === 'number'
-          ? sanitizedByBrand.NA_TELE
-          : 2
+        : isIncompatibleForBrand
+        ? fallbackBrandScen
         : savedScenId;
+      if (isForeignForBornersOrAll && syncedScenId !== savedScenId) {
+        safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, syncedScenId);
+      }
       setSelectedScenarioIdState(syncedScenId);
     }
 
@@ -299,9 +315,16 @@ export function useLiveScenarioPortfolio() {
       const mergedCloudModels = hydratePortfolioModelsFromStorage();
       safeSetStorageJson(STORAGE_KEY_MODELS, mergedCloudModels);
       syncUserPlansBackup(mergedCloudModels);
+      void savePortfolioSnapshotToIdb(mergedCloudModels);
       setModels(mergedCloudModels);
       if (Array.isArray(cloud.scenarios) && cloud.scenarios.length > 0) {
+        const localScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || [];
         let nextScen = [...cloud.scenarios];
+        for (const loc of localScenarios) {
+          if (loc && typeof loc.id === 'number' && !nextScen.some((s) => s.id === loc.id)) {
+            nextScen.push(loc);
+          }
+        }
         if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
           nextScen = [ACTING_2027_SCENARIO_DEF, ...nextScen];
         }
@@ -384,6 +407,15 @@ export function useLiveScenarioPortfolio() {
         if (targetScen && !isScenarioCompatibleWithBrand(targetScen, code)) {
           return;
         }
+      }
+      if (
+        scenarioId !== null &&
+        brandFilterRef.current &&
+        brandFilterRef.current !== 'ALL' &&
+        normalizePortfolioBrandCode(brandFilterRef.current) === code
+      ) {
+        setSelectedScenarioIdState(scenarioId);
+        safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, scenarioId);
       }
       setSelectedScenarioByBrandState((prev) => {
         const next = sanitizeSelectedScenarioByBrand(
@@ -474,19 +506,20 @@ export function useLiveScenarioPortfolio() {
     if (brandFilter && brandFilter !== 'ALL') {
       const normBrand = normalizePortfolioBrandCode(brandFilter);
       if (normBrand !== 'ALL') {
-        if (
-          direct &&
-          direct.ownerBrandCode &&
-          normalizePortfolioBrandCode(direct.ownerBrandCode) === normBrand
-        ) {
-          return direct;
-        }
         const mappedId = selectedScenarioByBrand[normBrand];
         if (typeof mappedId === 'number') {
           const mappedScen = scenarios.find((s) => s.id === mappedId && !s.isArchived);
           if (mappedScen && isScenarioCompatibleWithBrand(mappedScen, normBrand)) {
             return mappedScen;
           }
+        }
+        if (
+          direct &&
+          !direct.isArchived &&
+          direct.ownerBrandCode &&
+          normalizePortfolioBrandCode(direct.ownerBrandCode) === normBrand
+        ) {
+          return direct;
         }
         const brandOwned = scenarios.find(
           (s) =>
@@ -495,7 +528,7 @@ export function useLiveScenarioPortfolio() {
             normalizePortfolioBrandCode(s.ownerBrandCode) === normBrand
         );
         if (brandOwned) return brandOwned;
-        if (direct && isScenarioCompatibleWithBrand(direct, normBrand)) {
+        if (direct && !direct.isArchived && isScenarioCompatibleWithBrand(direct, normBrand)) {
           return direct;
         }
         const fallbackBorners = scenarios.find(

@@ -184,7 +184,11 @@ export function BrandCabinetsMatrixTable({
                           const raw = e.target.value;
                           const nextId = raw === '' ? null : Number(raw);
                           onSelectScenarioForBrand(b.brandCode, nextId);
-                          if (nextId !== null && activeBrandFilter === b.brandCode) {
+                          if (
+                            nextId !== null &&
+                            activeBrandFilter !== 'ALL' &&
+                            normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode
+                          ) {
                             onSelectActiveScenarioId(nextId, b.brandCode);
                           }
                         }}

@@ -659,6 +659,7 @@ export function ProductCatalogView() {
               code: `${m.code}-COPY`,
               title: `${m.title} (КОПИЯ)`,
             };
+            unmarkModelAsDeletedInStorage(copy);
             updateModelsBatch((prev) => [...prev, copy]);
             setActivePassportModelId(copy.id);
             notify('success', `Создана копия модели ${copy.code}`);

@@ -70,7 +70,12 @@ import {
 import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
-import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import {
+  safeGetStorageJson,
+  safeSetStorageJson,
+  saveModelGalleryToIdb,
+  savePortfolioSnapshotToIdb,
+} from '@/lib/safeStorage';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
@@ -107,6 +112,7 @@ import {
   getScenariosForBrand,
   groupRecommendedBatchesByFactory,
   importStructuredScenarioPlan,
+  isScenarioCompatibleWithBrand,
   launchAllEmptyCabinetsInHolding,
   launchBrandStarterMatrix,
   matchesBrandFilter,
@@ -225,15 +231,8 @@ export function GrowthScenariosShowcase({
     }
   }, [screen, selectedModelId]);
 
-  const setSelectedScenarioId = useCallback((nextId: number) => {
-    setSelectedScenarioIdState(nextId);
-    safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
-      }, 0);
-    }
-  }, []);
+  const brandFilterRef = useRef(brandFilter);
+  brandFilterRef.current = brandFilter;
 
   const navigateScreen = (
     nextScreen: 'scenarios' | 'model' | 'sales-plan',
@@ -422,12 +421,64 @@ export function GrowthScenariosShowcase({
     return () => window.removeEventListener('borners-set-home-subview', onSubView);
   }, []);
 
+  const setSelectedScenarioId = useCallback(
+    (nextId: number, explicitBrandOverride?: string) => {
+      setSelectedScenarioIdState(nextId);
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
+      const targetScenario = scenarios.find((s) => s.id === nextId);
+      const effectiveBrand =
+        explicitBrandOverride !== undefined ? explicitBrandOverride : brandFilterLocal;
+      if (effectiveBrand && effectiveBrand !== 'ALL') {
+        const normCode = normalizePortfolioBrandCode(effectiveBrand);
+        if (normCode !== 'ALL') {
+          const targetOwner =
+            targetScenario?.ownerBrandCode && targetScenario.ownerBrandCode !== 'ALL'
+              ? normalizePortfolioBrandCode(targetScenario.ownerBrandCode)
+              : null;
+          const safeBrandSlot =
+            targetOwner && targetOwner !== normCode ? targetOwner : normCode;
+          if (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, safeBrandSlot)) {
+            setSelectedScenarioByBrandState((prev) => {
+              const next = sanitizeSelectedScenarioByBrand(
+                { ...prev, [safeBrandSlot]: nextId },
+                scenarios
+              );
+              safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+              return next;
+            });
+          }
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('borners-active-scenario-changed'));
+        }, 0);
+      }
+    },
+    [brandFilterLocal, scenarios]
+  );
+
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenId: number | null) => {
       const code = normalizePortfolioBrandCode(brandInput);
       if (code === 'ALL') return;
+      if (scenId !== null) {
+        const targetScen = scenarios.find((s) => s.id === scenId);
+        if (targetScen && !isScenarioCompatibleWithBrand(targetScen, code)) {
+          return;
+        }
+      }
+      if (
+        scenId !== null &&
+        brandFilterLocal &&
+        brandFilterLocal !== 'ALL' &&
+        normalizePortfolioBrandCode(brandFilterLocal) === code
+      ) {
+        setSelectedScenarioIdState(scenId);
+        safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, scenId);
+      }
       setSelectedScenarioByBrandState((prev) => {
-        const next = { ...prev, [code]: scenId };
+        const next = sanitizeSelectedScenarioByBrand({ ...prev, [code]: scenId }, scenarios);
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
@@ -437,7 +488,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    []
+    [brandFilterLocal, scenarios]
   );
 
   const SHOWCASE_BRAND_PRESETS: Record<
@@ -560,8 +611,17 @@ export function GrowthScenariosShowcase({
     (updater: ScenarioModelSpec[] | ((prev: ScenarioModelSpec[]) => ScenarioModelSpec[])) => {
       setModels((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
+        for (const m of next) {
+          if (
+            Array.isArray(m.gallery) &&
+            m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+          ) {
+            void saveModelGalleryToIdb(m.id, m.gallery);
+          }
+        }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
+        void savePortfolioSnapshotToIdb(next);
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -602,10 +662,11 @@ export function GrowthScenariosShowcase({
       setSelectedScenarioByBrandState(nextByBrand);
       safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
       saveUserPlansBackup(res.models);
+      void savePortfolioSnapshotToIdb(res.models);
       safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
       safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
       if (res.scenarioId) {
-        setSelectedScenarioId(res.scenarioId);
+        setSelectedScenarioId(res.scenarioId, brandCode);
       }
       if (typeof window !== 'undefined') {
         window.setTimeout(() => {
@@ -636,6 +697,7 @@ export function GrowthScenariosShowcase({
     setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     saveUserPlansBackup(res.models);
+    void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
     if (typeof window !== 'undefined') {
@@ -675,6 +737,7 @@ export function GrowthScenariosShowcase({
     setSelectedScenarioByBrandState(nextByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     saveUserPlansBackup(res.models);
+    void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
     if (
@@ -761,7 +824,8 @@ export function GrowthScenariosShowcase({
           sanitizedBrandScen.BORNERS !== parsedBrandScen.BORNERS ||
           sanitizedBrandScen.FUKAI !== parsedBrandScen.FUKAI ||
           sanitizedBrandScen.LISKANI !== parsedBrandScen.LISKANI ||
-          sanitizedBrandScen.AKUSHA !== parsedBrandScen.AKUSHA
+          sanitizedBrandScen.AKUSHA !== parsedBrandScen.AKUSHA ||
+          sanitizedBrandScen.NA_TELE !== parsedBrandScen.NA_TELE
         ) {
           safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedBrandScen);
         }
@@ -772,13 +836,23 @@ export function GrowthScenariosShowcase({
       const effectiveBornersScen =
         typeof sanitizedBrandScen.BORNERS === 'number' ? sanitizedBrandScen.BORNERS : 1;
       if (typeof savedScenId === 'number') {
-        const syncedScenId =
-          savedScenId === AKUSHA_2027_SCENARIO_ID ||
-          savedScenId === LISKANI_2027_SCENARIO_ID ||
-          (savedScenId === ACTING_2027_SCENARIO_ID &&
-            effectiveBornersScen !== ACTING_2027_SCENARIO_ID)
-            ? effectiveBornersScen
-            : savedScenId;
+        const liveBrand = brandFilterRef.current;
+        const normActiveBrand =
+          liveBrand && liveBrand !== 'ALL'
+            ? normalizePortfolioBrandCode(liveBrand)
+            : 'ALL';
+        const foundSavedScen = effectiveScenList.find(
+          (s) => s.id === savedScenId && !s.isArchived
+        );
+        const isForeignForBornersOrAll =
+          (normActiveBrand === 'ALL' || normActiveBrand === 'BORNERS') &&
+          (!foundSavedScen ||
+            !isScenarioCompatibleWithBrand(foundSavedScen, 'BORNERS') ||
+            savedScenId === AKUSHA_2027_SCENARIO_ID ||
+            savedScenId === LISKANI_2027_SCENARIO_ID ||
+            (savedScenId === ACTING_2027_SCENARIO_ID &&
+              effectiveBornersScen !== ACTING_2027_SCENARIO_ID));
+        const syncedScenId = isForeignForBornersOrAll ? effectiveBornersScen : savedScenId;
         if (syncedScenId !== savedScenId) {
           safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, syncedScenId);
         }
@@ -806,8 +880,54 @@ export function GrowthScenariosShowcase({
     };
   }, []);
 
-  const currentScenario =
-    scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0] || INITIAL_SCENARIOS[0];
+  const currentScenario = useMemo(() => {
+    const direct =
+      scenarios.find((s) => s.id === selectedScenarioId && !s.isArchived) ||
+      scenarios[0] ||
+      INITIAL_SCENARIOS[0];
+    if (brandFilterLocal && brandFilterLocal !== 'ALL') {
+      const normBrand = normalizePortfolioBrandCode(brandFilterLocal);
+      if (normBrand !== 'ALL') {
+        const mappedId = selectedScenarioByBrand[normBrand];
+        if (typeof mappedId === 'number') {
+          const mappedScen = scenarios.find((s) => s.id === mappedId && !s.isArchived);
+          if (mappedScen && isScenarioCompatibleWithBrand(mappedScen, normBrand)) {
+            return mappedScen;
+          }
+        }
+        if (
+          direct &&
+          direct.ownerBrandCode &&
+          normalizePortfolioBrandCode(direct.ownerBrandCode) === normBrand
+        ) {
+          return direct;
+        }
+        const brandOwned = scenarios.find(
+          (s) =>
+            !s.isArchived &&
+            s.ownerBrandCode &&
+            normalizePortfolioBrandCode(s.ownerBrandCode) === normBrand
+        );
+        if (brandOwned) return brandOwned;
+        if (direct && isScenarioCompatibleWithBrand(direct, normBrand)) {
+          return direct;
+        }
+        const fallbackCompatible = scenarios.find(
+          (s) => !s.isArchived && isScenarioCompatibleWithBrand(s, normBrand)
+        );
+        if (fallbackCompatible) return fallbackCompatible;
+      }
+    } else if (direct && !isScenarioCompatibleWithBrand(direct, 'ALL')) {
+      const bornersId = selectedScenarioByBrand.BORNERS || 1;
+      const bornersScen = scenarios.find(
+        (s) => s.id === bornersId && !s.isArchived && isScenarioCompatibleWithBrand(s, 'ALL')
+      );
+      if (bornersScen) return bornersScen;
+      const defaultS1 = scenarios.find((s) => s.id === 1 && !s.isArchived);
+      if (defaultS1) return defaultS1;
+    }
+    return direct;
+  }, [scenarios, selectedScenarioId, brandFilterLocal, selectedScenarioByBrand]);
 
   const activeModel =
     models.find((m) => m.id === selectedModelId) || models[0] || INITIAL_SCENARIO_MODELS[0];
@@ -1125,21 +1245,34 @@ export function GrowthScenariosShowcase({
   // Единая синхронизация модели сценария с основным Каталогом моделей (SKU)
   const syncScenarioModelToCatalog = useCallback(
     (spec: ScenarioModelSpec, prevSpec?: ScenarioModelSpec) => {
-      const unitCfg = getBrandUnitConfig(spec.customBrandLabel || spec.brandId);
+      const resolvedBrandCode = normalizePortfolioBrandCode(
+        spec.customBrandLabel || spec.brandId
+      );
+      const effectiveCatalogBrand =
+        resolvedBrandCode === 'ALL' ? 'BORNERS' : resolvedBrandCode;
+      const unitCfg = getBrandUnitConfig(effectiveCatalogBrand);
+      const presetPrefix =
+        SHOWCASE_BRAND_PRESETS[effectiveCatalogBrand]?.prefix || 'BRN';
       const cleanCode = spec.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
       const hasBrandPrefix = /^(BRN|NT|NTL|LSC|LSK|AKU|FUK)-/i.test(cleanCode);
       const targetSku = hasBrandPrefix
         ? cleanCode
-        : `${spec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`;
+        : `${presetPrefix}-${cleanCode}`;
 
       const prevCleanCode = prevSpec
         ? prevSpec.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001'
         : cleanCode;
       const prevHasPrefix = /^(BRN|NT|NTL|LSC|LSK|AKU|FUK)-/i.test(prevCleanCode);
+      const prevNormBrand = prevSpec
+        ? normalizePortfolioBrandCode(prevSpec.customBrandLabel || prevSpec.brandId)
+        : effectiveCatalogBrand;
+      const prevPresetPrefix =
+        SHOWCASE_BRAND_PRESETS[prevNormBrand === 'ALL' ? 'BORNERS' : prevNormBrand]
+          ?.prefix || presetPrefix;
       const prevSku = prevSpec
         ? prevHasPrefix
           ? prevCleanCode
-          : `${prevSpec.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${prevCleanCode}`
+          : `${prevPresetPrefix}-${prevCleanCode}`
         : targetSku;
 
       const mainPhotoUrl =
@@ -1163,7 +1296,7 @@ export function GrowthScenariosShowcase({
         updateProduct(existing.id, {
           sku: targetSku,
           name: spec.title,
-          brandId: spec.brandId,
+          brandId: effectiveCatalogBrand,
           isArchived: false,
           materials: spec.fabric.composition,
           fitType: spec.subtitle,
@@ -1189,7 +1322,7 @@ export function GrowthScenariosShowcase({
         createProduct({
           sku: targetSku,
           name: spec.title,
-          brandId: spec.brandId,
+          brandId: effectiveCatalogBrand,
           category: (unitCfg.categoryDefault as any) || 'Боксеры',
           productType: 'Базовая коллекция',
           priceSegment: 'Middle+',
@@ -1337,13 +1470,18 @@ export function GrowthScenariosShowcase({
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
       ...LISKANI_2027_MODELS,
+      ...AKUSHA_2027_MODELS,
     ];
     commitModels(baseline);
-    commitScenarios([...INITIAL_SCENARIOS, LISKANI_2027_SCENARIO_DEF]);
+    commitScenarios([
+      ...INITIAL_SCENARIOS,
+      LISKANI_2027_SCENARIO_DEF,
+      AKUSHA_2027_SCENARIO_DEF,
+    ]);
     notify(
       'success',
       '↺ Восстановлен эталон PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)',
-      '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.) + матрица LISKANI.'
+      '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.) + матрицы LISKANI и AKUSHA.'
     );
   };
 
@@ -1371,6 +1509,7 @@ export function GrowthScenariosShowcase({
       launchStatus: 'В плане',
       hasActualSalesOrPurchases: false,
     };
+    unmarkModelAsDeletedInStorage(copy);
     commitModels((prev) => [...prev, copy]);
     syncScenarioModelToCatalog(copy);
     setSelectedModelId(copy.id);

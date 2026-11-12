@@ -25,11 +25,21 @@ export function PdfConstructorModal({
 }: PdfConstructorModalProps) {
   const existingOrder = concept.productionOrders?.[0];
 
+  const brandLabel = formatLabBrandLabel(concept.brandId);
+  const defaultZhProductLabel =
+    brandLabel === 'НА ТЕЛЕ'
+      ? 'НА ТЕЛЕ 女士无痕亲肤内衣套装'
+      : brandLabel === 'AKUSHA'
+      ? 'AKUSHA 儿童真皮学步鞋'
+      : brandLabel === 'LISKANI'
+      ? 'LISKANI 家居窗帘纺织系列'
+      : `${brandLabel} 男士莫代尔平角内裤`;
+
   const [docTitleZh, setDocTitleZh] = useState(
     `生产工艺单及大货采购订单：${
       concept.techPack?.zh?.modelName && concept.techPack.zh.modelName !== '待定'
         ? concept.techPack.zh.modelName
-        : 'BORNERS 男士莫代尔平角内裤'
+        : defaultZhProductLabel
     } (${concept.code})`
   );
   const [docTitle, setDocTitle] = useState(

@@ -238,6 +238,15 @@ export function ProductLabCardBody({
     });
   };
 
+  const updateAnalysisFields = (patch: Partial<RnDAnalysisReport>) => {
+    onUpdateConcept(concept.id, {
+      analysisReport: {
+        ...currentAnalysis,
+        ...patch,
+      },
+    });
+  };
+
   const linkedProduct = products.find(
     (p) => p.id === concept.linkedProductId || p.conceptId === concept.id
   );
@@ -572,8 +581,10 @@ export function ProductLabCardBody({
                     disabled={!canEdit}
                     value={currentAnalysis.whatWeCreate}
                     onChange={(e) => {
-                      updateAnalysisField('whatWeCreate', e.target.value);
-                      updateAnalysisField('concreteAdvantage', e.target.value);
+                      updateAnalysisFields({
+                        whatWeCreate: e.target.value,
+                        concreteAdvantage: e.target.value,
+                      });
                     }}
                     placeholder="Базовое лекало боксеров + более мягкая резинка без давления..."
                     className="w-full rounded-xl border border-[#E8E8E5] bg-white p-3"
@@ -775,8 +786,16 @@ export function ProductLabCardBody({
               <button
                 type="button"
                 onClick={() => {
-                  updateAnalysisField('recommendation', 'continue');
-                  onChangeStageWithGate(concept, 'SAMPLE');
+                  const nextReport: RnDAnalysisReport = {
+                    ...currentAnalysis,
+                    recommendation: 'continue',
+                  };
+                  const updatedConcept: ProductConcept = {
+                    ...concept,
+                    analysisReport: nextReport,
+                  };
+                  onUpdateConcept(concept.id, { analysisReport: nextReport });
+                  onChangeStageWithGate(updatedConcept, 'SAMPLE');
                 }}
                 className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#126b4d] text-white text-[13px] font-bold cursor-pointer transition"
               >
@@ -1414,7 +1433,22 @@ export function ProductLabCardBody({
           </div>
           <button
             type="button"
-            onClick={() => onChangeStageWithGate(concept, 'DECISION')}
+            onClick={() => {
+              const summaryNote =
+                defectsList.length > 0
+                  ? `Замечания: ${defectsList.map((d) => d.label).join(', ')}`
+                  : 'Все 4 проверки пройдены успешно';
+              const testPatch: Partial<ProductConcept> = {
+                fourChecksTest: fourChecks,
+                testResults: summaryNote,
+              };
+              const updatedConcept: ProductConcept = {
+                ...concept,
+                ...testPatch,
+              };
+              onUpdateConcept(concept.id, testPatch);
+              onChangeStageWithGate(updatedConcept, 'DECISION');
+            }}
             className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
           >
             Перейти к решению (05 Решение) →
@@ -1460,9 +1494,15 @@ export function ProductLabCardBody({
           ? `Возвращено на доработку (этап ${reworkTargetStage})`
           : 'Отклонено по результатам проверки');
 
-      onUpdateConcept(concept.id, {
+      const resolvedSupplier =
+        concept.supplierName?.trim() ||
+        selectedSample?.factoryName ||
+        `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`;
+
+      const decisionPatch: Partial<ProductConcept> = {
         stage: targetStage,
         isArchived: outcome === 'reject',
+        ...(outcome === 'approve' ? { supplierName: resolvedSupplier } : {}),
         approvalDecisions: [
           {
             id: `dec-${Date.now()}`,
@@ -1495,9 +1535,21 @@ export function ProductLabCardBody({
           },
           ...(concept.stageHistory || []),
         ],
-      });
+      };
 
-      onChangeStageWithGate(concept, targetStage);
+      const updatedConcept: ProductConcept = {
+        ...concept,
+        ...decisionPatch,
+      };
+      onUpdateConcept(concept.id, decisionPatch);
+      if (outcome === 'approve') {
+        onSyncToScenarioCatalog?.(updatedConcept);
+      }
+      if (outcome === 'reject') {
+        notify('warning', 'Карточка отклонена и перенесена в архив');
+        return;
+      }
+      onChangeStageWithGate(updatedConcept, targetStage);
     };
 
     return (
@@ -2178,7 +2230,21 @@ export function ProductLabCardBody({
 
             <button
               type="button"
-              onClick={() => onChangeStageWithGate(concept, 'LAUNCH')}
+              onClick={() => {
+                let updatedConcept = concept;
+                if (orders.length === 0) {
+                  const orderPatch: Partial<ProductConcept> = {
+                    supplierName: currentOrder.factoryName,
+                    productionOrders: [currentOrder],
+                  };
+                  updatedConcept = {
+                    ...concept,
+                    ...orderPatch,
+                  };
+                  onUpdateConcept(concept.id, orderPatch);
+                }
+                onChangeStageWithGate(updatedConcept, 'LAUNCH');
+              }}
               className="h-10 px-5 rounded-xl bg-[#111111] text-white font-bold cursor-pointer"
             >
               Перейти к Запуску (07 Запуск) →
@@ -2281,12 +2347,18 @@ export function ProductLabCardBody({
                 <button
                   type="button"
                   disabled={!canEdit}
-                  onClick={() =>
+                  onClick={() => {
+                    const launchedConcept: ProductConcept = {
+                      ...concept,
+                      launchSalesStatus: 'in_sale',
+                      stage: 'LAUNCH',
+                    };
                     onUpdateConcept(concept.id, {
                       launchSalesStatus: 'in_sale',
                       stage: 'LAUNCH',
-                    })
-                  }
+                    });
+                    onSyncToScenarioCatalog?.(launchedConcept);
+                  }}
                   className={`flex-1 rounded-lg text-[13px] font-bold transition cursor-pointer ${
                     isInSale
                       ? 'bg-[#16805D] text-white shadow-2xs'

@@ -28,6 +28,7 @@ import {
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
 import { TaskStatus } from '@/types/platform';
+import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 export function DashboardView() {
   const {
@@ -64,7 +65,10 @@ export function DashboardView() {
   const filteredProducts = useMemo(
     () =>
       products.filter(
-        (p) => !p.isArchived && (brandFilter === 'ALL' || p.brandId === brandFilter)
+        (p) =>
+          !p.isArchived &&
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(p.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [products, brandFilter]
   );
@@ -75,7 +79,8 @@ export function DashboardView() {
         (c) =>
           !c.isArchived &&
           !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage) &&
-          (brandFilter === 'ALL' || c.brandId === brandFilter)
+          (brandFilter === 'ALL' ||
+            normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [concepts, brandFilter]
   );
@@ -83,7 +88,12 @@ export function DashboardView() {
   const filteredLaunches = useMemo(
     () =>
       launches
-        .filter((l) => !l.isArchived && (brandFilter === 'ALL' || l.brandId === brandFilter))
+        .filter(
+          (l) =>
+            !l.isArchived &&
+            (brandFilter === 'ALL' ||
+              normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
+        )
         .sort((a, b) => a.startDate.localeCompare(b.startDate)),
     [launches, brandFilter]
   );
@@ -204,7 +214,9 @@ export function DashboardView() {
       tasks.filter(
         (t) =>
           !t.isArchived &&
-          (brandFilter === 'ALL' || t.brandId === 'ALL' || t.brandId === brandFilter)
+          (brandFilter === 'ALL' ||
+            t.brandId === 'ALL' ||
+            normalizeLabBrandCode(t.brandId) === normalizeLabBrandCode(brandFilter))
       ),
     [tasks, brandFilter]
   );

@@ -34,6 +34,7 @@ import {
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
 import {
+  FACTORY_DIRECTORY,
   ProductLabCardBody,
   RND_CARD_TABS,
   RnDCardTabId,
@@ -229,6 +230,10 @@ export function ProductLabView() {
           : {}),
       });
     }
+    const targetImportBrand = normalizeLabBrandCode(patchFromModel?.brandId || item.brandId);
+    if (brandFilter !== 'ALL' && normalizeLabBrandCode(brandFilter) !== targetImportBrand) {
+      setBrandFilter(targetImportBrand as typeof brandFilter);
+    }
     setAddFromCatalogOpen(false);
     setQuickIdeaOpen(false);
     notify(
@@ -297,7 +302,12 @@ export function ProductLabView() {
     hypothesis: '',
     risks: '',
     supplierName: '',
+    sampleComposition: 'Хлопок 95% + Эластан 5%',
+    sampleUnitCost: '340',
+    testSummary: 'Посадка, резинка, стирка и пошив проверены — замечаний нет',
     approvalJustification: '',
+    orderTotalPacks: '1500',
+    launchStatus: 'in_sale' as 'prep' | 'in_sale',
   });
 
   const accessibleConcepts = useMemo(() => {
@@ -370,6 +380,9 @@ export function ProductLabView() {
     const normCurrent = normalizeConceptStageToSeven(concept.stage);
 
     if (normCurrent === normTarget && targetStage !== 'REJECTED') {
+      if (normTarget === 'PRODUCTION' || normTarget === 'LAUNCH') {
+        handleSyncConceptToCatalog(concept, true);
+      }
       setActiveCardTab(stageToTabId(normTarget));
       return;
     }
@@ -387,8 +400,20 @@ export function ProductLabView() {
         risks:
           concept.analysisReport?.openQuestionsAndRisks ||
           'Проверить посадку и усадку после стирки',
-        supplierName: concept.supplierName || 'Ташкент Текстиль №1 (Узбекистан)',
+        supplierName:
+          concept.supplierName ||
+          concept.samples?.[0]?.factoryName ||
+          `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`,
+        sampleComposition:
+          concept.samples?.[0]?.materialAndComposition || 'Хлопок 95% + Эластан 5%',
+        sampleUnitCost: String(concept.plannedUnitCost || 340),
+        testSummary:
+          concept.testResults && concept.testResults !== 'Нет данных'
+            ? concept.testResults
+            : 'Посадка, резинка, стирка и пошив проверены — образец прошёл тест',
         approvalJustification: 'Образец и тесты проверены, утверждено в производство',
+        orderTotalPacks: '1500',
+        launchStatus: concept.launchSalesStatus || 'in_sale',
       });
       setStageGateModal({
         concept,
@@ -404,6 +429,16 @@ export function ProductLabView() {
       targetStage,
       `Переход на этап «${CONCEPT_STAGE_LABELS_RU[targetStage]}»`
     );
+    if (normTarget === 'PRODUCTION' || normTarget === 'LAUNCH') {
+      handleSyncConceptToCatalog(
+        {
+          ...concept,
+          stage: targetStage,
+          ...(normTarget === 'LAUNCH' ? { launchSalesStatus: 'in_sale' } : {}),
+        },
+        true
+      );
+    }
     setActiveCardTab(stageToTabId(normTarget));
   };
 
@@ -420,6 +455,17 @@ export function ProductLabView() {
     }
 
     const normalizedTarget = normalizeConceptStageToSeven(targetStage);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const nowTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const resolvedSupplier =
+      gateFillForm.supplierName.trim() ||
+      concept.supplierName ||
+      `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`;
+    const parsedUnitCost =
+      Number(String(gateFillForm.sampleUnitCost).replace(/[^\d]/g, '')) ||
+      concept.plannedUnitCost ||
+      340;
+
     const patch: Partial<ProductConcept> = {
       stage: targetStage,
       ownerId: gateFillForm.ownerId || concept.ownerId || currentUser.id,
@@ -427,7 +473,7 @@ export function ProductLabView() {
         gateFillForm.whatAttracted || concept.whatAttracted || concept.name,
       ideaDescription:
         gateFillForm.whatAttracted || concept.ideaDescription || concept.name,
-      supplierName: gateFillForm.supplierName || concept.supplierName,
+      supplierName: resolvedSupplier,
     };
 
     if (normalizedTarget === 'SAMPLE') {
@@ -456,13 +502,159 @@ export function ProductLabView() {
           recommendation: 'continue',
         }),
         whatWeCreate: gateFillForm.hypothesis || 'Продуктовая гипотеза зафиксирована',
+        concreteAdvantage: gateFillForm.hypothesis || 'Продуктовая гипотеза зафиксирована',
         openQuestionsAndRisks:
           gateFillForm.risks || 'Проверить посадку и стирку на образце',
         recommendation: 'continue',
       };
     }
 
-    const nowTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    if (
+      normalizedTarget === 'TEST' ||
+      ((normalizedTarget === 'DECISION' ||
+        normalizedTarget === 'PRODUCTION' ||
+        normalizedTarget === 'LAUNCH') &&
+        (!concept.samples || concept.samples.length === 0))
+    ) {
+      const compText =
+        gateFillForm.sampleComposition.trim() || 'Хлопок 95% + Эластан 5%';
+      patch.sampleStatus = 'Образец получен на тест';
+      patch.plannedUnitCost = parsedUnitCost;
+      patch.samples = [
+        ...(concept.samples || []),
+        {
+          id: `smp-gate-${Date.now()}`,
+          versionCode: `Версия ${(concept.samples?.length || 0) + 1}`,
+          factoryName: resolvedSupplier,
+          country: 'Справочник',
+          orderedAt: todayIso,
+          receivedAt: todayIso,
+          status: 'testing',
+          photos: concept.imageUrl ? [concept.imageUrl] : [],
+          materialAndComposition: compText,
+          compositionRows: [
+            { material: 'Хлопок', pct: 95 },
+            { material: 'Эластан', pct: 5 },
+          ],
+          densityGsm: 180,
+          sizeTested: 'M / L',
+          color: 'Базовый',
+          measurementsNote: 'По спецификации',
+          sampleCostRub: 3500,
+          deliveryCostRub: 1200,
+          estimatedUnitProductionPrice: parsedUnitCost,
+          currency: 'RUB',
+          preliminaryScore: 5,
+          comments: 'Образец зафиксирован при переходе на тест',
+          isSelectedForProduction: true,
+        },
+      ];
+    }
+
+    if (
+      normalizedTarget === 'DECISION' ||
+      ((normalizedTarget === 'PRODUCTION' || normalizedTarget === 'LAUNCH') &&
+        !concept.fourChecksTest &&
+        (!concept.testResults || concept.testResults === 'Нет данных'))
+    ) {
+      patch.testResults =
+        gateFillForm.testSummary.trim() ||
+        'Посадка, резинка, стирка и пошив проверены — образец прошёл тест';
+      patch.fourChecksTest = concept.fourChecksTest || {
+        fitAndComfort: 'passed',
+        fitAndComfortComment: '',
+        waistbandAndSeams: 'passed',
+        waistbandAndSeamsComment: '',
+        washShapeColor: 'passed',
+        washShapeColorComment: '',
+        manufacturingQuality: 'passed',
+        manufacturingQualityComment: '',
+      };
+    }
+
+    if (
+      normalizedTarget === 'PRODUCTION' ||
+      (normalizedTarget === 'LAUNCH' &&
+        !concept.approvalDecisions?.some((d) => d.decision === 'approve'))
+    ) {
+      patch.approvalDecisions = [
+        {
+          id: `dec-gate-${Date.now()}`,
+          decision: 'approve',
+          authorName: currentUser.fullName,
+          authorRole: currentUser.role,
+          decidedAt: nowTime,
+          approvedSampleLabel:
+            concept.samples?.[0]?.versionCode ||
+            patch.samples?.[0]?.versionCode ||
+            'Версия 1',
+          justification:
+            gateFillForm.approvalJustification.trim() ||
+            'Образец и тесты проверены, утверждено в производство',
+          conditions: '',
+        },
+        ...(concept.approvalDecisions || []),
+      ];
+    }
+
+    if (normalizedTarget === 'LAUNCH') {
+      const packsQty =
+        Number(String(gateFillForm.orderTotalPacks).replace(/[^\d]/g, '')) || 1500;
+      const unitsPerPack =
+        concept.packUnitsCount && concept.packUnitsCount > 0
+          ? concept.packUnitsCount
+          : 4;
+      patch.launchSalesStatus = gateFillForm.launchStatus || 'in_sale';
+      patch.actualLaunchDate = concept.actualLaunchDate || todayIso;
+      if (!concept.productionOrders || concept.productionOrders.length === 0) {
+        patch.productionOrders = [
+          {
+            id: `po-gate-${Date.now()}`,
+            orderNumber: 'PO-2027-01',
+            factoryName: resolvedSupplier,
+            contactPerson: 'Менеджер производства',
+            approvedSampleVersion:
+              concept.samples?.[0]?.versionCode ||
+              patch.samples?.[0]?.versionCode ||
+              'Версия 1',
+            internalStatus: 'order_placed',
+            materialAndColors:
+              gateFillForm.sampleComposition.trim() || 'Хлопок 95% + Эластан 5%',
+            sizeBreakdown: {
+              S: Math.round(packsQty * 0.1),
+              M: Math.round(packsQty * 0.25),
+              L: Math.round(packsQty * 0.3),
+              XL: Math.round(packsQty * 0.2),
+              XXL: Math.round(packsQty * 0.15),
+            },
+            packsBySize: {
+              S: Math.round(packsQty * 0.1),
+              M: Math.round(packsQty * 0.2),
+              L: Math.round(packsQty * 0.25),
+              XL: Math.round(packsQty * 0.2),
+              '2XL': Math.round(packsQty * 0.15),
+              '3XL': Math.round(packsQty * 0.05),
+              '4XL': Math.round(packsQty * 0.05),
+            },
+            unitsPerPack,
+            packColorComposition: 'Базовый ассортимент комплекта',
+            totalUnits: packsQty * unitsPerPack,
+            packConfiguration: `${unitsPerPack} шт. в наборе`,
+            packagingDetails: 'Фирменный матовый зип-пакет со штрихкодом EAN-13 / Честный Знак',
+            unitPrice: parsedUnitCost,
+            currency: 'RUB',
+            plannedReadyDate: concept.targetLaunchDate || '2027-02-15',
+            paymentTerms: '30% депозит / 70% перед отгрузкой',
+            orderVersion: 1,
+            approvedAt: todayIso,
+            chineseVerified: true,
+            qcNotes: 'AQL 1.5',
+            logisticsTracking: '',
+          },
+        ];
+      }
+    }
+
     patch.stageHistory = [
       {
         id: `sh-${Date.now()}`,
@@ -477,7 +669,14 @@ export function ProductLabView() {
       ...(concept.stageHistory || []),
     ];
 
+    const mergedConcept: ProductConcept = {
+      ...concept,
+      ...patch,
+    };
     updateConcept(concept.id, patch);
+    if (normalizedTarget === 'PRODUCTION' || normalizedTarget === 'LAUNCH') {
+      handleSyncConceptToCatalog(mergedConcept, true);
+    }
     setStageGateModal(null);
     setActiveCardTab(stageToTabId(normalizedTarget));
     notify('success', `Статус изменён: «${CONCEPT_STAGE_LABELS_RU[targetStage]}»`);
@@ -577,12 +776,13 @@ export function ProductLabView() {
       status: 'in_development',
     });
 
+    if (brandFilter !== 'ALL' && normalizeLabBrandCode(brandFilter) !== cleanBrand) {
+      setBrandFilter(cleanBrand as typeof brandFilter);
+    }
+
     setQuickIdeaOpen(false);
     setQuickIdeaForm({
-      brandId:
-        brandFilter && brandFilter !== 'ALL'
-          ? normalizeLabBrandCode(brandFilter)
-          : cleanBrand,
+      brandId: cleanBrand,
       name: '',
       comment: '',
       referenceLink: '',
@@ -606,8 +806,8 @@ export function ProductLabView() {
   };
 
   const activeConcept: ProductConcept | null = useMemo(
-    () => accessibleConcepts.find((c) => c.id === selectedConceptId) || null,
-    [accessibleConcepts, selectedConceptId]
+    () => concepts.find((c) => !c.isArchived && c.id === selectedConceptId) || null,
+    [concepts, selectedConceptId]
   );
 
   const activeLinkedScenarioModel = useMemo(
@@ -1476,9 +1676,20 @@ export function ProductLabView() {
                       <select
                         disabled={!canEditActiveConcept}
                         value={normalizeLabBrandCode(activeConcept.brandId)}
-                        onChange={(e) =>
-                          updateConcept(activeConcept.id, { brandId: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const nextBrand = normalizeLabBrandCode(e.target.value);
+                          updateConcept(activeConcept.id, { brandId: nextBrand });
+                          if (
+                            brandFilter !== 'ALL' &&
+                            normalizeLabBrandCode(brandFilter) !== nextBrand
+                          ) {
+                            setBrandFilter(nextBrand as typeof brandFilter);
+                          }
+                          handleSyncConceptToCatalog(
+                            { ...activeConcept, brandId: nextBrand },
+                            true
+                          );
+                        }}
                         className="text-[15px] font-bold text-[#171717] bg-transparent outline-none cursor-pointer"
                       >
                         <option value="BORNERS">BORNERS</option>
@@ -2314,6 +2525,162 @@ export function ProductLabView() {
                       }
                       className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
                     />
+                  </div>
+                </>
+              )}
+
+              {normalizeConceptStageToSeven(stageGateModal.targetStage) ===
+                'TEST' && (
+                <>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                      Фабрика образца
+                    </label>
+                    <input
+                      value={gateFillForm.supplierName}
+                      onChange={(e) =>
+                        setGateFillForm({ ...gateFillForm, supplierName: e.target.value })
+                      }
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                        Состав ткани
+                      </label>
+                      <input
+                        value={gateFillForm.sampleComposition}
+                        onChange={(e) =>
+                          setGateFillForm({
+                            ...gateFillForm,
+                            sampleComposition: e.target.value,
+                          })
+                        }
+                        className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                        Предложение на серию (₽/шт.)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={gateFillForm.sampleUnitCost}
+                        onChange={(e) =>
+                          setGateFillForm({
+                            ...gateFillForm,
+                            sampleUnitCost: e.target.value.replace(/[^\d]/g, ''),
+                          })
+                        }
+                        className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {normalizeConceptStageToSeven(stageGateModal.targetStage) ===
+                'DECISION' && (
+                <div>
+                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    Итог проверки образца (посадка, резинка, стирка, пошив)
+                  </label>
+                  <input
+                    value={gateFillForm.testSummary}
+                    onChange={(e) =>
+                      setGateFillForm({ ...gateFillForm, testSummary: e.target.value })
+                    }
+                    className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                  />
+                </div>
+              )}
+
+              {normalizeConceptStageToSeven(stageGateModal.targetStage) ===
+                'PRODUCTION' && (
+                <>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                      Утверждённая фабрика-производитель
+                    </label>
+                    <input
+                      value={gateFillForm.supplierName}
+                      onChange={(e) =>
+                        setGateFillForm({ ...gateFillForm, supplierName: e.target.value })
+                      }
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                      Обоснование решения «УТВЕРДИТЬ»
+                    </label>
+                    <input
+                      value={gateFillForm.approvalJustification}
+                      onChange={(e) =>
+                        setGateFillForm({
+                          ...gateFillForm,
+                          approvalJustification: e.target.value,
+                        })
+                      }
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    />
+                  </div>
+                </>
+              )}
+
+              {normalizeConceptStageToSeven(stageGateModal.targetStage) ===
+                'LAUNCH' && (
+                <>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                      Фабрика стартовой партии
+                    </label>
+                    <input
+                      value={gateFillForm.supplierName}
+                      onChange={(e) =>
+                        setGateFillForm({ ...gateFillForm, supplierName: e.target.value })
+                      }
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                        Объём первой партии (наборов)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={gateFillForm.orderTotalPacks}
+                        onChange={(e) =>
+                          setGateFillForm({
+                            ...gateFillForm,
+                            orderTotalPacks: e.target.value.replace(/[^\d]/g, ''),
+                          })
+                        }
+                        className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                        Статус запуска
+                      </label>
+                      <select
+                        value={gateFillForm.launchStatus}
+                        onChange={(e) =>
+                          setGateFillForm({
+                            ...gateFillForm,
+                            launchStatus: e.target.value as 'prep' | 'in_sale',
+                          })
+                        }
+                        className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 bg-white font-semibold"
+                      >
+                        <option value="in_sale">В продаже ✓</option>
+                        <option value="prep">Подготовка к старту</option>
+                      </select>
+                    </div>
                   </div>
                 </>
               )}

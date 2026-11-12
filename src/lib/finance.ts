@@ -425,9 +425,17 @@ export function validateRnDStageTransition(
       missingFields.push('Добавить физический образец (Паспорт образца) для проверки');
     }
   } else if (normalizedTarget === 'DECISION') {
+    const hasFourChecks = Boolean(
+      concept.fourChecksTest &&
+        (concept.fourChecksTest.fitAndComfort !== 'untested' ||
+          concept.fourChecksTest.waistbandAndSeams !== 'untested' ||
+          concept.fourChecksTest.washShapeColor !== 'untested' ||
+          concept.fourChecksTest.manufacturingQuality !== 'untested')
+    );
     const hasTests =
       (concept.testProtocols && concept.testProtocols.length > 0) ||
-      Boolean(concept.testResults?.trim());
+      Boolean(concept.testResults && concept.testResults.trim() && concept.testResults.trim() !== 'Нет данных') ||
+      hasFourChecks;
     if (!hasTests) {
       missingFields.push('Завершить протокол тестирования образца (оценка посадки и стирки)');
     }

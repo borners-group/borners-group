@@ -22,6 +22,7 @@ import { usePlatform } from '@/context/PlatformContext';
 import { MiroBoardItem } from '@/types/platform';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 const STICKY_COLORS = [
   { hex: '#FFF8D6', label: 'Тёплый жёлтый' },
@@ -195,7 +196,9 @@ export function MiroBoardView() {
 
   const visibleItems = (miroItems || []).filter(
     (item) =>
-      brandFilter === 'ALL' || item.brandId === 'ALL' || item.brandId === brandFilter
+      brandFilter === 'ALL' ||
+      item.brandId === 'ALL' ||
+      normalizeLabBrandCode(item.brandId) === normalizeLabBrandCode(brandFilter)
   );
 
   // Перевод экранных координат мыши в мировые координаты бесконечного холста
@@ -677,10 +680,15 @@ export function MiroBoardView() {
           >
             <option value="">+ Карточка R&amp;D...</option>
             {concepts
-              .filter((c) => !c.isArchived)
+              .filter(
+                (c) =>
+                  !c.isArchived &&
+                  (brandFilter === 'ALL' ||
+                    normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
+              )
               .map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.code} · {c.name}
+                  [{formatLabBrandLabel(c.brandId)}] {c.code} · {c.name}
                 </option>
               ))}
           </select>

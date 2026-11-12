@@ -52,7 +52,7 @@ import {
 } from '@/components/sections/UnifiedContourViews';
 import { DRAFT_MODULES_META, useDraftModules } from '@/lib/draftModules';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
-import { computeModelScenarioMetrics } from '@/lib/scenarioData';
+import { computeModelScenarioMetrics, resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import {
   computeMultiBrandPortfolioSummary,
@@ -736,17 +736,18 @@ export function AppShell() {
 
     for (const p of products) {
       if (p.isArchived) continue;
-      const brandRu = p.brandId === 'NA_TELE' ? 'на теле' : 'borners';
+      const brandDisplay = formatLabBrandLabel(p.brandId);
+      const brandSearch = `${brandDisplay.toLowerCase()} ${p.brandId.toLowerCase()}`;
       if (
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        brandRu.includes(q)
+        brandSearch.includes(q)
       ) {
         results.push({
           id: `p-${p.id}`,
           category: 'Модель',
           title: `${p.sku} — ${p.name}`,
-          subtitle: `${p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : p.brandId} · ${p.collection}`,
+          subtitle: `${brandDisplay} · ${p.collection}`,
           onSelect: () => {
             setPlatformMode('management');
             navigateTo('product-catalog', { productId: p.id, brandId: 'ALL' });
@@ -760,17 +761,18 @@ export function AppShell() {
 
     for (const c of concepts) {
       if (c.isArchived) continue;
-      const brandRu = c.brandId === 'NA_TELE' ? 'на теле' : 'borners';
+      const brandDisplay = formatLabBrandLabel(c.brandId);
+      const brandSearch = `${brandDisplay.toLowerCase()} ${c.brandId.toLowerCase()}`;
       if (
         c.name.toLowerCase().includes(q) ||
         c.code.toLowerCase().includes(q) ||
-        brandRu.includes(q)
+        brandSearch.includes(q)
       ) {
         results.push({
           id: `c-${c.id}`,
           category: 'R&D',
           title: `${c.code} — ${c.name}`,
-          subtitle: `${CONCEPT_STAGE_LABELS_RU[c.stage]} · Запуск: ${c.targetLaunchDate}`,
+          subtitle: `${brandDisplay} · ${CONCEPT_STAGE_LABELS_RU[c.stage]} · Запуск: ${c.targetLaunchDate}`,
           onSelect: () => {
             setPlatformMode('management');
             navigateTo('product-lab', { conceptId: c.id, brandId: 'ALL' });
@@ -1118,7 +1120,7 @@ export function AppShell() {
                 <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src="./images/products/borners-lion-emblem.png"
+                    src={resolvePublicAssetUrl('images/products/borners-lion-emblem.png')}
                     alt="BORNERS"
                     className="h-full w-full object-contain"
                   />

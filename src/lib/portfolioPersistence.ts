@@ -198,13 +198,17 @@ export function sanitizeSelectedScenarioByBrand(
 
 export function runBornersSalesScenarioRepairMigrationV1(): void {
   const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1);
+  const savedScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
 
-  // Постоянная защита от записи чужого сценария (202706 / 202705) в BORNERS
+  // Постоянная защита от записи чужого сценария (202706 / 202705 / NA_TELE) в BORNERS
   const savedByBrand = safeGetStorageJson<Record<string, number | null>>(
     STORAGE_KEY_SCENARIO_BY_BRAND
   );
   if (savedByBrand && typeof savedByBrand === 'object') {
-    const sanitized = sanitizeSelectedScenarioByBrand(savedByBrand);
+    const sanitized = sanitizeSelectedScenarioByBrand(
+      savedByBrand,
+      Array.isArray(savedScenarios) && savedScenarios.length > 0 ? savedScenarios : undefined
+    );
     const shouldResetActingFromStaleBug =
       alreadyMigrated !== '1' && sanitized.BORNERS === ACTING_2027_SCENARIO_ID;
     const finalByBrand = shouldResetActingFromStaleBug
@@ -221,10 +225,20 @@ export function runBornersSalesScenarioRepairMigrationV1(): void {
     }
   }
 
+  // Защита активного сценария по умолчанию: если в STORAGE_KEY_ACTIVE_SCENARIO_ID записан несовместимый с BORNERS/ALL сценарий (AKUSHA / LISKANI / NA_TELE) при сброшенном фильтре бренда — чиним
+  const savedActiveId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
+  if (typeof savedActiveId === 'number' && Array.isArray(savedScenarios) && savedScenarios.length > 0) {
+    const foundActive = savedScenarios.find((s) => s.id === savedActiveId && !s.isArchived);
+    if (!foundActive) {
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, 1);
+    } else if (alreadyMigrated !== '1' && !isScenarioCompatibleWithBrand(foundActive, 'BORNERS')) {
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, 1);
+    }
+  }
+
   if (alreadyMigrated === '1') return;
 
   // Сбрасываем залипший чужой или исходный сценарий в активном ключе на эталонный Сценарий №1 (686,28 млн ₽)
-  const savedActiveId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
   if (
     savedActiveId === AKUSHA_2027_SCENARIO_ID ||
     savedActiveId === LISKANI_2027_SCENARIO_ID ||

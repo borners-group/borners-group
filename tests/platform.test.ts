@@ -5422,6 +5422,365 @@ test('64. Полный аудит всех фотографий в public/ и re
   }
 });
 
+test('65. Защита BORNERS 686,28 млн ₽ от перезаписи пользовательским сценарием НА ТЕЛЕ (ownerBrandCode: NA_TELE) на Главной, в 02 · Продажи и при миграции F5', async () => {
+  const {
+    INITIAL_SCENARIOS,
+    computeModelScenarioMetrics,
+  } = await import('../src/lib/scenarioData.ts');
+  const {
+    createIndependentBrandScenario,
+    isScenarioCompatibleWithBrand,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    STORAGE_KEY_ACTIVE_SCENARIO_ID,
+    STORAGE_KEY_SCENARIO_BY_BRAND,
+    STORAGE_KEY_SCENARIOS,
+    filterModelsForScenario,
+    runBornersSalesScenarioRepairMigrationV1,
+    sanitizeSelectedScenarioByBrand,
+  } = await import('../src/lib/portfolioPersistence.ts');
+
+  const portfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  // Создаём независимый сценарий специально для бренда НА ТЕЛЕ
+  const createdNaTeleScen = createIndependentBrandScenario(INITIAL_SCENARIOS, portfolio, {
+    title: 'НА ТЕЛЕ — Капсула 2027',
+    brandCode: 'NA_TELE',
+    year: 2027,
+    monthlyTargetMln: 45,
+    copyFromScenarioId: null,
+  });
+  const naTeleCustomScen = createdNaTeleScen.scenario;
+  assert.equal(naTeleCustomScen.ownerBrandCode, 'NA_TELE');
+  assert.equal(isScenarioCompatibleWithBrand(naTeleCustomScen, 'NA_TELE'), true);
+  assert.equal(isScenarioCompatibleWithBrand(naTeleCustomScen, 'BORNERS'), false);
+  assert.equal(isScenarioCompatibleWithBrand(naTeleCustomScen, 'ALL'), false);
+
+  // Если по ошибке в BORNERS попал id сценария НА ТЕЛЕ — санитайзер обязан вернуть BORNERS на Сценарий №1
+  const sanitized = sanitizeSelectedScenarioByBrand(
+    {
+      BORNERS: naTeleCustomScen.id,
+      NA_TELE: naTeleCustomScen.id,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: 202706,
+      LISKANI: 202705,
+    },
+    createdNaTeleScen.scenarios
+  );
+  assert.equal(sanitized.BORNERS, 1);
+  assert.equal(sanitized.NA_TELE, naTeleCustomScen.id);
+
+  // Проверим ремонтную миграцию localStorage при залипшем сценарии НА ТЕЛЕ
+  const mem = new Map<string, string>();
+  const origWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        mem.set(k, v);
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+    },
+  };
+  try {
+    mem.set(STORAGE_KEY_SCENARIOS, JSON.stringify(createdNaTeleScen.scenarios));
+    mem.set(STORAGE_KEY_ACTIVE_SCENARIO_ID, JSON.stringify(naTeleCustomScen.id));
+    mem.set(
+      STORAGE_KEY_SCENARIO_BY_BRAND,
+      JSON.stringify({ BORNERS: naTeleCustomScen.id, NA_TELE: naTeleCustomScen.id })
+    );
+    runBornersSalesScenarioRepairMigrationV1();
+
+    const repairedActive = JSON.parse(mem.get(STORAGE_KEY_ACTIVE_SCENARIO_ID)!);
+    const repairedByBrand = JSON.parse(mem.get(STORAGE_KEY_SCENARIO_BY_BRAND)!);
+    assert.equal(repairedActive, 1);
+    assert.equal(repairedByBrand.BORNERS, 1);
+    assert.equal(repairedByBrand.NA_TELE, naTeleCustomScen.id);
+  } finally {
+    if (origWindow === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = origWindow;
+    }
+  }
+
+  // Эталон BORNERS Сценарий №1 неизменен: 21 SKU · 686 284 972 ₽ за год · 109 938 111 ₽ в декабре
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersModels = filterModelsForScenario(createdNaTeleScen.models, scen1, false, 'BORNERS');
+  const bornersYearRub = bornersModels.reduce(
+    (sum, m) => sum + computeModelScenarioMetrics(m, scen1).annualRevenueRub,
+    0
+  );
+  const bornersDecRub = bornersModels.reduce(
+    (sum, m) => sum + computeModelScenarioMetrics(m, scen1).targetMonthRevenueRub,
+    0
+  );
+  assert.equal(bornersModels.length, 21);
+  assert.equal(bornersYearRub, 686_284_972);
+  assert.equal(bornersDecRub, 109_938_111);
+});
+
+test('66. Сквозное прохождение всех 7 этапов Лаборатории R&D (01 Идея -> 07 Запуск), учёт fourChecksTest на 04 Тест и полнота stageGateModal', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { validateRnDStageTransition } = await import('../src/lib/finance.ts');
+  const { INITIAL_USERS, INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+
+  const ownerUser = INITIAL_USERS[0];
+  const baseConcept = {
+    ...INITIAL_CONCEPTS[0],
+    brandId: 'NA_TELE',
+    stage: 'IDEA' as const,
+    ownerId: ownerUser.id,
+    whatAttracted: 'Невесомая бесшовная посадка для линейки НА ТЕЛЕ',
+    ideaDescription: 'Невесомая бесшовная посадка для линейки НА ТЕЛЕ',
+    analysisReport: undefined,
+    samples: [],
+    sampleStatus: '',
+    testProtocols: [],
+    testResults: 'Нет данных',
+    fourChecksTest: undefined,
+    approvalDecisions: [],
+    supplierName: '',
+    productionOrders: [],
+  };
+
+  // 01 -> 02 ANALYSIS (поля идеи заполнены)
+  assert.equal(validateRnDStageTransition(baseConcept, 'ANALYSIS', ownerUser).allowed, true);
+
+  // 02 -> 03 SAMPLE (до заполнения анализа — запрещено, после — разрешено)
+  assert.equal(validateRnDStageTransition(baseConcept, 'SAMPLE', ownerUser).allowed, false);
+  const afterAnalysis = {
+    ...baseConcept,
+    stage: 'ANALYSIS' as const,
+    analysisReport: {
+      whatWeCreate: 'Бесшовные слипы НА ТЕЛЕ с лазерным краем',
+      targetBuyer: 'Женщины 23–40',
+      concreteAdvantage: 'Незаметны под одеждой',
+      whyChooseUs: 'Ультратонкая микрофибра',
+      demandType: 'incremental' as const,
+      marketEvidences: [],
+      nicheConclusion: 'Высокий спрос',
+      buyerMotives: 'Комфорт',
+      competitorProsAndComplaints: 'Скатываются края у конкурентов',
+      priceBenchmarksAndObjections: '1890 ₽ за 3 шт.',
+      potentialFactories: 'Сучжоу Бесшовные Технологии',
+      materialsAndMoq: 'MOQ 1500',
+      estimatedProductionCostNote: '320 ₽',
+      estimatedLogisticsNote: '45 ₽',
+      estimatedLandedCostNote: '365 ₽',
+      productionRisks: '',
+      summaryAndPros: 'Заказываем образец',
+      openQuestionsAndRisks: 'Проверить эластичность края после 5 стирок',
+      confidenceLevel: 'high' as const,
+      whatToVerifyOnSample: 'Край после стирки',
+      recommendation: 'continue' as const,
+    },
+  };
+  assert.equal(validateRnDStageTransition(afterAnalysis, 'SAMPLE', ownerUser).allowed, true);
+
+  // 03 -> 04 TEST (до образца — запрещено, с образцом — разрешено)
+  assert.equal(validateRnDStageTransition(afterAnalysis, 'TEST', ownerUser).allowed, false);
+  const afterSample = {
+    ...afterAnalysis,
+    stage: 'SAMPLE' as const,
+    supplierName: 'Сучжоу Бесшовные Технологии (Китай)',
+    samples: [
+      {
+        id: 'smp-nt-1',
+        versionCode: 'Версия 1',
+        factoryName: 'Сучжоу Бесшовные Технологии (Китай)',
+        country: 'Китай',
+        orderedAt: '2027-01-10',
+        receivedAt: '2027-01-20',
+        status: 'testing' as const,
+        photos: [],
+        materialAndComposition: 'Полиамид 80% + Эластан 20%',
+        densityGsm: 140,
+        sizeTested: 'M',
+        color: 'Nude',
+        measurementsNote: 'Ок',
+        sampleCostRub: 3000,
+        deliveryCostRub: 1000,
+        estimatedUnitProductionPrice: 310,
+        currency: 'RUB' as const,
+        preliminaryScore: 5,
+        comments: 'Отличный образец',
+        isSelectedForProduction: true,
+      },
+    ],
+  };
+  assert.equal(validateRnDStageTransition(afterSample, 'TEST', ownerUser).allowed, true);
+
+  // 04 -> 05 DECISION: заполнение 4 проверок (fourChecksTest) без старого testProtocols должно открывать переход в 05 Решение!
+  assert.equal(validateRnDStageTransition(afterSample, 'DECISION', ownerUser).allowed, false);
+  const afterFourChecks = {
+    ...afterSample,
+    stage: 'TEST' as const,
+    fourChecksTest: {
+      fitAndComfort: 'passed' as const,
+      fitAndComfortComment: 'Идеально',
+      waistbandAndSeams: 'passed' as const,
+      waistbandAndSeamsComment: '',
+      washShapeColor: 'passed' as const,
+      washShapeColorComment: '',
+      manufacturingQuality: 'passed' as const,
+      manufacturingQualityComment: '',
+    },
+  };
+  assert.equal(
+    validateRnDStageTransition(afterFourChecks, 'DECISION', ownerUser).allowed,
+    true,
+    'Заполненные 4 проверки (fourChecksTest) обязаны разблокировать переход на 05 Решение'
+  );
+
+  // 05 -> 06 PRODUCTION и 06 -> 07 LAUNCH
+  assert.equal(validateRnDStageTransition(afterFourChecks, 'PRODUCTION', ownerUser).allowed, false);
+  const afterDecision = {
+    ...afterFourChecks,
+    stage: 'DECISION' as const,
+    approvalDecisions: [
+      {
+        id: 'dec-1',
+        decision: 'approve' as const,
+        authorName: ownerUser.fullName,
+        authorRole: ownerUser.role,
+        decidedAt: '2027-01-25 12:00',
+        approvedSampleLabel: 'Версия 1',
+        justification: 'Утверждено в серию НА ТЕЛЕ',
+        conditions: '',
+      },
+    ],
+  };
+  assert.equal(validateRnDStageTransition(afterDecision, 'PRODUCTION', ownerUser).allowed, true);
+  assert.equal(validateRnDStageTransition(afterDecision, 'LAUNCH', ownerUser).allowed, false);
+
+  // Проверяем, что в stageGateModal (ProductLabView.tsx) есть поля ввода для ВСЕХ этапов (ANALYSIS, SAMPLE, TEST, DECISION, PRODUCTION, LAUNCH) и авто-синк с каталогом
+  const labViewCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+  for (const stageKey of ['ANALYSIS', 'SAMPLE', 'TEST', 'DECISION', 'PRODUCTION', 'LAUNCH']) {
+    assert.ok(
+      labViewCode.includes(`'${stageKey}'`),
+      `ProductLabView должен обрабатывать этап ${stageKey} в модальном окне Gate`
+    );
+  }
+  assert.ok(
+    labViewCode.includes("normalizedTarget === 'PRODUCTION' || normalizedTarget === 'LAUNCH'"),
+    'Переход на 06 Производство или 07 Запуск должен автоматически синхронизировать модель с каталогом SKU'
+  );
+});
+
+test('67. Атомарное сохранение полей анализа и передача актуального ProductConcept между вкладками 02–07 в ProductLabTabs.tsx', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const tabsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabTabs.tsx'),
+    'utf8'
+  );
+
+  // Не должно быть двойного подряд вызова updateAnalysisField, затирающего предыдущее поле из-за замыкания React
+  assert.ok(
+    tabsCode.includes('const updateAnalysisFields ='),
+    'Должна использоваться атомарная функция updateAnalysisFields для одновременного обновления полей анализа'
+  );
+  assert.equal(
+    tabsCode.includes("updateAnalysisField('whatWeCreate', e.target.value);\n                      updateAnalysisField('concreteAdvantage'"),
+    false,
+    'Запрещён двойной вызов updateAnalysisField в одном onChange, затирающий whatWeCreate'
+  );
+  assert.ok(
+    tabsCode.includes("onChangeStageWithGate(updatedConcept, 'SAMPLE')") &&
+      tabsCode.includes("onChangeStageWithGate(updatedConcept, 'DECISION')") &&
+      tabsCode.includes("onChangeStageWithGate(updatedConcept, targetStage)") &&
+      tabsCode.includes("onChangeStageWithGate(updatedConcept, 'LAUNCH')"),
+    'Кнопки перехода этапов 02->03, 04->05, 05->06 и 06->07 должны передавать свежий updatedConcept без устаревшего замыкания'
+  );
+});
+
+test('68. Защита карточки R&D от внезапного закрытия при смене бренда на НА ТЕЛЕ или переходе из Холста Miro / Поиска ⌘K', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const labViewCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+
+  assert.ok(
+    labViewCode.includes('concepts.find((c) => !c.isArchived && c.id === selectedConceptId)'),
+    'activeConcept должен искаться по полному списку concepts, чтобы карточка не схлопывалась при смене бренда'
+  );
+  assert.equal(
+    labViewCode.includes('accessibleConcepts.find((c) => c.id === selectedConceptId)'),
+    false,
+    'activeConcept не должен зависеть от отфильтрованного accessibleConcepts'
+  );
+});
+
+test('69. Сохранность AKUSHA при сбросе эталона, запись в IndexedDB на Главной и приоритет выбранного сценария бренда', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const showcaseCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf8'
+  );
+  const liveHookCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+
+  assert.ok(
+    showcaseCode.includes('...AKUSHA_2027_MODELS') &&
+      showcaseCode.includes('AKUSHA_2027_SCENARIO_DEF'),
+    'GrowthScenariosShowcase обязан сохранять AKUSHA 2027 во всех базовых наборах моделей и сценариев'
+  );
+  assert.ok(
+    showcaseCode.includes('savePortfolioSnapshotToIdb(') &&
+      showcaseCode.includes('saveModelGalleryToIdb('),
+    'Изменения моделей и фото на Главной (GrowthScenariosShowcase) должны дублироваться в IndexedDB'
+  );
+  assert.ok(
+    liveHookCode.includes('const localScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS)'),
+    'При загрузке из облака локально созданные сценарии (например НА ТЕЛЕ) не должны затираться'
+  );
+});
+
+test('70. Глобальный поиск ⌘K по всем 5 брендам холдинга, базовый путь эмблемы и китайский техпак НА ТЕЛЕ / AKUSHA / LISKANI', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const appShellCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  const pdfModalCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PdfConstructorModal.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    appShellCode.includes("const brandRu = c.brandId === 'NA_TELE' ? 'на теле' : 'borners'"),
+    false,
+    'В глобальном поиске ⌘K не должно быть хардкода borners для всех остальных брендов'
+  );
+  assert.ok(
+    appShellCode.includes("resolvePublicAssetUrl('images/products/borners-lion-emblem.png')"),
+    'Логотип в шапке AppShell должен использовать resolvePublicAssetUrl для корректной работы на всех basePath'
+  );
+  assert.ok(
+    pdfModalCode.includes('НА ТЕЛЕ 女士无痕亲肤内衣套装') &&
+      pdfModalCode.includes('AKUSHA 儿童真皮学步鞋') &&
+      pdfModalCode.includes('LISKANI 家居窗帘纺织系列'),
+    'PDF-конструктор для фабрики должен формировать точный китайский заголовок под бренд карточки (включая НА ТЕЛЕ)'
+  );
+});
+
+
 
 
 

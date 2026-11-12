@@ -992,14 +992,24 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const createConcept = useCallback(
     (input: Partial<ProductConcept> & { name: string; brandId: string }): ProductConcept => {
       const id = makeUniqueId('concept');
-      const nextNum = state.concepts.length + 21;
-      const code = input.code || `RD-0${nextNum}`;
+      const maxExistingNum = state.concepts.reduce((maxAcc, item) => {
+        const match = item.code.match(/(\d+)/);
+        const parsed = match ? Number(match[1]) : 0;
+        return Number.isFinite(parsed) && parsed > maxAcc ? parsed : maxAcc;
+      }, 20);
+      const nextNum = Math.max(state.concepts.length + 21, maxExistingNum + 1);
+      const code = input.code || `RD-${String(nextNum).padStart(3, '0')}`;
       const now = new Date().toISOString().slice(0, 10);
       const nowTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      const normBrand = input.brandId.trim().toUpperCase();
       const defaultImage =
         input.imageUrl ||
-        (input.brandId === 'NA_TELE'
+        (normBrand === 'NA_TELE' || normBrand === 'НА ТЕЛЕ'
           ? 'images/products/natele-skin-tone.svg'
+          : normBrand === 'AKUSHA'
+          ? 'images/akusha/akusha-001.jpg'
+          : normBrand === 'LISKANI' || normBrand === 'LISCANI'
+          ? 'images/liskani/lsk-1.jpg'
           : 'images/products/borners-core-modal.svg');
 
       const newConcept: ProductConcept = {
@@ -1142,6 +1152,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             return {
               ...p,
               name: patch.name ?? p.name,
+              brandId: patch.brandId ?? p.brandId,
               imageUrl: patch.imageUrl ?? p.imageUrl,
               colorCombinations: patch.colorCombinations ?? p.colorCombinations,
               economics: {
