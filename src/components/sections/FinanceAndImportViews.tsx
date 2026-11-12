@@ -23,6 +23,7 @@ import {
   validateAndCheckDuplicates,
   ParsedImportRow,
 } from '@/lib/finance';
+import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 export function FinanceView() {
   const {
@@ -654,14 +655,19 @@ export function FinanceView() {
         <CsvImportWizardModal
           onClose={() => setImportModalOpen(false)}
           existingProducts={products}
+          existingFinanceKeys={financialPlans
+            .filter((f) => f.scenario === financialScenario)
+            .map((f) => `${normalizeLabBrandCode(f.brandId)}:${f.periodMonth}`)}
           onImportProducts={(rows) => {
+            const parseCsvNum = (v?: string) =>
+              Number((v || '').replace(/\s+/g, '').replace(',', '.')) || 0;
             rows.forEach((r) => {
-              const retail = Number(r.retailPriceRub) || 2290;
-              const cost = Number(r.costPriceRub) || 450;
+              const retail = parseCsvNum(r.retailPriceRub) || 2290;
+              const cost = parseCsvNum(r.costPriceRub) || 450;
               createProduct({
                 sku: r.sku || `SKU-${Date.now().toString().slice(-4)}`,
                 name: r.name || 'Импортированная модель',
-                brandId: r.brandId === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+                brandId: normalizeLabBrandCode(r.brandId || 'BORNERS'),
                 collection: r.collection || 'CORE 2027',
                 materials: r.materials || 'Модал / Хлопок',
                 status: 'in_development',
@@ -703,22 +709,24 @@ export function FinanceView() {
             setImportModalOpen(false);
           }}
           onImportFinance={(rows) => {
+            const parseCsvNum = (v?: string) =>
+              Number((v || '').replace(/\s+/g, '').replace(',', '.')) || 0;
             rows.forEach((r) => {
-              const units = Number(r.plannedBuyoutUnits) || 4500;
-              const avgPrice = Number(r.avgSellingPriceRub) || 2190;
-              const rev = Number(r.plannedRevenueRub) || units * avgPrice;
-              const prof = Number(r.plannedOperatingProfitRub) || Math.round(rev * 0.32);
+              const units = parseCsvNum(r.plannedBuyoutUnits) || 4500;
+              const avgPrice = parseCsvNum(r.avgSellingPriceRub) || 2190;
+              const rev = parseCsvNum(r.plannedRevenueRub) || units * avgPrice;
+              const prof = parseCsvNum(r.plannedOperatingProfitRub) || Math.round(rev * 0.32);
               addFinancialPlanRow({
-                brandId: r.brandId === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+                brandId: normalizeLabBrandCode(r.brandId || 'BORNERS'),
                 scenario: financialScenario,
                 periodMonth: r.periodMonth || '2027-04',
                 periodLabel: r.periodLabel || 'Апрель 2027',
                 currency: 'RUB',
                 plannedBuyoutUnits: units,
-                actualBuyoutUnits: r.actualBuyoutUnits ? Number(r.actualBuyoutUnits) : null,
+                actualBuyoutUnits: r.actualBuyoutUnits ? parseCsvNum(r.actualBuyoutUnits) : null,
                 avgSellingPriceRub: avgPrice,
                 plannedRevenueRub: rev,
-                actualRevenueRub: r.actualRevenueRub ? Number(r.actualRevenueRub) : null,
+                actualRevenueRub: r.actualRevenueRub ? parseCsvNum(r.actualRevenueRub) : null,
                 plannedOperatingProfitRub: prof,
                 actualOperatingProfitRub: null,
                 fixedCostsRub: 850000,
@@ -743,12 +751,14 @@ export function FinanceView() {
 function CsvImportWizardModal({
   onClose,
   existingProducts,
+  existingFinanceKeys = [],
   onImportProducts,
   onImportCompetitors,
   onImportFinance,
 }: {
   onClose: () => void;
   existingProducts: { sku: string }[];
+  existingFinanceKeys?: string[];
   onImportProducts: (rows: Record<string, string>[]) => void;
   onImportCompetitors: (rows: Record<string, string>[]) => void;
   onImportFinance: (rows: Record<string, string>[]) => void;
@@ -771,6 +781,16 @@ function CsvImportWizardModal({
     parsed.headers.forEach((h) => {
       columnMapping[h] = h;
     });
+    const rowsToValidate =
+      targetType === 'finance'
+        ? parsed.rows.map((r) => ({
+            ...r,
+            _brandPeriodKey: `${normalizeLabBrandCode(r.brandId || 'BORNERS')}:${(r.periodMonth || '').trim()}`,
+          }))
+        : parsed.rows;
+    if (targetType === 'finance') {
+      columnMapping._brandPeriodKey = '_brandPeriodKey';
+    }
     const requiredFields =
       targetType === 'products'
         ? ['sku', 'name', 'brandId', 'retailPriceRub']
@@ -786,6 +806,8 @@ function CsvImportWizardModal({
     const existingKeys = new Set(
       targetType === 'products'
         ? existingProducts.map((p) => p.sku.toUpperCase())
+        : targetType === 'finance'
+        ? existingFinanceKeys.map((k) => k.toUpperCase())
         : []
     );
     const uniqueTargetField =
@@ -793,17 +815,17 @@ function CsvImportWizardModal({
         ? 'sku'
         : targetType === 'competitors'
         ? 'brandName'
-        : 'periodMonth';
+        : '_brandPeriodKey';
 
     return validateAndCheckDuplicates({
-      rows: parsed.rows,
+      rows: rowsToValidate,
       columnMapping,
       requiredFields,
       numericFields,
       existingKeys,
       uniqueTargetField,
     });
-  }, [parsed, targetType, existingProducts]);
+  }, [parsed, targetType, existingProducts, existingFinanceKeys]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

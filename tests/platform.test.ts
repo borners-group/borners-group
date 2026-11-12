@@ -407,7 +407,7 @@ test('9. Быстрая загрузка фотографий (< 50 КБ на ф
     assert.equal(stat.size < 60 * 1024, true, `Файл ${file} превышает 60 КБ: ${stat.size} байт`);
   }
 
-  assert.equal(INITIAL_STRATEGIES.length, 28);
+  assert.equal(INITIAL_STRATEGIES.length, 70);
   for (const block of INITIAL_STRATEGIES) {
     assert.equal(typeof block.deadline, 'string');
     assert.equal((block.deadline ?? '').length, 10);
@@ -5779,6 +5779,435 @@ test('70. Глобальный поиск ⌘K по всем 5 брендам х
     'PDF-конструктор для фабрики должен формировать точный китайский заголовок под бренд карточки (включая НА ТЕЛЕ)'
   );
 });
+
+test('71. Умное слияние облака Supabase (mergeCloudPortfolioSnapshot): защита моделей НА ТЕЛЕ, локальных правок, удалённых SKU и эталона BORNERS 686,28 млн ₽', async () => {
+  const {
+    mergeCloudPortfolioSnapshot,
+    filterModelsForScenario,
+    markModelAsDeletedInStorage,
+    unmarkModelAsDeletedInStorage,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { INITIAL_SCENARIOS, computeModelScenarioMetrics } = await import(
+    '../src/lib/scenarioData.ts'
+  );
+  const { ACTING_2027_SCENARIO_MODELS } = await import('../src/lib/actingAssortment2027.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+  const { LISKANI_2027_MODELS } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { S1_100M_SCENARIO_MODELS, applyClientSavedS1SalesPlan } = await import(
+    '../src/lib/scenarioS1_100M.ts'
+  );
+  const { createBrandProductModel } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const baseModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+
+  // Добавляем новую локальную модель НА ТЕЛЕ
+  const createdNaTele = createBrandProductModel(baseModels, INITIAL_SCENARIOS, {
+    title: 'Бесшовные слипы НА ТЕЛЕ Second Skin',
+    code: 'NTL-901',
+    brandCode: 'NA_TELE',
+    retailPriceRub: 1890,
+    unitCostRub: 320,
+    unitsInPack: 1,
+  });
+
+  // Помечаем тестовую кастомную карточку удалённой локально
+  markModelAsDeletedInStorage({ id: 'scen-deleted-cloud-ghost', code: 'GHOST-999' });
+  try {
+    const rawBrn001 = S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!;
+    const staleCloudModels = [
+      ...baseModels.map((m) => {
+        // Имитируем старую облачную строку BRN-001-SC со старым заниженным планом (до ремонта 686,28 млн ₽)
+        if (m.code === 'BRN-001-SC') {
+          return {
+            ...m,
+            plansByScenario: {
+              ...m.plansByScenario,
+              1: {
+                ...rawBrn001.plansByScenario[1],
+              },
+            },
+          };
+        }
+        return m;
+      }),
+      {
+        ...createdNaTele.model,
+        id: 'scen-deleted-cloud-ghost',
+        code: 'GHOST-999',
+        title: 'Удалённый призрак из старого облака',
+      },
+    ];
+
+    const merged = mergeCloudPortfolioSnapshot({
+      localModels: createdNaTele.models,
+      cloudModels: staleCloudModels,
+      localUpdatedAtIso: '2026-11-12T18:00:00.000Z',
+      cloudUpdatedAtIso: '2026-11-10T10:00:00.000Z',
+      deletedRegistry: ['SCEN-DELETED-CLOUD-GHOST', 'GHOST-999'],
+    });
+
+    // 1. Локальная модель НА ТЕЛЕ сохранена
+    assert.ok(
+      merged.models.some((m) => m.code === 'NTL-901'),
+      'Локально созданная модель НА ТЕЛЕ обязана сохраниться при приходе устаревшего облачного слепка'
+    );
+    // 2. Удалённый призрак НЕ воскрес
+    assert.equal(
+      merged.models.some((m) => m.code === 'GHOST-999'),
+      false,
+      'Удалённая пользователем модель не должна воскресать из облака Supabase'
+    );
+    // 3. Эталон BORNERS Сценария №1 остаётся ровно 686 284 972 ₽
+    const s1Models = filterModelsForScenario(merged.models, scen1, false);
+    const bornersS1Rev = s1Models.reduce(
+      (s, m) => s + computeModelScenarioMetrics(m, scen1).annualRevenueRub,
+      0
+    );
+    assert.equal(bornersS1Rev, 686_284_972);
+    assert.equal(merged.shouldPushLocalToCloud, true);
+  } finally {
+    unmarkModelAsDeletedInStorage({ id: 'scen-deleted-cloud-ghost', code: 'GHOST-999' });
+  }
+});
+
+test('72. Генератор PDF-техпака из каталога SKU (buildPdfConceptFromScenarioModel): точные бренды, фабрики, 1 шт./набор и китайские спецификации без утечки боксеров BORNERS', async () => {
+  const { buildPdfConceptFromScenarioModel } = await import('../src/lib/rndCatalogSync.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+  const { LISKANI_2027_MODELS } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { INITIAL_SCENARIOS } = await import('../src/lib/scenarioData.ts');
+  const { createBrandProductModel } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const naTeleModel = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Бралетт НА ТЕЛЕ Invisible Soft',
+    code: 'NTL-105',
+    brandCode: 'NA_TELE',
+    retailPriceRub: 2490,
+    unitCostRub: 460,
+    unitsInPack: 1,
+  }).model;
+
+  const ntlConcept = buildPdfConceptFromScenarioModel(naTeleModel, []);
+  assert.equal(ntlConcept.brandId, 'NA_TELE');
+  assert.equal(ntlConcept.packUnitsCount, 1);
+  assert.equal(ntlConcept.plannedUnitCost, 460);
+  assert.ok(ntlConcept.techPack?.zh?.modelName.includes('НА ТЕЛЕ'));
+  assert.equal(ntlConcept.techPack?.zh?.modelName.includes('BORNERS'), false);
+
+  const akuConcept = buildPdfConceptFromScenarioModel(AKUSHA_2027_MODELS[0], []);
+  assert.equal(akuConcept.brandId, 'AKUSHA');
+  assert.equal(akuConcept.packUnitsCount, 1);
+  assert.ok(akuConcept.techPack?.zh?.modelName.includes('AKUSHA'));
+  assert.equal(akuConcept.techPack?.zh?.construction.includes('平角内裤'), false);
+
+  const lscConcept = buildPdfConceptFromScenarioModel(LISKANI_2027_MODELS[0], []);
+  assert.equal(lscConcept.brandId, 'LISKANI');
+  assert.ok(lscConcept.techPack?.zh?.modelName.includes('LISKANI'));
+});
+
+test('73. Смена бренда карточки (changeModelBrandWithAudit) и распознавание NA_TELE → НА ТЕЛЕ без залипания на старом portfolioBrandCode', async () => {
+  const { INITIAL_SCENARIOS } = await import('../src/lib/scenarioData.ts');
+  const {
+    createBrandProductModel,
+    changeModelBrandWithAudit,
+    detectModelBrandPortfolioLabel,
+    matchesBrandFilter,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const brnCard = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Тестовый артикул смены бренда',
+    code: 'MOVE-01',
+    brandCode: 'BORNERS',
+    retailPriceRub: 2190,
+    unitCostRub: 420,
+    unitsInPack: 3,
+  }).model;
+
+  assert.equal(
+    detectModelBrandPortfolioLabel({
+      ...brnCard,
+      id: 'scen-test-ntl',
+      code: 'CUSTOM-01',
+      customBrandLabel: 'NA_TELE',
+    }),
+    'НА ТЕЛЕ'
+  );
+
+  const movedToNaTele = changeModelBrandWithAudit(brnCard, 'NA_TELE', 'Владелец');
+  assert.equal(detectModelBrandPortfolioLabel(movedToNaTele), 'НА ТЕЛЕ');
+  assert.equal(matchesBrandFilter(movedToNaTele, 'NA_TELE'), true);
+  assert.equal(matchesBrandFilter(movedToNaTele, 'BORNERS'), false);
+});
+
+test('74. Генератор ID независимых сценариев (createIndependentBrandScenario): исключение коллизий с резервными ID 100, 202705 и 202706', async () => {
+  const { INITIAL_SCENARIOS } = await import('../src/lib/scenarioData.ts');
+  const { ACTING_2027_SCENARIO_DEF, ACTING_2027_SCENARIO_MODELS } = await import(
+    '../src/lib/actingAssortment2027.ts'
+  );
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+  const { LISKANI_2027_SCENARIO_DEF } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { createIndependentBrandScenario } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const allScens = [
+    ACTING_2027_SCENARIO_DEF,
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const created = createIndependentBrandScenario(allScens, ACTING_2027_SCENARIO_MODELS, {
+    title: 'НА ТЕЛЕ — Капсула Осень 2027',
+    brandCode: 'NA_TELE',
+    year: 2027,
+    monthlyTargetMln: 25,
+    copyFromScenarioId: null,
+  });
+
+  assert.equal(created.scenario.id, 4, 'Новый сценарий должен получить чистый ID 4, а не 202707');
+  assert.notEqual(created.scenario.id, 202705);
+  assert.notEqual(created.scenario.id, 202706);
+});
+
+test('75. Защита эталонной себестоимости AKUSHA (37 448 200 ₽) при applyCategoryWbUnitEconomics(..., { fillMissingCost: true })', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { applyCategoryWbUnitEconomics, computeScenarioInvestmentSummary } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const processed = AKUSHA_2027_MODELS.map((m) =>
+    applyCategoryWbUnitEconomics(m, { fillMissingCost: true })
+  );
+  const unpricedCard = processed.find((m) => m.code === 'AKU-017')!;
+  assert.equal(
+    unpricedCard.unitCostRub,
+    0,
+    'Неоценённые карточки AKU-017..020 и AKU-028..031 с 0 ₽ в официальном PDF не должны получать искусственную себестоимость 26%'
+  );
+
+  const inv = computeScenarioInvestmentSummary(processed, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(inv.annualRevenueRub, 105_793_210);
+  assert.equal(inv.annualSoldGoodsCostRub, 37_448_200);
+});
+
+test('76. Изоляция правок в кастомных сценариях от официальных 202705/202706, точечная правка цены 1 месяца и защита % выкупа от смены режима закупки', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { INITIAL_SCENARIOS, computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+  const { S1_100M_SCENARIO_MODELS } = await import('../src/lib/scenarioS1_100M.ts');
+  const {
+    updateModelScenarioPrice,
+    updateModelScenarioMonthBuyouts,
+    updateModelScenarioSingleMonthPrice,
+    updateModelBuyoutRatePct,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const akuSample = AKUSHA_2027_MODELS[0];
+  const origOfficialRev = computeModelScenarioMetrics(
+    akuSample,
+    AKUSHA_2027_SCENARIO_DEF
+  ).annualRevenueRub;
+
+  // Редактируем кастомный сценарий ID=4 — официальный план 202706 должен остаться неизменным!
+  const editedCustomPrice = updateModelScenarioPrice(akuSample, 4, 9990);
+  const editedCustomPacks = updateModelScenarioMonthBuyouts(editedCustomPrice, 4, 5, 777);
+  assert.equal(
+    computeModelScenarioMetrics(editedCustomPacks, AKUSHA_2027_SCENARIO_DEF).annualRevenueRub,
+    origOfficialRev,
+    'Правка кастомного сценария ID=4 не имеет права мутировать официальный план AKUSHA 202706'
+  );
+
+  // Точечная правка цены одного месяца (июль, индекс 6) не перезаписывает остальные 11 месяцев
+  const brnSample = S1_100M_SCENARIO_MODELS[0];
+  const scen2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+  const origJanPrice = brnSample.plansByScenario[2].monthlyPricesRub[0];
+  const singleMonthUpdated = updateModelScenarioSingleMonthPrice(brnSample, 2, 6, 3990);
+  assert.equal(singleMonthUpdated.plansByScenario[2].monthlyPricesRub[6], 3990);
+  assert.equal(singleMonthUpdated.plansByScenario[2].monthlyPricesRub[0], origJanPrice);
+  assert.ok(computeModelScenarioMetrics(singleMonthUpdated, scen2).annualRevenueRub > 0);
+
+  // Изменение % выкупа у белья BORNERS не должно включать обувной флаг procureByOrdersVolume
+  const buyoutUpdated = updateModelBuyoutRatePct(brnSample, 82);
+  assert.equal(buyoutUpdated.buyoutRatePct, 82);
+  assert.notEqual(buyoutUpdated.procureByOrdersVolume, true);
+  assert.ok(AKUSHA_2027_SCENARIO_ID === 202706);
+});
+
+test('77. Сводка инвестиций холдинга по всем брендам (computeGroupBrandsInvestmentReport с allScenarios и selectedScenarioByBrand)', async () => {
+  const { INITIAL_SCENARIOS } = await import('../src/lib/scenarioData.ts');
+  const { ACTING_2027_SCENARIO_DEF, ACTING_2027_SCENARIO_MODELS } = await import(
+    '../src/lib/actingAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { S1_100M_SCENARIO_MODELS, applyClientSavedS1SalesPlan } = await import(
+    '../src/lib/scenarioS1_100M.ts'
+  );
+  const { computeGroupBrandsInvestmentReport } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const allScenarios = [
+    ACTING_2027_SCENARIO_DEF,
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const scen1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const report = computeGroupBrandsInvestmentReport(models, scen1, {
+    allScenarios,
+    selectedScenarioByBrand: {
+      BORNERS: 1,
+      FUKAI: 100,
+      LISKANI: 202705,
+      AKUSHA: 202706,
+      NA_TELE: 2,
+    },
+  });
+
+  const byBrand = Object.fromEntries(report.brands.map((b) => [b.brandCode, b]));
+  assert.equal(byBrand.BORNERS.annualRevenueRub, 686_284_972);
+  assert.equal(byBrand.FUKAI.annualRevenueRub, 90_553_401);
+  assert.equal(byBrand.LISKANI.annualRevenueRub, 500_000_000);
+  assert.equal(byBrand.AKUSHA.annualRevenueRub, 105_793_210);
+  const expectedTotal = 686_284_972 + 90_553_401 + 500_000_000 + 105_793_210;
+  assert.equal(report.groupTotal.annualRevenueRub, expectedTotal);
+});
+
+test('78. Группы товаров (productGroups): взвешивание маржи по выручке и чистая фильтрация архивных групп', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { buildBrandCatalogSections, computeProductGroupMetrics } = await import(
+    '../src/lib/productGroups.ts'
+  );
+
+  const sections = buildBrandCatalogSections(
+    AKUSHA_2027_MODELS,
+    { AKUSHA: AKUSHA_2027_SCENARIO_DEF },
+    AKUSHA_2027_SCENARIO_DEF
+  );
+  const akushaSec = sections.find((s) => s.brandCode === 'AKUSHA')!;
+  assert.equal(akushaSec.annualRevenueRub, 105_793_210);
+
+  // Группа с 1 продающейся моделью и 1 нулевой карточкой должна считать маржу строго по выручке продающейся модели
+  const activeCard = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-001')!;
+  const zeroCard = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-028')!;
+  const grpMetrics = computeProductGroupMetrics(
+    {
+      id: 'grp-test-akusha',
+      title: 'Тестовая группа AKUSHA',
+      subtitle: '',
+      brandCode: 'AKUSHA',
+      cabinetLabel: 'AKUSHA',
+      modelIds: [activeCard.id, zeroCard.id],
+      modelCodes: [activeCard.code, zeroCard.code],
+      createdAt: '2026-11-12',
+    },
+    [activeCard, zeroCard],
+    AKUSHA_2027_SCENARIO_DEF
+  );
+  assert.ok(grpMetrics.annualRevenueRub > 0);
+  assert.ok(grpMetrics.avgMarginPct > 0 && grpMetrics.avgMarginPct < 100);
+});
+
+test('79. Полнота 14 стратегических блоков ДНК для каждого из 5 брендов холдинга (70 блоков) и целостность связей R&D RD-027', async () => {
+  const { INITIAL_STRATEGIES } = await import('../src/lib/initial-strategies.ts');
+  const { INITIAL_CONCEPTS, INITIAL_LAUNCHES, INITIAL_TASKS, INITIAL_CAMPAIGNS } = await import(
+    '../src/lib/initial-data.ts'
+  );
+
+  for (const brandId of ['BORNERS', 'NA_TELE', 'AKUSHA', 'LISKANI', 'FUKAI']) {
+    const blocks = INITIAL_STRATEGIES.filter((s) => s.brandId === brandId);
+    assert.equal(
+      blocks.length,
+      14,
+      `Для бренда ${brandId} должно быть заполнено ровно 14 блоков стратегии`
+    );
+  }
+  assert.equal(INITIAL_STRATEGIES.length, 70);
+
+  // Ни одной битой ссылки на старый 'concept-skin-tone' или несуществующий 'prod-borners-terracotta-pack'
+  const rd027 = INITIAL_CONCEPTS.find((c) => c.id === 'concept-rd-027');
+  assert.ok(rd027, 'Карточка concept-rd-027 (НА ТЕЛЕ) должна существовать в INITIAL_CONCEPTS');
+  assert.equal(rd027.packUnitsCount, 1);
+  assert.equal(
+    INITIAL_TASKS.some((t) => t.conceptId === 'concept-skin-tone'),
+    false,
+    'Задачи не должны ссылаться на несуществующий concept-skin-tone'
+  );
+  assert.equal(
+    INITIAL_LAUNCHES.some((l) => l.conceptId === 'concept-skin-tone'),
+    false,
+    'Запуски не должны ссылаться на несуществующий concept-skin-tone'
+  );
+  assert.equal(
+    INITIAL_CAMPAIGNS.some((c) => c.productIds.includes('prod-borners-terracotta-pack')),
+    false,
+    'Кампании не должны ссылаться на несуществующий prod-borners-terracotta-pack'
+  );
+});
+
+test('80. Защита от утечек пути ассетов на GitHub Pages subpaths, безопасное имя скачивания base64-фото и чистый переход из Лаборатории в паспорт SKU', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const lightboxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/FullscreenPhotoLightbox.tsx'),
+    'utf8'
+  );
+  const docExportCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/document-export.ts'),
+    'utf8'
+  );
+  const deckCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/StrategyPresentationDeck.tsx'),
+    'utf8'
+  );
+  const catalogCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+
+  assert.ok(
+    lightboxCode.includes("currentOriginalSrc.startsWith('data:image/')"),
+    'FullscreenPhotoLightbox должен безопасно извлекать расширение для data:image/... без вставки мегабайтов base64 в downloadFilename'
+  );
+  assert.ok(
+    docExportCode.includes('img.src = resolvePublicAssetUrl(url);'),
+    'loadImageForPdf должен резолвить пути фото через resolvePublicAssetUrl для рендера на subpaths /borners-group/ и /borners-platform/'
+  );
+  assert.ok(
+    deckCode.includes("{ code: 'AKUSHA', label: 'AKUSHA' }") &&
+      deckCode.includes("{ code: 'LISKANI', label: 'LISKANI' }") &&
+      deckCode.includes("{ code: 'FUKAI', label: 'FUKAI' }"),
+    'Слайд 05 презентации стратегии должен поддерживать все 5 брендов холдинга'
+  );
+  assert.ok(
+    catalogCode.includes('buildPdfConceptFromScenarioModel(pdfModalModel, concepts)') &&
+      catalogCode.includes('setActivePassportModelId(matched.id)'),
+    'Каталог 01 · Продукт должен автоматически открывать паспорт SKU по deep-link из Лаборатории R&D и открывать PDF-конструктор ТЗ'
+  );
+});
+
 
 
 

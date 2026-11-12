@@ -22,8 +22,11 @@ import {
 } from '@/lib/scenarioData';
 import {
   detectModelBrandPortfolioLabel,
+  getBrandUnitConfig,
+  isScenarioCompatibleWithBrand,
+  normalizePortfolioBrandCode,
   updateModelScenarioMonthBuyouts,
-  updateModelScenarioPrice,
+  updateModelScenarioSingleMonthPrice,
 } from '@/lib/unifiedBusinessEngine';
 
 interface ScenarioSalesPlanScreenProps {
@@ -54,6 +57,14 @@ export function ScenarioSalesPlanScreen({
 
   const metrics = computeModelScenarioMetrics(model, scenario);
   const { plan } = metrics;
+  const modelBrandLabel = detectModelBrandPortfolioLabel(model);
+  const modelBrandCode = normalizePortfolioBrandCode(modelBrandLabel);
+  const unitConfig = getBrandUnitConfig(modelBrandLabel);
+  const compatibleScenarios = allScenarios.filter(
+    (sc) =>
+      sc.id === scenario.id ||
+      (!sc.isArchived && isScenarioCompatibleWithBrand(sc, modelBrandCode))
+  );
 
   const isPlanEmpty = metrics.annualPacks === 0;
 
@@ -70,7 +81,9 @@ export function ScenarioSalesPlanScreen({
       return;
     }
     if (field === 'price') {
-      onUpdateModel(updateModelScenarioPrice(model, scenario.id, cleanVal));
+      onUpdateModel(
+        updateModelScenarioSingleMonthPrice(model, scenario.id, monthIdx, cleanVal)
+      );
       return;
     }
     const nextPlan = {
@@ -226,9 +239,9 @@ export function ScenarioSalesPlanScreen({
             onChange={(e) => onSelectScenario(Number(e.target.value))}
             className="h-9 px-3.5 rounded-[10px] bg-white border border-[#DED8CC] text-[12.5px] font-semibold text-[#1D1D1F] cursor-pointer"
           >
-            {allScenarios.map((sc) => (
+            {compatibleScenarios.map((sc) => (
               <option key={sc.id} value={sc.id}>
-                Сценарий: №{sc.id} — {sc.monthlyTargetMln} млн ₽ / мес
+                {sc.title} — {sc.monthlyTargetMln} млн ₽ / мес
               </option>
             ))}
           </select>
@@ -315,7 +328,7 @@ export function ScenarioSalesPlanScreen({
               {metrics.annualPacks.toLocaleString('ru-RU')}
             </div>
             <div className="text-[11px] text-[#6E6E73]">
-              комплектов ({metrics.annualUnits.toLocaleString('ru-RU')} шт.)
+              {unitConfig.primaryUnit} ({metrics.annualUnits.toLocaleString('ru-RU')} шт.)
             </div>
           </div>
 
@@ -325,7 +338,7 @@ export function ScenarioSalesPlanScreen({
               {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
             </div>
             <div className="text-[11px] text-[#6E6E73]">
-              за 1 комплект из {model.unitsInPack} шт.
+              за 1 {unitConfig.primaryUnit} ({model.unitsInPack} шт.)
             </div>
           </div>
 
@@ -400,16 +413,39 @@ export function ScenarioSalesPlanScreen({
               <button
                 type="button"
                 onClick={() => {
+                  const starterPacks =
+                    modelBrandCode === 'NA_TELE'
+                      ? [160, 190, 230, 270, 310, 340, 380, 420, 470, 520, 610, 650]
+                      : modelBrandCode === 'AKUSHA'
+                      ? [65, 80, 120, 145, 130, 95, 110, 190, 240, 210, 180, 160]
+                      : modelBrandCode === 'LISKANI'
+                      ? [220, 240, 280, 310, 320, 300, 310, 360, 420, 480, 560, 590]
+                      : modelBrandCode === 'FUKAI'
+                      ? [180, 200, 230, 250, 260, 270, 290, 320, 350, 390, 450, 480]
+                      : [850, 960, 1120, 1280, 1420, 1550, 1680, 1850, 2050, 2320, 2740, 2980];
+                  const ratePct = Math.max(5, Math.min(100, metrics.buyoutRatePct || 85));
+                  const pricesRub =
+                    Array.isArray(plan.monthlyPricesRub) && plan.monthlyPricesRub.length === 12
+                      ? plan.monthlyPricesRub.map((p) => p || model.retailPriceRub || 1990)
+                      : Array(12).fill(model.retailPriceRub || 1990);
+                  const ordersPacks = starterPacks.map((b) =>
+                    Math.round(b / (ratePct / 100))
+                  );
+                  const ordersRub = ordersPacks.map((ord, idx) =>
+                    Math.round(ord * (pricesRub[idx] || model.retailPriceRub || 1990))
+                  );
                   onUpdateModel({
                     ...model,
                     plansByScenario: {
                       ...model.plansByScenario,
                       [scenario.id]: {
                         ...plan,
-                        monthlyPacks: [
-                          2480, 2945, 3565, 4265, 4885, 5350, 5815, 6355, 6900, 7675,
-                          8835, 8372,
-                        ],
+                        scenarioId: scenario.id,
+                        monthlyPacks: starterPacks,
+                        monthlyPricesRub: pricesRub,
+                        monthlyOrdersPacks: ordersPacks,
+                        monthlyOrdersRub: ordersRub,
+                        monthlyRevenuesRubOverride: undefined,
                       },
                     },
                   });
@@ -430,7 +466,7 @@ export function ScenarioSalesPlanScreen({
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-[#1D1D1F]" />
-                  Продажи, тыс. комплектов
+                  Продажи, тыс. {unitConfig.primaryUnit}
                 </span>
               </div>
 

@@ -32,6 +32,7 @@ import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
+import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
 import {
   markModelAsDeletedInStorage,
   unmarkModelAsDeletedInStorage,
@@ -51,6 +52,7 @@ import {
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
 import { getModelBrandAccentStyles } from '@/lib/productGroups';
 import {
+  buildPdfConceptFromScenarioModel,
   formatLabBrandLabel,
   normalizeLabBrandCode,
   syncAllBrandConceptsToScenarioPortfolio,
@@ -185,6 +187,8 @@ export function ProductCatalogView() {
     updateConcept,
     brandFilter,
     setBrandFilter,
+    selectedProductId,
+    setSelectedProductId,
     navigateTo,
     archiveEntity,
     notify,
@@ -197,6 +201,7 @@ export function ProductCatalogView() {
   const [stageFilter, setStageFilter] = useState<string>('ALL');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [activePassportModelId, setActivePassportModelId] = useState<string | null>(null);
+  const [pdfModalModel, setPdfModalModel] = useState<ScenarioModelSpec | null>(null);
 
   const {
     models: rawScenarioModels,
@@ -260,6 +265,40 @@ export function ProductCatalogView() {
   useEffect(() => {
     setCategoryFilter('ALL');
   }, [brandFilter]);
+
+  // Автоматическое открытие паспорта модели при переходе из R&D, поиска или дашборда
+  useEffect(() => {
+    if (!selectedProductId || scenarioModels.length === 0) return;
+    const targetUpper = selectedProductId.trim().toUpperCase();
+    const linkedCatalogProd = products.find((p) => p.id === selectedProductId);
+    const linkedConcept = concepts.find(
+      (c) =>
+        c.linkedProductId === selectedProductId ||
+        c.linkedScenarioModelId === selectedProductId ||
+        c.code.trim().toUpperCase() === targetUpper
+    );
+    const matched = scenarioModels.find((m) => {
+      if (m.id === selectedProductId) return true;
+      if (m.code.trim().toUpperCase() === targetUpper) return true;
+      if (linkedConcept?.linkedScenarioModelId && m.id === linkedConcept.linkedScenarioModelId) {
+        return true;
+      }
+      if (linkedConcept && m.code.trim().toUpperCase() === linkedConcept.code.trim().toUpperCase()) {
+        return true;
+      }
+      if (linkedCatalogProd) {
+        const prodSku = (linkedCatalogProd.sku || '').trim().toUpperCase();
+        const prodName = (linkedCatalogProd.name || '').trim().toUpperCase();
+        if (prodSku && m.code.trim().toUpperCase() === prodSku) return true;
+        if (prodName && m.title.trim().toUpperCase() === prodName) return true;
+      }
+      return false;
+    });
+    if (matched) {
+      setActivePassportModelId(matched.id);
+      setSelectedProductId(null);
+    }
+  }, [selectedProductId, scenarioModels, products, concepts, setSelectedProductId]);
 
   // Форма создания новой модели с адаптацией под выбранный бренд
   const initialModalBrand: CanonicalBrandCode =
@@ -344,7 +383,12 @@ export function ProductCatalogView() {
     );
 
     const cleanCode = modelToDelete.code.replace(/[^0-9A-Za-zА-Яа-я-]/g, '') || '001';
-    const targetSku = `${modelToDelete.brandId === 'NA_TELE' ? 'NT' : 'BRN'}-${cleanCode}`.toUpperCase();
+    const delBrandNorm = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(modelToDelete));
+    const delPrefix =
+      delBrandNorm !== 'ALL' && BRAND_CREATE_PRESETS[delBrandNorm]
+        ? BRAND_CREATE_PRESETS[delBrandNorm].skuPrefix
+        : 'BRN';
+    const targetSku = `${delPrefix}-${cleanCode}`.toUpperCase();
     products.forEach((p) => {
       if (
         !p.isArchived &&
@@ -652,28 +696,45 @@ export function ProductCatalogView() {
           onOpenSalesPlan={() => navigateTo('launch-calendar')}
           onUpdateModel={updateModelSpec}
           onDuplicateModel={(m) => {
-            const copyId = `scen-copy-${Date.now()}`;
+            const copyBrand: CanonicalBrandCode =
+              modBrandCode === 'ALL' ? 'BORNERS' : modBrandCode;
+            const nextCode = computeNextBrandSkuCode(scenarioModels, copyBrand);
+            const copyId = `scen-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             const copy: ScenarioModelSpec = {
               ...m,
               id: copyId,
-              code: `${m.code}-COPY`,
+              code: nextCode,
               title: `${m.title} (КОПИЯ)`,
             };
             unmarkModelAsDeletedInStorage(copy);
             updateModelsBatch((prev) => [...prev, copy]);
+            if (copy.gallery?.length) {
+              void saveModelGalleryToIdb(copy.id, copy.gallery);
+            }
             setActivePassportModelId(copy.id);
             notify('success', `Создана копия модели ${copy.code}`);
           }}
           onDeleteOrArchiveModel={(m) => handleDeleteScenarioModel(m)}
-          onOpenPdfModal={() =>
-            notify(
-              'success',
-              'ТЗ карточки модели готово к выгрузке',
-              'Все параметры, фото и экономика сохранены в паспорте изделия.'
-            )
-          }
+          onOpenPdfModal={() => setPdfModalModel(activePassportModel)}
           notify={notify}
         />
+
+        {pdfModalModel && (
+          <PdfConstructorModal
+            concept={buildPdfConceptFromScenarioModel(pdfModalModel, concepts)}
+            onClose={() => setPdfModalModel(null)}
+            onSaveToConcept={(patch) => {
+              const built = buildPdfConceptFromScenarioModel(pdfModalModel, concepts);
+              if (!built.id.startsWith('scen-pdf-')) {
+                updateConcept(built.id, patch);
+              }
+              notify(
+                'success',
+                `PDF ТЗ для ${pdfModalModel.code} · ${pdfModalModel.title} сформирован`
+              );
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -1026,23 +1087,31 @@ export function ProductCatalogView() {
                     </span>
                   </button>
                 )}
-                {(brandFilter === 'NA_TELE' ||
-                  brandFilter === 'AKUSHA' ||
-                  brandFilter === 'LISKANI') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const res = launchStarterCabinet(brandFilter);
-                      notify(
-                        'success',
-                        `Стартовая матрица ${formatLabBrandLabel(brandFilter)} добавлена (${res.addedCount} SKU)`
-                      );
-                    }}
-                    className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
-                  >
-                    <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
-                  </button>
-                )}
+                {(() => {
+                  const normFilter = normalizePortfolioBrandCode(brandFilter);
+                  if (
+                    normFilter !== 'NA_TELE' &&
+                    normFilter !== 'AKUSHA' &&
+                    normFilter !== 'LISKANI'
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = launchStarterCabinet(normFilter);
+                        notify(
+                          'success',
+                          `Стартовая матрица ${formatLabBrandLabel(normFilter)} добавлена (${res.addedCount} SKU)`
+                        );
+                      }}
+                      className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                    >
+                      <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
+                    </button>
+                  );
+                })()}
                 <button
                   type="button"
                   onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
@@ -1610,7 +1679,7 @@ export function ProductCatalogView() {
 
               <div>
                 <label className="block font-bold text-[#0F172A] mb-1">
-                  Категория ({newSkuForm.brandCode})
+                  Категория ({formatLabBrandLabel(newSkuForm.brandCode)})
                 </label>
                 <select
                   value={newSkuForm.category}

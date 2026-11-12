@@ -425,11 +425,10 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
       for (let i = 0; i < defMatch.modelIds.length; i++) {
         const mId = defMatch.modelIds[i];
         const mCode = defMatch.modelCodes[i];
-        const alreadyInGroup =
-          nextIds.includes(mId) ||
-          (Boolean(mCode) &&
-            nextCodes.some((c) => c.toUpperCase() === mCode.toUpperCase()));
-        if (!alreadyInGroup) {
+        const alreadyAssignedAnywhere =
+          assignedIds.has(mId) ||
+          (Boolean(mCode) && assignedCodes.has(mCode.toUpperCase()));
+        if (!alreadyAssignedAnywhere) {
           nextIds.push(mId);
           if (mCode) nextCodes.push(mCode);
           assignedIds.add(mId);
@@ -438,8 +437,8 @@ export function loadProductGroups(models: ScenarioModelSpec[]): ProductGroupDef[
       }
       return {
         ...g,
-        title: defMatch.title || g.title,
-        subtitle: defMatch.subtitle || g.subtitle,
+        title: g.title || defMatch.title,
+        subtitle: g.subtitle || defMatch.subtitle,
         modelIds: nextIds,
         modelCodes: nextCodes,
       };
@@ -596,17 +595,28 @@ export function computeProductGroupMetrics(
       }
     }
 
-    weightedMarginSum += met.unitMarginPct * Math.max(1, met.annualRevenueRub);
+    if (met.annualRevenueRub > 0) {
+      weightedMarginSum += met.unitMarginPct * met.annualRevenueRub;
+    }
   }
 
   const totalRevWeight = models.reduce(
-    (s, m) =>
-      s + Math.max(1, computeModelScenarioMetrics(m, scenario).annualRevenueRub),
+    (s, m) => s + Math.max(0, computeModelScenarioMetrics(m, scenario).annualRevenueRub),
     0
   );
+  const pricedModels = models.filter((m) => (m.retailPriceRub || 0) > 0);
   const avgMarginPct =
-    models.length > 0 && totalRevWeight > 0
+    totalRevWeight > 0
       ? Math.round((weightedMarginSum / totalRevWeight) * 10) / 10
+      : pricedModels.length > 0
+      ? Math.round(
+          (pricedModels.reduce(
+            (s, m) => s + computeModelScenarioMetrics(m, scenario).unitMarginPct,
+            0
+          ) /
+            pricedModels.length) *
+            10
+        ) / 10
       : 0;
 
   return {
@@ -664,14 +674,25 @@ export function buildBrandCatalogSections(
   scenarioByBrand: Partial<Record<CanonicalBrandCode, GrowthScenarioDef>>,
   fallbackScenario: GrowthScenarioDef
 ): BrandCatalogSectionSummary[] {
-  const activeModels = models.filter((m) => m.launchStatus !== 'В архиве');
+  const activeModels = models.filter(
+    (m) =>
+      m.launchStatus !== 'В архиве' &&
+      !['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(m.id) &&
+      !['№001', '№002', '№003', '№004'].includes(m.code)
+  );
 
   return ALL_CANONICAL_BRANDS.map((brandCode) => {
     const cfg = getBrandUnitConfig(brandCode);
     const brandModels = activeModels.filter((m) =>
       matchesBrandFilter(m, brandCode)
     );
-    const activeScen = scenarioByBrand[brandCode] || fallbackScenario;
+    const hasExplicitScenario = Object.prototype.hasOwnProperty.call(
+      scenarioByBrand,
+      brandCode
+    );
+    const activeScen = hasExplicitScenario
+      ? scenarioByBrand[brandCode]
+      : fallbackScenario;
 
     let decRevenueRub = 0;
     let annualRevenueRub = 0;
@@ -683,9 +704,19 @@ export function buildBrandCatalogSections(
     let totalBatchesCount = 0;
     let earliestOrderDateIso: string | null = null;
 
-    for (const m of brandModels) {
-      const met = computeModelScenarioMetrics(m, activeScen);
-      const proc = computeProcurementPlan(m, activeScen);
+    const scopedModelsForTotals = !activeScen
+      ? []
+      : activeScen.id === 100
+      ? brandModels.filter(
+          (m) =>
+            Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+            Boolean(m.plansByScenario[100])
+        )
+      : brandModels;
+
+    for (const m of scopedModelsForTotals) {
+      const met = computeModelScenarioMetrics(m, activeScen!);
+      const proc = computeProcurementPlan(m, activeScen!);
       decRevenueRub += met.targetMonthRevenueRub;
       annualRevenueRub += met.annualRevenueRub;
       annualPacks += met.annualPacks;
@@ -740,7 +771,7 @@ export function buildBrandCatalogSections(
       categoryLabel: cfg.categoryDefault,
       primaryUnit: cfg.primaryUnit,
       secondaryUnit: cfg.secondaryUnit,
-      activeScenario: activeScen,
+      activeScenario: activeScen || fallbackScenario,
       models: brandModels,
       decRevenueRub,
       annualRevenueRub,

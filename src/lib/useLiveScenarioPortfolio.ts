@@ -63,6 +63,7 @@ import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
   STORAGE_KEY_MODELS,
+  STORAGE_KEY_PORTFOLIO_UPDATED_AT,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
   STORAGE_KEY_SCENARIOS,
@@ -70,13 +71,16 @@ import {
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
+  mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup,
+  touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
 
@@ -84,6 +88,7 @@ export {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
   STORAGE_KEY_MODELS,
+  STORAGE_KEY_PORTFOLIO_UPDATED_AT,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
   STORAGE_KEY_SCENARIOS,
@@ -91,13 +96,16 @@ export {
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
+  mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
   syncUserPlansBackup,
+  touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
 };
 
@@ -302,7 +310,17 @@ export function useLiveScenarioPortfolio() {
 
     void pullPortfolioFromSupabase().then((cloud) => {
       if (!cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) return;
-      for (const m of cloud.models) {
+
+      const localHydrated = hydratePortfolioModelsFromStorage();
+      const localUpdatedAtIso = getPortfolioUpdatedAt();
+      const mergeRes = mergeCloudPortfolioSnapshot({
+        localModels: localHydrated,
+        cloudModels: cloud.models,
+        localUpdatedAtIso,
+        cloudUpdatedAtIso: cloud.updatedAtIso,
+      });
+
+      for (const m of mergeRes.models) {
         if (
           Array.isArray(m.gallery) &&
           m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
@@ -310,19 +328,29 @@ export function useLiveScenarioPortfolio() {
           void saveModelGalleryToIdb(m.id, m.gallery);
         }
       }
-      safeSetStorageJson(STORAGE_KEY_MODELS, cloud.models);
-      syncUserPlansBackup(cloud.models);
-      const mergedCloudModels = hydratePortfolioModelsFromStorage();
-      safeSetStorageJson(STORAGE_KEY_MODELS, mergedCloudModels);
-      syncUserPlansBackup(mergedCloudModels);
-      void savePortfolioSnapshotToIdb(mergedCloudModels);
-      setModels(mergedCloudModels);
+
+      safeSetStorageJson(STORAGE_KEY_MODELS, mergeRes.models);
+      syncUserPlansBackup(mergeRes.models);
+      void savePortfolioSnapshotToIdb(mergeRes.models);
+      setModels(mergeRes.models);
+
+      let nextScen =
+        safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || DEFAULT_SCENARIOS_LIST;
       if (Array.isArray(cloud.scenarios) && cloud.scenarios.length > 0) {
         const localScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || [];
-        let nextScen = [...cloud.scenarios];
-        for (const loc of localScenarios) {
-          if (loc && typeof loc.id === 'number' && !nextScen.some((s) => s.id === loc.id)) {
-            nextScen.push(loc);
+        const localTs = localUpdatedAtIso ? Date.parse(localUpdatedAtIso) : NaN;
+        const cloudTs = cloud.updatedAtIso ? Date.parse(cloud.updatedAtIso) : NaN;
+        const preferLocalScenarios =
+          Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
+
+        nextScen = preferLocalScenarios && localScenarios.length > 0
+          ? [...localScenarios]
+          : [...cloud.scenarios];
+
+        const secondaryScenarios = preferLocalScenarios ? cloud.scenarios : localScenarios;
+        for (const extra of secondaryScenarios) {
+          if (extra && typeof extra.id === 'number' && !nextScen.some((s) => s.id === extra.id)) {
+            nextScen.push(extra);
           }
         }
         if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
@@ -336,6 +364,15 @@ export function useLiveScenarioPortfolio() {
         }
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
         setScenarios(nextScen);
+      }
+
+      if (mergeRes.shouldPushLocalToCloud) {
+        void pushPortfolioCoreToSupabase({
+          models: mergeRes.models,
+          scenarios: nextScen,
+        });
+      } else if (cloud.updatedAtIso) {
+        touchPortfolioUpdatedAt(cloud.updatedAtIso);
       }
     });
 
@@ -439,6 +476,11 @@ export function useLiveScenarioPortfolio() {
       setScenarios((prev) => {
         const next = updater(prev);
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
+        touchPortfolioUpdatedAt();
+        const currentModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
+        if (Array.isArray(currentModels) && currentModels.length > 0) {
+          void pushPortfolioCoreToSupabase({ models: currentModels, scenarios: next });
+        }
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             dispatchCrossHookEvent('borners-scenarios-changed');
@@ -452,7 +494,7 @@ export function useLiveScenarioPortfolio() {
 
   const updateModelSpec = useCallback(
     (updated: ScenarioModelSpec) => {
-      if (Array.isArray(updated.gallery) && updated.gallery.length > 0) {
+      if (Array.isArray(updated.gallery)) {
         void saveModelGalleryToIdb(updated.id, updated.gallery);
         void pushModelGalleryToSupabase(updated.id, updated.gallery);
       }
@@ -460,6 +502,7 @@ export function useLiveScenarioPortfolio() {
         const next = prev.map((m) => (m.id === updated.id ? updated : m));
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
+        touchPortfolioUpdatedAt();
         void savePortfolioSnapshotToIdb(next);
         void pushPortfolioCoreToSupabase({ models: next });
         if (typeof window !== 'undefined') {
@@ -488,6 +531,7 @@ export function useLiveScenarioPortfolio() {
         }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
+        touchPortfolioUpdatedAt();
         void savePortfolioSnapshotToIdb(next);
         void pushPortfolioCoreToSupabase({ models: next });
         if (typeof window !== 'undefined') {
@@ -676,6 +720,9 @@ export function useLiveScenarioPortfolio() {
       });
       safeSetStorageJson(STORAGE_KEY_MODELS, next);
       syncUserPlansBackup(next);
+      touchPortfolioUpdatedAt();
+      void savePortfolioSnapshotToIdb(next);
+      void pushPortfolioCoreToSupabase({ models: next });
       if (typeof window !== 'undefined') {
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -692,8 +739,10 @@ export function useLiveScenarioPortfolio() {
       setScenarios(res.scenarios);
       safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
       syncUserPlansBackup(res.models);
+      touchPortfolioUpdatedAt();
       void savePortfolioSnapshotToIdb(res.models);
       safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
+      void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
       setSelectedScenarioByBrandState((prev) => {
         const next = { ...prev, [bCode]: res.scenarioId };
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
@@ -724,9 +773,11 @@ export function useLiveScenarioPortfolio() {
     setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     syncUserPlansBackup(res.models);
+    touchPortfolioUpdatedAt();
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -759,9 +810,11 @@ export function useLiveScenarioPortfolio() {
     setSelectedScenarioByBrandState(nextByBrand);
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     syncUserPlansBackup(res.models);
+    touchPortfolioUpdatedAt();
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
+    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));

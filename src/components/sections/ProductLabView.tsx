@@ -600,10 +600,17 @@ export function ProductLabView() {
     if (normalizedTarget === 'LAUNCH') {
       const packsQty =
         Number(String(gateFillForm.orderTotalPacks).replace(/[^\d]/g, '')) || 1500;
+      const defaultUnitsPerPack =
+        normalizeLabBrandCode(concept.brandId) === 'NA_TELE' ||
+        normalizeLabBrandCode(concept.brandId) === 'AKUSHA' ||
+        normalizeLabBrandCode(concept.brandId) === 'LISKANI' ||
+        normalizeLabBrandCode(concept.brandId) === 'FUKAI'
+          ? 1
+          : 3;
       const unitsPerPack =
         concept.packUnitsCount && concept.packUnitsCount > 0
           ? concept.packUnitsCount
-          : 4;
+          : defaultUnitsPerPack;
       patch.launchSalesStatus = gateFillForm.launchStatus || 'in_sale';
       patch.actualLaunchDate = concept.actualLaunchDate || todayIso;
       if (!concept.productionOrders || concept.productionOrders.length === 0) {

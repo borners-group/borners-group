@@ -178,9 +178,9 @@ export function BoxerPackStackSvg({
         <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A756C]">
           Макро-деталь · Жаккардовая резинка 38 мм в тон ткани
         </div>
-        {colors.slice(0, 3).map((c) => (
+        {colors.slice(0, 3).map((c, idx) => (
           <div
-            key={c.nameRu}
+            key={`${c.nameRu}-${idx}`}
             className="w-full max-w-[320px] h-11 rounded-[10px] border border-black/10 shadow-xs flex items-center justify-around px-4 font-extrabold text-[12px] tracking-[0.22em]"
             style={{ backgroundColor: c.bandHex, color: c.textHex }}
           >
@@ -201,8 +201,8 @@ export function BoxerPackStackSvg({
         }`}
       >
         <div className="grid grid-cols-4 gap-2.5 w-full max-w-[320px]">
-          {colors.map((c) => (
-            <div key={c.nameRu} className="space-y-1 text-center">
+          {colors.map((c, idx) => (
+            <div key={`${c.nameRu}-${idx}`} className="space-y-1 text-center">
               <div
                 className="h-24 rounded-[12px] border border-black/10 shadow-inner"
                 style={{
@@ -216,7 +216,7 @@ export function BoxerPackStackSvg({
                 {c.nameRu}
               </div>
               <div className="text-[9px] text-[#7A756C] font-mono truncate">
-                {c.pantone.replace('PANTONE ', '')}
+                {(c.pantone || '').replace('PANTONE ', '')}
               </div>
             </div>
           ))}
@@ -255,7 +255,7 @@ export function BoxerPackStackSvg({
     );
   }
 
-  const renderColors = category === 'single' ? [primary] : colors;
+  const renderColors = category === 'single' || colors.length === 0 ? [primary] : colors;
   const count = renderColors.length;
 
   return (
@@ -278,7 +278,7 @@ export function BoxerPackStackSvg({
             const rot = count === 1 ? 0 : -3.5 + idx * 1.1;
             return (
               <g
-                key={col.nameRu}
+                key={`${col.nameRu}-${idx}`}
                 transform={`translate(${18 + offsetX}, ${14 + offsetY}) rotate(${rot}, 135, 70)`}
               >
                 <path

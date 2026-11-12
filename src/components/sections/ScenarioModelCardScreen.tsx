@@ -36,6 +36,7 @@ import {
 import {
   VALUE_STATUS_LABELS_RU,
   applyCategoryWbUnitEconomics,
+  changeModelBrandWithAudit,
   computeFinancialPnL,
   computeProcurementPlan,
   detectModelBrandPortfolioLabel,
@@ -46,6 +47,8 @@ import {
   getModelChannelSplit,
   importStructuredScenarioPlan,
   isModelProcurementByOrdersActive,
+  isScenarioCompatibleWithBrand,
+  normalizePortfolioBrandCode,
   parseStructuredPlanCsvOrJson,
   serializeStructuredPlanToCsv,
   toggleModelProcurementByOrders,
@@ -428,20 +431,10 @@ export function ScenarioModelCardScreen({
     ) {
       return;
     }
-    const nextBrandId: ScenarioModelSpec['brandId'] =
-      clean === 'НА ТЕЛЕ' ? 'NA_TELE' : 'BORNERS';
-    commitWithAudit(
-      {
-        ...model,
-        brandId: nextBrandId,
-        customBrandLabel: clean,
-      },
-      'product',
-      'Изменён бренд в карточке товара',
-      brandPortfolioLabel,
-      clean,
-      true
-    );
+    const switched = changeModelBrandWithAudit(model, clean, 'Владелец');
+    onUpdateModel(switched);
+    setHasUnsavedDraft(false);
+    triggerSavedFeedback(`Бренд изменён на «${detectModelBrandPortfolioLabel(switched)}»`);
   };
 
   const handleCreateCustomBrand = () => {
@@ -450,24 +443,16 @@ export function ScenarioModelCardScreen({
     const nextCustomList = Array.from(
       new Set([...(shared.customBrandOptions || []), clean])
     );
-    const nextBrandId: ScenarioModelSpec['brandId'] =
-      clean.toUpperCase() === 'НА ТЕЛЕ' ? 'NA_TELE' : 'BORNERS';
-    commitWithAudit(
-      {
-        ...model,
-        brandId: nextBrandId,
-        customBrandLabel: clean,
-        sharedSupplyAndFact: {
-          ...shared,
-          customBrandOptions: nextCustomList,
-        },
+    const switched = changeModelBrandWithAudit(model, clean, 'Владелец');
+    onUpdateModel({
+      ...switched,
+      sharedSupplyAndFact: {
+        ...switched.sharedSupplyAndFact!,
+        customBrandOptions: nextCustomList,
       },
-      'product',
-      `Создан и назначен бренд «${clean}»`,
-      brandPortfolioLabel,
-      clean,
-      true
-    );
+    });
+    setHasUnsavedDraft(false);
+    triggerSavedFeedback(`Создан и назначен бренд «${clean}»`);
     setNewBrandDraft('');
     setCreatingBrandOpen(false);
   };
@@ -623,6 +608,7 @@ export function ScenarioModelCardScreen({
         .map((g) => ({ ...g, isMain: false })),
     ];
     setSelectedGalleryId(photoId);
+    void saveModelGalleryToIdb(model.id, reordered);
     commitWithAudit(
       { ...model, gallery: reordered },
       'product',
@@ -646,6 +632,7 @@ export function ScenarioModelCardScreen({
       ...item,
       isMain: i === 0,
     }));
+    void saveModelGalleryToIdb(model.id, normalized);
     commitWithAudit(
       { ...model, gallery: normalized },
       'product',
@@ -673,6 +660,7 @@ export function ScenarioModelCardScreen({
     const nextSel =
       nextGallery.find((g) => Boolean(g.url || g.originalUrl))?.id || '';
     setSelectedGalleryId(nextSel);
+    void saveModelGalleryToIdb(model.id, nextGallery);
     commitWithAudit(
       { ...model, gallery: nextGallery, palettes: nextPalettes },
       'product',
@@ -1116,11 +1104,18 @@ export function ScenarioModelCardScreen({
                   onChange={(e) => onSelectScenario(Number(e.target.value))}
                   className="bg-transparent text-[12px] font-bold text-[#141413] focus:outline-none cursor-pointer"
                 >
-                  {allScenarios.map((sc) => (
-                    <option key={sc.id} value={sc.id}>
-                      {sc.title} ({sc.monthlyTargetMln} млн ₽/мес)
-                    </option>
-                  ))}
+                  {allScenarios
+                    .filter((sc) => {
+                      if (sc.id === scenario.id) return true;
+                      if (sc.isArchived) return false;
+                      const mCode = normalizePortfolioBrandCode(brandPortfolioLabel);
+                      return mCode === 'ALL' || isScenarioCompatibleWithBrand(sc, mCode);
+                    })
+                    .map((sc) => (
+                      <option key={sc.id} value={sc.id}>
+                        {sc.title} ({sc.monthlyTargetMln} млн ₽/мес)
+                      </option>
+                    ))}
                 </select>
               </div>
             ) : (

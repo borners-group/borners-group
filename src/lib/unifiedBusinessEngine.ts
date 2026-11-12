@@ -2437,6 +2437,11 @@ export function detectModelBrandPortfolioLabel(
     if (['LISKANI', 'LISCANI', 'LEZKANI', 'ЛЕЗКАНИ', 'ЛИСКАНИ'].includes(upper)) {
       return 'LISKANI';
     }
+    if (['NA_TELE', 'НА_ТЕЛЕ', 'NATELE', 'НА ТЕЛЕ', 'NA TELE'].includes(upper)) {
+      return 'НА ТЕЛЕ';
+    }
+    if (upper === 'ФУКАЙ' || upper === 'FUKAI') return 'FUKAI';
+    if (upper === 'БОРНЕРС' || upper === 'BORNERS') return 'BORNERS';
     return raw;
   }
   if (model.brandId === 'NA_TELE') return 'НА ТЕЛЕ';
@@ -2791,6 +2796,8 @@ export interface ScenarioInvestmentOptions {
   initialCashRub?: number;
   settlementLagMonths?: number | null;
   wbPayoutScheduleSpecified?: boolean;
+  allScenarios?: GrowthScenarioDef[];
+  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
 }
 
 /**
@@ -3156,10 +3163,147 @@ export function computeGroupBrandsInvestmentReport(
   const dedupedModels: ScenarioModelSpec[] = [];
   for (const m of eligibleModels) {
     if (!m || m.launchStatus === 'В архиве') continue;
+    if (
+      ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(m.id) ||
+      ['№001', '№002', '№003', '№004'].includes(m.code)
+    ) {
+      continue;
+    }
     const key = m.id || m.code;
     if (seenIds.has(key)) continue;
     seenIds.add(key);
     dedupedModels.push(ensureModelUnifiedV11(m));
+  }
+
+  if (options.allScenarios && options.allScenarios.length > 0 && options.selectedScenarioByBrand) {
+    const multi = computeMultiBrandPortfolioSummary(
+      dedupedModels,
+      options.allScenarios,
+      options.selectedScenarioByBrand,
+      options
+    );
+    const brands: BrandInvestmentSummaryRow[] = PORTFOLIO_BRANDS_ORDER.map(({ code, title }) => {
+      const mb = multi.brands.find((b) => b.brandCode === code);
+      if (!mb || !mb.hasScenario || mb.selectedScenarioId === null) {
+        return {
+          brandCode: code,
+          brandTitle: title,
+          modelsCount: mb?.modelsCount ?? 0,
+          decemberRevenueRub: 0,
+          annualRevenueRub: 0,
+          annualDemandPacks: 0,
+          totalProcurementPacks: 0,
+          totalProcurementUnits: 0,
+          firstWaveStartBudgetRub: 0,
+          firstWavePrepaymentRub: 0,
+          peakWorkingCapitalRub: 0,
+          totalProcurementBudgetRub: 0,
+          annualSoldGoodsCostRub: 0,
+          annualEstimatedOperatingProfitRub: 0,
+          operatingMarginPct: 0,
+        };
+      }
+      const brandScen =
+        options.allScenarios!.find((s) => s.id === mb.selectedScenarioId && !s.isArchived) ||
+        scenario;
+      const rawBrandModels = dedupedModels.filter((m) => matchesBrandFilter(m, code));
+      const scopedModels =
+        brandScen.id === 100
+          ? rawBrandModels.filter(
+              (m) =>
+                Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+                Boolean(m.plansByScenario[100])
+            )
+          : rawBrandModels;
+      const summary = computeScenarioInvestmentSummary(scopedModels, brandScen, {
+        initialCashRub: 0,
+        settlementLagMonths: options.settlementLagMonths ?? 0,
+        wbPayoutScheduleSpecified: options.wbPayoutScheduleSpecified,
+      });
+      return {
+        brandCode: code,
+        brandTitle: title,
+        modelsCount: summary.modelsCount,
+        decemberRevenueRub: summary.decemberRevenueRub,
+        annualRevenueRub: summary.annualRevenueRub,
+        annualDemandPacks: summary.annualDemandPacks,
+        totalProcurementPacks: summary.totalProcurementPacks,
+        totalProcurementUnits: summary.totalProcurementUnits,
+        firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
+        peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        totalProcurementBudgetRub: summary.totalProcurementBudgetRub,
+        annualSoldGoodsCostRub: summary.annualSoldGoodsCostRub,
+        annualEstimatedOperatingProfitRub: summary.annualEstimatedOperatingProfitRub,
+        operatingMarginPct: summary.operatingMarginPct,
+      };
+    });
+
+    const gt = multi.groupTotal;
+    const annualGrossProfitRub = gt.annualRevenueRub - gt.annualSoldGoodsCostRub;
+    const annualWbDeductionsAndAdsRub = Math.max(
+      0,
+      annualGrossProfitRub - gt.annualEstimatedOperatingProfitRub
+    );
+    const operatingMarginPct =
+      gt.annualRevenueRub > 0
+        ? Math.round((gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub) * 1000) / 10
+        : 0;
+    const peakRowIdx = gt.monthlyRows.findIndex((r) => r.isPeakDeficitMonth);
+    const safePeakIdx = peakRowIdx >= 0 ? peakRowIdx : 0;
+    let selfFundingMonthIdx: number | null = null;
+    for (let m = safePeakIdx; m < gt.monthlyRows.length; m++) {
+      if (gt.monthlyRows.slice(m).every((r) => r.cumulativeCashBalanceRub >= 0)) {
+        selfFundingMonthIdx = m;
+        break;
+      }
+    }
+
+    return {
+      brands,
+      groupTotal: {
+        modelsCount: gt.modelsCount,
+        annualRevenueRub: gt.annualRevenueRub,
+        decemberRevenueRub: gt.decemberRevenueRub,
+        annualDemandPacks: brands.reduce((s, b) => s + b.annualDemandPacks, 0),
+        annualDemandUnits: 0,
+        totalProcurementPacks: brands.reduce((s, b) => s + b.totalProcurementPacks, 0),
+        totalProcurementUnits: brands.reduce((s, b) => s + b.totalProcurementUnits, 0),
+        totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
+        approvedOrdersCount: 0,
+        approvedOrdersBudgetRub: 0,
+        plannedBatchesCount: 0,
+        plannedBatchesBudgetRub: gt.totalProcurementBudgetRub,
+        annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
+        annualGrossProfitRub,
+        annualWbDeductionsAndAdsRub,
+        annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
+        operatingMarginPct,
+        firstWavePacks: 0,
+        firstWaveUnits: 0,
+        firstWaveStartBudgetRub: gt.firstWaveStartBudgetRub,
+        firstWavePrepaymentRub: gt.firstWavePrepaymentRub,
+        firstWaveBalanceRub: Math.max(0, gt.firstWaveStartBudgetRub - gt.firstWavePrepaymentRub),
+        initialCashOnHandRub: Math.max(0, Math.round(options.initialCashRub || 0)),
+        settlementLagMonths: Math.max(0, Math.min(3, Math.round(options.settlementLagMonths ?? 0))),
+        wbPayoutScheduleSpecified: multi.wbPayoutScheduleSpecified,
+        verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+        ownMoneyStatusLabel: multi.ownMoneyStatusLabel,
+        peakWorkingCapitalRub: gt.peakWorkingCapitalRub,
+        netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
+        peakMonthIdx: safePeakIdx,
+        peakMonthLabel: gt.monthlyRows[safePeakIdx]?.monthLabel || 'Янв',
+        selfFundingMonthIdx,
+        selfFundingMonthLabel:
+          selfFundingMonthIdx !== null
+            ? gt.monthlyRows[selfFundingMonthIdx]?.monthLabel || null
+            : null,
+        yearEndCashBalanceRub:
+          gt.monthlyRows[11]?.cumulativeCashBalanceRub ??
+          Math.max(0, Math.round(options.initialCashRub || 0)),
+        monthlyRows: gt.monthlyRows,
+      },
+    };
   }
 
   const brands: BrandInvestmentSummaryRow[] = PORTFOLIO_BRANDS_ORDER.map(
@@ -3576,7 +3720,10 @@ export function createIndependentBrandScenario(
     normBrand === 'ALL' ? 'BORNERS' : normBrand;
   const unitCfg = BRAND_UNIT_CONFIGS[effectiveBrand];
   const year = input.year === 2028 ? 2028 : 2027;
-  const maxId = scenarios.reduce((mx, s) => Math.max(mx, s.id === 100 ? 3 : s.id), 3);
+  const maxId = scenarios.reduce((mx, s) => {
+    if (s.id === 100 || s.id >= 202700) return mx;
+    return Math.max(mx, s.id);
+  }, 3);
   const newId = maxId + 1;
   const copySourceId = input.copyFromScenarioId ?? null;
   const sourceScenario =
@@ -3942,12 +4089,16 @@ export function changeModelBrandWithAudit(
 ): ScenarioModelSpec {
   const model = ensureModelUnifiedV11(rawModel);
   const prevBrand = detectModelBrandPortfolioLabel(model);
-  const normNext = normalizePortfolioBrandCode(nextBrandInput);
+  const cleanRaw = (nextBrandInput || '').trim() || 'BORNERS';
+  const normNext = normalizePortfolioBrandCode(cleanRaw);
+  const isCustomBrand =
+    normNext === 'ALL' && !['BORNERS', 'БОРНЕРС', 'ALL'].includes(cleanRaw.toUpperCase());
   const effectiveNext: CanonicalBrandCode =
     normNext === 'ALL' ? 'BORNERS' : normNext;
   const unitCfg = BRAND_UNIT_CONFIGS[effectiveNext];
-  const nextCustomLabel =
-    effectiveNext === 'AKUSHA'
+  const nextCustomLabel = isCustomBrand
+    ? cleanRaw
+    : effectiveNext === 'AKUSHA'
       ? 'AKUSHA'
       : effectiveNext === 'LISKANI'
         ? 'LISKANI'
@@ -3956,10 +4107,14 @@ export function changeModelBrandWithAudit(
           : effectiveNext === 'NA_TELE'
             ? 'НА ТЕЛЕ'
             : 'BORNERS';
+  const displayAfter = isCustomBrand ? cleanRaw : unitCfg.displayCode;
 
   const shared = model.sharedSupplyAndFact!;
-  return {
-    ...model,
+  const { portfolioBrandCode: _legacyPortfolioBrandCode, ...cleanModelRest } =
+    model as ScenarioModelSpec & { portfolioBrandCode?: string };
+  void _legacyPortfolioBrandCode;
+  const switchedBase: ScenarioModelSpec = {
+    ...cleanModelRest,
     brandId: effectiveNext === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
     customBrandLabel: nextCustomLabel,
     primaryUnitLabel: unitCfg.primaryUnit,
@@ -3973,15 +4128,22 @@ export function changeModelBrandWithAudit(
           timestamp: new Date().toISOString(),
           author,
           category: 'product',
-          summary: `Карточка перенесена в каталог бренда ${unitCfg.displayCode}`,
+          summary: `Карточка перенесена в каталог бренда ${displayAfter}`,
           beforeValue: prevBrand,
-          afterValue: unitCfg.displayCode,
+          afterValue: displayAfter,
           passportVersion: (shared.passportVersion || 1) + 1,
         },
         ...(shared.auditHistory || []),
       ],
     },
   };
+
+  return isCustomBrand
+    ? switchedBase
+    : applyCategoryWbUnitEconomics(switchedBase, {
+        fillMissingCost: false,
+        forceOverwriteRates: true,
+      });
 }
 
 export interface MultiBrandRowSummary {
@@ -4558,10 +4720,10 @@ export function applyCategoryWbUnitEconomics(
   const nextUnitCostRub =
     model.unitCostRub > 0
       ? model.unitCostRub
-      : fillMissingCost
+      : fillMissingCost && model.retailPriceRub > 0
       ? Math.max(
           250,
-          Math.round(((model.retailPriceRub || 1990) * norms.defaultCostSharePct) / 100 / 5) * 5
+          Math.round((model.retailPriceRub * norms.defaultCostSharePct) / 100 / 5) * 5
         )
       : model.unitCostRub;
 
@@ -5097,11 +5259,16 @@ export function updateModelUnitCostWithVariants(
 
   let nextLiskaniVariants = model.liskaniSizeVariants;
   if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+    const baseRetail = Math.max(0, model.retailPriceRub || 0);
     nextLiskaniVariants = model.liskaniSizeVariants.map((sv) => ({
       ...sv,
       unitCostRub:
-        prevUnitCost > 0
+        clean === 0
+          ? 0
+          : prevUnitCost > 0 && sv.unitCostRub > 0
           ? Math.max(0, Math.round((sv.unitCostRub * clean) / prevUnitCost))
+          : baseRetail > 0 && sv.retailPriceRub > 0
+          ? Math.max(0, Math.round((sv.retailPriceRub * clean) / baseRetail))
           : clean,
     }));
   }
@@ -5301,24 +5468,28 @@ export function updateModelBuyoutRatePct(
   const nextProcureByOrders =
     options?.syncProcurementToOrders !== undefined
       ? options.syncProcurementToOrders
-      : model.procureByOrdersVolume !== undefined
-        ? model.procureByOrdersVolume
-        : true;
+      : isModelProcurementByOrdersActive(model);
   const isAkushaModel =
     normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model)) === 'AKUSHA';
   const isOfficialAkushaPlan = Boolean(model.plansByScenario?.[202706]);
+  const isPrimaryScenarioTarget =
+    options?.scenarioId === undefined ||
+    options.scenarioId === 1 ||
+    options.scenarioId === 202706 ||
+    options.scenarioId === 202705;
 
   const nextPlans: ScenarioModelSpec['plansByScenario'] = {};
   for (const [scKey, pl] of Object.entries(model.plansByScenario || {})) {
     const scId = Number(scKey);
     const isBrandPrimaryPlan =
-      (isAkushaModel && (scId === 202706 || scId === 1)) ||
-      (Boolean(model.liskaniSizeVariants?.length) && (scId === 202705 || scId === 1));
+      isPrimaryScenarioTarget &&
+      ((isAkushaModel && (scId === 202706 || scId === 1)) ||
+        (Boolean(model.liskaniSizeVariants?.length) && (scId === 202705 || scId === 1)));
     const shouldUpdatePlan =
       options?.scenarioId === undefined ||
       scId === options.scenarioId ||
       isBrandPrimaryPlan;
-    if (!shouldUpdatePlan && pl.buyoutRatePct) {
+    if (!shouldUpdatePlan) {
       nextPlans[scId] = pl;
       continue;
     }
@@ -5343,7 +5514,11 @@ export function updateModelBuyoutRatePct(
   }
 
   let nextVariants = model.liskaniSizeVariants;
-  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+  if (
+    isPrimaryScenarioTarget &&
+    Array.isArray(model.liskaniSizeVariants) &&
+    model.liskaniSizeVariants.length > 0
+  ) {
     nextVariants = model.liskaniSizeVariants.map((sv) => {
       const nextMonthlyOrders = (sv.monthlyBuyoutsUnits || []).map((b) =>
         cleanPct >= 100 ? b : Math.round((b * 100) / cleanPct)
@@ -5363,7 +5538,7 @@ export function updateModelBuyoutRatePct(
 
   return {
     ...model,
-    buyoutRatePct: cleanPct,
+    buyoutRatePct: isPrimaryScenarioTarget ? cleanPct : model.buyoutRatePct,
     procureByOrdersVolume: nextProcureByOrders,
     plansByScenario: nextPlans,
     liskaniSizeVariants: nextVariants,
@@ -5404,6 +5579,10 @@ export function updateModelScenarioPrice(
   const isLiskani =
     brandCode === 'LISKANI' ||
     (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+  const isPrimaryScenarioEdit =
+    scenarioId === 1 ||
+    (isAkusha && scenarioId === 202706) ||
+    (isLiskani && scenarioId === 202705);
 
   const basePlan =
     model.plansByScenario[scenarioId] ||
@@ -5464,7 +5643,7 @@ export function updateModelScenarioPrice(
     },
   };
 
-  if (isAkusha) {
+  if (isAkusha && isPrimaryScenarioEdit) {
     nextPlans[202706] = {
       ...(model.plansByScenario[202706] || updatedPlanBase),
       ...updatedPlanBase,
@@ -5476,7 +5655,7 @@ export function updateModelScenarioPrice(
       scenarioId: 1,
     };
   }
-  if (isLiskani) {
+  if (isLiskani && isPrimaryScenarioEdit) {
     nextPlans[202705] = {
       ...(model.plansByScenario[202705] || updatedPlanBase),
       ...updatedPlanBase,
@@ -5490,11 +5669,17 @@ export function updateModelScenarioPrice(
   }
 
   let nextLiskaniVariants = model.liskaniSizeVariants;
-  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+  if (
+    isPrimaryScenarioEdit &&
+    Array.isArray(model.liskaniSizeVariants) &&
+    model.liskaniSizeVariants.length > 0
+  ) {
     const prevPrice = Math.max(0, model.retailPriceRub || 0);
     nextLiskaniVariants = model.liskaniSizeVariants.map((sv) => {
       const nextSvPrice =
-        prevPrice > 0
+        clean === 0
+          ? 0
+          : prevPrice > 0 && sv.retailPriceRub > 0
           ? Math.max(0, Math.round((sv.retailPriceRub * clean) / prevPrice))
           : clean;
       return {
@@ -5508,8 +5693,115 @@ export function updateModelScenarioPrice(
 
   return {
     ...model,
-    retailPriceRub: clean,
+    retailPriceRub:
+      isPrimaryScenarioEdit || !isAkusha && !isLiskani ? clean : model.retailPriceRub,
     liskaniSizeVariants: nextLiskaniVariants,
+    plansByScenario: nextPlans,
+  };
+}
+
+/**
+ * Обновляет цену реализации конкретного месяца (monthIdx) без перезаписи остальных 11 месяцев.
+ */
+export function updateModelScenarioSingleMonthPrice(
+  rawModel: ScenarioModelSpec,
+  scenarioId: number,
+  monthIdx: number,
+  nextMonthPriceRub: number
+): ScenarioModelSpec {
+  const model = ensureModelUnifiedV11(rawModel);
+  const clean = Math.max(0, Math.round(Number(nextMonthPriceRub) || 0));
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const isAkusha = brandCode === 'AKUSHA';
+  const isLiskani =
+    brandCode === 'LISKANI' ||
+    (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+  const isPrimaryScenarioEdit =
+    scenarioId === 1 ||
+    (isAkusha && scenarioId === 202706) ||
+    (isLiskani && scenarioId === 202705);
+
+  const basePlan =
+    model.plansByScenario[scenarioId] ||
+    (isAkusha ? model.plansByScenario[202706] : undefined) ||
+    (isLiskani ? model.plansByScenario[202705] : undefined) ||
+    model.plansByScenario[1] || {
+      scenarioId,
+      monthlyPacks: Array(12).fill(0),
+      monthlyPricesRub: Array(12).fill(model.retailPriceRub || clean),
+      monthlyReceiptsPacks: Array(12).fill(0),
+      initialStockPacks: 0,
+      firstOrderPacks: 0,
+      nextOrderDateLabel: '15 января 2027',
+      salesStartMonthIdx: 0,
+      warehouseArrivalMonthIdx: 0,
+      warehouseArrivalDateLabel: '10 января',
+    };
+
+  const nextMonthlyPrices = (basePlan.monthlyPricesRub || Array(12).fill(model.retailPriceRub)).map(
+    (pr, idx) => (idx === monthIdx ? clean : pr)
+  );
+  const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
+  const monthlyOrdersPacks =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : (basePlan.monthlyPacks || Array(12).fill(0)).map((packs, idx) => {
+          const cleanPacks = Math.max(0, Math.round(packs || 0));
+          if (effBuyoutPct >= 100) return cleanPacks;
+          const storedOrd = basePlan.monthlyOrdersPacks?.[idx];
+          if (typeof storedOrd === 'number' && storedOrd >= 0) return Math.round(storedOrd);
+          return isAkusha
+            ? Math.ceil((cleanPacks * 100) / effBuyoutPct)
+            : Math.round((cleanPacks * 100) / effBuyoutPct);
+        });
+  const monthlyOrdersRub =
+    effBuyoutPct <= 0
+      ? Array(12).fill(0)
+      : monthlyOrdersPacks.map((ord, idx) => ord * (nextMonthlyPrices[idx] ?? model.retailPriceRub));
+
+  const updatedPlanBase = {
+    ...basePlan,
+    monthlyPricesRub: nextMonthlyPrices,
+    monthlyRevenuesRubOverride: undefined,
+    monthlyOrdersPacks,
+    monthlyOrdersRub,
+  };
+
+  const nextPlans: ScenarioModelSpec['plansByScenario'] = {
+    ...model.plansByScenario,
+    [scenarioId]: {
+      ...updatedPlanBase,
+      scenarioId,
+    },
+  };
+
+  if (isAkusha && isPrimaryScenarioEdit) {
+    nextPlans[202706] = {
+      ...(model.plansByScenario[202706] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202706,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+  if (isLiskani && isPrimaryScenarioEdit) {
+    nextPlans[202705] = {
+      ...(model.plansByScenario[202705] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 202705,
+    };
+    nextPlans[1] = {
+      ...(model.plansByScenario[1] || updatedPlanBase),
+      ...updatedPlanBase,
+      scenarioId: 1,
+    };
+  }
+
+  return {
+    ...model,
     plansByScenario: nextPlans,
   };
 }
@@ -5532,13 +5824,27 @@ export function updateModelScenarioMonthBuyouts(
   const isLiskani =
     brandCode === 'LISKANI' ||
     (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+  const isPrimaryScenarioEdit =
+    scenarioId === 1 ||
+    (isAkusha && scenarioId === 202706) ||
+    (isLiskani && scenarioId === 202705);
 
   const basePlan =
     model.plansByScenario[scenarioId] ||
     (isAkusha ? model.plansByScenario[202706] : undefined) ||
     (isLiskani ? model.plansByScenario[202705] : undefined) ||
-    model.plansByScenario[1];
-  if (!basePlan) return model;
+    model.plansByScenario[1] || {
+      scenarioId,
+      monthlyPacks: Array(12).fill(0),
+      monthlyPricesRub: Array(12).fill(model.retailPriceRub || 1990),
+      monthlyReceiptsPacks: Array(12).fill(0),
+      initialStockPacks: 0,
+      firstOrderPacks: 0,
+      nextOrderDateLabel: '15 января 2027',
+      salesStartMonthIdx: 0,
+      warehouseArrivalMonthIdx: 0,
+      warehouseArrivalDateLabel: '10 января',
+    };
 
   const prevMonthPacks = Math.max(0, Math.round(basePlan.monthlyPacks[monthIdx] || 0));
   const nextMonthlyPacks = basePlan.monthlyPacks.map((v, idx) =>
@@ -5576,7 +5882,11 @@ export function updateModelScenarioMonthBuyouts(
         );
 
   let nextLiskaniVariants = model.liskaniSizeVariants;
-  if (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0) {
+  if (
+    isPrimaryScenarioEdit &&
+    Array.isArray(model.liskaniSizeVariants) &&
+    model.liskaniSizeVariants.length > 0
+  ) {
     const varCount = model.liskaniSizeVariants.length;
     nextLiskaniVariants = model.liskaniSizeVariants.map((sv, svIdx) => {
       const nextBuyoutsUnits = sv.monthlyBuyoutsUnits.map((val, idx) => {
@@ -5628,7 +5938,7 @@ export function updateModelScenarioMonthBuyouts(
     },
   };
 
-  if (isAkusha) {
+  if (isAkusha && isPrimaryScenarioEdit) {
     nextPlans[202706] = {
       ...(model.plansByScenario[202706] || updatedPlanBase),
       ...updatedPlanBase,
@@ -5640,7 +5950,7 @@ export function updateModelScenarioMonthBuyouts(
       scenarioId: 1,
     };
   }
-  if (isLiskani) {
+  if (isLiskani && isPrimaryScenarioEdit) {
     nextPlans[202705] = {
       ...(model.plansByScenario[202705] || updatedPlanBase),
       ...updatedPlanBase,
@@ -5677,13 +5987,27 @@ export function updateModelScenarioMonthOrders(
   const isLiskani =
     brandCode === 'LISKANI' ||
     (Array.isArray(model.liskaniSizeVariants) && model.liskaniSizeVariants.length > 0);
+  const isPrimaryScenarioEdit =
+    scenarioId === 1 ||
+    (isAkusha && scenarioId === 202706) ||
+    (isLiskani && scenarioId === 202705);
 
   const basePlan =
     model.plansByScenario[scenarioId] ||
     (isAkusha ? model.plansByScenario[202706] : undefined) ||
     (isLiskani ? model.plansByScenario[202705] : undefined) ||
-    model.plansByScenario[1];
-  if (!basePlan) return model;
+    model.plansByScenario[1] || {
+      scenarioId,
+      monthlyPacks: Array(12).fill(0),
+      monthlyPricesRub: Array(12).fill(model.retailPriceRub || 1990),
+      monthlyReceiptsPacks: Array(12).fill(0),
+      initialStockPacks: 0,
+      firstOrderPacks: 0,
+      nextOrderDateLabel: '15 января 2027',
+      salesStartMonthIdx: 0,
+      warehouseArrivalMonthIdx: 0,
+      warehouseArrivalDateLabel: '10 января',
+    };
 
   const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
   const nextBuyoutsForMonth =
@@ -5736,7 +6060,7 @@ export function updateModelScenarioMonthOrders(
     },
   };
 
-  if (isAkusha) {
+  if (isAkusha && isPrimaryScenarioEdit) {
     nextPlans[202706] = {
       ...(model.plansByScenario[202706] || updatedPlanBase),
       ...updatedPlanBase,
@@ -5748,7 +6072,7 @@ export function updateModelScenarioMonthOrders(
       scenarioId: 1,
     };
   }
-  if (isLiskani) {
+  if (isLiskani && isPrimaryScenarioEdit) {
     nextPlans[202705] = {
       ...(model.plansByScenario[202705] || updatedPlanBase),
       ...updatedPlanBase,

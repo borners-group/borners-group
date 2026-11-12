@@ -5,6 +5,7 @@ import {
   GrowthScenarioDef,
   MONTHS_SHORT_RU,
   ScenarioModelSpec,
+  computeModelScenarioMetrics,
 } from '@/lib/scenarioData';
 
 const MONTHS_SHORT = MONTHS_SHORT_RU;
@@ -85,24 +86,30 @@ function NumericInput({
 }: NumericInputProps) {
   const [draft, setDraft] = useState<string>(String(value));
   const [focused, setFocused] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!focused) {
       setDraft(String(value));
+      setDirty(false);
     }
   }, [value, focused]);
 
   const commit = (raw: string) => {
+    if (!dirty) {
+      setDraft(String(value));
+      return;
+    }
     const cleaned = raw.replace(/\s+/g, '').replace(',', '.');
     if (cleaned === '' || cleaned === '-') {
-      const fallback = Math.max(min, 0);
-      setDraft(String(fallback));
-      if (fallback !== value) onChangeValue(fallback);
+      setDraft(String(value));
+      setDirty(false);
       return;
     }
     const parsed = Number(cleaned);
     if (!Number.isFinite(parsed)) {
       setDraft(String(value));
+      setDirty(false);
       return;
     }
     let clamped = Math.max(min, Math.round(parsed));
@@ -110,6 +117,7 @@ function NumericInput({
       clamped = Math.min(max, clamped);
     }
     setDraft(String(clamped));
+    setDirty(false);
     if (clamped !== value) {
       onChangeValue(clamped);
     }
@@ -133,17 +141,7 @@ function NumericInput({
           nextRaw = nextRaw.trim().replace(/^0+(?=\d)/, '');
         }
         setDraft(nextRaw);
-        const trimmed = nextRaw.trim();
-        if (trimmed !== '') {
-          const parsed = Number(trimmed.replace(/\s+/g, '').replace(',', '.'));
-          if (Number.isFinite(parsed)) {
-            let clamped = Math.max(min, Math.round(parsed));
-            if (typeof max === 'number') clamped = Math.min(max, clamped);
-            if (clamped !== value) {
-              onChangeValue(clamped);
-            }
-          }
-        }
+        setDirty(true);
       }}
       onBlur={() => {
         setFocused(false);
@@ -151,6 +149,10 @@ function NumericInput({
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        } else if (e.key === 'Escape') {
+          setDraft(String(value));
+          setDirty(false);
           e.currentTarget.blur();
         }
       }}
@@ -238,6 +240,8 @@ export function SkuProcurementMvpWorkbench({
     const cleanTarget = Math.max(0, Math.round(nextAnnualPacks));
     const currentPlan =
       model.plansByScenario[currentScenario.id] ||
+      model.plansByScenario[202706] ||
+      model.plansByScenario[202705] ||
       model.plansByScenario[1] || {
         scenarioId: currentScenario.id,
         monthlyPacks: Array(12).fill(0),
@@ -279,29 +283,75 @@ export function SkuProcurementMvpWorkbench({
       });
     }
 
+    const ratePct = Math.max(5, Math.min(100, proc.buyoutRatePct || 85));
+    const pricesRub =
+      Array.isArray(currentPlan.monthlyPricesRub) &&
+      currentPlan.monthlyPricesRub.length === 12
+        ? currentPlan.monthlyPricesRub.map((p) => p || model.retailPriceRub || 1990)
+        : Array(12).fill(model.retailPriceRub || 1990);
+    const nextOrdersPacks = nextMonthlyPacks.map((b) =>
+      Math.round(b / (ratePct / 100))
+    );
+    const nextOrdersRub = nextOrdersPacks.map((ord, idx) =>
+      Math.round(ord * (pricesRub[idx] || model.retailPriceRub || 1990))
+    );
+
+    const isPrimaryEdit =
+      currentScenario.id === 1 ||
+      currentScenario.id === 202705 ||
+      currentScenario.id === 202706;
     const isLiskaniModel =
       model.customBrandLabel === 'LISKANI' ||
       Boolean(model.plansByScenario[202705]);
+    const isAkushaModel =
+      model.customBrandLabel === 'AKUSHA' ||
+      Boolean(model.plansByScenario[202706]);
+
+    const updatedPlan = {
+      ...currentPlan,
+      scenarioId: currentScenario.id,
+      monthlyPacks: nextMonthlyPacks,
+      monthlyPricesRub: pricesRub,
+      monthlyOrdersPacks: nextOrdersPacks,
+      monthlyOrdersRub: nextOrdersRub,
+      monthlyRevenuesRubOverride: undefined,
+    };
+
     const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
       ...model.plansByScenario,
-      [currentScenario.id]: {
-        ...currentPlan,
-        scenarioId: currentScenario.id,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyRevenuesRubOverride: undefined,
-      },
+      [currentScenario.id]: updatedPlan,
     };
-    if (isLiskaniModel && currentScenario.id !== 202705) {
-      nextPlansByScenario[202705] = {
-        ...(model.plansByScenario[202705] || currentPlan),
-        scenarioId: 202705,
-        monthlyPacks: nextMonthlyPacks,
-        monthlyRevenuesRubOverride: undefined,
-      };
+    if (isPrimaryEdit && isLiskaniModel && model.plansByScenario[202705]) {
+      nextPlansByScenario[202705] = { ...updatedPlan, scenarioId: 202705 };
     }
+    if (isPrimaryEdit && isAkushaModel && model.plansByScenario[202706]) {
+      nextPlansByScenario[202706] = { ...updatedPlan, scenarioId: 202706 };
+    }
+
+    const scaleFactor = currentSum > 0 ? cleanTarget / currentSum : 0;
+    const nextLiskaniVariants =
+      isPrimaryEdit && Array.isArray(model.liskaniSizeVariants) && currentSum > 0
+        ? model.liskaniSizeVariants.map((sv) => {
+            const nextMonthlyBuyoutsUnits = sv.monthlyBuyoutsUnits.map((u) =>
+              Math.max(0, Math.round(u * scaleFactor))
+            );
+            const annualBuyoutsUnits = nextMonthlyBuyoutsUnits.reduce((s, v) => s + v, 0);
+            const annualOrdersUnits = Math.round(annualBuyoutsUnits / (ratePct / 100));
+            return {
+              ...sv,
+              monthlyBuyoutsUnits: nextMonthlyBuyoutsUnits,
+              annualBuyoutsUnits,
+              annualBuyoutsRub: Math.round(annualBuyoutsUnits * sv.retailPriceRub),
+              annualOrdersUnits,
+              annualOrdersRub: Math.round(annualOrdersUnits * sv.retailPriceRub),
+            };
+          })
+        : model.liskaniSizeVariants;
+
     onUpdateModel({
       ...model,
       plansByScenario: nextPlansByScenario,
+      liskaniSizeVariants: nextLiskaniVariants,
       sharedSupplyAndFact: {
         ...shared,
         factoryParams: {
@@ -363,7 +413,6 @@ export function SkuProcurementMvpWorkbench({
   const handleUpdateBuyoutRatePct = (nextPct: number) => {
     const updated = updateModelBuyoutRatePct(model, nextPct, {
       scenarioId: currentScenario.id,
-      syncProcurementToOrders: true,
     });
     onUpdateModel(updated);
     triggerSavedIndicator(`% выкупа: ${updated.buyoutRatePct}%`);
@@ -852,14 +901,10 @@ export function SkuProcurementMvpWorkbench({
     (po) => po.confirmedByFactory !== false
   ).length;
 
-  const modelAnnualRevenueRub = useMemo(() => {
-    const plan = model.plansByScenario[currentScenario.id] || model.plansByScenario[1];
-    if (!plan) return proc.annualDemandPacks * (model.retailPriceRub || 0);
-    return plan.monthlyPacks.reduce((sum, packs, mIdx) => {
-      const price = plan.monthlyPricesRub?.[mIdx] || model.retailPriceRub || 0;
-      return sum + Math.max(0, packs || 0) * price;
-    }, 0);
-  }, [model, currentScenario.id, proc.annualDemandPacks]);
+  const modelAnnualRevenueRub = useMemo(
+    () => computeModelScenarioMetrics(model, currentScenario).annualRevenueRub,
+    [model, currentScenario]
+  );
 
   const approvedTotalRub = useMemo(
     () =>

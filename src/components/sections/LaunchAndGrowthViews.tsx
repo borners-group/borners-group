@@ -22,6 +22,8 @@ import {
   formatCompactRub,
   formatCurrencyRub,
 } from '@/lib/finance';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 const LAUNCH_STATUS_COLUMNS: Launch['status'][] = [
   'Подготовка',
@@ -65,7 +67,7 @@ export function LaunchCalendarView() {
 
   const [newLaunchForm, setNewLaunchForm] = useState({
     name: '',
-    brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+    brandId: brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : 'BORNERS',
     collectionName: 'Капсула Весна 2027',
     startDate: '2027-03-20',
     salesPlanRub: '9500000',
@@ -207,7 +209,7 @@ export function LaunchCalendarView() {
                     {/* Чистое предметное превью запуска */}
                     <div className="h-24 w-24 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] flex items-center justify-center p-2.5 shrink-0">
                       <img
-                        src={launch.imageUrl}
+                        src={resolvePublicAssetUrl(launch.imageUrl)}
                         alt={launch.name}
                         className="h-full w-full object-contain"
                       />
@@ -215,7 +217,7 @@ export function LaunchCalendarView() {
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2.5 text-[13px] font-semibold">
                         <span style={{ color: isBorners ? '#D97745' : '#8B8078' }}>
-                          {isBorners ? 'BORNERS' : 'НА ТЕЛЕ'}
+                          {formatLabBrandLabel(launch.brandId)}
                         </span>
                         <span className="text-[#737373]">
                           · Старт продаж: <b className="text-[#171717]">{launch.startDate}</b> ·{' '}
@@ -701,7 +703,7 @@ export function LaunchCalendarView() {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <img
-                            src={p.imageUrl}
+                            src={resolvePublicAssetUrl(p.imageUrl)}
                             alt={p.name}
                             loading="lazy"
                             decoding="async"
@@ -912,12 +914,18 @@ export function LaunchCalendarView() {
                   <select
                     value={newLaunchForm.brandId}
                     onChange={(e) =>
-                      setNewLaunchForm({ ...newLaunchForm, brandId: e.target.value })
+                      setNewLaunchForm({
+                        ...newLaunchForm,
+                        brandId: normalizeLabBrandCode(e.target.value),
+                      })
                     }
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                   >
                     <option value="BORNERS">BORNERS</option>
                     <option value="NA_TELE">НА ТЕЛЕ</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISKANI">LISKANI</option>
+                    <option value="FUKAI">FUKAI</option>
                   </select>
                 </div>
                 <div>
@@ -1420,12 +1428,11 @@ export function MarketingGrowthView() {
                 >
                   {(
                     [
-                      'Idea',
                       'Planned',
                       'Running',
                       'Completed',
-                      'Scaled',
-                      'Rejected',
+                      'Successful',
+                      'Unsuccessful',
                     ] as ExperimentStatus[]
                   ).map((st) => (
                     <option key={st} value={st}>

@@ -17,6 +17,9 @@ import {
 } from '@/lib/finance';
 import { GrowthScenariosShowcase } from './GrowthScenariosShowcase';
 import { useDraftModules } from '@/lib/draftModules';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { INITIAL_STRATEGIES } from '@/lib/initial-strategies';
 
 const STATUS_LABELS: Record<ApprovalStatus, { label: string; dotColor: string }> = {
   draft: {
@@ -112,7 +115,7 @@ export function BrandPortfolioView() {
                 {/* Студийный кадр коллекции фиксированной высоты h-60 */}
                 <div className="relative h-60 w-full bg-[#F5F5F1] border-b-[1.5px] border-[#C8C7BE] overflow-hidden">
                   <img
-                    src={brand.heroImage}
+                    src={resolvePublicAssetUrl(brand.heroImage)}
                     alt={brand.name}
                     className="h-full w-full object-cover object-center"
                   />
@@ -413,29 +416,42 @@ export function BrandStrategyView() {
     navigateTo,
   } = usePlatform();
 
+  const { draftModules } = useDraftModules();
   const activeBrands = brands.filter((b) => !b.isStrategyInDevelopment);
+  const normFilter =
+    brandFilter && brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : null;
   const activeBrandCode =
-    brandFilter !== 'ALL' && activeBrands.some((b) => b.code === brandFilter || b.id === brandFilter)
-      ? brandFilter
+    normFilter &&
+    activeBrands.some(
+      (b) => normalizeLabBrandCode(b.code) === normFilter || b.id === brandFilter
+    )
+      ? normFilter
       : activeBrands[0]?.code || 'BORNERS';
 
   const activeBrand = useMemo(
     () =>
-      activeBrands.find((b) => b.code === activeBrandCode || b.id === activeBrandCode) ||
-      activeBrands[0],
+      activeBrands.find(
+        (b) =>
+          normalizeLabBrandCode(b.code) === normalizeLabBrandCode(activeBrandCode) ||
+          b.id === activeBrandCode
+      ) || activeBrands[0],
     [activeBrands, activeBrandCode]
   );
 
-  const brandBlocks = useMemo(
-    () =>
-      strategies
-        .filter(
-          (s) =>
-            s.brandId === activeBrand?.code || s.brandId === activeBrand?.id
-        )
-        .sort((a, b) => a.sectionOrder - b.sectionOrder),
-    [strategies, activeBrand]
-  );
+  const brandBlocks = useMemo(() => {
+    const targetCode = activeBrand ? normalizeLabBrandCode(activeBrand.code) : 'BORNERS';
+    const matched = strategies
+      .filter(
+        (s) =>
+          normalizeLabBrandCode(s.brandId) === targetCode ||
+          s.brandId === activeBrand?.id
+      )
+      .sort((a, b) => a.sectionOrder - b.sectionOrder);
+    if (matched.length > 0) return matched;
+    return INITIAL_STRATEGIES.filter(
+      (s) => normalizeLabBrandCode(s.brandId) === targetCode
+    ).sort((a, b) => a.sectionOrder - b.sectionOrder);
+  }, [strategies, activeBrand]);
 
   const [strategyTab, setStrategyTab] = useState<'scenarios' | 'dna'>('scenarios');
   const [editingBlock, setEditingBlock] = useState<StrategyBlock | null>(null);
@@ -506,7 +522,6 @@ export function BrandStrategyView() {
     setEditingBlock(null);
   };
 
-  const { draftModules } = useDraftModules();
   const showDraftStrategyTools =
     draftModules.brandPortfolio || draftModules.strategyPresentationCard;
 

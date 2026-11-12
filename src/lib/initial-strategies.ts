@@ -527,6 +527,244 @@ const DEFAULT_STRATEGY_DEADLINES = [
   '2027-03-01',
 ];
 
+function buildHoldingBrandSections(cfg: {
+  brandCode: 'AKUSHA' | 'LISKANI' | 'FUKAI';
+  brandName: string;
+  categoryName: string;
+  visionSummary: string;
+  missionSummary: string;
+  audienceSummary: string;
+  problemSummary: string;
+  valueSummary: string;
+  positioningSummary: string;
+  assortmentSummary: string;
+  pricingSummary: string;
+  channelsSummary: string;
+  marketingSummary: string;
+  visualSummary: string;
+  financeSummary: string;
+  supplySummary: string;
+  risksSummary: string;
+  revenue2027Label: string;
+  marginLabel: string;
+  skuCountLabel: string;
+  buyoutLabel: string;
+}): StrategyBlock[] {
+  const rows: {
+    key: string;
+    en: string;
+    ru: string;
+    summary: string;
+    kpis: { label: string; value: string }[];
+  }[] = [
+    {
+      key: 'brand_vision',
+      en: 'Видение бренда',
+      ru: `Видение бренда ${cfg.brandName}`,
+      summary: cfg.visionSummary,
+      kpis: [
+        { label: 'План выручки 2027', value: cfg.revenue2027Label },
+        { label: 'Матрица 2027', value: cfg.skuCountLabel },
+      ],
+    },
+    {
+      key: 'brand_mission',
+      en: 'Миссия бренда',
+      ru: 'Миссия бренда',
+      summary: cfg.missionSummary,
+      kpis: [
+        { label: 'Целевой рейтинг карточек WB/Ozon', value: '4.90+ / 5.0' },
+        { label: 'Категория', value: cfg.categoryName },
+      ],
+    },
+    {
+      key: 'target_audience',
+      en: 'Целевая аудитория',
+      ru: 'Целевая аудитория',
+      summary: cfg.audienceSummary,
+      kpis: [
+        { label: 'Плановый % выкупа WB', value: cfg.buyoutLabel },
+        { label: 'География продаж', value: 'РФ и СНГ (ФБО)' },
+      ],
+    },
+    {
+      key: 'customer_problems',
+      en: 'Проблемы покупателей',
+      ru: 'Проблемы покупателей',
+      summary: cfg.problemSummary,
+      kpis: [{ label: 'Доля брака партии', value: '< 0,5%' }],
+    },
+    {
+      key: 'value_proposition',
+      en: 'Ценностное предложение',
+      ru: 'Ценностное предложение',
+      summary: cfg.valueSummary,
+      kpis: [{ label: 'Валовая маржинальность', value: cfg.marginLabel }],
+    },
+    {
+      key: 'brand_positioning',
+      en: 'Позиционирование бренда',
+      ru: 'Позиционирование бренда',
+      summary: cfg.positioningSummary,
+      kpis: [{ label: 'Роль в холдинге', value: 'Самостоятельный бренд портфеля' }],
+    },
+    {
+      key: 'assortment_architecture',
+      en: 'Ассортиментная матрица',
+      ru: 'Ассортиментная архитектура 70/30',
+      summary: cfg.assortmentSummary,
+      kpis: [{ label: 'Активная матрица', value: cfg.skuCountLabel }],
+    },
+    {
+      key: 'pricing_economics',
+      en: 'Ценообразование и юнит-экономика',
+      ru: 'Ценообразование и юнит-экономика',
+      summary: cfg.pricingSummary,
+      kpis: [
+        { label: 'Целевая валовая маржа', value: cfg.marginLabel },
+        { label: 'Расчётный % выкупа', value: cfg.buyoutLabel },
+      ],
+    },
+    {
+      key: 'distribution_channels',
+      en: 'Каналы дистрибуции',
+      ru: 'Каналы продаж и дистрибуции',
+      summary: cfg.channelsSummary,
+      kpis: [{ label: 'Основной канал 2027', value: 'Wildberries + Ozon ФБО' }],
+    },
+    {
+      key: 'marketing_growth',
+      en: 'Маркетинг и продвижение',
+      ru: 'Маркетинг и воронка роста',
+      summary: cfg.marketingSummary,
+      kpis: [{ label: 'Целевой ДРР', value: '8–12% от выкупов' }],
+    },
+    {
+      key: 'visual_code',
+      en: 'Визуальный код и упаковка',
+      ru: 'Визуальный код и упаковка',
+      summary: cfg.visualSummary,
+      kpis: [{ label: 'Контент-стандарт', value: 'Студийная съёмка + инфографика' }],
+    },
+    {
+      key: 'financial_targets_2027',
+      en: 'Финансовые цели 2027',
+      ru: 'Финансовые цели 2027',
+      summary: cfg.financeSummary,
+      kpis: [
+        { label: 'Выручка выкупов 2027', value: cfg.revenue2027Label },
+        { label: 'Валовая маржа', value: cfg.marginLabel },
+      ],
+    },
+    {
+      key: 'supply_chain_qc',
+      en: 'Производство и контроль качества',
+      ru: 'Цепочка поставок и ОТК',
+      summary: cfg.supplySummary,
+      kpis: [{ label: 'Инспекция партий', value: 'AQL 1.5 до отгрузки' }],
+    },
+    {
+      key: 'risks_opportunities',
+      en: 'Риски и возможности',
+      ru: 'Риски и точки роста',
+      summary: cfg.risksSummary,
+      kpis: [{ label: 'Управление запасами', value: 'Помесячный контур 03 · Закупки' }],
+    },
+  ];
+
+  const slug = cfg.brandCode.toLowerCase();
+  return rows.map((r, idx) => ({
+    id: `strat-${slug}-${idx + 1}`,
+    brandId: cfg.brandCode,
+    sectionKey: r.key,
+    sectionOrder: idx + 1,
+    titleEn: r.en,
+    titleRu: r.ru,
+    summary: r.summary,
+    content: `${r.summary}\nСинхронизировано с живыми контурами 01 · Продукт, 02 · Продажи, 03 · Закупки и 04 · Деньги на 2027 год.`,
+    kpiHighlights: r.kpis,
+    status: 'approved',
+    version: 1,
+    authorName: 'Алексей Морозов (Владелец)',
+    updatedAt: '2026-11-01',
+    deadline: DEFAULT_STRATEGY_DEADLINES[idx] || '2027-02-01',
+    history: [],
+    isDemo: false,
+  }));
+}
+
+const AKUSHA_STRATEGIES = buildHoldingBrandSections({
+  brandCode: 'AKUSHA',
+  brandName: 'AKUSHA',
+  categoryName: 'Детская анатомическая обувь (barefoot)',
+  visionSummary: 'Лидер детской анатомической и босоногой обуви на WB и Ozon с годовой выручкой 105,79 млн ₽ в 2027 году.',
+  missionSummary: 'Здоровое развитие детской стопы за счёт широкого анатомического мыса, гибкой подошвы zero-drop и натуральных материалов.',
+  audienceSummary: 'Осознанные родители детей от 0 до 7 лет (размеры 18–31), выбирающие физиологичную обувь для первых шагов, сада и улицы.',
+  problemSummary: 'Узкий жёсткий мыс и тяжёлая негнущаяся подошва массовой детской обуви деформируют пальцы и мешают естественной походке.',
+  valueSummary: 'Натуральная кожа, нубук, замша и дышащая сетка с гибкой ТПР-подошвой и проверенной посадкой на разный подъём стопы.',
+  positioningSummary: 'Специализированный бренд детской босоногой обуви (пинетки, сандалии, кеды, кроссовки, демисезонные ботинки и дутики).',
+  assortmentSummary: '24 карточки (31 цветомодель): всесезонная матрица от первых шагов до зимних дутиков и сменной обуви для сада.',
+  pricingSummary: 'Средний чек 4 500 – 6 100 ₽ при плановой себестоимости проданных пар 37,45 млн ₽ и расчёте закупок с учётом примерки.',
+  channelsSummary: 'Флагманская витрина Wildberries и Ozon с распределением размерных коробов по центральным и региональным складам ФБО.',
+  marketingSummary: 'Экспертный контент с детскими ортопедами, обзоры гибкости подошвы и автореклама по сезонным кластерам.',
+  visualSummary: 'Чистая скандинавская палитра, макро-кадры натуральной кожи/замши, размерная линейка стопы в миллиметрах на слайдах.',
+  financeSummary: 'План 2027: 20 377 выкупленных пар (47 808 в заказах), 105 793 210 ₽ выручки выкупов и 37 448 200 ₽ себестоимости.',
+  supplySummary: 'Сезонный календарь запуска партий (весна/лето и школа/зима) с контролем проклейки, швов и размерной сетки.',
+  risksSummary: 'Учёт оборотного запаса на примерку в детской обуви (выкуп ~42–43%) и заблаговременный подсорт ходовых размеров.',
+  revenue2027Label: '105,79 млн ₽',
+  marginLabel: '64,6%',
+  skuCountLabel: '24 карточки (31 модель)',
+  buyoutLabel: '42,6%',
+});
+
+const LISKANI_STRATEGIES = buildHoldingBrandSections({
+  brandCode: 'LISKANI',
+  brandName: 'LISKANI',
+  categoryName: 'Домашний текстиль и интерьерные шторы',
+  visionSummary: 'Системный бренд готового интерьерного текстиля с целевым объёмом выкупов 500,00 млн ₽ (877,19 млн ₽ в заказах) в 2027 году.',
+  missionSummary: 'Создавать уют и визуальную тишину дома за счёт готовых штор и тюля ресторанного/отельного качества пошива.',
+  audienceSummary: 'Покупательницы 25–55 лет, обустраивающие квартиру или загородный дом, а также комплектаторы и хоумстейджеры.',
+  problemSummary: 'Кривые строчки, несовпадение высоты полотен в комплекте и дешёвый синтетический блеск у массовых штор на МП.',
+  valueSummary: 'Плотный рогожка/канвас блэкаут, мраморный бархат и воздушный тюль с выверенной высотой (240–290 см) и ровной шторной лентой.',
+  positioningSummary: 'Премиальное качество пошива по доступной цене готового комплекта без ожидания индивидуального ателье.',
+  assortmentSummary: '33 базовые карточки, развёрнутые в 269 размерных SKU по ширине и высоте под стандартные и панорамные потолки.',
+  pricingSummary: 'Поразмерная матрица цен и себестоимости для каждого из 269 SKU с прозрачным контролем маржи на каждый метр ткани.',
+  channelsSummary: 'Wildberries и Ozon ФБО с постоянным наличием ключевых высот 250 / 260 / 270 см на региональных хабах.',
+  marketingSummary: 'Видео-демонстрация степени затемнения блэкаута и драпировки ткани при дневном и вечернем освещении.',
+  visualSummary: 'Интерьерная редакционная съёмка, точная цветопередача оттенков (молочный, графит, шалфей, пудра, тёплый беж) и плотная упаковка ПВХ.',
+  financeSummary: 'План 2027: 500 000 000 ₽ выкупов при 877 192 982 ₽ заказов и полном покрытии 269 размерных позиций.',
+  supplySummary: 'Прямые поставки рулонных тканей и контроль геометрии пошива каждого полотна с допуском по высоте ±0,5 см.',
+  risksSummary: 'Балансировка остатков по длинной размерной матрице (269 SKU) без вымывания топ-размеров и заморозки неликвидов.',
+  revenue2027Label: '500,00 млн ₽',
+  marginLabel: '62,0%',
+  skuCountLabel: '33 карточки (269 разм. SKU)',
+  buyoutLabel: '57,0%',
+});
+
+const FUKAI_STRATEGIES = buildHoldingBrandSections({
+  brandCode: 'FUKAI',
+  brandName: 'FUKAI',
+  categoryName: 'Функциональный текстиль и аксессуары для сна',
+  visionSummary: 'Нишевый бренд тактильных товаров для глубокого сна и восстановления с выручкой 12,06 млн ₽ на действующей матрице.',
+  missionSummary: 'Повышать качество ежедневного отдыха за счёт продуманной эргономики и деликатных к коже материалов.',
+  audienceSummary: 'Городские жители 23–45 лет, заботящиеся о гигиене сна, комфорте в поездках и эстетичных подарках.',
+  problemSummary: 'Неудобная посадка, просветы по контуру носа и грубые резинки у стандартных аксессуаров для сна.',
+  valueSummary: 'Анатомическое прилегание, мягкие дышащие материалы и стабильная юнит-экономика на высокой оборачиваемости.',
+  positioningSummary: 'Компактная высокомаржинальная линейка внутри портфеля BORNERS GROUP с минимальной операционной нагрузкой.',
+  assortmentSummary: '2 подтверждённых действующих SKU с отлаженной цепочкой поставок и устойчивым органическим спросом.',
+  pricingSummary: 'Высокий процент выкупа (85%+) и низкая стоимость логистики ФБО за счёт компактного габарита упаковки.',
+  channelsSummary: 'Wildberries и Ozon ФБО в связке с общим контуром поставок холдинга.',
+  marketingSummary: 'Удержание органических позиций в узких целевых запросах и работа с отзывами 4.9+.',
+  visualSummary: 'Минималистичная японская эстетика спокойствия, тактильная подарочная упаковка.',
+  financeSummary: 'Подтверждённый действующий план 2027: 12 060 985 ₽ годовой выручки по 2 действующим артикулам.',
+  supplySummary: 'Регулярный подсорт компактными партиями в составе сборных отгрузок группы.',
+  risksSummary: 'Расширение линейки точечными комплементарными новинками через фильтр R&D-лаборатории.',
+  revenue2027Label: '12,06 млн ₽',
+  marginLabel: '68,0%',
+  skuCountLabel: '2 действующих SKU',
+  buyoutLabel: '85,0%',
+});
+
 export const INITIAL_STRATEGIES: StrategyBlock[] = [
   ...BORNERS_SECTIONS.map((s, idx) => ({
     ...s,
@@ -540,4 +778,7 @@ export const INITIAL_STRATEGIES: StrategyBlock[] = [
     brandId: 'NA_TELE',
     deadline: s.deadline || DEFAULT_STRATEGY_DEADLINES[idx] || '2027-01-20',
   })),
+  ...AKUSHA_STRATEGIES,
+  ...LISKANI_STRATEGIES,
+  ...FUKAI_STRATEGIES,
 ];

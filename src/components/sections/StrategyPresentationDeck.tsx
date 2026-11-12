@@ -32,6 +32,9 @@ import {
   formatCurrencyRub,
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { INITIAL_STRATEGIES } from '@/lib/initial-strategies';
 
 interface SlideMeta {
   id: string;
@@ -159,8 +162,23 @@ export function StrategyPresentationDeck({
   const [viewLayout, setViewLayout] = useState<'slides' | 'all'>('slides');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [strategyBrandTab, setStrategyBrandTab] = useState<'BORNERS' | 'NA_TELE'>('BORNERS');
+  const [strategyBrandTab, setStrategyBrandTab] = useState<
+    'BORNERS' | 'NA_TELE' | 'AKUSHA' | 'LISKANI' | 'FUKAI'
+  >(() =>
+    brandFilter && brandFilter !== 'ALL'
+      ? normalizeLabBrandCode(brandFilter)
+      : 'BORNERS'
+  );
   const [strategyChapter, setStrategyChapter] = useState<'all' | 'brand' | 'product' | 'growth' | 'finance'>('all');
+
+  useEffect(() => {
+    if (brandFilter && brandFilter !== 'ALL') {
+      setStrategyBrandTab(normalizeLabBrandCode(brandFilter));
+    }
+  }, [brandFilter]);
+
+  const kpiPrefix =
+    brandFilter && brandFilter !== 'ALL' ? `${normalizeLabBrandCode(brandFilter)}_` : '';
 
   const getOverride = (key: string, fallback: string) =>
     presentationOverrides[key] !== undefined ? presentationOverrides[key] : fallback;
@@ -178,6 +196,10 @@ export function StrategyPresentationDeck({
       ) {
         return;
       }
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        return;
+      }
       if (viewLayout === 'slides') {
         if (e.key === 'ArrowRight') {
           e.preventDefault();
@@ -185,8 +207,6 @@ export function StrategyPresentationDeck({
         } else if (e.key === 'ArrowLeft') {
           e.preventDefault();
           setActiveSlideIdx((prev) => Math.max(0, prev - 1));
-        } else if (e.key === 'Escape' && isFullscreen) {
-          setIsFullscreen(false);
         }
       }
     };
@@ -423,7 +443,7 @@ export function StrategyPresentationDeck({
                 <div className="grid grid-cols-2 border-b-[1.5px] border-[#CFC8BC] h-60">
                   <div className="border-r-[1.5px] border-[#CFC8BC] overflow-hidden relative">
                     <img
-                      src="images/products/borners-editorial-hero.jpg"
+                      src={resolvePublicAssetUrl('images/products/borners-editorial-hero.jpg')}
                       alt="BORNERS"
                       className="h-full w-full object-cover"
                     />
@@ -433,7 +453,7 @@ export function StrategyPresentationDeck({
                   </div>
                   <div className="overflow-hidden relative">
                     <img
-                      src="images/products/natele-editorial-hero.jpg"
+                      src={resolvePublicAssetUrl('images/products/natele-editorial-hero.jpg')}
                       alt="НА ТЕЛЕ"
                       className="h-full w-full object-cover"
                     />
@@ -450,13 +470,13 @@ export function StrategyPresentationDeck({
                     </div>
                     {isEditMode ? (
                       <input
-                        value={getOverride('kpi_revenue_2027', formatCompactRub(totalPlanYearRub))}
-                        onChange={(e) => updatePresentationOverride('kpi_revenue_2027', e.target.value)}
+                        value={getOverride(`${kpiPrefix}kpi_revenue_2027`, formatCompactRub(totalPlanYearRub))}
+                        onChange={(e) => updatePresentationOverride(`${kpiPrefix}kpi_revenue_2027`, e.target.value)}
                         className="mt-1 h-9 rounded-[6px] border-[1.5px] border-[#B85D35] bg-white px-2.5 font-serif-editorial text-[22px] font-semibold text-[#181715]"
                       />
                     ) : (
                       <div className="font-serif-editorial text-[30px] font-medium text-[#181715] mt-1 leading-none">
-                        {hasFinance ? getOverride('kpi_revenue_2027', formatCompactRub(totalPlanYearRub)) : 'Скрыто'}
+                        {hasFinance ? getOverride(`${kpiPrefix}kpi_revenue_2027`, formatCompactRub(totalPlanYearRub)) : 'Скрыто'}
                       </div>
                     )}
                     <div className="text-[11.5px] text-[#8C867E] mt-1.5">
@@ -469,17 +489,17 @@ export function StrategyPresentationDeck({
                     </div>
                     {isEditMode ? (
                       <input
-                        value={getOverride('kpi_profit_2027', formatCompactRub(totalPlanProfitYearRub))}
-                        onChange={(e) => updatePresentationOverride('kpi_profit_2027', e.target.value)}
+                        value={getOverride(`${kpiPrefix}kpi_profit_2027`, formatCompactRub(totalPlanProfitYearRub))}
+                        onChange={(e) => updatePresentationOverride(`${kpiPrefix}kpi_profit_2027`, e.target.value)}
                         className="mt-1 h-9 rounded-[6px] border-[1.5px] border-[#B85D35] bg-white px-2.5 font-serif-editorial text-[22px] font-semibold text-[#181715]"
                       />
                     ) : (
                       <div className="font-serif-editorial text-[30px] font-medium text-[#181715] mt-1 leading-none">
-                        {hasFinance ? getOverride('kpi_profit_2027', formatCompactRub(totalPlanProfitYearRub)) : 'Скрыто'}
+                        {hasFinance ? getOverride(`${kpiPrefix}kpi_profit_2027`, formatCompactRub(totalPlanProfitYearRub)) : 'Скрыто'}
                       </div>
                     )}
                     <div className="text-[11.5px] font-medium text-[#2A6F53] mt-1.5">
-                      Средняя маржа SKU: {getOverride('kpi_avg_margin', `${avgMarginPct}%`)}
+                      Средняя маржа SKU: {getOverride(`${kpiPrefix}kpi_avg_margin`, `${avgMarginPct}%`)}
                     </div>
                   </div>
                   <div className="p-5 flex flex-col justify-between">
@@ -488,13 +508,13 @@ export function StrategyPresentationDeck({
                     </div>
                     {isEditMode ? (
                       <input
-                        value={getOverride('kpi_rnd_models', `${filteredConcepts.length} моделей`)}
-                        onChange={(e) => updatePresentationOverride('kpi_rnd_models', e.target.value)}
+                        value={getOverride(`${kpiPrefix}kpi_rnd_models`, `${filteredConcepts.length} моделей`)}
+                        onChange={(e) => updatePresentationOverride(`${kpiPrefix}kpi_rnd_models`, e.target.value)}
                         className="mt-1 h-9 rounded-[6px] border-[1.5px] border-[#B85D35] bg-white px-2.5 font-serif-editorial text-[22px] font-semibold text-[#181715]"
                       />
                     ) : (
                       <div className="font-serif-editorial text-[30px] font-medium text-[#181715] mt-1 leading-none">
-                        {getOverride('kpi_rnd_models', `${filteredConcepts.length} моделей`)}
+                        {getOverride(`${kpiPrefix}kpi_rnd_models`, `${filteredConcepts.length} моделей`)}
                       </div>
                     )}
                     <div className="text-[11.5px] text-[#8C867E] mt-1.5">
@@ -507,17 +527,17 @@ export function StrategyPresentationDeck({
                     </div>
                     {isEditMode ? (
                       <input
-                        value={getOverride('kpi_portfolio_count', '2 + 2 бренда')}
+                        value={getOverride('kpi_portfolio_count', '5 брендов')}
                         onChange={(e) => updatePresentationOverride('kpi_portfolio_count', e.target.value)}
                         className="mt-1 h-9 rounded-[6px] border-[1.5px] border-[#B85D35] bg-white px-2.5 font-serif-editorial text-[22px] font-semibold text-[#181715]"
                       />
                     ) : (
                       <div className="font-serif-editorial text-[30px] font-medium text-[#181715] mt-1 leading-none">
-                        {getOverride('kpi_portfolio_count', '2 + 2 бренда')}
+                        {getOverride('kpi_portfolio_count', '5 брендов')}
                       </div>
                     )}
                     <div className="text-[11.5px] text-[#8C867E] mt-1.5">
-                      2 активных + Акуша и Liskani
+                      BORNERS · НА ТЕЛЕ · FUKAI · AKUSHA · LISKANI
                     </div>
                   </div>
                 </div>
@@ -548,7 +568,7 @@ export function StrategyPresentationDeck({
                 >
                   <div className="h-60 w-full bg-[#F3EFE8] border-b-[1.5px] border-[#CFC8BC] overflow-hidden">
                     <img
-                      src={b.heroImage}
+                      src={resolvePublicAssetUrl(b.heroImage)}
                       alt={b.name}
                       className="h-full w-full object-cover object-center"
                     />
@@ -678,7 +698,7 @@ export function StrategyPresentationDeck({
               <div className="grid grid-cols-1 sm:grid-cols-12 sm:h-[240px] border-b-[1.5px] border-[#CFC8BC]">
                 <div className="sm:col-span-5 h-56 sm:h-[240px] bg-[#F2EFE9] border-b-[1.5px] sm:border-b-0 sm:border-r-[1.5px] border-[#CFC8BC] overflow-hidden">
                   <img
-                    src="images/products/borners-editorial-hero.jpg"
+                    src={resolvePublicAssetUrl('images/products/borners-editorial-hero.jpg')}
                     alt="BORNERS"
                     className="h-full w-full object-cover object-center"
                   />
@@ -769,7 +789,7 @@ export function StrategyPresentationDeck({
               <div className="grid grid-cols-1 sm:grid-cols-12 sm:h-[240px] border-b-[1.5px] border-[#CFC8BC]">
                 <div className="sm:col-span-5 h-56 sm:h-[240px] bg-[#F2EFE9] border-b-[1.5px] sm:border-b-0 sm:border-r-[1.5px] border-[#CFC8BC] overflow-hidden">
                   <img
-                    src="images/products/natele-editorial-hero.jpg"
+                    src={resolvePublicAssetUrl('images/products/natele-editorial-hero.jpg')}
                     alt="НА ТЕЛЕ"
                     className="h-full w-full object-cover object-center"
                   />
@@ -1022,14 +1042,14 @@ export function StrategyPresentationDeck({
                     <div className="flex items-center gap-3.5">
                       <div className="h-20 w-20 rounded-[4px] bg-[#EAE5DC] border border-[#E5E0D8] overflow-hidden shrink-0">
                         <img
-                          src={p.imageUrl}
+                          src={resolvePublicAssetUrl(p.imageUrl)}
                           alt={p.name}
                           className="h-full w-full object-cover"
                         />
                       </div>
                       <div className="min-w-0">
                         <div className="font-mono text-[10px] uppercase tracking-wider text-[#7A756D]">
-                          {p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {p.sku}
+                          {formatLabBrandLabel(p.brandId)} · {p.sku}
                         </div>
                         <div className="text-[14.5px] font-semibold text-[#161615] group-hover:underline truncate mt-0.5">
                           {p.name}
@@ -1147,7 +1167,7 @@ export function StrategyPresentationDeck({
                   <div className="h-44 bg-[#F2EFE9] border-b border-[#E5E0D8] overflow-hidden relative flex items-center justify-center">
                     {c.imageUrl ? (
                       <img
-                        src={c.imageUrl}
+                        src={resolvePublicAssetUrl(c.imageUrl)}
                         alt={c.name}
                         className="h-full w-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
                       />
@@ -1163,7 +1183,7 @@ export function StrategyPresentationDeck({
 
                   <div className="p-4 space-y-1.5">
                     <div className="font-mono text-[10px] uppercase tracking-wider text-[#7A756D]">
-                      {c.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'} · {c.code}
+                      {formatLabBrandLabel(c.brandId)} · {c.code}
                     </div>
                     <h4 className="font-semibold text-[14.5px] text-[#161615] line-clamp-1">
                       {c.name}
@@ -1189,9 +1209,15 @@ export function StrategyPresentationDeck({
     // СЛАЙД 05: 14 БЛОКОВ СТРАТЕГИИ БРЕНДОВ
     // =========================================================================
     if (slide.id === 'strategy-14') {
-      const blocks = strategies
-        .filter((s) => s.brandId === strategyBrandTab)
+      const matchedBlocks = strategies
+        .filter((s) => normalizeLabBrandCode(s.brandId) === strategyBrandTab)
         .sort((a, b) => a.sectionOrder - b.sectionOrder);
+      const blocks =
+        matchedBlocks.length > 0
+          ? matchedBlocks
+          : INITIAL_STRATEGIES.filter(
+              (s) => normalizeLabBrandCode(s.brandId) === strategyBrandTab
+            ).sort((a, b) => a.sectionOrder - b.sectionOrder);
 
       const filteredBlocks = blocks.filter((b) => {
         if (strategyChapter === 'all') return true;
@@ -1204,29 +1230,29 @@ export function StrategyPresentationDeck({
       return (
         <div className="space-y-5">
           <div className="rounded-[8px] bg-[#FDFCFA] border border-[#E5E0D8] p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 bg-[#F2EFE9] p-1 rounded-[6px] border border-[#E5E0D8]">
-              <button
-                type="button"
-                onClick={() => setStrategyBrandTab('BORNERS')}
-                className={`px-4 py-1.5 rounded-[4px] text-[13px] font-medium cursor-pointer transition ${
-                  strategyBrandTab === 'BORNERS'
-                    ? 'bg-[#161615] text-white'
-                    : 'text-[#6E6A63] hover:text-[#161615]'
-                }`}
-              >
-                BORNERS (14 блоков)
-              </button>
-              <button
-                type="button"
-                onClick={() => setStrategyBrandTab('NA_TELE')}
-                className={`px-4 py-1.5 rounded-[4px] text-[13px] font-medium cursor-pointer transition ${
-                  strategyBrandTab === 'NA_TELE'
-                    ? 'bg-[#161615] text-white'
-                    : 'text-[#6E6A63] hover:text-[#161615]'
-                }`}
-              >
-                НА ТЕЛЕ (14 блоков)
-              </button>
+            <div className="flex flex-wrap items-center gap-1 bg-[#F2EFE9] p-1 rounded-[6px] border border-[#E5E0D8]">
+              {(
+                [
+                  { code: 'BORNERS', label: 'BORNERS' },
+                  { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
+                  { code: 'AKUSHA', label: 'AKUSHA' },
+                  { code: 'LISKANI', label: 'LISKANI' },
+                  { code: 'FUKAI', label: 'FUKAI' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.code}
+                  type="button"
+                  onClick={() => setStrategyBrandTab(tab.code)}
+                  className={`px-3.5 py-1.5 rounded-[4px] text-[12.5px] font-medium cursor-pointer transition ${
+                    strategyBrandTab === tab.code
+                      ? 'bg-[#161615] text-white'
+                      : 'text-[#6E6A63] hover:text-[#161615]'
+                  }`}
+                >
+                  {tab.label} (14)
+                </button>
+              ))}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1389,7 +1415,7 @@ export function StrategyPresentationDeck({
                   <div>
                     <div className="h-40 bg-[#EAE5DC] border-b border-[#E5E0D8] overflow-hidden relative">
                       <img
-                        src={l.imageUrl}
+                        src={resolvePublicAssetUrl(l.imageUrl)}
                         alt={l.name}
                         className="h-full w-full object-cover"
                       />
@@ -1401,7 +1427,7 @@ export function StrategyPresentationDeck({
                     <div className="p-5 space-y-2.5">
                       <div className="flex items-center justify-between font-mono text-[10.5px]">
                         <span className="uppercase text-[#7A756D]">
-                          {l.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS'}
+                          {formatLabBrandLabel(l.brandId)}
                         </span>
                         <span className="font-semibold text-[#161615]">
                           Готовность {l.readinessPct}%
@@ -1445,7 +1471,16 @@ export function StrategyPresentationDeck({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {campaigns.slice(0, 3).map((camp) => (
+            {(() => {
+              const activeCamps = campaigns.filter((c) => !c.isArchived);
+              const brandCamps =
+                brandFilter === 'ALL'
+                  ? activeCamps
+                  : activeCamps.filter(
+                      (c) => normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter)
+                    );
+              return (brandCamps.length > 0 ? brandCamps : activeCamps).slice(0, 3);
+            })().map((camp) => (
               <div
                 key={camp.id}
                 className="rounded-[8px] bg-[#FDFCFA] border border-[#E5E0D8] p-5 space-y-2.5"
@@ -1633,19 +1668,26 @@ export function StrategyPresentationDeck({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {strategicGoals.map((g) => (
+            {(() => {
+              const activeGoals = strategicGoals;
+              const brandGoals =
+                brandFilter === 'ALL'
+                  ? activeGoals
+                  : activeGoals.filter(
+                      (g) =>
+                        g.brandId === 'ALL' ||
+                        normalizeLabBrandCode(g.brandId) === normalizeLabBrandCode(brandFilter)
+                    );
+              return brandGoals.length > 0 ? brandGoals : activeGoals;
+            })().map((g) => (
               <div
                 key={g.id}
                 className="rounded-[6px] border border-[#E5E0D8] bg-[#F8F6F2] p-5 space-y-2.5"
               >
                 <div className="flex items-center justify-between font-mono text-[10.5px] uppercase">
                   <span className="text-[#7A756D]">
-                    {g.brandId === 'ALL'
-                      ? 'Вся группа'
-                      : g.brandId === 'NA_TELE'
-                      ? 'НА ТЕЛЕ'
-                      : 'BORNERS'}{' '}
-                    · {g.periodQuarter}
+                    {g.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(g.brandId)} ·{' '}
+                    {g.periodQuarter}
                   </span>
                   <span className="text-[#1F6E50] font-semibold">{g.progressPct}% выполнено</span>
                 </div>
@@ -1743,6 +1785,16 @@ export function StrategyPresentationDeck({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onExitPresentation && (
+              <button
+                type="button"
+                onClick={onExitPresentation}
+                className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-semibold text-[#181715] cursor-pointer transition"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span>К рабочим разделам</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsEditMode((v) => !v)}

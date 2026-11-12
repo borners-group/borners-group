@@ -33,6 +33,7 @@ import {
 } from '@/lib/document-export';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { DRAFT_MODULES_META, useDraftModules } from '@/lib/draftModules';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 
 // =============================================================================
 // РЫНОК И КОНКУРЕНТЫ (п. 11 ТЗ)
@@ -1471,7 +1472,12 @@ export function DocumentsView() {
         createDocument({
           title: file.name.replace(/\.[^/.]+$/, ''),
           category: form.category || 'производство',
-          brandId: brandFilter === 'NA_TELE' ? 'NA_TELE' : 'BORNERS',
+          brandId:
+            form.brandId && form.brandId !== 'ALL'
+              ? normalizeLabBrandCode(form.brandId)
+              : brandFilter !== 'ALL'
+              ? normalizeLabBrandCode(brandFilter)
+              : 'BORNERS',
           fileName: file.name,
           fileType: ext,
           fileSizeBytes: file.size || 245000,
@@ -1732,7 +1738,7 @@ export function DocumentsView() {
                   <td className="py-4 px-4">
                     <div className="font-medium capitalize text-[#6E6A63]">{doc.category}</div>
                     <div className="text-[12px] font-semibold text-[#181715]">
-                      {doc.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : doc.brandId}
+                      {doc.brandId === 'ALL' ? 'BORNERS GROUP' : formatLabBrandLabel(doc.brandId)}
                     </div>
                   </td>
                   <td className="py-4 px-4">
@@ -1848,6 +1854,9 @@ export function DocumentsView() {
                     <option value="ALL">BORNERS GROUP (Общий)</option>
                     <option value="BORNERS">BORNERS</option>
                     <option value="NA_TELE">НА ТЕЛЕ</option>
+                    <option value="AKUSHA">AKUSHA</option>
+                    <option value="LISKANI">LISKANI</option>
+                    <option value="FUKAI">FUKAI</option>
                   </select>
                 </div>
               </div>

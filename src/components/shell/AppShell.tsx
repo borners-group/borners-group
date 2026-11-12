@@ -551,7 +551,7 @@ export function AppShell() {
 
     const checkRemoteVersion = async () => {
       try {
-        const res = await fetch(`./version.json?t=${Date.now()}`, {
+        const res = await fetch(`${resolvePublicAssetUrl('version.json')}?t=${Date.now()}`, {
           cache: 'no-store',
         });
         if (!res.ok) return;
@@ -1456,6 +1456,7 @@ export function AppShell() {
                           type="button"
                           onClick={() => {
                             setProfileMenuOpen(false);
+                            setPlatformMode('management');
                             setTourStepIdx(0);
                             setTourModalOpen(true);
                           }}

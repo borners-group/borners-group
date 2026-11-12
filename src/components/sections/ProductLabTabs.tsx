@@ -28,7 +28,7 @@ import {
   TaskItem,
 } from '@/types/platform';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
-import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import {
   canUserApproveProduction,
   canUserViewCostPrice,
@@ -252,7 +252,14 @@ export function ProductLabCardBody({
   );
 
   // Расчёт комплекта и 1 пары (Важное правило расчёта со Стр. 5 PDF)
-  const packUnits = concept.packUnitsCount && concept.packUnitsCount > 0 ? concept.packUnitsCount : 4;
+  const defaultPackUnits = normalizeLabBrandCode(concept.brandId) === 'NA_TELE' ||
+    normalizeLabBrandCode(concept.brandId) === 'AKUSHA' ||
+    normalizeLabBrandCode(concept.brandId) === 'LISKANI' ||
+    normalizeLabBrandCode(concept.brandId) === 'FUKAI'
+      ? 1
+      : 3;
+  const packUnits =
+    concept.packUnitsCount && concept.packUnitsCount > 0 ? concept.packUnitsCount : defaultPackUnits;
   const packRetailPrice = concept.plannedRetailPrice || 2600;
   const unitRetailPrice = Math.round(packRetailPrice / packUnits);
   const unitCostPrice = concept.plannedUnitCost || 320;
@@ -2419,8 +2426,12 @@ export function ProductLabCardBody({
                     type="button"
                     onClick={() =>
                       onNavigateToSection('product-catalog', {
-                        productId: linkedProduct?.id,
-                        brandId: concept.brandId,
+                        productId:
+                          concept.linkedScenarioModelId ||
+                          linkedScenarioModelCode ||
+                          linkedProduct?.id ||
+                          concept.code,
+                        brandId: normalizeLabBrandCode(concept.brandId),
                       })
                     }
                     className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold cursor-pointer transition"
@@ -2431,7 +2442,7 @@ export function ProductLabCardBody({
                     type="button"
                     onClick={() =>
                       onNavigateToSection('launch-calendar', {
-                        brandId: concept.brandId,
+                        brandId: normalizeLabBrandCode(concept.brandId),
                       })
                     }
                     className="h-11 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13px] font-bold cursor-pointer transition"

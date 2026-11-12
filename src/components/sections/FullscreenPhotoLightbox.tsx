@@ -246,9 +246,17 @@ export function FullscreenPhotoLightbox({
     dragStartRef.current = null;
   };
 
+  const fileExt = currentOriginalSrc.startsWith('data:image/')
+    ? currentOriginalSrc
+        .match(/^data:image\/([a-zA-Z0-9+]+);/)?.[1]
+        ?.toLowerCase()
+        .replace('jpeg', 'jpg')
+        .replace('svg+xml', 'svg') || 'jpg'
+    : (currentOriginalSrc.split('.').pop()?.split('?')[0]?.split('#')[0] || 'jpg')
+        .slice(0, 8);
   const downloadFilename = `${modelCode.replace(/\s+/g, '_')}_${
     currentItem.category
-  }_original.${currentOriginalSrc.split('.').pop()?.split('?')[0] || 'jpg'}`;
+  }_original.${fileExt}`;
 
   return (
     <div
@@ -325,7 +333,19 @@ export function FullscreenPhotoLightbox({
             href={currentOriginalSrc}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setActual100Pct()}
+            onClick={(e) => {
+              setActual100Pct();
+              if (currentOriginalSrc.startsWith('data:')) {
+                e.preventDefault();
+                fetch(currentOriginalSrc)
+                  .then((r) => r.blob())
+                  .then((blob) => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                  })
+                  .catch(() => {});
+              }
+            }}
             className="h-8 px-2.5 rounded-[9px] bg-white/10 hover:bg-white/20 text-white text-[11.5px] font-semibold inline-flex items-center gap-1.5 transition"
             title="Показать исходное изображение без ограничения размера превью"
           >

@@ -35,6 +35,29 @@ export function PdfConstructorModal({
       ? 'LISKANI 家居窗帘纺织系列'
       : `${brandLabel} 男士莫代尔平角内裤`;
 
+  const defaultFactoryZh =
+    brandLabel === 'НА ТЕЛЕ'
+      ? '杭州无痕针织内衣制造有限公司 (杭州, 中国)'
+      : brandLabel === 'AKUSHA'
+      ? '广州阿库莎童鞋制造有限公司 (广州, 中国)'
+      : brandLabel === 'LISKANI'
+      ? '绍兴利斯卡尼家纺制品有限公司 (绍兴, 中国)'
+      : '广东奥佩克内衣有限公司 (佛山, 中国)';
+
+  const defaultFactoryRu =
+    brandLabel === 'НА ТЕЛЕ'
+      ? 'Фабрика Ханчжоу Бесшовные Технологии (Ханчжоу, КНР)'
+      : brandLabel === 'AKUSHA'
+      ? 'Фабрика Гуанчжоу Детская Обувь (Гуанчжоу, КНР)'
+      : brandLabel === 'LISKANI'
+      ? 'Фабрика Шаосин Домашний Текстиль (Шаосин, КНР)'
+      : 'Фабрика Гуандун Апекс Интимэйт (Фошань, КНР)';
+
+  const defaultPackUnits =
+    existingOrder?.unitsPerPack ||
+    concept.packUnitsCount ||
+    (brandLabel === 'НА ТЕЛЕ' ? 1 : brandLabel === 'LISKANI' ? 2 : brandLabel === 'AKUSHA' ? 8 : 3);
+
   const [docTitleZh, setDocTitleZh] = useState(
     `生产工艺单及大货采购订单：${
       concept.techPack?.zh?.modelName && concept.techPack.zh.modelName !== '待定'
@@ -45,14 +68,12 @@ export function PdfConstructorModal({
   const [docTitle, setDocTitle] = useState(
     `Спецификация и заказ на производство: ${concept.name} (${concept.code})`
   );
-  const [factoryNameZh, setFactoryNameZh] = useState(
-    '广东奥佩克内衣有限公司 (佛山, 中国)'
-  );
+  const [factoryNameZh, setFactoryNameZh] = useState(defaultFactoryZh);
   const [factoryName, setFactoryName] = useState(
     existingOrder?.factoryName ||
       concept.samples?.[0]?.factoryName ||
       concept.supplierName ||
-      'Фабрика Гуандун Апекс Интимэйт (Фошань, КНР)'
+      defaultFactoryRu
   );
   const [plannedReadyDate, setPlannedReadyDate] = useState(
     existingOrder?.plannedReadyDate || concept.targetLaunchDate || '2027-02-15'
@@ -75,7 +96,13 @@ export function PdfConstructorModal({
     `Лицевая фотография товара · ${concept.name} (${concept.code})`
   );
   const [backCaption, setBackCaption] = useState(
-    'Вид сзади, поясная резинка и обработка плоских швов'
+    brandLabel === 'AKUSHA'
+      ? 'Вид сбоку, протектор подошвы и обработка кожаного верха'
+      : brandLabel === 'LISKANI'
+      ? 'Фактура ткани, шторная лента и качество нижнего подгиба'
+      : brandLabel === 'НА ТЕЛЕ'
+      ? 'Вид сзади, бесшовные края и посадка second-skin'
+      : 'Вид сзади, поясная резинка и обработка плоских швов'
   );
 
   // Валюты: CNY (¥), USD ($), RUB (₽) + живой курс конвертации
@@ -94,9 +121,7 @@ export function PdfConstructorModal({
   });
 
   // Комплектация и размерная сетка
-  const [unitsPerPack, setUnitsPerPack] = useState<number>(
-    existingOrder?.unitsPerPack || concept.packUnitsCount || 3
-  );
+  const [unitsPerPack, setUnitsPerPack] = useState<number>(defaultPackUnits);
   const [packsBySize, setPacksBySize] = useState<Record<string, number>>(
     existingOrder?.packsBySize || {
       S: 100,
@@ -118,6 +143,42 @@ export function PdfConstructorModal({
   const [includeSizeMatrix, setIncludeSizeMatrix] = useState<boolean>(true);
   const [includeFactoryTerms, setIncludeFactoryTerms] = useState<boolean>(true);
 
+  const defaultZhConstruction =
+    brandLabel === 'НА ТЕЛЕ'
+      ? '无痕超声波贴合工艺 · 激光裁剪隐形边 · 亲肤零束缚版型'
+      : brandLabel === 'AKUSHA'
+      ? '人体工学护踝童鞋楦型 · 防滑耐磨柔韧大底 · 加固车缝工艺'
+      : brandLabel === 'LISKANI'
+      ? '高精密垂感定型窗帘工艺 · 均匀褶皱挂带 · 精细包边底摆'
+      : '3D立体囊袋平角内裤 · 四针六线无骨平缝 · 后档无中缝';
+
+  const defaultRuConstruction =
+    brandLabel === 'НА ТЕЛЕ'
+      ? 'Бесшовная клеевая/лазерная обработка краёв, анатомическая посадка second-skin'
+      : brandLabel === 'AKUSHA'
+      ? 'Анатомическая детская колодка с фиксирующим задником и гибкой подошвой'
+      : brandLabel === 'LISKANI'
+      ? 'Равномерная шторная сборка, усиленный боковой и нижний подгиб'
+      : 'Анатомический 3D-гульфик, плоские швы 4 иглы / 6 нитей, без заднего шва';
+
+  const defaultZhComposition =
+    brandLabel === 'НА ТЕЛЕ'
+      ? '78% 锦纶超细纤维 + 22% 莱卡氨纶 · 克重 145g/m²'
+      : brandLabel === 'AKUSHA'
+      ? '头层牛皮鞋面 + 透气内里 · 环保防滑TPR大底'
+      : brandLabel === 'LISKANI'
+      ? '100% 高克重遮光聚酯纤维面料 · 克重 280g/m²'
+      : '92% 兰精超细莫代尔 + 8% 氨纶 · 克重 180g/m²';
+
+  const defaultRuComposition =
+    brandLabel === 'НА ТЕЛЕ'
+      ? '78% полиамид микрофибра + 22% эластан Lycra · Плотность 145 г/м²'
+      : brandLabel === 'AKUSHA'
+      ? 'Натуральная кожа КРС + дышащая стелька · Подошва ТЭП'
+      : brandLabel === 'LISKANI'
+      ? '100% плотный портьерный полиэстер · Плотность 280 г/м²'
+      : '92% микромодал Lenzing + 8% эластан · Плотность 180 г/м²';
+
   // Двуязычные строки: Крупный китайский (中文) сверху + мелкий русский снизу
   const [bilingualRows, setBilingualRows] = useState<
     {
@@ -136,10 +197,9 @@ export function PdfConstructorModal({
       zhLarge:
         concept.techPack?.zh?.construction && concept.techPack.zh.construction !== '待定'
           ? concept.techPack.zh.construction
-          : '3D立体囊袋平角内裤 · 四针六线无骨平缝 · 后档无中缝',
+          : defaultZhConstruction,
       ruSmall: `${concept.name} (${concept.code}) · ${
-        concept.techPack?.ru?.construction ||
-        'Анатомический 3D-гульфик, плоские швы 4 иглы / 6 нитей, без заднего шва'
+        concept.techPack?.ru?.construction || defaultRuConstruction
       }`,
       highlight: true,
     },
@@ -151,26 +211,40 @@ export function PdfConstructorModal({
         concept.techPack?.zh?.compositionAndDensity &&
         concept.techPack.zh.compositionAndDensity !== '待定'
           ? concept.techPack.zh.compositionAndDensity
-          : '92% 兰精超细莫代尔 + 8% 氨纶 · 克重 180g/m²',
+          : defaultZhComposition,
       ruSmall:
         existingOrder?.materialAndColors ||
         concept.techPack?.ru?.compositionAndDensity ||
-        '92% микромодал Lenzing + 8% эластан · Плотность 180 г/м²',
+        defaultRuComposition,
       highlight: true,
     },
     {
       id: 'row-3',
-      labelZh: '腰头橡筋与包装配比',
-      labelRu: 'Резинка пояса и комплектация',
-      zhLarge: `38mm 超柔提花腰头（内侧微纤维）· 每盒 ${
-        existingOrder?.unitsPerPack || concept.packUnitsCount || 3
-      } 条装`,
+      labelZh: '辅料细节与包装配比',
+      labelRu: 'Фурнитура / пояс и комплектация',
+      zhLarge:
+        brandLabel === 'AKUSHA'
+          ? `加固魔术贴搭扣 · 每箱 ${defaultPackUnits} 双尺码配比装`
+          : brandLabel === 'LISKANI'
+          ? `6cm 加固窗帘挂带 · 每组 ${defaultPackUnits} 幅独立包装`
+          : brandLabel === 'НА ТЕЛЕ'
+          ? `隐形无痕贴合弹力边 · 每套 ${defaultPackUnits} 件独立包装`
+          : `38mm 超柔提花腰头（内侧微纤维）· 每盒 ${defaultPackUnits} 条装`,
       ruSmall: `${
-        concept.techPack?.ru?.waistbandSpec || 'Мягкая жаккардовая резинка 38 мм'
-      } · В наборе ${existingOrder?.unitsPerPack || concept.packUnitsCount || 3} шт. (${
+        concept.techPack?.ru?.waistbandSpec ||
+        (brandLabel === 'AKUSHA'
+          ? 'Анатомическая фиксация липучкой Velcro'
+          : brandLabel === 'LISKANI'
+          ? 'Универсальная шторная лента 6 см'
+          : brandLabel === 'НА ТЕЛЕ'
+          ? 'Бесшовная микрофибровая окантовка без давления'
+          : 'Мягкая жаккардовая резинка 38 мм')
+      } · В комплекте ${defaultPackUnits} ед. (${
         existingOrder?.packColorComposition ||
         concept.colorCombinations?.join(', ') ||
-        'чёрный, графит, тёмно-синий'
+        (brandLabel === 'НА ТЕЛЕ'
+          ? 'телесный беж, молочный, графит'
+          : 'базовая палитра паспорта SKU')
       })`,
       highlight: false,
     },

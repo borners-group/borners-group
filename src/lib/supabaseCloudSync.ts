@@ -47,6 +47,22 @@ export async function pushModelGalleryToSupabase(
   const client = getActiveSupabaseClient();
   if (!client || !modelId || !Array.isArray(gallery)) return false;
 
+  if (gallery.length === 0) {
+    try {
+      const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
+        {
+          key: `${SUPABASE_GALLERY_KEY_PREFIX}${modelId}`,
+          payload: { modelId, gallery: [] },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      );
+      return !error;
+    } catch {
+      return false;
+    }
+  }
+
   const hasDataImage = gallery.some(
     (g) =>
       (typeof g.url === 'string' && g.url.startsWith('data:image/')) ||
@@ -163,18 +179,18 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
     }
 
     const hydratedModels = core.models.map((m) => {
+      const hasGalleryRef =
+        Array.isArray(m.gallery) &&
+        m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
       const cloudGal = galleriesByModelId.get(m.id);
-      if (cloudGal && cloudGal.length > 0) {
+      if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !Array.isArray(m.gallery))) {
         return {
           ...m,
           gallery: cloudGal,
         };
       }
       // Очищаем маркер __SUPABASE_GALLERY_REF__, если отдельной строки не нашлось
-      if (
-        Array.isArray(m.gallery) &&
-        m.gallery.some((g) => g.url === '__SUPABASE_GALLERY_REF__')
-      ) {
+      if (hasGalleryRef) {
         return {
           ...m,
           gallery: m.gallery.filter((g) => g.url !== '__SUPABASE_GALLERY_REF__'),
@@ -183,8 +199,14 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
       return m;
     });
 
+    const rowUpdatedAt =
+      typeof (coreRow as { updated_at?: string }).updated_at === 'string'
+        ? (coreRow as { updated_at?: string }).updated_at
+        : '';
+
     return {
       ...core,
+      updatedAtIso: core.updatedAtIso || rowUpdatedAt || '',
       models: hydratedModels,
     };
   } catch {

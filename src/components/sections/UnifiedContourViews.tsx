@@ -26,6 +26,7 @@ import {
   exportStructuredScenarioPlan,
   groupRecommendedBatchesByFactory,
   matchesBrandFilter,
+  normalizePortfolioBrandCode,
   removeApprovedPurchaseOrder,
   serializePurchaseOrdersToCsv,
   serializeScenarioFactoryOrdersToCsv,
@@ -36,6 +37,8 @@ import {
   updateModelSizeVariantUnitCost,
   updateModelUnitCostWithVariants,
 } from '@/lib/unifiedBusinessEngine';
+import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
+import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
@@ -45,6 +48,89 @@ import { FinanceView } from '@/components/sections/FinanceAndImportViews';
 
 function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
+}
+
+function BufferedInlineNumberInput({
+  value,
+  min = 0,
+  max,
+  ariaLabel,
+  className,
+  onCommit,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  ariaLabel: string;
+  className?: string;
+  onCommit: (next: number) => void;
+}) {
+  const [draft, setDraft] = useState<string>(() => String(value));
+  const [focused, setFocused] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(String(value));
+      setDirty(false);
+    }
+  }, [value, focused]);
+
+  const flush = (raw: string) => {
+    if (!dirty) {
+      setDraft(String(value));
+      return;
+    }
+    const cleaned = raw.replace(/\s+/g, '').replace(',', '.');
+    if (cleaned === '' || cleaned === '-') {
+      setDraft(String(value));
+      setDirty(false);
+      return;
+    }
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value));
+      setDirty(false);
+      return;
+    }
+    let clamped = Math.max(min, Math.round(parsed));
+    if (typeof max === 'number') clamped = Math.min(max, clamped);
+    setDraft(String(clamped));
+    setDirty(false);
+    if (clamped !== value) {
+      onCommit(clamped);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={ariaLabel}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        const nextRaw = e.target.value;
+        if (!/^[0-9\s.,]*$/.test(nextRaw)) return;
+        setDraft(nextRaw);
+        setDirty(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        flush(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        } else if (e.key === 'Escape') {
+          setDraft(String(value));
+          setDirty(false);
+          e.currentTarget.blur();
+        }
+      }}
+      className={className}
+    />
+  );
 }
 
 function ScenarioContourHeader({
@@ -99,15 +185,18 @@ function ScenarioContourHeader({
                 key={sc.id}
                 type="button"
                 onClick={() => {
-                  if (sc.id === 105 || sc.id === 202705 || sc.ownerBrandCode === 'LISKANI') {
+                  const ownerNorm = sc.ownerBrandCode
+                    ? normalizePortfolioBrandCode(sc.ownerBrandCode)
+                    : null;
+                  if (sc.id === 105 || sc.id === 202705 || ownerNorm === 'LISKANI') {
                     setBrandFilter('LISKANI');
                     onSelectScenario(sc.id, 'LISKANI');
-                  } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
+                  } else if (sc.id === 202706 || ownerNorm === 'AKUSHA') {
                     setBrandFilter('AKUSHA');
                     onSelectScenario(sc.id, 'AKUSHA');
-                  } else if (sc.ownerBrandCode === 'NA_TELE') {
-                    setBrandFilter('NA_TELE');
-                    onSelectScenario(sc.id, 'NA_TELE');
+                  } else if (ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS') {
+                    setBrandFilter(ownerNorm);
+                    onSelectScenario(sc.id, ownerNorm);
                   } else if (brandFilter !== 'ALL') {
                     onSelectScenario(sc.id, brandFilter);
                   } else {
@@ -132,7 +221,7 @@ function ScenarioContourHeader({
           {brandFilter !== 'ALL' && (
             <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[11.5px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
               <span>
-                Бренд: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} ({eligibleCount} SKU)
+                Бренд: {formatLabBrandLabel(brandFilter)} ({eligibleCount} SKU)
               </span>
               <button
                 type="button"
@@ -403,8 +492,10 @@ export function SalesMatrixContourView() {
         <ScenarioSalesPlanScreen
           model={editingModel}
           scenario={currentScenario}
-          allScenarios={scenarios}
-          onSelectScenario={setSelectedScenarioId}
+          allScenarios={orderedScenarios}
+          onSelectScenario={(id) =>
+            setSelectedScenarioId(id, detectModelBrandPortfolioLabel(editingModel))
+          }
           onBackToModel={() => setEditingModelId(null)}
           onUpdateModel={updateModelSpec}
           notify={notify}
@@ -686,22 +777,15 @@ export function SalesMatrixContourView() {
                       className="py-2 px-2 text-right font-mono whitespace-nowrap"
                     >
                       <div className="inline-flex items-center justify-end gap-0.5 rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#1E2536] px-1.5 py-0.5">
-                        <input
-                          type="number"
+                        <BufferedInlineNumberInput
                           min={5}
                           max={100}
-                          step={1}
-                          aria-label={`Процент выкупа ${mod.code}`}
+                          ariaLabel={`Процент выкупа ${mod.code}`}
                           value={met.buyoutRatePct}
-                          onChange={(e) => {
-                            const updated = updateModelBuyoutRatePct(
-                              mod,
-                              Number(e.target.value),
-                              {
-                                scenarioId: currentScenario.id,
-                                syncProcurementToOrders: true,
-                              }
-                            );
+                          onCommit={(nextVal) => {
+                            const updated = updateModelBuyoutRatePct(mod, nextVal, {
+                              scenarioId: currentScenario.id,
+                            });
                             updateModelSpec(updated);
                           }}
                           className="w-10 text-right font-mono text-[11.5px] font-bold text-[#0F172A] dark:text-[#F8FAFC] bg-transparent focus:outline-none"
@@ -1393,13 +1477,18 @@ export function ProcurementContourView() {
               </button>
               {orderedScenarios.map((sc) => {
                 const active = !isHoldingAllBrandsActive && sc.id === selectedScenarioId;
+                const ownerNorm = sc.ownerBrandCode
+                  ? normalizePortfolioBrandCode(sc.ownerBrandCode)
+                  : null;
                 const shortTitle =
-                  sc.id === 100 || sc.id === 4
+                  sc.id === 100
                     ? 'Исходный'
-                    : sc.id === 105 || sc.ownerBrandCode === 'LISKANI'
+                    : sc.id === 105 || sc.id === 202705
                     ? 'LISKANI · 500 млн'
-                    : sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA'
+                    : sc.id === 202706
                     ? 'AKUSHA · 105,8 млн'
+                    : ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS'
+                    ? `${sc.title} · ${sc.monthlyTargetMln} млн`
                     : `№${sc.id} · ${sc.monthlyTargetMln} млн`;
                 return (
                   <button
@@ -1408,12 +1497,17 @@ export function ProcurementContourView() {
                     onClick={() => {
                       setHoldingScopeMode(false);
                       setSelectedCategoryFilter('ALL');
-                      if (sc.id === 105 || sc.id === 202705 || sc.ownerBrandCode === 'LISKANI') {
+                      if (sc.id === 105 || sc.id === 202705 || ownerNorm === 'LISKANI') {
                         setBrandFilter('LISKANI');
                         setSelectedScenarioId(sc.id, 'LISKANI');
-                      } else if (sc.id === 202706 || sc.ownerBrandCode === 'AKUSHA') {
+                      } else if (sc.id === 202706 || ownerNorm === 'AKUSHA') {
                         setBrandFilter('AKUSHA');
                         setSelectedScenarioId(sc.id, 'AKUSHA');
+                      } else if (ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS') {
+                        setBrandFilter(ownerNorm);
+                        setSelectedScenarioId(sc.id, ownerNorm);
+                      } else if (brandFilter !== 'ALL') {
+                        setSelectedScenarioId(sc.id, brandFilter);
                       } else {
                         setSelectedScenarioId(sc.id);
                       }
@@ -2470,14 +2564,11 @@ export function ProcurementContourView() {
                                     className="px-2.5 py-2.5 text-right font-mono"
                                   >
                                     <div className="inline-flex items-center justify-end gap-1 rounded-lg border border-[#CBD5E1] bg-white px-2 py-1 hover:border-emerald-500 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
-                                      <input
-                                        type="number"
+                                      <BufferedInlineNumberInput
                                         min={0}
-                                        step={10}
-                                        aria-label={`Себестоимость 1 компл. ${m.code}`}
+                                        ariaLabel={`Себестоимость 1 компл. ${m.code}`}
                                         value={Math.round(m.unitCostRub || 0)}
-                                        onChange={(e) => {
-                                          const nextVal = Math.max(0, Math.round(Number(e.target.value) || 0));
+                                        onCommit={(nextVal) => {
                                           updateModelSpec(updateModelUnitCostWithVariants(m, nextVal));
                                         }}
                                         className="w-16 text-right font-mono text-[12px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
@@ -2499,15 +2590,12 @@ export function ProcurementContourView() {
                                     <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 font-semibold">
                                       <span>Зак: {plan.annualOrdersPacks.toLocaleString('ru-RU')}</span>
                                       <span className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50/70 px-1 py-0.5">
-                                        <input
-                                          type="number"
+                                        <BufferedInlineNumberInput
                                           min={5}
                                           max={100}
-                                          step={1}
-                                          aria-label={`Процент выкупа ${m.code}`}
+                                          ariaLabel={`Процент выкупа ${m.code}`}
                                           value={plan.buyoutRatePct}
-                                          onChange={(e) => {
-                                            const nextPct = Math.max(5, Math.min(100, Number(e.target.value) || 33));
+                                          onCommit={(nextPct) => {
                                             const activeScn = scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0];
                                             updateModelSpec(updateModelBuyoutRatePct(m, nextPct, { scenarioId: activeScn?.id }));
                                           }}
@@ -2900,9 +2988,12 @@ export function ProcurementContourView() {
 export function FinanceContourView() {
   const { currentUser, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
+    models,
+    scenarios,
     orderedScenarios,
     currentScenario,
     selectedScenarioId,
+    selectedScenarioByBrand,
     setSelectedScenarioId,
     includeGroupPortfolioInS1,
     setIncludeGroupPortfolioInS1,
@@ -2916,12 +3007,47 @@ export function FinanceContourView() {
   const [subTab, setSubTab] = useState<'scenarios-pnl' | 'legacy-plan-fact'>(
     'scenarios-pnl'
   );
-  const [initialCashMln, setInitialCashMln] = useState<number>(0);
-  const [wbLagMonths, setWbLagMonths] = useState<number>(0);
+  const [initialCashMln, setInitialCashMln] = useState<number>(() => {
+    const saved = safeGetStorageJson<{ initialCashMln?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0;
+  });
+  const [wbLagMonths, setWbLagMonths] = useState<number>(() => {
+    const saved = safeGetStorageJson<{ wbLagMonths?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0;
+  });
   const [whatIfOpen, setWhatIfOpen] = useState<boolean>(false);
-  const [whatIfPriceDelta, setWhatIfPriceDelta] = useState<number>(0);
-  const [whatIfCostDelta, setWhatIfCostDelta] = useState<number>(0);
-  const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState<number>(0);
+  const [whatIfPriceDelta, setWhatIfPriceDelta] = useState<number>(() => {
+    const saved = safeGetStorageJson<{ whatIfPriceDelta?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return typeof saved?.whatIfPriceDelta === 'number' ? saved.whatIfPriceDelta : 0;
+  });
+  const [whatIfCostDelta, setWhatIfCostDelta] = useState<number>(() => {
+    const saved = safeGetStorageJson<{ whatIfCostDelta?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return typeof saved?.whatIfCostDelta === 'number' ? saved.whatIfCostDelta : 0;
+  });
+  const [whatIfMpAdsDelta, setWhatIfMpAdsDelta] = useState<number>(() => {
+    const saved = safeGetStorageJson<{ whatIfMpAdsDelta?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return typeof saved?.whatIfMpAdsDelta === 'number' ? saved.whatIfMpAdsDelta : 0;
+  });
+
+  useEffect(() => {
+    safeSetStorageJson('borners_finance_contour_params_v1', {
+      initialCashMln,
+      wbLagMonths,
+      whatIfPriceDelta,
+      whatIfCostDelta,
+      whatIfMpAdsDelta,
+    });
+  }, [initialCashMln, wbLagMonths, whatIfPriceDelta, whatIfCostDelta, whatIfMpAdsDelta]);
 
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
@@ -2939,14 +3065,24 @@ export function FinanceContourView() {
   const brandsReport = useMemo(
     () =>
       computeGroupBrandsInvestmentReport(
-        scenarioAllEligibleModels,
+        models.length > 0 ? models : scenarioAllEligibleModels,
         currentScenario,
         {
           initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
           settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
+          allScenarios: scenarios,
+          selectedScenarioByBrand,
         }
       ),
-    [scenarioAllEligibleModels, currentScenario, initialCashMln, wbLagMonths]
+    [
+      models,
+      scenarioAllEligibleModels,
+      currentScenario,
+      initialCashMln,
+      wbLagMonths,
+      scenarios,
+      selectedScenarioByBrand,
+    ]
   );
 
   const finSummary = useMemo(() => {

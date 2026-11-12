@@ -11,6 +11,8 @@ import type {
   Product,
   ProductConcept,
 } from '@/types/platform';
+import { resolvePublicAssetUrl } from './scenarioData.ts';
+import { formatLabBrandLabel, normalizeLabBrandCode } from './rndCatalogSync.ts';
 
 // -----------------------------------------------------------------------------
 // 1. НИЗКОУРОВНЕВЫЙ СБОРЩИК НАСТОЯЩЕГО .XLSX (OpenXML ZIP БЕЗ ЗАВИСИМОСТЕЙ)
@@ -625,7 +627,7 @@ function loadImageForPdf(url?: string): Promise<HTMLImageElement | null> {
       window.clearTimeout(timer);
       resolve(null);
     };
-    img.src = url;
+    img.src = resolvePublicAssetUrl(url);
   });
 }
 
@@ -859,10 +861,18 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
         ctx.font = `700 15px ${monoFont}`;
         ctx.fillText(c.labelZh, tx, y + 52);
 
+        const secondPhotoHeadingZh =
+          spec.brandLabel === 'AKUSHA'
+            ? '真皮鞋面、防滑大底及车缝细节'
+            : spec.brandLabel === 'LISKANI'
+            ? '窗帘面料垂感、帘头及底边工艺细节'
+            : spec.brandLabel === 'НА ТЕЛЕ'
+            ? '无痕激光切边及亲肤内里细节'
+            : '38mm超柔腰头及四针六线平缝细节';
         ctx.fillStyle = '#181715';
         ctx.font = `700 23px ${sansFont}`;
         ctx.fillText(
-          idx === 0 ? '请按正面确认样衣版型及色卡生产' : '38mm超柔腰头及四针六线平缝细节',
+          idx === 0 ? '请按正面确认样衣版型及色卡生产' : secondPhotoHeadingZh,
           tx,
           y + 92
         );
@@ -1298,7 +1308,7 @@ export function exportDocumentAsPdf(
   }
 
   // 2. Спецификация выкрасов Pantone — НА ТЕЛЕ «Оттенки кожи»
-  if (doc.id === 'doc-2' || doc.category === 'дизайн') {
+  if (doc.id === 'doc-2') {
     downloadEditorialPdfDocument({
       fileName: doc.fileName.replace(/\.[^/.]+$/, '') + '.pdf',
       docCode: 'NTL-SKIN-2027',
@@ -1832,7 +1842,32 @@ export function exportConceptProductionPdf(
     orderVersion: number;
   }
 ): void {
-  const brandLabel = concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS';
+  const normBrand = normalizeLabBrandCode(concept.brandId);
+  const brandLabel = formatLabBrandLabel(concept.brandId);
+  const factoryZh =
+    normBrand === 'AKUSHA'
+      ? '温州阿库莎童鞋制造厂 (温州)'
+      : normBrand === 'LISKANI'
+      ? '绍兴柯桥家纺窗帘定制工坊 (绍兴)'
+      : normBrand === 'NA_TELE'
+      ? '汕头无痕贴身内衣制造厂 (广东)'
+      : '广东奥佩克内衣有限公司 (佛山)';
+  const defaultTitleZh =
+    normBrand === 'AKUSHA'
+      ? `AKUSHA 儿童鞋履 · ${concept.name}`
+      : normBrand === 'LISKANI'
+      ? `LISKANI 家居窗帘套装 · ${concept.name}`
+      : normBrand === 'NA_TELE'
+      ? `НА ТЕЛЕ 无痕贴身内衣 · ${concept.name}`
+      : `BORNERS 男士莫代尔内裤 · ${concept.name}`;
+  const defaultBackCaption =
+    normBrand === 'AKUSHA'
+      ? `Профиль подошвы, застёжка и анатомическая колодка (${orderInfo.approvedSampleVersion})`
+      : normBrand === 'LISKANI'
+      ? `Шторная лента, фактура ткани и обработка нижнего края (${orderInfo.approvedSampleVersion})`
+      : normBrand === 'NA_TELE'
+      ? `Бесшовный срез Free-Cut, ластовица и посадка сзади (${orderInfo.approvedSampleVersion})`
+      : `Вид сзади, резинка пояса и плоские швы (${orderInfo.approvedSampleVersion})`;
   const sizes = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
   let totalPacks = 0;
   let totalPcs = 0;
@@ -1864,20 +1899,20 @@ export function exportConceptProductionPdf(
     docCode: `${concept.code} · v${orderInfo.orderVersion}`,
     categoryLabel: '生产工艺及采购单 (PRODUCTION ORDER)',
     brandLabel,
-    titleZh: `生产工艺单及大货采购订单：${concept.techPack?.zh?.modelName || 'BORNERS 男士莫代尔内裤'} (${concept.code})`,
+    titleZh: `生产工艺单及大货采购订单：${concept.techPack?.zh?.modelName || defaultTitleZh} (${concept.code})`,
     title: `Спецификация и заказ на производство: ${concept.name} (${concept.code})`,
-    subtitleZh: `承接生产工厂：广东奥佩克内衣有限公司 (佛山) · 交货期：${orderInfo.plannedReadyDate}`,
+    subtitleZh: `承接生产工厂：${factoryZh} · 交货期：${orderInfo.plannedReadyDate}`,
     subtitle: `Фабрика: ${orderInfo.factoryName} · Срок готовности партии: ${orderInfo.plannedReadyDate}`,
     metaGrid: [
       { label: '款号 · Код модели', value: concept.code, subValueRu: `Артикул ${concept.code}` },
-      { label: '生产工厂 · Фабрика', value: '广东奥佩克内衣厂 (佛山)', subValueRu: orderInfo.factoryName },
+      { label: '生产工厂 · Фабрика', value: factoryZh, subValueRu: orderInfo.factoryName },
       { label: '交货日期 · Готовность', value: orderInfo.plannedReadyDate, subValueRu: 'Срок сдачи партии' },
       { label: '结算货币 · Валюта', value: `${orderInfo.currency} · 30%定金/70%尾款`, subValueRu: orderInfo.paymentTerms },
     ],
     frontPhotoUrl: frontPhoto,
     backPhotoUrl: backPhoto,
     frontPhotoCaption: `${concept.name} (${concept.code}) — лицевая фотография товара`,
-    backPhotoCaption: `Вид сзади, резинка пояса и плоские швы (${orderInfo.approvedSampleVersion})`,
+    backPhotoCaption: defaultBackCaption,
     sections: [
       {
         badge: '01 · 工艺标准',
@@ -1959,7 +1994,7 @@ export function exportConceptProductionExcel(
     orderVersion: number;
   }
 ): void {
-  const brandLabel = concept.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS';
+  const brandLabel = formatLabBrandLabel(concept.brandId);
   const sizes = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
   let totalPacks = 0;
   let totalPcs = 0;

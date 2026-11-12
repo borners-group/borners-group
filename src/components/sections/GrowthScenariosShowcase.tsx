@@ -33,6 +33,7 @@ import {
   computeModelScenarioMetrics,
   cycleModelPriority,
   getModelPriority,
+  resolvePublicAssetUrl,
 } from '@/lib/scenarioData';
 import {
   ACTING_2027_CONTROL_TOTALS,
@@ -122,6 +123,12 @@ import {
   resetStarterCabinetsFromHolding,
   serializeStructuredPlanToCsv,
 } from '@/lib/unifiedBusinessEngine';
+import { touchPortfolioUpdatedAt } from '@/lib/portfolioPersistence';
+import {
+  pushModelGalleryToSupabase,
+  pushPortfolioCoreToSupabase,
+} from '@/lib/supabaseCloudSync';
+import { buildPdfConceptFromScenarioModel } from '@/lib/rndCatalogSync';
 
 export {
   STORAGE_KEY_SCENARIOS,
@@ -611,17 +618,26 @@ export function GrowthScenariosShowcase({
     (updater: ScenarioModelSpec[] | ((prev: ScenarioModelSpec[]) => ScenarioModelSpec[])) => {
       setModels((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
+        const prevMap = new Map(prev.map((m) => [m.id, m]));
         for (const m of next) {
+          const oldM = prevMap.get(m.id);
+          const galChanged = !oldM || oldM.gallery !== m.gallery;
           if (
             Array.isArray(m.gallery) &&
-            m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+            (m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/')) ||
+              (galChanged && m.gallery.length === 0))
           ) {
             void saveModelGalleryToIdb(m.id, m.gallery);
+            if (galChanged) {
+              void pushModelGalleryToSupabase(m.id, m.gallery);
+            }
           }
         }
+        touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next);
+        void pushPortfolioCoreToSupabase({ models: next, scenarios });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -630,14 +646,16 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    []
+    [scenarios]
   );
 
   const commitScenarios = useCallback(
     (updater: GrowthScenarioDef[] | ((prev: GrowthScenarioDef[]) => GrowthScenarioDef[])) => {
       setScenarios((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
+        touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
+        void pushPortfolioCoreToSupabase({ models, scenarios: next });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('borners-scenarios-changed'));
@@ -646,7 +664,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    []
+    [models]
   );
 
   // Мгновенный запуск стартовой матрицы пустого кабинета (AKUSHA / LISKANI / НА ТЕЛЕ · 3 SKU + сценарий 2027)
@@ -660,11 +678,13 @@ export function GrowthScenariosShowcase({
       setModels(res.models);
       setScenarios(res.scenarios);
       setSelectedScenarioByBrandState(nextByBrand);
+      touchPortfolioUpdatedAt();
       safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
       saveUserPlansBackup(res.models);
       void savePortfolioSnapshotToIdb(res.models);
       safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
       safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
+      void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
       if (res.scenarioId) {
         setSelectedScenarioId(res.scenarioId, brandCode);
       }
@@ -695,11 +715,13 @@ export function GrowthScenariosShowcase({
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
+    touchPortfolioUpdatedAt();
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     saveUserPlansBackup(res.models);
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, res.selectedScenarioByBrand);
+    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
@@ -735,11 +757,13 @@ export function GrowthScenariosShowcase({
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(nextByBrand);
+    touchPortfolioUpdatedAt();
     safeSetStorageJson(STORAGE_KEY_MODELS, res.models);
     saveUserPlansBackup(res.models);
     void savePortfolioSnapshotToIdb(res.models);
     safeSetStorageJson(STORAGE_KEY_SCENARIOS, res.scenarios);
     safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, nextByBrand);
+    void pushPortfolioCoreToSupabase({ models: res.models, scenarios: res.scenarios });
     if (
       brandFilterLocal === 'AKUSHA' ||
       brandFilterLocal === 'NA_TELE'
@@ -1466,17 +1490,25 @@ export function GrowthScenariosShowcase({
   // Сброс к эталону 28-страничного PDF (15,04 млн WB + 85,11 млн 16 новых = 100,15 млн ₽ в дек)
   const handleResetToPdfBaseline = () => {
     clearDeletedModelsRegistry();
+    const preservedNaTeleModels = models.filter(
+      (m) => normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'NA_TELE'
+    );
+    const preservedNaTeleScenarios = scenarios.filter(
+      (sc) => sc.ownerBrandCode === 'NA_TELE'
+    );
     const baseline = [
       ...ACTING_2027_SCENARIO_MODELS,
       ...S1_100M_SCENARIO_MODELS,
       ...LISKANI_2027_MODELS,
       ...AKUSHA_2027_MODELS,
+      ...preservedNaTeleModels,
     ];
     commitModels(baseline);
     commitScenarios([
       ...INITIAL_SCENARIOS,
       LISKANI_2027_SCENARIO_DEF,
       AKUSHA_2027_SCENARIO_DEF,
+      ...preservedNaTeleScenarios,
     ]);
     notify(
       'success',
@@ -1485,25 +1517,16 @@ export function GrowthScenariosShowcase({
     );
   };
 
-  const generateNextUniqueModelCode = (existingModels: ScenarioModelSpec[]): string => {
-    const usedNums = new Set<number>();
-    existingModels.forEach((m) => {
-      const match = m.code.match(/^№?0*(\d+)$/);
-      if (match) usedNums.add(Number(match[1]));
-    });
-    let candidate = Math.max(existingModels.length + 1, 24);
-    while (usedNums.has(candidate)) {
-      candidate += 1;
-    }
-    return `№${String(candidate).padStart(3, '0')}`;
-  };
-
   // Дублирование модели (п. 4.1)
+  const generateNextUniqueModelCode = (brandLabel: string) =>
+    computeNextDraftCodeForBrand(brandLabel);
+
   const handleDuplicateModel = (source: ScenarioModelSpec) => {
-    const nextCode = generateNextUniqueModelCode(models);
+    const sourceBrandLabel = detectModelBrandPortfolioLabel(source);
+    const nextCode = generateNextUniqueModelCode(sourceBrandLabel);
     const copy: ScenarioModelSpec = {
       ...source,
-      id: `scen-model-${Date.now()}`,
+      id: `scen-model-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       code: nextCode,
       title: `${source.title} (КОПИЯ)`,
       launchStatus: 'В плане',
@@ -1511,6 +1534,9 @@ export function GrowthScenariosShowcase({
     };
     unmarkModelAsDeletedInStorage(copy);
     commitModels((prev) => [...prev, copy]);
+    if (copy.gallery?.length) {
+      void saveModelGalleryToIdb(copy.id, copy.gallery);
+    }
     syncScenarioModelToCatalog(copy);
     setSelectedModelId(copy.id);
     notify('success', `Создана и сохранена копия модели ${copy.code} · ${copy.title}`);
@@ -1827,7 +1853,10 @@ export function GrowthScenariosShowcase({
     return () => window.removeEventListener('keydown', onKey);
   }, [screen, switcherModels, activeSwitcherIdx, pushScenarioStep]);
 
-  const conceptForPdf = concepts[0];
+  const conceptForPdf = useMemo(
+    () => buildPdfConceptFromScenarioModel(activeModel, concepts),
+    [activeModel, concepts]
+  );
   const maxChartVal = Math.max(
     currentScenario.monthlyTargetMln * 1.05,
     ...(currentAgg?.monthlyTotalMln || [20])
@@ -1934,7 +1963,9 @@ export function GrowthScenariosShowcase({
           model={activeModel}
           scenario={currentScenario}
           allScenarios={scenarios}
-          onSelectScenario={(id) => setSelectedScenarioId(id)}
+          onSelectScenario={(id) =>
+            setSelectedScenarioId(id, detectModelBrandPortfolioLabel(activeModel))
+          }
           onBackToScenarios={() => navigateScreen('scenarios')}
           onOpenSalesPlan={() => navigateScreen('sales-plan')}
           onUpdateModel={handleUpdateModel}
@@ -1951,7 +1982,9 @@ export function GrowthScenariosShowcase({
           model={activeModel}
           scenario={currentScenario}
           allScenarios={scenarios}
-          onSelectScenario={(id) => setSelectedScenarioId(id)}
+          onSelectScenario={(id) =>
+            setSelectedScenarioId(id, detectModelBrandPortfolioLabel(activeModel))
+          }
           onBackToModel={() => navigateScreen('model')}
           onUpdateModel={handleUpdateModel}
           notify={notify}
@@ -2322,7 +2355,7 @@ export function GrowthScenariosShowcase({
                             Документы PDF
                           </div>
                           <a
-                            href="docs/tz-v1.1/BORNERS_TZ_v1_1.pdf"
+                            href={resolvePublicAssetUrl('docs/tz-v1.1/BORNERS_TZ_v1_1.pdf')}
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setExportMenuOpen(false)}
@@ -2332,7 +2365,7 @@ export function GrowthScenariosShowcase({
                             <span className="font-mono text-[10.5px] text-[#64748B]">PDF</span>
                           </a>
                           <a
-                            href="docs/s1-100m/BORNERS_2027_S1_100M_Plan.pdf"
+                            href={resolvePublicAssetUrl('docs/s1-100m/BORNERS_2027_S1_100M_Plan.pdf')}
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setExportMenuOpen(false)}
@@ -4315,7 +4348,7 @@ export function GrowthScenariosShowcase({
                     {draftImageUrl && (
                       <div className="relative h-11 w-11 rounded-[8px] border border-[#DED8CC] overflow-hidden shrink-0 bg-[#F8FAFC]">
                         <img
-                          src={draftImageUrl}
+                          src={resolvePublicAssetUrl(draftImageUrl)}
                           alt="Превью"
                           className="h-full w-full object-cover"
                         />
@@ -4508,14 +4541,7 @@ export function GrowthScenariosShowcase({
       {/* КОНСТРУКТОР PDF ТЕХНИЧЕСКОГО ЗАДАНИЯ (Тест 10) */}
       {pdfModalOpen && conceptForPdf && (
         <PdfConstructorModal
-          concept={{
-            ...conceptForPdf,
-            code: activeModel.code.replace('№', ''),
-            name: `${detectModelBrandPortfolioLabel(activeModel)} ${activeModel.code} · ${activeModel.title}`,
-            plannedUnitCost: activeModel.unitCostRub,
-            plannedRetailPrice: activeModel.retailPriceRub,
-            packUnitsCount: activeModel.unitsInPack,
-          }}
+          concept={conceptForPdf}
           onClose={() => setPdfModalOpen(false)}
           onSaveToConcept={() => {
             notify(

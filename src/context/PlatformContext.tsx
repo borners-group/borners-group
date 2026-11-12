@@ -279,7 +279,7 @@ const INITIAL_MIRO_ITEMS: MiroBoardItem[] = [
     x: 80,
     y: 330,
     width: 290,
-    linkedConceptId: 'concept-soft-boxers',
+    linkedConceptId: 'concept-soft-boxers-v2',
     connectedToIds: ['miro-2'],
     authorName: 'Елена Смирнова',
     createdAt: '2026-11-01',
@@ -419,7 +419,12 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       cleanupLegacyStorageKeys();
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        let normalized = saved.replaceAll('"/images/products/', '"images/products/');
+        let normalized = saved
+          .replaceAll('"/images/', '"images/')
+          .replaceAll('"/models/', '"models/')
+          .replaceAll('"/docs/', '"docs/')
+          .replaceAll('"concept-soft-boxers"', '"concept-soft-boxers-v2"')
+          .replaceAll('"concept-skin-tone"', '"concept-rd-027"');
         for (const base of ['rnd-seamless-hero', 'rnd-print-family', 'rnd-seamless-base', 'rnd-soft-boxers']) {
           normalized = normalized.replaceAll(`images/products/${base}.png`, `images/products/${base}.jpg`);
         }
@@ -497,10 +502,21 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             users: mergedUsers,
             products: deduplicateAndHealProducts(nextProducts),
             brands: mergedBrands,
-            strategies: (parsed.strategies || prev.strategies).map((s, idx) => ({
-              ...s,
-              deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
-            })),
+            strategies: (() => {
+              const base = (parsed.strategies || prev.strategies).map((s, idx) => ({
+                ...s,
+                deadline: s.deadline || INITIAL_STRATEGIES[idx]?.deadline || '2027-01-15',
+              }));
+              for (const initStrat of INITIAL_STRATEGIES) {
+                if (!base.some((s) => s.id === initStrat.id)) {
+                  base.push({
+                    ...initStrat,
+                    deadline: initStrat.deadline || '2027-01-15',
+                  });
+                }
+              }
+              return base;
+            })(),
             miroItems: parsed.miroItems !== undefined
               ? parsed.miroItems.map((m) => {
                   if (m.connectedToIds) return m;

@@ -410,3 +410,231 @@ export function buildConceptPatchFromScenarioModel(
     ideaDescription: `${model.subtitle || model.title}. Состав: ${model.fabric?.composition || 'по паспорту SKU'}.`,
   };
 }
+
+export function buildPdfConceptFromScenarioModel(
+  model: ScenarioModelSpec,
+  concepts: ProductConcept[] = []
+): ProductConcept {
+  const brandCode = normalizeLabBrandCode(detectModelBrandPortfolioLabel(model));
+  const brandLabel = formatLabBrandLabel(brandCode);
+  const packUnits = Math.max(1, Math.round(model.unitsInPack || 1));
+  const perPieceUnitCost =
+    packUnits > 1
+      ? Math.max(1, Math.round((model.unitCostRub || 0) / packUnits))
+      : Math.max(1, Math.round(model.unitCostRub || 0));
+
+  const cleanCodeUpper = (model.code || '').trim().toUpperCase();
+  const cleanTitleUpper = (model.title || '').trim().toUpperCase();
+
+  const linkedConcept =
+    concepts.find((c) => {
+      if (c.isArchived) return false;
+      if (c.linkedScenarioModelId && c.linkedScenarioModelId === model.id) return true;
+      if (normalizeLabBrandCode(c.brandId) !== brandCode) return false;
+      const cCode = (c.code || '').trim().toUpperCase();
+      const cAlt = cCode.replace('-LAB-', '-');
+      const cName = (c.name || '').trim().toUpperCase();
+      return (
+        (cleanCodeUpper.length > 0 && (cCode === cleanCodeUpper || cAlt === cleanCodeUpper)) ||
+        (cleanTitleUpper.length > 0 && cName === cleanTitleUpper)
+      );
+    }) || null;
+
+  const validModelPhotos = (model.gallery || []).filter((g): g is GalleryMediaItem & { url: string } =>
+    Boolean(g?.url && g.url.trim().length > 0)
+  );
+  const defaultBrandHero =
+    brandCode === 'NA_TELE'
+      ? 'images/products/rnd-seamless-base.jpg'
+      : brandCode === 'AKUSHA'
+      ? 'models/akusha/AKU-001_main.jpg'
+      : brandCode === 'LISKANI'
+      ? 'images/liskani/liskani-2027-01.jpg'
+      : 'images/products/borners-editorial-hero.jpg';
+
+  const mainPhoto =
+    validModelPhotos.find((g) => g.isMain)?.url ||
+    validModelPhotos[0]?.url ||
+    linkedConcept?.imageUrl ||
+    defaultBrandHero;
+
+  const galleryPhotos =
+    validModelPhotos.length > 0
+      ? validModelPhotos.map((g, idx) => ({
+          id: g.id || `gp-pdf-${model.id}-${idx + 1}`,
+          url: g.url,
+          caption: g.label || `${brandLabel} · ${model.title}`,
+        }))
+      : linkedConcept?.galleryPhotos && linkedConcept.galleryPhotos.length > 0
+      ? linkedConcept.galleryPhotos
+      : [{ id: `gp-pdf-${model.id}-main`, url: mainPhoto, caption: `${brandLabel} · ${model.title}` }];
+
+  const compositionRu =
+    [model.fabric?.composition, model.fabric?.density ? `Плотность ${model.fabric.density}` : '']
+      .filter(Boolean)
+      .join(' · ') ||
+    linkedConcept?.techPack?.ru?.compositionAndDensity ||
+    (brandCode === 'NA_TELE'
+      ? '78% полиамид Sensil + 22% эластан Lycra · Бесшовное микрополотно 145 г/м²'
+      : brandCode === 'AKUSHA'
+      ? '100% натуральная кожа КРС / текстильная дышащая подкладка · Подошва ТЭП'
+      : brandCode === 'LISKANI'
+      ? '100% плотный полиэстер премиум плетения · Плотность 280 г/м²'
+      : '92% микромодал Lenzing + 8% эластан · Плотность 180 г/м²');
+
+  const constructionRu =
+    [model.construction?.type, model.construction?.fit, model.construction?.seams]
+      .filter(Boolean)
+      .join(' · ') ||
+    linkedConcept?.techPack?.ru?.construction ||
+    (brandCode === 'NA_TELE'
+      ? 'Бесшовная анатомическая посадка second-skin, лазерная обработка краёв без давления'
+      : brandCode === 'AKUSHA'
+      ? 'Анатомическая детская колодка с жёстким задником и гибким перекатом стопы'
+      : brandCode === 'LISKANI'
+      ? 'Шторная лента равномерной драпировки, усиленный нижний подгиб, ровная геометрия полотна'
+      : 'Анатомический 3D-крой, плоские швы 4 иглы / 6 нитей, комфортная посадка');
+
+  const waistbandRu =
+    [model.waistband?.width, model.waistband?.type].filter(Boolean).join(' · ') ||
+    linkedConcept?.techPack?.ru?.waistbandSpec ||
+    (brandCode === 'NA_TELE'
+      ? 'Невидимый клеевой пояс / мягкая микрофибровая окантовка'
+      : brandCode === 'AKUSHA'
+      ? 'Фиксация липучкой Velcro + эластичная шнуровка, размерный короб'
+      : brandCode === 'LISKANI'
+      ? 'Универсальная шторная тесьма 6 см под крючки и трубу'
+      : 'Мягкая жаккардовая резинка 38 мм');
+
+  const zhModelName =
+    linkedConcept?.techPack?.zh?.modelName && linkedConcept.techPack.zh.modelName !== '待定'
+      ? linkedConcept.techPack.zh.modelName
+      : brandCode === 'NA_TELE'
+      ? `НА ТЕЛЕ 女士无痕亲肤内衣 · ${model.code}`
+      : brandCode === 'AKUSHA'
+      ? `AKUSHA 儿童真皮舒适童鞋 · ${model.code}`
+      : brandCode === 'LISKANI'
+      ? `LISKANI 高精密遮光窗帘套装 · ${model.code}`
+      : `${brandLabel} 莫代尔内衣系列 · ${model.code}`;
+
+  const zhConstruction =
+    linkedConcept?.techPack?.zh?.construction && linkedConcept.techPack.zh.construction !== '待定'
+      ? linkedConcept.techPack.zh.construction
+      : brandCode === 'NA_TELE'
+      ? '无痕超声波贴合工艺 · 激光裁剪隐形边 · 亲肤零束缚版型'
+      : brandCode === 'AKUSHA'
+      ? '人体工学护踝童鞋楦型 · 防滑耐磨柔韧大底 · 加固车缝工艺'
+      : brandCode === 'LISKANI'
+      ? '高精密垂感定型窗帘工艺 · 均匀褶皱挂带 · 精细包边底摆'
+      : '3D立体剪裁工艺 · 四针六线无骨平缝 · 舒适贴合版型';
+
+  const zhComposition =
+    linkedConcept?.techPack?.zh?.compositionAndDensity &&
+    linkedConcept.techPack.zh.compositionAndDensity !== '待定'
+      ? linkedConcept.techPack.zh.compositionAndDensity
+      : brandCode === 'NA_TELE'
+      ? '78% 锦纶超细纤维 + 22% 莱卡氨纶 · 克重 145g/m²'
+      : brandCode === 'AKUSHA'
+      ? '头层牛皮鞋面 + 透气内里 · 环保防滑TPR大底'
+      : brandCode === 'LISKANI'
+      ? '100% 高克重遮光聚酯纤维面料 · 克重 280g/m²'
+      : '92% 兰精超细莫代尔 + 8% 氨纶 · 克重 180g/m²';
+
+  const colorList = (model.palettes || [])
+    .flatMap((p) => {
+      const names = (p.colors || []).map((c) => c.nameRu).filter(Boolean);
+      return names.length > 0 ? names : [p.title].filter(Boolean);
+    });
+
+  const factoryName =
+    model.sharedSupplyAndFact?.factoryParams?.factoryName?.trim() ||
+    linkedConcept?.productionOrders?.[0]?.factoryName ||
+    linkedConcept?.supplierName ||
+    (brandCode === 'NA_TELE'
+      ? 'Фабрика Ханчжоу Бесшовные Технологии (Ханчжоу, КНР)'
+      : brandCode === 'AKUSHA'
+      ? 'Фабрика Гуанчжоу Детская Обувь (Гуанчжоу, КНР)'
+      : brandCode === 'LISKANI'
+      ? 'Фабрика Шаосин Домашний Текстиль (Шаосин, КНР)'
+      : 'Фабрика Гуандун Апекс Интимэйт (Фошань, КНР)');
+
+  return {
+    id: linkedConcept?.id || `pdf-concept-${model.id}`,
+    code: model.code.replace(/^№/, ''),
+    name: `${brandLabel} · ${model.title}`,
+    brandId: brandCode,
+    collectionName: model.subtitle || model.categoryLabel || `Каталог ${brandLabel} 2027`,
+    stage: mapConceptStageToLaunchStatus(linkedConcept?.stage || 'LAUNCH') === 'Утверждено' ? 'LAUNCH' : 'PRODUCTION',
+    priority: 'High',
+    linkedScenarioModelId: model.id,
+    imageUrl: mainPhoto,
+    galleryPhotos,
+    ideaDescription: model.description || model.subtitle || model.title,
+    customerProblem: model.subtitle || model.title,
+    targetAudience: brandLabel,
+    keyDifferentiators: constructionRu,
+    referencesNotes: compositionRu,
+    plannedRetailPrice: model.retailPriceRub || 2490,
+    plannedUnitCost: perPieceUnitCost,
+    packUnitsCount: packUnits,
+    currency: 'RUB',
+    targetLaunchDate: '2027-03-01',
+    ownerId: 'user-owner',
+    supplierName: factoryName,
+    sampleStatus: 'Образец утверждён к запуску',
+    testResults: 'Посадка и качество пошива подтверждены',
+    developmentBudgetRub: 0,
+    selectedDesignVersion: 1,
+    designVersions: linkedConcept?.designVersions || [],
+    comments: linkedConcept?.comments || [],
+    colorCombinations: colorList.length > 0 ? colorList : ['Базовая палитра модели'],
+    samples: linkedConcept?.samples || [],
+    productionOrders: linkedConcept?.productionOrders || [],
+    stageHistory: linkedConcept?.stageHistory || [],
+    techPack: {
+      ru: {
+        modelName: `${brandLabel} · ${model.title} (${model.code})`,
+        construction: constructionRu,
+        material: compositionRu,
+        compositionAndDensity: compositionRu,
+        colorAndPantone: colorList.join(' / ') || 'По утверждённой карте цветов',
+        sizeGrading: 'Полная размерная сетка по стандарту бренда',
+        waistbandSpec: waistbandRu,
+        seamsSpec: constructionRu,
+        packagingSpec: `Комплект ${packUnits} ед. со штрихкодом EAC / Честный ЗНАК`,
+        qualityRequirements: 'Инспекция AQL 1.5 перед отгрузкой партии',
+        referencesNote: model.wbArticle ? `Артикул WB: ${model.wbArticle}` : model.code,
+      },
+      en: {
+        modelName: `${brandLabel} ${model.code}`,
+        construction: constructionRu,
+        material: compositionRu,
+        compositionAndDensity: compositionRu,
+        colorAndPantone: colorList.join(' / ') || 'Approved Pantone colorway',
+        sizeGrading: 'Standard brand size grading',
+        waistbandSpec: waistbandRu,
+        seamsSpec: constructionRu,
+        packagingSpec: `${packUnits}-unit pack with EAC barcode`,
+        qualityRequirements: 'AQL 1.5 pre-shipment inspection',
+        referencesNote: model.code,
+      },
+      zh: {
+        modelName: zhModelName,
+        construction: zhConstruction,
+        material: zhComposition,
+        compositionAndDensity: zhComposition,
+        colorAndPantone: '按确认色卡配比生产',
+        sizeGrading: '按确认尺码表跳码生产',
+        waistbandSpec: waistbandRu,
+        seamsSpec: zhConstruction,
+        packagingSpec: `每盒/组 ${packUnits} 件独立条码包装 (Честный ЗНАК)`,
+        qualityRequirements: '出货前执行 AQL 1.5 验货标准',
+        referencesNote: model.code,
+      },
+    },
+    isDemo: false,
+    isArchived: false,
+    createdAt: linkedConcept?.createdAt || new Date().toISOString().slice(0, 10),
+    updatedAt: new Date().toISOString().slice(0, 10),
+  };
+}

@@ -189,6 +189,7 @@ export function MiroBoardView() {
   // Запись голосового сообщения (MediaRecorder)
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSec, setRecordingSec] = useState(0);
+  const recordingSecRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -255,13 +256,16 @@ export function MiroBoardView() {
     notify('warning', 'Связь-стрелка удалена');
   };
 
+  const resolveCanvasBrandId = () =>
+    brandFilter === 'ALL' ? 'ALL' : normalizeLabBrandCode(brandFilter);
+
   const handleAddSticky = (color = '#FFF8D6') => {
     const pos = getNextCoordinates();
     createMiroItem({
       type: 'sticky',
       title: 'Новая заметка в Студии',
       content: 'Запишите идею, комментарий по образцу или свяжите стрелочкой с соседней карточкой...',
-      brandId: brandFilter === 'ALL' ? 'ALL' : brandFilter,
+      brandId: resolveCanvasBrandId(),
       color,
       x: pos.x,
       y: pos.y,
@@ -290,7 +294,7 @@ export function MiroBoardView() {
             ? files[0].name.replace(/\.[^/.]+$/, '')
             : `Подборка фото (${files.length} шт.)`,
         content: 'Визуальный референс / фотография образца на холсте',
-        brandId: brandFilter === 'ALL' ? 'ALL' : brandFilter,
+        brandId: resolveCanvasBrandId(),
         color: '#FAF8F5',
         x: pos.x,
         y: pos.y,
@@ -313,6 +317,7 @@ export function MiroBoardView() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const recorder = new MediaRecorder(stream);
         audioChunksRef.current = [];
+        recordingSecRef.current = 0;
 
         recorder.ondataavailable = (ev) => {
           if (ev.data.size > 0) audioChunksRef.current.push(ev.data);
@@ -320,6 +325,7 @@ export function MiroBoardView() {
 
         recorder.onstop = () => {
           stream.getTracks().forEach((t) => t.stop());
+          const duration = Math.max(1, recordingSecRef.current || 1);
           const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           const reader = new FileReader();
           reader.onload = () => {
@@ -327,15 +333,15 @@ export function MiroBoardView() {
             const pos = getNextCoordinates();
             createMiroItem({
               type: 'voice',
-              title: `Голосовая заметка (${recordingSec || 3} сек.)`,
+              title: `Голосовая заметка (${duration} сек.)`,
               content: 'Аудиокомментарий по продукту / правкам лекала и образца',
-              brandId: brandFilter === 'ALL' ? 'ALL' : brandFilter,
+              brandId: resolveCanvasBrandId(),
               color: '#EBF2FA',
               x: pos.x,
               y: pos.y,
               width: 300,
               audioDataUrl: dataUrl || createDemoVoiceWavDataUrl(),
-              audioDurationSec: recordingSec || 3,
+              audioDurationSec: duration,
               connectedToIds: [],
             });
             notify('success', 'Голосовое сообщение сохранено в Студии идей');
@@ -348,7 +354,8 @@ export function MiroBoardView() {
         setIsRecording(true);
         setRecordingSec(0);
         timerRef.current = window.setInterval(() => {
-          setRecordingSec((s) => s + 1);
+          recordingSecRef.current += 1;
+          setRecordingSec(recordingSecRef.current);
         }, 1000);
         return;
       }
@@ -361,7 +368,7 @@ export function MiroBoardView() {
       type: 'voice',
       title: 'Голосовое сообщение (Демо-запись 00:02)',
       content: 'Комментарий руководителя по посадке пояса и отбору фабрики',
-      brandId: brandFilter === 'ALL' ? 'ALL' : brandFilter,
+      brandId: resolveCanvasBrandId(),
       color: '#EBF2FA',
       x: pos.x,
       y: pos.y,
@@ -400,7 +407,7 @@ export function MiroBoardView() {
         type: 'voice',
         title: `Аудио: ${file.name.replace(/\.[^/.]+$/, '')}`,
         content: 'Прикреплённое голосовое сообщение / аудиозапись обсуждения',
-        brandId: brandFilter === 'ALL' ? 'ALL' : brandFilter,
+        brandId: resolveCanvasBrandId(),
         color: '#EBF2FA',
         x: pos.x,
         y: pos.y,

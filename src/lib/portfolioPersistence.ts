@@ -58,9 +58,21 @@ export const STORAGE_KEY_ACTIVE_SCENARIO_ID = 'borners_active_scenario_id_v1';
 export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
+export const STORAGE_KEY_PORTFOLIO_UPDATED_AT = 'borners_portfolio_updated_at_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
 export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
 export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_repair_v1';
+
+export function touchPortfolioUpdatedAt(explicitIso?: string): string {
+  const iso = explicitIso || new Date().toISOString();
+  safeSetStorageJson(STORAGE_KEY_PORTFOLIO_UPDATED_AT, iso);
+  return iso;
+}
+
+export function getPortfolioUpdatedAt(): string | null {
+  const val = safeGetStorageJson<string>(STORAGE_KEY_PORTFOLIO_UPDATED_AT);
+  return typeof val === 'string' && val.trim().length > 0 ? val : null;
+}
 
 function isExactSamePacksArray(a: number[] | undefined, b: number[]): boolean {
   return (
@@ -1139,4 +1151,125 @@ export function filterModelsForScenario(
       modelBrand === 'FUKAI'
     );
   });
+}
+
+export function mergeCloudPortfolioSnapshot(params: {
+  localModels: ScenarioModelSpec[];
+  cloudModels: ScenarioModelSpec[];
+  localUpdatedAtIso?: string | null;
+  cloudUpdatedAtIso?: string | null;
+  deletedRegistry?: string[];
+}): {
+  models: ScenarioModelSpec[];
+  shouldPushLocalToCloud: boolean;
+} {
+  const deletedReg = params.deletedRegistry ?? getDeletedModelsRegistry();
+
+  const isAcceptableModel = (m: ScenarioModelSpec | null | undefined): m is ScenarioModelSpec => {
+    if (!m || !m.id || !m.code) return false;
+    if (
+      ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(m.id) ||
+      ['№001', '№002', '№003', '№004'].includes(m.code)
+    ) {
+      return false;
+    }
+    if (isLegacyPlaceholderLiskani(m) || isLegacyPlaceholderAkusha(m)) return false;
+    if (isModelMarkedDeleted(m, deletedReg)) return false;
+    return true;
+  };
+
+  const cleanLocal = (params.localModels || [])
+    .filter(isAcceptableModel)
+    .map((raw) => {
+      const explicitEmptyGallery = Array.isArray(raw.gallery) && raw.gallery.length === 0;
+      const normalized = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(raw));
+      return explicitEmptyGallery ? { ...normalized, gallery: [] } : normalized;
+    });
+
+  const cleanCloud = (params.cloudModels || [])
+    .filter(isAcceptableModel)
+    .map((raw) => {
+      const upgraded = upgradeUnadjustedRawS1SalesPlan(raw).updated;
+      const explicitEmptyGallery =
+        Array.isArray(upgraded.gallery) && upgraded.gallery.length === 0;
+      const normalized = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(upgraded));
+      return explicitEmptyGallery ? { ...normalized, gallery: [] } : normalized;
+    });
+
+  const localTs = params.localUpdatedAtIso ? Date.parse(params.localUpdatedAtIso) : NaN;
+  const cloudTs = params.cloudUpdatedAtIso ? Date.parse(params.cloudUpdatedAtIso) : NaN;
+  const isLocalNewer =
+    Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
+
+  if (isLocalNewer) {
+    const merged = [...cleanLocal];
+    for (const cm of cleanCloud) {
+      const exists = merged.some(
+        (m) =>
+          m.id === cm.id || m.code.trim().toUpperCase() === cm.code.trim().toUpperCase()
+      );
+      if (!exists) {
+        merged.push(cm);
+      }
+    }
+    return {
+      models: merged,
+      shouldPushLocalToCloud: true,
+    };
+  }
+
+  const merged = [...cleanCloud];
+  let addedLocalMissingInCloud = false;
+
+  for (const lm of cleanLocal) {
+    const exists = merged.some(
+      (m) =>
+        m.id === lm.id || m.code.trim().toUpperCase() === lm.code.trim().toUpperCase()
+    );
+    if (!exists) {
+      merged.push(lm);
+      addedLocalMissingInCloud = true;
+    }
+  }
+
+  for (const baselineMod of [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...CLIENT_SAVED_S1_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ]) {
+    if (isModelMarkedDeleted(baselineMod, deletedReg)) continue;
+    const idx = merged.findIndex(
+      (m) =>
+        m.id === baselineMod.id ||
+        m.code.trim().toUpperCase() === baselineMod.code.trim().toUpperCase() ||
+        m.title.trim().toUpperCase() === baselineMod.title.trim().toUpperCase()
+    );
+    if (idx < 0) {
+      merged.push(ensureModelUnifiedV11(applyCategoryWbUnitEconomics(baselineMod)));
+    } else if (
+      (!merged[idx].liskaniSizeVariants || merged[idx].liskaniSizeVariants!.length === 0) &&
+      baselineMod.liskaniSizeVariants &&
+      baselineMod.liskaniSizeVariants.length > 0
+    ) {
+      merged[idx] = ensureModelUnifiedV11(
+        applyCategoryWbUnitEconomics({
+          ...baselineMod,
+          ...merged[idx],
+          liskaniSizeVariants: baselineMod.liskaniSizeVariants,
+          plansByScenario: {
+            ...baselineMod.plansByScenario,
+            ...merged[idx].plansByScenario,
+            [LISKANI_2027_SCENARIO_ID]:
+              baselineMod.plansByScenario[LISKANI_2027_SCENARIO_ID],
+          },
+        })
+      );
+    }
+  }
+
+  return {
+    models: merged,
+    shouldPushLocalToCloud: addedLocalMissingInCloud,
+  };
 }

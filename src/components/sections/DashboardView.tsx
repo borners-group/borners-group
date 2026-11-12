@@ -28,7 +28,8 @@ import {
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
 import { TaskStatus } from '@/types/platform';
-import { normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 
 export function DashboardView() {
   const {
@@ -316,7 +317,7 @@ export function DashboardView() {
                       {/* Студийный редакционный кадр фиксированной высоты h-60 */}
                       <div className="h-60 w-full bg-[#F3EFE8] border-b-[1.5px] border-[#CFC8BC] overflow-hidden relative">
                         <img
-                          src={brand.heroImage}
+                          src={resolvePublicAssetUrl(brand.heroImage)}
                           alt={brand.name}
                           loading="lazy"
                           decoding="async"
@@ -660,7 +661,7 @@ export function DashboardView() {
                   >
                     <div className="h-16 w-16 rounded-[6px] bg-[#EAE5DC] border-[1.5px] border-[#CFC8BC] overflow-hidden shrink-0">
                       <img
-                        src={launch.imageUrl}
+                        src={resolvePublicAssetUrl(launch.imageUrl)}
                         alt={launch.name}
                         loading="lazy"
                         decoding="async"
@@ -670,7 +671,7 @@ export function DashboardView() {
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center justify-between font-mono text-[10.5px]">
                         <span className="uppercase text-[#161615] font-semibold">
-                          {isBorners ? 'BORNERS' : 'НА ТЕЛЕ'} · Готовность {launch.readinessPct}%
+                          {formatLabBrandLabel(launch.brandId)} · Готовность {launch.readinessPct}%
                         </span>
                         <span className="text-[#5C5852] font-medium">
                           Старт: {launch.startDate}
