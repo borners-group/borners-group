@@ -6460,7 +6460,7 @@ export function computePortfolioProcurementWavesSummary(
     const proc = computeProcurementPlan(m, entry.scenario);
     const fp = m.sharedSupplyAndFact!.factoryParams;
     prepayPctWeightedSum += fp.prepaymentPct ?? 30;
-    leadDaysWeightedSum += proc.totalLeadDays || 45;
+    leadDaysWeightedSum += proc.totalLeadDays ?? 45;
     modelsWeightCount += 1;
 
     const confirmedPos = proc.approvedOrders.filter(
@@ -6471,7 +6471,7 @@ export function computePortfolioProcurementWavesSummary(
       const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
       const orderM = Math.max(
         0,
-        arrivalM - Math.ceil((po.leadTimeDaysAtApproval || proc.totalLeadDays || 45) / 30)
+        arrivalM - Math.ceil((po.leadTimeDaysAtApproval ?? proc.totalLeadDays ?? 45) / 30)
       );
       const qIdx = Math.min(3, Math.max(0, Math.floor(arrivalM / 3)));
       const w = waveAcc[qIdx];
@@ -6499,7 +6499,7 @@ export function computePortfolioProcurementWavesSummary(
       const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
       const orderM = Math.max(
         0,
-        arrivalM - Math.ceil((rb.totalLeadDays || proc.totalLeadDays || 45) / 30)
+        arrivalM - Math.ceil((rb.totalLeadDays ?? proc.totalLeadDays ?? 45) / 30)
       );
       const qIdx = Math.min(3, Math.max(0, Math.floor(arrivalM / 3)));
       const w = waveAcc[qIdx];

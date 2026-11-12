@@ -7315,6 +7315,259 @@ test('96. Контрольная регрессионная проверка в�
   assert.equal(akushaInv.annualSoldGoodsCostRub, 37_448_200);
 });
 
+test('97. Защита от двойного учёта стартового кэша (initialCashRub) в PeakOwnMoneyChartPanel и честный режим wbPayoutScheduleSpecified = false', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    LISKANI_2027_SCENARIO_ID,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersS1 = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code));
+
+  const inv0 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    initialCashRub: 0,
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+  const inv10 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    initialCashRub: 10_000_000,
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+  const inv150 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    initialCashRub: 150_000_000,
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+
+  // Балансы в monthlyRows УЖЕ сдвинуты ровно на +10 000 000 ₽ (без удвоения до +20 млн ₽)
+  for (let m = 0; m < 12; m++) {
+    assert.equal(
+      inv10.monthlyRows[m].openingCashBalanceRub - inv0.monthlyRows[m].openingCashBalanceRub,
+      10_000_000,
+      `Месяц ${m + 1}: openingCashBalanceRub должен увеличиваться ровно на +10 млн ₽`
+    );
+    assert.equal(
+      inv10.monthlyRows[m].intraMonthLowBalanceRub - inv0.monthlyRows[m].intraMonthLowBalanceRub,
+      10_000_000,
+      `Месяц ${m + 1}: intraMonthLowBalanceRub должен увеличиваться ровно на +10 млн ₽`
+    );
+    assert.equal(
+      inv10.monthlyRows[m].cumulativeCashBalanceRub - inv0.monthlyRows[m].cumulativeCashBalanceRub,
+      10_000_000,
+      `Месяц ${m + 1}: cumulativeCashBalanceRub должен увеличиваться ровно на +10 млн ₽`
+    );
+  }
+  assert.equal(
+    inv0.verifiedOwnMoneyRequiredRub! - inv10.verifiedOwnMoneyRequiredRub!,
+    10_000_000,
+    'Потребность в своих деньгах снижается ровно рубль-в-рубль на величину стартового кэша (10 млн ₽)'
+  );
+  assert.equal(
+    inv150.verifiedOwnMoneyRequiredRub,
+    0,
+    'При стартовом кэше выше валового пика потребность в доп. своих деньгах равна 0 ₽ (не уходит в минус)'
+  );
+
+  // Мультибрендовый режим при wbPayoutScheduleSpecified = false честно возвращает null
+  const allScens = [...INITIAL_SCENARIOS, LISKANI_2027_SCENARIO_DEF];
+  const allModels = [...bornersS1, ...LISKANI_2027_MODELS];
+  const multiUnspecified = computeMultiBrandPortfolioSummary(
+    allModels,
+    allScens,
+    { BORNERS: 1, LISKANI: LISKANI_2027_SCENARIO_ID },
+    { initialCashRub: 10_000_000, wbPayoutScheduleSpecified: false }
+  );
+  assert.equal(multiUnspecified.wbPayoutScheduleSpecified, false);
+  assert.equal(multiUnspecified.groupTotal.verifiedOwnMoneyRequiredRub, null);
+  assert.equal(multiUnspecified.groupTotal.peakWorkingCapitalRub, 0);
+
+  // Статическая проверка кода PeakOwnMoneyChartPanel: ни одного двойного "+ initialCashRub" к уже сдвинутым балансам!
+  const panelCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeakOwnMoneyChartPanel.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    panelCode.includes('+ initialCashRub'),
+    false,
+    'PeakOwnMoneyChartPanel не должен повторно прибавлять + initialCashRub к полям баланса движка'
+  );
+  assert.equal(
+    panelCode.includes('useId'),
+    true,
+    'PeakOwnMoneyChartPanel должен изолировать SVG gradient ID через useId()'
+  );
+});
+
+test('98. Лаг выплат WB (0, +1, +2 мес.) точно сдвигает приходы WB по месяцам и монотонно углубляет Пик своих денег', async () => {
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersS1 = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code));
+
+  const lag0 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    settlementLagMonths: 0,
+    wbPayoutScheduleSpecified: true,
+  });
+  const lag1 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    settlementLagMonths: 1,
+    wbPayoutScheduleSpecified: true,
+  });
+  const lag2 = computeScenarioInvestmentSummary(bornersS1, s1Def, {
+    settlementLagMonths: 2,
+    wbPayoutScheduleSpecified: true,
+  });
+
+  assert.equal(lag1.monthlyRows[0].wbNetInflowRub, 0, 'При лаге +1 мес. в январе приход WB равен 0 ₽');
+  assert.equal(lag2.monthlyRows[0].wbNetInflowRub, 0, 'При лаге +2 мес. в январе приход WB равен 0 ₽');
+  assert.equal(lag2.monthlyRows[1].wbNetInflowRub, 0, 'При лаге +2 мес. в феврале приход WB равен 0 ₽');
+
+  for (let m = 1; m < 12; m++) {
+    assert.equal(
+      lag1.monthlyRows[m].wbNetInflowRub,
+      lag0.monthlyRows[m - 1].wbNetInflowRub,
+      `При лаге +1 мес. приход месяца ${m + 1} равен приходу месяца ${m} без лага`
+    );
+  }
+  for (let m = 2; m < 12; m++) {
+    assert.equal(
+      lag2.monthlyRows[m].wbNetInflowRub,
+      lag0.monthlyRows[m - 2].wbNetInflowRub,
+      `При лаге +2 мес. приход месяца ${m + 1} равен приходу месяца ${m - 1} без лага`
+    );
+  }
+
+  assert.ok(
+    lag0.peakWorkingCapitalRub <= lag1.peakWorkingCapitalRub &&
+      lag1.peakWorkingCapitalRub <= lag2.peakWorkingCapitalRub,
+    `Пик оборотного капитала монотонно не убывает с ростом лага WB: ${lag0.peakWorkingCapitalRub} <= ${lag1.peakWorkingCapitalRub} <= ${lag2.peakWorkingCapitalRub}`
+  );
+  assert.ok(
+    lag2.peakWorkingCapitalRub > lag0.peakWorkingCapitalRub,
+    'Лаг выплат WB +2 мес. строго увеличивает пиковую потребность в оборотном капитале'
+  );
+});
+
+test('99. Нулевой срок поставки (0 дней lead time) даёт 1-в-1 совпадение помесячных оттоков в волнах закупок и финансовом кэшфлоу', async () => {
+  const { computePortfolioProcurementWavesSummary } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const zeroLeadModels = S1_100M_SCENARIO_MODELS.slice(0, 3).map((m) => {
+    const unified = ensureModelUnifiedV11(structuredClone(m));
+    unified.sharedSupplyAndFact!.factoryParams = {
+      ...unified.sharedSupplyAndFact!.factoryParams,
+      productionLeadDays: 0,
+      qcDays: 0,
+      logisticsLeadDays: 0,
+      acceptanceDays: 0,
+      prepaymentPct: 30,
+      balancePaymentPct: 70,
+    };
+    return unified;
+  });
+
+  // Дополнительно утверждаем одну партию во 2-м квартале (Q2) в PO с leadTimeDaysAtApproval = 0
+  const m0Plan = computeProcurementPlan(zeroLeadModels[0], s1Def);
+  const q2Batch =
+    m0Plan.recommendedBatches.find((b) => b.firstCoveredMonthIdx >= 3) ||
+    m0Plan.recommendedBatches[0];
+  zeroLeadModels[0] = approveRecommendedBatch(zeroLeadModels[0], q2Batch, 'Тест 0 дней');
+  zeroLeadModels[0].sharedSupplyAndFact!.approvedOrders[0].leadTimeDaysAtApproval = 0;
+
+  const inv = computeScenarioInvestmentSummary(zeroLeadModels, s1Def);
+  const waves = computePortfolioProcurementWavesSummary(
+    zeroLeadModels.map((model) => ({ model, scenario: s1Def })),
+    inv.monthlyRows,
+    2027
+  );
+
+  assert.equal(
+    waves.avgTotalLeadDays,
+    0,
+    'Средний lead time при 0 днях на всех этапах должен быть строго 0 (без подмены на 45)'
+  );
+  for (let m = 0; m < 12; m++) {
+    assert.equal(
+      waves.monthlySchedule[m].prepayRub,
+      inv.monthlyRows[m].factoryPrepaymentOutflowRub,
+      `Месяц ${m + 1}: авансы в волнах и в кэшфлоу совпадают рубль-в-рубль при leadTime = 0`
+    );
+    assert.equal(
+      waves.monthlySchedule[m].balanceRub,
+      inv.monthlyRows[m].factoryBalanceOutflowRub,
+      `Месяц ${m + 1}: доплаты в волнах и в кэшфлоу совпадают рубль-в-рубль при leadTime = 0`
+    );
+    assert.equal(
+      waves.monthlySchedule[m].totalOutflowRub,
+      inv.monthlyRows[m].factoryTotalOutflowRub,
+      `Месяц ${m + 1}: суммарный отток фабрикам совпадает 1-в-1 при leadTime = 0`
+    );
+  }
+});
+
+test('100. Обратимый цикл «✓ Утвердить в PO → ↺ В черновик» для обуви AKUSHA (пар) и белья BORNERS (компл.) без потери ни 1 единицы', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { getBrandUnitConfig, removeApprovedPurchaseOrder } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  // 1. Проверяем AKUSHA (обувь в парах, закуп под заказы ПВЗ)
+  const akModel = ensureModelUnifiedV11(structuredClone(AKUSHA_2027_MODELS[0]));
+  const akUnit = getBrandUnitConfig(akModel);
+  assert.equal(akUnit.primaryUnit, 'пар', 'Единица измерения AKUSHA должна быть «пар»');
+
+  const akPlanInit = computeProcurementPlan(akModel, AKUSHA_2027_SCENARIO_DEF);
+  assert.ok(akPlanInit.recommendedBatches.length >= 1);
+  const akApproved = approveRecommendedBatch(
+    akModel,
+    akPlanInit.recommendedBatches[0],
+    'Владелец'
+  );
+  const poId = akApproved.sharedSupplyAndFact!.approvedOrders[0].id;
+  const akPlanWithPo = computeProcurementPlan(akApproved, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(
+    akPlanWithPo.totalApprovedReceiptsPacks + akPlanWithPo.totalRecommendedPacks,
+    akPlanInit.totalRecommendedPacks,
+    'Сумма утверждённых PO + оставшихся черновиков AKUSHA равна исходной потребности в парах'
+  );
+
+  // Возвращаем PO обратно в черновик («↺ В черновик»)
+  const akReverted = removeApprovedPurchaseOrder(akApproved, poId, 'Владелец');
+  assert.equal(akReverted.sharedSupplyAndFact!.approvedOrders.length, 0);
+  const akPlanReverted = computeProcurementPlan(akReverted, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(akPlanReverted.totalRecommendedPacks, akPlanInit.totalRecommendedPacks);
+  assert.equal(akPlanReverted.totalRecommendedBudgetRub, akPlanInit.totalRecommendedBudgetRub);
+
+  // 2. Проверяем наличие кнопки «↺ В черновик», allocatePacksAcrossProfileSizes и e.stopPropagation() в UI
+  const contoursCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const homeCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  assert.ok(
+    contoursCode.includes('↺ В черновик') &&
+      contoursCode.includes('allocatePacksAcrossProfileSizes'),
+    'UnifiedContourViews должен поддерживать 1-клик отмену PO «↺ В черновик» и точное распределение пар по размерам'
+  );
+  assert.ok(
+    homeCode.includes('e.stopPropagation()'),
+    'Карточка «Пик своих денег» в Hero-блоке Главной должна останавливать всплытие клика для переключения графика на месте'
+  );
+});
+
+
 
 
 

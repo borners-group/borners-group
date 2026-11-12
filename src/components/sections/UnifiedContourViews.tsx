@@ -30,6 +30,7 @@ import {
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
+  getBrandUnitConfig,
   groupRecommendedBatchesByFactory,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
@@ -56,6 +57,37 @@ import { FinanceView } from '@/components/sections/FinanceAndImportViews';
 
 function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
+}
+
+function allocatePacksAcrossProfileSizes(
+  totalPacks: number,
+  sizes: string[],
+  sizeSharesPct: Record<string, number>
+): { label: string; qty: number }[] {
+  const safeTotal = Math.max(0, Math.round(totalPacks));
+  if (sizes.length === 0) return [];
+  const weights = sizes.map((sz) =>
+    Math.max(0, Number(sizeSharesPct[sz]) || 100 / sizes.length)
+  );
+  const weightSum = weights.reduce((s, w) => s + w, 0) || 1;
+  const exacts = weights.map((w) => (safeTotal * w) / weightSum);
+  const floors = exacts.map((v) => Math.floor(v));
+  let remainder = Math.max(0, safeTotal - floors.reduce((s, v) => s + v, 0));
+
+  const order = sizes
+    .map((_, idx) => idx)
+    .sort((a, b) => {
+      const diff = exacts[b] - floors[b] - (exacts[a] - floors[a]);
+      if (Math.abs(diff) > 1e-9) return diff;
+      return weights[b] - weights[a];
+    });
+
+  for (let i = 0; i < order.length && remainder > 0; i += 1) {
+    floors[order[i]] += 1;
+    remainder -= 1;
+  }
+
+  return sizes.map((label, idx) => ({ label, qty: floors[idx] }));
 }
 
 function buildHoldingScopedModelEntries(
@@ -2466,8 +2498,8 @@ export function ProcurementContourView() {
                           onClick={() => setFactoryTermsPanelOpen((v) => !v)}
                           className={`h-8 px-3 rounded-lg border text-[11.5px] font-semibold transition cursor-pointer ${
                             factoryTermsPanelOpen
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#0F172A] border-[#CBD5E1]'
+                              ? 'bg-slate-900 dark:bg-emerald-500 text-white dark:text-slate-950 border-slate-900 dark:border-emerald-500'
+                              : 'bg-[#F8FAFC] dark:bg-[#181D2A] hover:bg-[#F1F5F9] dark:hover:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7] border-[#CBD5E1] dark:border-[#283246]'
                           }`}
                         >
                           ⚙️ Условия оплаты фабрикам ({wavesSummary.avgPrepaymentPct}/{100 - wavesSummary.avgPrepaymentPct}%) {factoryTermsPanelOpen ? '▴' : '▾'}
@@ -2475,7 +2507,7 @@ export function ProcurementContourView() {
                         <button
                           type="button"
                           onClick={() => setScenarioDrawerTab('investment')}
-                          className="h-8 px-3 rounded-lg bg-amber-500/12 hover:bg-amber-500/20 border border-amber-400/60 text-amber-950 text-[11.5px] font-bold cursor-pointer transition"
+                          className="h-8 px-3 rounded-lg bg-amber-500/12 dark:bg-amber-500/15 hover:bg-amber-500/20 border border-amber-400/60 dark:border-amber-500/40 text-amber-950 dark:text-amber-200 text-[11.5px] font-bold cursor-pointer transition"
                         >
                           Подробный график «Пик своих денег» →
                         </button>
@@ -2502,13 +2534,13 @@ export function ProcurementContourView() {
                                 title={`${ms.monthLabel}: всего фабрикам ${formatMln(ms.totalOutflowRub)} (аванс ${formatMln(ms.prepayRub)} + доплата ${formatMln(ms.balanceRub)})${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`}
                                 className={`rounded-lg border p-1.5 text-center transition cursor-pointer ${
                                   isPeakM
-                                    ? 'border-amber-400 bg-amber-50/70'
+                                    ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/70 dark:bg-amber-500/15'
                                     : ms.totalOutflowRub > 0
-                                    ? 'border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#94A3B8]'
-                                    : 'border-[#F1F5F9] bg-white opacity-75'
+                                    ? 'border-[#E2E8F0] dark:border-[#283246] bg-[#F8FAFC] dark:bg-[#181D2A] hover:border-[#94A3B8]'
+                                    : 'border-[#F1F5F9] dark:border-[#222938] bg-white dark:bg-[#121620] opacity-75'
                                 }`}
                               >
-                                <div className="flex items-center justify-center gap-0.5 text-[10px] font-bold text-[#334155]">
+                                <div className="flex items-center justify-center gap-0.5 text-[10px] font-bold text-[#334155] dark:text-slate-300">
                                   <span>{ms.monthLabel}</span>
                                   {isPeakM && <span>📍</span>}
                                 </div>
@@ -2526,7 +2558,7 @@ export function ProcurementContourView() {
                                     />
                                   )}
                                 </div>
-                                <div className="font-mono text-[10px] font-bold text-[#0F172A]">
+                                <div className="font-mono text-[10px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                                   {ms.totalOutflowRub > 0
                                     ? `−${(ms.totalOutflowRub / 1_000_000).toFixed(1)}`
                                     : '0'}
@@ -2540,9 +2572,9 @@ export function ProcurementContourView() {
 
                     {/* Групповая настройка условий закупки (мгновенно пересчитывает волны и Пик своих денег) */}
                     {factoryTermsPanelOpen && (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11.5px]">
+                      <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/80 dark:bg-[#181D2A] p-3.5 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11.5px]">
                         <div className="space-y-1.5">
-                          <div className="font-bold text-slate-800">
+                          <div className="font-bold text-slate-800 dark:text-[#EDF0F7]">
                             1. Аванс / Доплата фабрикам ({scopedModelEntries.length} SKU)
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -2565,7 +2597,7 @@ export function ProcurementContourView() {
                                   className={`px-2.5 py-1 rounded-lg font-mono font-bold border cursor-pointer transition ${
                                     active
                                       ? 'bg-emerald-600 text-white border-emerald-600'
-                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                      : 'bg-white dark:bg-[#121620] text-slate-700 dark:text-slate-200 border-slate-300 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536]'
                                   }`}
                                 >
                                   {pct}/{100 - pct}%
@@ -2576,7 +2608,7 @@ export function ProcurementContourView() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <div className="font-bold text-slate-800">
+                          <div className="font-bold text-slate-800 dark:text-[#EDF0F7]">
                             2. Срок производства на фабрике
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -2594,7 +2626,7 @@ export function ProcurementContourView() {
                                     `Срок пошива/производства установлен: ${days} дн. (${scopedModelEntries.length} SKU)`
                                   );
                                 }}
-                                className="px-2.5 py-1 rounded-lg font-mono font-bold border bg-white text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer transition"
+                                className="px-2.5 py-1 rounded-lg font-mono font-bold border bg-white dark:bg-[#121620] text-slate-700 dark:text-slate-200 border-slate-300 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536] cursor-pointer transition"
                               >
                                 {days} дн.
                               </button>
@@ -2603,7 +2635,7 @@ export function ProcurementContourView() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <div className="font-bold text-slate-800">
+                          <div className="font-bold text-slate-800 dark:text-[#EDF0F7]">
                             3. Объём закупа с учётом возвратов ПВЗ
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -2619,7 +2651,7 @@ export function ProcurementContourView() {
                                   `Режим закупки: под чистые выкупы ×1,00 (${scopedModelEntries.length} SKU)`
                                 );
                               }}
-                              className="px-2.5 py-1 rounded-lg font-semibold border bg-white text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer transition"
+                              className="px-2.5 py-1 rounded-lg font-semibold border bg-white dark:bg-[#121620] text-slate-700 dark:text-slate-200 border-slate-300 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536] cursor-pointer transition"
                             >
                               Под выкупы (×1,00)
                             </button>
@@ -2635,7 +2667,7 @@ export function ProcurementContourView() {
                                   `Режим закупки: под полный объём заказов ПВЗ (${scopedModelEntries.length} SKU)`
                                 );
                               }}
-                              className="px-2.5 py-1 rounded-lg font-semibold border bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100 cursor-pointer transition"
+                              className="px-2.5 py-1 rounded-lg font-semibold border bg-indigo-50 dark:bg-indigo-500/15 text-indigo-900 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/35 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 cursor-pointer transition"
                             >
                               Под заказы ПВЗ
                             </button>
@@ -2858,6 +2890,7 @@ export function ProcurementContourView() {
                               detectModelBrandPortfolioLabel(m),
                               `${m.title} ${m.categoryLabel || ''}`
                             );
+                            const rowUnitCfg = getBrandUnitConfig(m);
                             const sizeRangeShortLabel = hasLiskaniSizes
                               ? `${sizesCount} разм.`
                               : prodProfile.sizes.length >= 2
@@ -2883,7 +2916,11 @@ export function ProcurementContourView() {
                                     </div>
                                     <div className="font-mono text-[10.5px] text-[#64748B]">
                                       {m.code} · {getNormalizedProcurementCategoryLabel(m)} ·{' '}
-                                      {m.unitsInPack} изд./компл.
+                                      {rowUnitCfg.primaryUnit === 'пар'
+                                        ? '1 пара'
+                                        : hasLiskaniSizes
+                                        ? `${sizesCount} разм. штор`
+                                        : `${m.unitsInPack} ${rowUnitCfg.secondaryUnit}/${rowUnitCfg.primaryUnit}`}
                                     </div>
                                   </td>
 
@@ -2945,11 +2982,15 @@ export function ProcurementContourView() {
                                   </td>
 
                                   <td className="px-2.5 py-2.5 text-right font-mono font-bold text-[#0F172A]">
-                                    <div>{totalModelPacks.toLocaleString('ru-RU')} компл.</div>
+                                    <div>
+                                      {totalModelPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
+                                    </div>
                                     <div className="text-[10px] font-normal text-[#64748B]">
                                       {plan.procureByOrdersVolume
                                         ? `×${plan.orderMultiplier.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} под заказы (${plan.buyoutRatePct}%)`
-                                        : `${totalModelUnits.toLocaleString('ru-RU')} изд.`}
+                                        : rowUnitCfg.primaryUnit === 'пар'
+                                        ? 'под чистые выкупы'
+                                        : `${totalModelUnits.toLocaleString('ru-RU')} ${rowUnitCfg.secondaryUnit}`}
                                     </div>
                                   </td>
 
@@ -2958,7 +2999,7 @@ export function ProcurementContourView() {
                                       {formatMln(w1Rub)}
                                     </div>
                                     <div className="text-[10px] text-[#475569]">
-                                      {w1Packs.toLocaleString('ru-RU')} компл. · ав.{' '}
+                                      {w1Packs.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} · ав.{' '}
                                       {formatMln(w1Prepay)}
                                     </div>
                                   </td>
@@ -2966,7 +3007,7 @@ export function ProcurementContourView() {
                                   <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
                                     <div className="font-semibold">{formatMln(restRub)}</div>
                                     <div className="text-[10px] text-[#64748B]">
-                                      {restPacks.toLocaleString('ru-RU')} компл. (с WB)
+                                      {restPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} (с WB)
                                     </div>
                                   </td>
 
@@ -3159,102 +3200,143 @@ export function ProcurementContourView() {
                                           </div>
                                         ) : (
                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                            {confirmedPos.map((po) => (
-                                              <div
-                                                key={po.id}
-                                                className="rounded-lg border border-emerald-300 bg-emerald-50/50 p-3 space-y-1.5"
-                                              >
-                                                <div className="flex items-center justify-between text-[11px]">
-                                                  <span className="font-bold text-emerald-950">
-                                                    ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
-                                                  </span>
-                                                  <span className="font-mono font-bold text-emerald-700">
-                                                    {formatMln(po.totalOrderRub)}
-                                                  </span>
-                                                </div>
-                                                <div className="font-mono text-[12px] font-bold text-[#0F172A]">
-                                                  {po.packsQty.toLocaleString('ru-RU')} компл. ({po.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
-                                                </div>
-                                                <div className="text-[10.5px] text-emerald-900/80 flex items-center justify-between">
-                                                  <span>Аванс: {formatMln(po.prepaymentRub)}</span>
-                                                  <span>Приход: {po.requiredArrivalDateIso}</span>
-                                                </div>
-                                              </div>
-                                            ))}
-
-                                            {plan.recommendedBatches.map((rb, bIdx) => {
-                                              const canonicalKeys = ['S', 'M', 'L', 'XL', 'XXL'] as const;
-                                              const mappedSizesText =
-                                                prodProfile.sizes.length === 5 &&
-                                                prodProfile.sizes[0] !== 'S'
-                                                  ? prodProfile.sizes
-                                                      .map(
-                                                        (szLabel, sIdx) =>
-                                                          `${szLabel}:${rb.sizeBreakdownPacks[canonicalKeys[sIdx]] || 0}`
-                                                      )
-                                                      .join(' ')
-                                                  : prodProfile.sizes.length > 0 &&
-                                                    prodProfile.sizes[0] !== 'S'
-                                                  ? prodProfile.sizes
-                                                      .map((szLabel) => {
-                                                        const share =
-                                                          (prodProfile.sizeSharesPct[szLabel] ||
-                                                            Math.round(100 / prodProfile.sizes.length)) / 100;
-                                                        return `${szLabel}:${Math.round(rb.recommendedPacks * share)}`;
-                                                      })
-                                                      .join(' ')
-                                                  : `S:${rb.sizeBreakdownPacks.S} M:${rb.sizeBreakdownPacks.M} L:${rb.sizeBreakdownPacks.L} XL:${rb.sizeBreakdownPacks.XL} XXL:${rb.sizeBreakdownPacks.XXL}`;
+                                            {(() => {
+                                              const unitCfg = getBrandUnitConfig(m);
+                                              const formatModelQty = (packsQty: number, physUnitsQty: number) => {
+                                                if (unitCfg.primaryUnit === 'пар') {
+                                                  return `${packsQty.toLocaleString('ru-RU')} пар`;
+                                                }
+                                                if ((m.unitsInPack || 1) > 1) {
+                                                  return `${packsQty.toLocaleString('ru-RU')} ${unitCfg.primaryUnit} (${physUnitsQty.toLocaleString('ru-RU')} ${unitCfg.secondaryUnit})`;
+                                                }
+                                                return `${packsQty.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`;
+                                              };
 
                                               return (
-                                                <div
-                                                  key={rb.periodId}
-                                                  className="rounded-lg border border-[#CBD5E1] bg-white p-3 space-y-1.5 flex flex-col justify-between"
-                                                >
-                                                  <div className="space-y-1">
-                                                    <div className="flex items-center justify-between text-[11px]">
-                                                      <span className="font-bold text-[#0F172A]">
-                                                        Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
-                                                      </span>
-                                                      <span className="font-mono font-semibold text-emerald-700">
-                                                        {formatMln(rb.estimatedTotalRub)}
-                                                      </span>
-                                                    </div>
-                                                    <div className="font-mono text-[12px] font-bold text-[#0F172A]">
-                                                      {rb.recommendedPacks.toLocaleString('ru-RU')} компл. ({rb.physicalUnitsQty.toLocaleString('ru-RU')} изд.)
-                                                    </div>
-                                                    <div className="text-[10.5px] text-[#64748B]">
-                                                      Аванс: {formatMln(rb.prepaymentRub)} · Доплата: {formatMln(rb.balancePaymentRub)}
-                                                    </div>
-                                                    <div className="font-mono text-[10px] text-[#475569] bg-slate-50 rounded px-1.5 py-0.5">
-                                                      {mappedSizesText}
-                                                    </div>
-                                                  </div>
-                                                  <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100">
-                                                    <span className="text-[10px] text-slate-500">
-                                                      Заказ до {rb.recommendedOrderDateIso}
-                                                    </span>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        const nextM = approveRecommendedBatch(
-                                                          m,
-                                                          rb,
-                                                          'Владелец'
-                                                        );
-                                                        updateModelSpec(nextM);
-                                                        notify(
-                                                          'success',
-                                                          `Партия ${rb.coverageMonthsLabel} (${m.code}) утверждена в PO`
-                                                        );
-                                                      }}
-                                                      className="rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 px-2 py-0.5 text-[10.5px] font-bold transition cursor-pointer"
+                                                <>
+                                                  {confirmedPos.map((po) => (
+                                                    <div
+                                                      key={po.id}
+                                                      className="rounded-lg border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-500/10 p-3 space-y-1.5 flex flex-col justify-between"
                                                     >
-                                                      ✓ Утвердить в PO
-                                                    </button>
-                                                  </div>
-                                                </div>
+                                                      <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]">
+                                                          <span className="font-bold text-emerald-950 dark:text-emerald-200">
+                                                            ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
+                                                          </span>
+                                                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                                                            {formatMln(po.totalOrderRub)}
+                                                          </span>
+                                                        </div>
+                                                        <div className="font-mono text-[12px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                                                          {formatModelQty(po.packsQty, po.physicalUnitsQty)}
+                                                        </div>
+                                                        <div className="text-[10.5px] text-emerald-900/80 dark:text-emerald-200/80 flex items-center justify-between">
+                                                          <span>Аванс: {formatMln(po.prepaymentRub)}</span>
+                                                          <span>Приход: {po.requiredArrivalDateIso}</span>
+                                                        </div>
+                                                      </div>
+                                                      <div className="pt-1 flex items-center justify-between gap-2 border-t border-emerald-200/70 dark:border-emerald-500/25">
+                                                        <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-medium">
+                                                          Подтверждён PO
+                                                        </span>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            const nextM = removeApprovedPurchaseOrder(
+                                                              m,
+                                                              po.id,
+                                                              'Владелец'
+                                                            );
+                                                            updateModelSpec(nextM);
+                                                            notify(
+                                                              'success',
+                                                              `Заказ ${po.orderNumber} (${m.code}) возвращён в плановые партии`
+                                                            );
+                                                          }}
+                                                          className="rounded-md bg-white dark:bg-[#121620] hover:bg-rose-50 dark:hover:bg-rose-500/20 text-slate-700 dark:text-slate-200 hover:text-rose-700 dark:hover:text-rose-300 border border-emerald-300/80 dark:border-emerald-500/35 px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer"
+                                                        >
+                                                          ↺ В черновик
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                  ))}
+
+                                                  {plan.recommendedBatches.map((rb, bIdx) => {
+                                                    const canonicalKeys = ['S', 'M', 'L', 'XL', 'XXL'] as const;
+                                                    const mappedSizesText =
+                                                      prodProfile.sizes.length === 5 &&
+                                                      prodProfile.sizes[0] !== 'S'
+                                                        ? prodProfile.sizes
+                                                            .map(
+                                                              (szLabel, sIdx) =>
+                                                                `${szLabel}:${rb.sizeBreakdownPacks[canonicalKeys[sIdx]] || 0}`
+                                                            )
+                                                            .join(' ')
+                                                        : prodProfile.sizes.length > 0 &&
+                                                          prodProfile.sizes[0] !== 'S'
+                                                        ? allocatePacksAcrossProfileSizes(
+                                                            rb.recommendedPacks,
+                                                            prodProfile.sizes,
+                                                            prodProfile.sizeSharesPct
+                                                          )
+                                                            .map((item) => `${item.label}:${item.qty}`)
+                                                            .join(' ')
+                                                        : `S:${rb.sizeBreakdownPacks.S} M:${rb.sizeBreakdownPacks.M} L:${rb.sizeBreakdownPacks.L} XL:${rb.sizeBreakdownPacks.XL} XXL:${rb.sizeBreakdownPacks.XXL}`;
+
+                                                    return (
+                                                      <div
+                                                        key={rb.periodId}
+                                                        className="rounded-lg border border-[#CBD5E1] dark:border-[#283246] bg-white dark:bg-[#121620] p-3 space-y-1.5 flex flex-col justify-between"
+                                                      >
+                                                        <div className="space-y-1">
+                                                          <div className="flex items-center justify-between text-[11px]">
+                                                            <span className="font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                                                              Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
+                                                            </span>
+                                                            <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+                                                              {formatMln(rb.estimatedTotalRub)}
+                                                            </span>
+                                                          </div>
+                                                          <div className="font-mono text-[12px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                                                            {formatModelQty(rb.recommendedPacks, rb.physicalUnitsQty)}
+                                                          </div>
+                                                          <div className="text-[10.5px] text-[#64748B] dark:text-slate-400">
+                                                            Аванс: {formatMln(rb.prepaymentRub)} · Доплата: {formatMln(rb.balancePaymentRub)}
+                                                          </div>
+                                                          <div className="font-mono text-[10px] text-[#475569] dark:text-slate-300 bg-slate-50 dark:bg-[#181D2A] rounded px-1.5 py-0.5">
+                                                            {mappedSizesText}
+                                                          </div>
+                                                        </div>
+                                                        <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-[#222938]">
+                                                          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                                            Заказ до {rb.recommendedOrderDateIso}
+                                                          </span>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              const nextM = approveRecommendedBatch(
+                                                                m,
+                                                                rb,
+                                                                'Владелец'
+                                                              );
+                                                              updateModelSpec(nextM);
+                                                              notify(
+                                                                'success',
+                                                                `Партия ${rb.coverageMonthsLabel} (${m.code}) утверждена в PO`
+                                                              );
+                                                            }}
+                                                            className="rounded-md bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-600 dark:hover:bg-emerald-500 text-emerald-800 dark:text-emerald-300 hover:text-white dark:hover:text-slate-950 border border-emerald-300 dark:border-emerald-500/35 px-2 py-0.5 text-[10.5px] font-bold transition cursor-pointer"
+                                                          >
+                                                            ✓ Утвердить в PO
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </>
                                               );
-                                            })}
+                                            })()}
                                           </div>
                                         )}
                                       </div>

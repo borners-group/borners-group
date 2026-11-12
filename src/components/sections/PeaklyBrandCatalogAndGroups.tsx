@@ -562,6 +562,8 @@ export function PeaklyMasterCabinetsSummary({
   onOpenStudioCanvas,
 }: PeaklyMasterCabinetsSummaryProps) {
   const { concepts, navigateTo } = usePlatform();
+  const rawGradUid = React.useId();
+  const gradUid = useMemo(() => rawGradUid.replace(/[^a-zA-Z0-9_-]/g, ''), [rawGradUid]);
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
   const [monthlyCashflowOpen, setMonthlyCashflowOpen] = useState(false);
   const [procurementWavesOpen, setProcurementWavesOpen] = useState(false);
@@ -932,40 +934,43 @@ export function PeaklyMasterCabinetsSummary({
   const hasActiveWhatIf =
     whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
 
-  // Данные 4 реальных волн закупок 2027 года (из фактических PO и квартальных партий моделей)
+  // Данные 4 реальных волн закупок 2027 года (строго 1-в-1 с активными кабинетами multiBrandSummary.brands)
   const procurementWavesTimeline = useMemo(() => {
     if (models && models.length > 0 && scenarios.length > 0) {
+      const seenKeys = new Set<string>();
+      const catalogModels: ScenarioModelSpec[] = [];
+      for (const rm of models) {
+        if (!rm || rm.launchStatus === 'В архиве') continue;
+        const key = rm.id || rm.code;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        catalogModels.push(rm);
+      }
+
       const entries: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] = [];
-      for (const m of models) {
-        if (!m || m.launchStatus === 'В архиве') continue;
-        const mBrand = normalizePortfolioBrandCode(
-          detectModelBrandPortfolioLabel(m)
-        );
-        if (normalizedSelectedBrand !== 'ALL' && mBrand !== normalizedSelectedBrand) {
+      for (const bRow of multiBrandSummary.brands) {
+        if (normalizedSelectedBrand !== 'ALL' && bRow.brandCode !== normalizedSelectedBrand) {
           continue;
         }
-        if (
-          selectedScenarioByBrand &&
-          isBrandScenarioExplicitlyNone(mBrand, selectedScenarioByBrand as Record<string, number | null>)
-        ) {
+        if (!bRow.hasScenario || !bRow.hasModels || bRow.selectedScenarioId === null) {
           continue;
         }
-        const effScen = resolveEffectiveScenarioForModel(
-          m,
-          scenarios,
-          (selectedScenarioByBrand || {}) as Record<string, number | null>,
-          scenarios[0]
-        );
-        if (!effScen) continue;
-        // BORNERS S1: строгая изоляция 21 SKU
-        if (
-          mBrand === 'BORNERS' &&
-          effScen.id === 1 &&
-          m.plansByScenario?.[1] === undefined
-        ) {
-          continue;
+        const bScen = scenarios.find((s) => s.id === bRow.selectedScenarioId && !s.isArchived);
+        if (!bScen) continue;
+
+        const brandModels = catalogModels.filter((m) => matchesBrandFilter(m, bRow.brandCode));
+        const scopedBrandModels =
+          bScen.id === ACTING_2027_SCENARIO_ID
+            ? brandModels.filter(
+                (m) =>
+                  Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+                  Boolean(m.plansByScenario?.[ACTING_2027_SCENARIO_ID])
+              )
+            : brandModels;
+
+        for (const m of scopedBrandModels) {
+          entries.push({ model: m, scenario: bScen });
         }
-        entries.push({ model: m, scenario: effScen });
       }
       if (entries.length > 0) {
         return computePortfolioProcurementWavesSummary(entries, gt.monthlyRows, 2027).waves;
@@ -1021,13 +1026,13 @@ export function PeaklyMasterCabinetsSummary({
           | 'cyan'
           | 'indigo'
           | 'emerald',
-        sharePct: totalProc > 0 ? Math.round((budgetRub / totalProc) * 100) : 25,
+        sharePct: totalProc > 0 ? Math.round((budgetRub / totalProc) * 100) : 0,
       };
     });
   }, [
     models,
     scenarios,
-    selectedScenarioByBrand,
+    multiBrandSummary.brands,
     normalizedSelectedBrand,
     gt.monthlyRows,
     gt.totalProcurementBudgetRub,
@@ -1311,7 +1316,8 @@ export function PeaklyMasterCabinetsSummary({
               </div>
 
               <div
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setTrendChartMode('ownMoneyPeak');
                   setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
                 }}
@@ -1499,11 +1505,11 @@ export function PeaklyMasterCabinetsSummary({
                 className="w-full h-full overflow-visible"
               >
                 <defs>
-                  <linearGradient id="peaklyEmeraldAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={`peaklyEmeraldAreaGrad-${gradUid}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10B981" stopOpacity="0.28" />
                     <stop offset="100%" stopColor="#10B981" stopOpacity="0.02" />
                   </linearGradient>
-                  <linearGradient id="peaklyOwnMoneyAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={`peaklyOwnMoneyAreaGrad-${gradUid}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
                     <stop offset="65%" stopColor="#F59E0B" stopOpacity="0.14" />
                     <stop offset="100%" stopColor="#E11D48" stopOpacity="0.22" />
@@ -1555,8 +1561,8 @@ export function PeaklyMasterCabinetsSummary({
                     d={trendChartData.areaPath}
                     fill={
                       trendChartMode === 'ownMoneyPeak'
-                        ? 'url(#peaklyOwnMoneyAreaGrad)'
-                        : 'url(#peaklyEmeraldAreaGrad)'
+                        ? `url(#peaklyOwnMoneyAreaGrad-${gradUid})`
+                        : `url(#peaklyEmeraldAreaGrad-${gradUid})`
                     }
                     className="transition-all duration-700 ease-out"
                   />
@@ -1870,7 +1876,11 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 shrink-0">
-                  аванс 30%
+                  аванс{' '}
+                  {gt.firstWaveStartBudgetRub > 0
+                    ? Math.round((gt.firstWavePrepaymentRub / gt.firstWaveStartBudgetRub) * 100)
+                    : 30}
+                  %
                 </span>
               </div>
               <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
@@ -2612,13 +2622,17 @@ export function PeaklyMasterCabinetsSummary({
 
                     <div className="space-y-2 text-[11.5px] text-[#64748B]">
                       <div className="flex items-center justify-between">
-                        <span>Аванс 30% ({wave.orderWindow}):</span>
+                        <span>
+                          Аванс {wave.budgetRub > 0 ? Math.round((wave.prepayRub / wave.budgetRub) * 100) : 30}% ({wave.orderWindow}):
+                        </span>
                         <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
                           {formatMln(wave.prepayRub)}
                         </strong>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Доплата 70% ({wave.arrivalMonth}):</span>
+                        <span>
+                          Доплата {wave.budgetRub > 0 ? Math.round((wave.balanceRub / wave.budgetRub) * 100) : 70}% ({wave.arrivalMonth}):
+                        </span>
                         <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
                           {formatMln(wave.balanceRub)}
                         </strong>
