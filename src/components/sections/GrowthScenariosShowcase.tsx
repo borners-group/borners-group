@@ -21,6 +21,7 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
+import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
 import {
   GalleryMediaItem,
   GrowthScenarioDef,
@@ -164,7 +165,9 @@ export function GrowthScenariosShowcase({
   onOpenStudioCanvas,
 }: GrowthScenariosShowcaseProps = {}) {
   const {
+    currentUser,
     concepts,
+    updateConcept,
     products,
     createProduct,
     updateProduct,
@@ -175,6 +178,11 @@ export function GrowthScenariosShowcase({
     setBrandFilter,
     notify,
   } = usePlatform();
+
+  const hasFinance = canUserViewFinance(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
+  const isReadOnlyRole =
+    currentUser.role === 'Viewer' || currentUser.role === 'Partner';
 
   // Архитектура из 3 экранов (п. 02 ТЗ):
   // 'scenarios' (Экран №1) -> 'model' (Экран №2) -> 'sales-plan' (Экран №3)
@@ -1564,6 +1572,7 @@ export function GrowthScenariosShowcase({
   // Смена приоритета прямо на карточке модели (Высший -> Высокий -> Средний -> Не указан)
   const handleCycleCardPriority = (mod: ScenarioModelSpec, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isReadOnlyRole) return;
     const cur = getModelPriority(mod);
     const nextPrio = cycleModelPriority(cur);
     const updated: ScenarioModelSpec = {
@@ -1588,6 +1597,7 @@ export function GrowthScenariosShowcase({
     e?: React.SyntheticEvent
   ) => {
     if (e) e.stopPropagation();
+    if (isReadOnlyRole) return;
     const nextDecPacks = Math.max(0, Math.round(nextDecPacksRaw));
     const targetScen = resolveEffectiveScenarioForModel(
       mod,
@@ -2242,47 +2252,51 @@ export function GrowthScenariosShowcase({
               РЕЖИМ «ГЛАВНАЯ»: ФЛАГМАНСКАЯ ГЛАВНАЯ СТРАНИЦА ВСЕГО СЕРВИСА BORNERS GROUP
           ===================================================================== */}
           {homeSubView === 'home' && (
-            <PeaklyMasterCabinetsSummary
-              multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
-              models={models}
-              selectedScenarioByBrand={selectedScenarioByBrand}
-              scenarios={scenarios}
-              activeBrandFilter={brandFilterLocal}
-              isStandaloneHome={true}
-              onOpenStrategySummary={() => switchHomeSubView('summary')}
-              onOpenStudioCanvas={onOpenStudioCanvas}
-              onSelectBrandFilter={(bCode) => {
-                if (
-                  bCode === 'FUKAI' &&
-                  currentScenario.id === 1 &&
-                  !includeGroupPortfolioInS1
-                ) {
-                  setIncludeGroupPortfolioInS1(true);
-                }
-                setBrandFilterLocal(bCode);
-                setBrandFilter(bCode);
-              }}
-              onSelectScenarioForBrand={(bCode, scenId) => {
-                setSelectedScenarioForBrand(bCode, scenId);
-              }}
-              onSelectActiveScenarioId={(scenId) => {
-                setSelectedScenarioId(scenId);
-              }}
-              onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-                setDraftScenBrand(bCode);
-                setDraftScenTitle(defaultTitle);
-                setDraftCopyFromScenarioId(0);
-                setNewScenarioModalOpen(true);
-              }}
-              onOpenCreateModelForBrand={(bCode) => {
-                setDraftBrand(bCode);
-                setNewModelModalOpen(true);
-              }}
-              onLaunchStarterCabinet={handleLaunchStarterCabinet}
-              onLaunchAllCabinets={handleLaunchAllCabinets}
-              onResetStarterCabinets={handleResetStarterCabinets}
-              onNavigateSection={(sec) => navigateTo(sec)}
-            />
+            <div data-tour="growth-scenarios">
+              <PeaklyMasterCabinetsSummary
+                multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+                models={models}
+                selectedScenarioByBrand={selectedScenarioByBrand}
+                scenarios={scenarios}
+                activeBrandFilter={brandFilterLocal}
+                isStandaloneHome={true}
+                onOpenStrategySummary={() => switchHomeSubView('summary')}
+                onOpenStudioCanvas={onOpenStudioCanvas}
+                onSelectBrandFilter={(bCode) => {
+                  if (
+                    bCode === 'FUKAI' &&
+                    currentScenario.id === 1 &&
+                    !includeGroupPortfolioInS1
+                  ) {
+                    setIncludeGroupPortfolioInS1(true);
+                  }
+                  setBrandFilterLocal(bCode);
+                  setBrandFilter(bCode);
+                }}
+                onSelectScenarioForBrand={(bCode, scenId) => {
+                  setSelectedScenarioForBrand(bCode, scenId);
+                }}
+                onSelectActiveScenarioId={(scenId) => {
+                  setSelectedScenarioId(scenId);
+                }}
+                onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+                  if (isReadOnlyRole) return;
+                  setDraftScenBrand(bCode);
+                  setDraftScenTitle(defaultTitle);
+                  setDraftCopyFromScenarioId(0);
+                  setNewScenarioModalOpen(true);
+                }}
+                onOpenCreateModelForBrand={(bCode) => {
+                  if (isReadOnlyRole) return;
+                  setDraftBrand(bCode);
+                  setNewModelModalOpen(true);
+                }}
+                onLaunchStarterCabinet={isReadOnlyRole ? () => {} : handleLaunchStarterCabinet}
+                onLaunchAllCabinets={isReadOnlyRole ? () => {} : handleLaunchAllCabinets}
+                onResetStarterCabinets={isReadOnlyRole ? () => {} : handleResetStarterCabinets}
+                onNavigateSection={(sec) => navigateTo(sec)}
+              />
+            </div>
           )}
 
           {/* =====================================================================
@@ -2458,7 +2472,7 @@ export function GrowthScenariosShowcase({
                   className="hidden"
                 />
 
-                {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
+                {currentScenario.id !== ACTING_2027_SCENARIO_ID && !isReadOnlyRole && (
                   <div className="inline-flex items-center gap-1 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] p-0.5 pl-2.5">
                     <span className="text-[11.5px] font-medium text-[#64748B]">Цель дек:</span>
                     <input
@@ -2523,7 +2537,7 @@ export function GrowthScenariosShowcase({
                         className="fixed inset-0 z-40"
                       />
                       <div className="absolute right-0 mt-1.5 w-76 rounded-[14px] bg-white border border-[#CFD6E0] shadow-[0_16px_40px_rgba(15,23,42,0.12)] p-2 z-50 text-[12px] space-y-1.5">
-                        {currentScenario.id !== ACTING_2027_SCENARIO_ID && (
+                        {currentScenario.id !== ACTING_2027_SCENARIO_ID && !isReadOnlyRole && (
                           <div className="pb-1.5 border-b border-[#EEF2F6] space-y-0.5">
                             <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                               Эталоны продаж и веса
@@ -2537,9 +2551,11 @@ export function GrowthScenariosShowcase({
                               className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
                             >
                               <span>Сохранённые продажи</span>
-                              <span className="font-mono text-[11px] text-[#111827] font-bold">
-                                109,94 млн ₽
-                              </span>
+                              {hasFinance && (
+                                <span className="font-mono text-[11px] text-[#111827] font-bold">
+                                  109,94 млн ₽
+                                </span>
+                              )}
                             </button>
                             <button
                               type="button"
@@ -2550,51 +2566,57 @@ export function GrowthScenariosShowcase({
                               className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
                             >
                               <span>Сбросить к эталону PDF</span>
-                              <span className="font-mono text-[11px] text-[#64748B]">
-                                100,15 млн ₽
-                              </span>
+                              {hasFinance && (
+                                <span className="font-mono text-[11px] text-[#64748B]">
+                                  100,15 млн ₽
+                                </span>
+                              )}
                             </button>
                           </div>
                         )}
 
-                        <div className="pb-1.5 border-b border-[#EEF2F6] space-y-0.5">
-                          <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
-                            Обмен планом сценария
+                        {hasFinance && (
+                          <div className="pb-1.5 border-b border-[#EEF2F6] space-y-0.5">
+                            <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
+                              Обмен планом сценария
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExportMenuOpen(false);
+                                handleExportScenarioPlan('csv');
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
+                            >
+                              <span>Экспорт плана</span>
+                              <span className="font-mono text-[10.5px] text-[#64748B]">CSV</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExportMenuOpen(false);
+                                handleExportScenarioPlan('json');
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
+                            >
+                              <span>Экспорт плана</span>
+                              <span className="font-mono text-[10.5px] text-[#64748B]">JSON</span>
+                            </button>
+                            {!isReadOnlyRole && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExportMenuOpen(false);
+                                  scenarioPlanImportRef.current?.click();
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
+                              >
+                                <span>Импорт плана</span>
+                                <span className="font-mono text-[10.5px] text-[#64748B]">CSV / JSON</span>
+                              </button>
+                            )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExportMenuOpen(false);
-                              handleExportScenarioPlan('csv');
-                            }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
-                          >
-                            <span>Экспорт плана</span>
-                            <span className="font-mono text-[10.5px] text-[#64748B]">CSV</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExportMenuOpen(false);
-                              handleExportScenarioPlan('json');
-                            }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
-                          >
-                            <span>Экспорт плана</span>
-                            <span className="font-mono text-[10.5px] text-[#64748B]">JSON</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExportMenuOpen(false);
-                              scenarioPlanImportRef.current?.click();
-                            }}
-                            className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-[#F8FAFC] text-left font-medium text-[#111827] flex items-center justify-between cursor-pointer"
-                          >
-                            <span>Импорт плана</span>
-                            <span className="font-mono text-[10.5px] text-[#64748B]">CSV / JSON</span>
-                          </button>
-                        </div>
+                        )}
 
                         <div className="space-y-0.5">
                           <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
@@ -2637,13 +2659,15 @@ export function GrowthScenariosShowcase({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => setNewScenarioModalOpen(true)}
-                  className="h-8 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
-                >
-                  + Новый сценарий
-                </button>
+                {!isReadOnlyRole && (
+                  <button
+                    type="button"
+                    onClick={() => setNewScenarioModalOpen(true)}
+                    className="h-8 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
+                  >
+                    + Новый сценарий
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2796,76 +2820,82 @@ export function GrowthScenariosShowcase({
                                 {agg?.modelsCount || 0} SKU
                               </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDraftScenTitle(`${sc.title} (копия)`);
-                                const nb = sc.ownerBrandCode
-                                  ? normalizePortfolioBrandCode(sc.ownerBrandCode)
-                                  : brandFilterLocal !== 'ALL'
-                                  ? normalizePortfolioBrandCode(brandFilterLocal)
-                                  : 'BORNERS';
-                                setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
-                                setDraftScenYear((sc.year as 2027 | 2028) || 2027);
-                                setDraftScenTargetMln(sc.monthlyTargetMln);
-                                setDraftCopyFromScenarioId(sc.id);
-                                setNewScenarioModalOpen(true);
-                              }}
-                              title={`Скопировать сценарий «${sc.title}»`}
-                              className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
-                            >
-                              Копия
-                            </button>
-                            {sc.id !== ACTING_2027_SCENARIO_ID && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const nextName =
-                                    typeof window !== 'undefined'
-                                      ? window.prompt('Новое название сценария:', sc.title)
-                                      : null;
-                                  if (nextName && nextName.trim()) {
-                                    commitScenarios((prev) =>
-                                      renameBrandScenario(prev, sc.id, { title: nextName.trim() })
-                                    );
-                                    notify(
-                                      'success',
-                                      'Сценарий переименован',
-                                      `Новое название: «${nextName.trim()}»`
-                                    );
-                                  }
-                                }}
-                                title={`Переименовать сценарий «${sc.title}»`}
-                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
-                              >
-                                Имя
-                              </button>
-                            )}
-                            {scenarios.length > 1 && sc.id !== ACTING_2027_SCENARIO_ID && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteScenario(sc);
-                                }}
-                                title={`Удалить сценарий «${sc.title}»`}
-                                aria-label={`Удалить сценарий ${sc.title}`}
-                                className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-medium transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
-                              >
-                                ×
-                              </button>
+                            {!isReadOnlyRole && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDraftScenTitle(`${sc.title} (копия)`);
+                                    const nb = sc.ownerBrandCode
+                                      ? normalizePortfolioBrandCode(sc.ownerBrandCode)
+                                      : brandFilterLocal !== 'ALL'
+                                      ? normalizePortfolioBrandCode(brandFilterLocal)
+                                      : 'BORNERS';
+                                    setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
+                                    setDraftScenYear((sc.year as 2027 | 2028) || 2027);
+                                    setDraftScenTargetMln(sc.monthlyTargetMln);
+                                    setDraftCopyFromScenarioId(sc.id);
+                                    setNewScenarioModalOpen(true);
+                                  }}
+                                  title={`Скопировать сценарий «${sc.title}»`}
+                                  className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                                >
+                                  Копия
+                                </button>
+                                {sc.id !== ACTING_2027_SCENARIO_ID && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const nextName =
+                                        typeof window !== 'undefined'
+                                          ? window.prompt('Новое название сценария:', sc.title)
+                                          : null;
+                                      if (nextName && nextName.trim()) {
+                                        commitScenarios((prev) =>
+                                          renameBrandScenario(prev, sc.id, { title: nextName.trim() })
+                                        );
+                                        notify(
+                                          'success',
+                                          'Сценарий переименован',
+                                          `Новое название: «${nextName.trim()}»`
+                                        );
+                                      }
+                                    }}
+                                    title={`Переименовать сценарий «${sc.title}»`}
+                                    className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                                  >
+                                    Имя
+                                  </button>
+                                )}
+                                {scenarios.length > 1 && sc.id !== ACTING_2027_SCENARIO_ID && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteScenario(sc);
+                                    }}
+                                    title={`Удалить сценарий «${sc.title}»`}
+                                    aria-label={`Удалить сценарий ${sc.title}`}
+                                    className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-medium transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
 
                         <div className="mt-2.5 flex items-baseline justify-between gap-2">
                           <div className="inline-flex items-baseline gap-1.5 font-mono text-2xl font-semibold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7] leading-none">
-                            <span>{liveDecMlnStr}</span>
-                            <span className="font-sans text-xs font-medium tracking-normal text-[#64748B]">
-                              млн ₽ в дек
-                            </span>
+                            <span>{hasFinance ? liveDecMlnStr : 'Скрыто'}</span>
+                            {hasFinance && (
+                              <span className="font-sans text-xs font-medium tracking-normal text-[#64748B]">
+                                млн ₽ в дек
+                              </span>
+                            )}
                           </div>
                           <span
                             className={`font-mono text-[10.5px] font-medium px-2 py-0.5 rounded-md ${
@@ -2882,12 +2912,20 @@ export function GrowthScenariosShowcase({
                       {/* Спокойные итоги и 3px полоса прогресса по нижнему краю */}
                       <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] space-y-1">
                         <div className="flex items-center justify-between gap-2 text-xs text-[#64748B]">
-                          <span>Цель: {String(targetMlnNum).replace('.', ',')} млн</span>
+                          <span>
+                            {hasFinance
+                              ? `Цель: ${String(targetMlnNum).replace('.', ',')} млн`
+                              : `${agg?.modelsCount || 0} SKU в плане`}
+                          </span>
                           <span className="font-mono font-medium text-[#0F172A] dark:text-[#EDF0F7]">
-                            {holdingCombinedMln ? `BORNERS: ${annualMln} млн` : `Год: ${annualMln} млн ₽`}
+                            {!hasFinance
+                              ? 'Скрыто'
+                              : holdingCombinedMln
+                              ? `BORNERS: ${annualMln} млн`
+                              : `Год: ${annualMln} млн ₽`}
                           </span>
                         </div>
-                        {holdingCombinedMln && (
+                        {hasFinance && holdingCombinedMln && (
                           <div className="flex items-center justify-between gap-1 text-[11px]">
                             <span className="text-[#64748B] truncate">
                               + FUKAI {(fukaiAnnualRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
@@ -3052,60 +3090,72 @@ export function GrowthScenariosShowcase({
                               {metricLabelTitle} {currentScenario.year || 2027}
                             </span>
                             <span className="font-mono text-[12px] font-semibold px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] text-[#334155]">
-                              Итого за год: {trajectoryChartMetric === 'profit' ? '+' : ''}
-                              {totalYearActiveMln.toFixed(2).replace('.', ',')} млн ₽
+                              Итого за год:{' '}
+                              {(trajectoryChartMetric === 'procurement' ? hasCost : hasFinance)
+                                ? `${trajectoryChartMetric === 'profit' ? '+' : ''}${totalYearActiveMln
+                                    .toFixed(2)
+                                    .replace('.', ',')} млн ₽`
+                                : 'Скрыто'}
                             </span>
                           </div>
                         </div>
 
                         {/* Переключатель метрики графика (Выручка | Опер. прибыль | Закупки) */}
                         <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#CBD5E1] p-0.5 text-[11.5px]">
-                          {[
-                            { id: 'revenue' as const, label: 'Выручка' },
-                            { id: 'profit' as const, label: 'Опер. прибыль' },
-                            { id: 'procurement' as const, label: 'Оплаты партий' },
-                          ].map((mTab) => {
-                            const active = trajectoryChartMetric === mTab.id;
-                            return (
-                              <button
-                                key={mTab.id}
-                                type="button"
-                                onClick={() => setTrajectoryChartMetric(mTab.id)}
-                                className={`h-7 px-2.5 rounded-[7px] font-semibold transition cursor-pointer ${
-                                  active
-                                    ? 'bg-white text-[#111827] shadow-2xs border border-[#CBD5E1]'
-                                    : 'text-[#64748B] hover:text-[#111827]'
-                                }`}
-                              >
-                                {mTab.label}
-                              </button>
-                            );
-                          })}
+                          {(
+                            [
+                              { id: 'revenue' as const, label: 'Выручка', show: hasFinance },
+                              { id: 'profit' as const, label: 'Опер. прибыль', show: hasFinance && hasCost },
+                              { id: 'procurement' as const, label: 'Оплаты партий', show: hasCost },
+                            ] as const
+                          )
+                            .filter((mTab) => mTab.show)
+                            .map((mTab) => {
+                              const active = trajectoryChartMetric === mTab.id;
+                              return (
+                                <button
+                                  key={mTab.id}
+                                  type="button"
+                                  onClick={() => setTrajectoryChartMetric(mTab.id)}
+                                  className={`h-7 px-2.5 rounded-[7px] font-semibold transition cursor-pointer ${
+                                    active
+                                      ? 'bg-white text-[#111827] shadow-2xs border border-[#CBD5E1]'
+                                      : 'text-[#64748B] hover:text-[#111827]'
+                                  }`}
+                                >
+                                  {mTab.label}
+                                </button>
+                              );
+                            })}
                         </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                        <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] px-3 py-1">
-                          <span className="font-semibold text-[#475569]">
-                            {MONTHS_SHORT_RU[selectedChartMonthIdx]}:
-                          </span>
-                          <span className="font-mono font-extrabold text-[#111827]">
-                            {selPt.revenueMln.toFixed(2).replace('.', ',')} млн ₽
-                          </span>
-                          <span className="font-mono font-bold text-[#0D9488] border-l border-[#CBD5E1] pl-2">
-                            прибыль +{selPt.profitMln.toFixed(2).replace('.', ',')} млн
-                          </span>
-                          {brandMonthBreakdown.length > 1 && (
-                            <span className="hidden xl:inline text-[11px] text-[#64748B] border-l border-[#CBD5E1] pl-2">
-                              {brandMonthBreakdown
-                                .map(
-                                  (b) =>
-                                    `${b.code}: ${b.revMln.toFixed(1).replace('.', ',')} млн`
-                                )
-                                .join(' · ')}
+                        {hasFinance && (
+                          <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] px-3 py-1">
+                            <span className="font-semibold text-[#475569]">
+                              {MONTHS_SHORT_RU[selectedChartMonthIdx]}:
                             </span>
-                          )}
-                        </div>
+                            <span className="font-mono font-extrabold text-[#111827]">
+                              {selPt.revenueMln.toFixed(2).replace('.', ',')} млн ₽
+                            </span>
+                            {hasCost && (
+                              <span className="font-mono font-bold text-[#0D9488] border-l border-[#CBD5E1] pl-2">
+                                прибыль +{selPt.profitMln.toFixed(2).replace('.', ',')} млн
+                              </span>
+                            )}
+                            {brandMonthBreakdown.length > 1 && (
+                              <span className="hidden xl:inline text-[11px] text-[#64748B] border-l border-[#CBD5E1] pl-2">
+                                {brandMonthBreakdown
+                                  .map(
+                                    (b) =>
+                                      `${b.code}: ${b.revMln.toFixed(1).replace('.', ',')} млн`
+                                  )
+                                  .join(' · ')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => navigateTo('launch-calendar')}
@@ -3139,8 +3189,13 @@ export function GrowthScenariosShowcase({
                                     : 'font-semibold text-[#475569] hover:text-[#111827]'
                                 }`}
                               >
-                                {trajectoryChartMetric === 'profit' && pt.activeValMln > 0 ? '+' : ''}
-                                {pt.activeValMln.toFixed(1).replace('.', ',')}
+                                {(trajectoryChartMetric === 'procurement' ? hasCost : hasFinance)
+                                  ? `${
+                                      trajectoryChartMetric === 'profit' && pt.activeValMln > 0
+                                        ? '+'
+                                        : ''
+                                    }${pt.activeValMln.toFixed(1).replace('.', ',')}`
+                                  : '—'}
                               </span>
                             </button>
                           );
@@ -3323,10 +3378,11 @@ export function GrowthScenariosShowcase({
                             </span>
                           </div>
                           <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                            {(currentAgg.targetMonthRevenueRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance
+                              ? `${(currentAgg.targetMonthRevenueRub / 1_000_000)
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </div>
                         </div>
 
@@ -3383,12 +3439,14 @@ export function GrowthScenariosShowcase({
                             <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
                               Годовой оборот (12 мес.)
                             </span>
-                            <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                              ~{avgMonthlyMln} млн/мес
-                            </span>
+                            {hasFinance && (
+                              <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
+                                ~{avgMonthlyMln} млн/мес
+                              </span>
+                            )}
                           </div>
                           <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                            {annualRevMln} млн ₽
+                            {hasFinance ? `${annualRevMln} млн ₽` : 'Скрыто'}
                           </div>
                         </div>
 
@@ -3417,40 +3475,47 @@ export function GrowthScenariosShowcase({
                               Вложить на старт (Q1)
                             </span>
                             <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#52514C]">
-                              Аванс 30%:{' '}
-                              {(
-                                v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub /
-                                1_000_000
-                              )
-                                .toFixed(2)
-                                .replace('.', ',')}{' '}
-                              млн
+                              {hasCost
+                                ? `Аванс 30%: ${(
+                                    v11ScenarioSummary.investmentSummary.firstWavePrepaymentRub /
+                                    1_000_000
+                                  )
+                                    .toFixed(2)
+                                    .replace('.', ',')} млн`
+                                : 'Скрыто'}
                             </span>
                           </div>
                           <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
-                            {(
-                              v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub /
-                              1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasCost
+                              ? `${(
+                                  v11ScenarioSummary.investmentSummary.firstWaveStartBudgetRub /
+                                  1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </div>
                         </div>
 
                         <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
                           <span>
-                            Пик с WB:{' '}
-                            <strong className="font-mono text-[#141413]">
-                              {(
-                                v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub /
-                                1_000_000
-                              )
-                                .toFixed(2)
-                                .replace('.', ',')}{' '}
-                              млн
-                            </strong>{' '}
-                            · год: {procBudgetMln} млн
+                            {hasCost ? (
+                              <>
+                                Пик с WB:{' '}
+                                <strong className="font-mono text-[#141413]">
+                                  {(
+                                    v11ScenarioSummary.investmentSummary.netOwnMoneyRequiredRub /
+                                    1_000_000
+                                  )
+                                    .toFixed(2)
+                                    .replace('.', ',')}{' '}
+                                  млн
+                                </strong>{' '}
+                                · год: {procBudgetMln} млн
+                              </>
+                            ) : (
+                              'Закупочный бюджет: Скрыто'
+                            )}
                           </span>
                           <button
                             type="button"
@@ -3469,21 +3534,23 @@ export function GrowthScenariosShowcase({
                             <span className="text-[11px] font-bold uppercase tracking-wider text-[#686762]">
                               Ожидаемая прибыль и P&L
                             </span>
-                            <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#146C43]">
-                              {v11ScenarioSummary.investmentSummary.operatingMarginPct
-                                .toFixed(1)
-                                .replace('.', ',')}% рентаб.
-                            </span>
+                            {hasFinance && hasCost && (
+                              <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#146C43]">
+                                {v11ScenarioSummary.investmentSummary.operatingMarginPct
+                                  .toFixed(1)
+                                  .replace('.', ',')}% рентаб.
+                              </span>
+                            )}
                           </div>
                           <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#157347]">
-                            +
-                            {(
-                              v11ScenarioSummary.investmentSummary
-                                .annualEstimatedOperatingProfitRub / 1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance && hasCost
+                              ? `+${(
+                                  v11ScenarioSummary.investmentSummary
+                                    .annualEstimatedOperatingProfitRub / 1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </div>
                         </div>
 
@@ -3491,22 +3558,25 @@ export function GrowthScenariosShowcase({
                           <span>
                             Себест. продаж:{' '}
                             <strong className="font-mono text-[#141413]">
-                              {(
-                                v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub /
-                                1_000_000
-                              )
-                                .toFixed(2)
-                                .replace('.', ',')}{' '}
-                              млн ₽
+                              {hasCost
+                                ? `${(
+                                    v11ScenarioSummary.investmentSummary.annualSoldGoodsCostRub /
+                                    1_000_000
+                                  )
+                                    .toFixed(2)
+                                    .replace('.', ',')} млн ₽`
+                                : 'Скрыто'}
                             </strong>
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => navigateTo('finance')}
-                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
-                          >
-                            04 · Финансы →
-                          </button>
+                          {hasFinance && (
+                            <button
+                              type="button"
+                              onClick={() => navigateTo('finance')}
+                              className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                            >
+                              04 · Финансы →
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3599,19 +3669,21 @@ export function GrowthScenariosShowcase({
                                       </option>
                                     ))}
                                   </select>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setDraftScenBrand(b.brandCode);
-                                      setDraftScenTitle(`${b.displayCode} — базовый план 2027`);
-                                      setDraftCopyFromScenarioId(0);
-                                      setNewScenarioModalOpen(true);
-                                    }}
-                                    title={`Создать сценарий для ${b.brandTitle}`}
-                                    className="h-7 px-2 rounded-[7px] border border-[#D8D7CF] bg-[#FAF9F6] hover:bg-[#EFEFE9] text-[11px] font-bold text-[#141413] cursor-pointer"
-                                  >
-                                    +
-                                  </button>
+                                  {!isReadOnlyRole && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDraftScenBrand(b.brandCode);
+                                        setDraftScenTitle(`${b.displayCode} — базовый план 2027`);
+                                        setDraftCopyFromScenarioId(0);
+                                        setNewScenarioModalOpen(true);
+                                      }}
+                                      title={`Создать сценарий для ${b.brandTitle}`}
+                                      className="h-7 px-2 rounded-[7px] border border-[#D8D7CF] bg-[#FAF9F6] hover:bg-[#EFEFE9] text-[11px] font-bold text-[#141413] cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-[#52514C]">
@@ -3622,8 +3694,10 @@ export function GrowthScenariosShowcase({
                                   <span className="text-[10.5px] font-sans text-[#686760]">
                                     {b.statusMessage}
                                   </span>
-                                ) : (
+                                ) : hasFinance ? (
                                   `${(b.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                ) : (
+                                  'Скрыто'
                                 )}
                               </td>
                               <td className="py-2 px-3 text-right font-mono text-[#52514C]">
@@ -3633,24 +3707,32 @@ export function GrowthScenariosShowcase({
                               </td>
                               <td className="py-2 px-3 text-right font-mono text-[#141413]">
                                 {b.hasScenario && b.hasModels
-                                  ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  ? hasCost
+                                    ? `${(b.totalProcurementBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                    : 'Скрыто'
                                   : '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-mono bg-emerald-500/6 text-emerald-700 dark:text-emerald-300 font-bold">
                                 {b.hasScenario && b.hasModels
-                                  ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  ? hasCost
+                                    ? `${(b.firstWaveStartBudgetRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                    : 'Скрыто'
                                   : '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-mono bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7] font-bold">
                                 {b.hasScenario && b.hasModels
-                                  ? b.verifiedOwnMoneyRequiredRub !== null
+                                  ? !hasCost
+                                    ? 'Скрыто'
+                                    : b.verifiedOwnMoneyRequiredRub !== null
                                     ? `${(b.verifiedOwnMoneyRequiredRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
                                     : v11ScenarioSummary.multiBrandSummary.ownMoneyStatusLabel
                                   : '—'}
                               </td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
                                 {b.hasScenario && b.hasModels
-                                  ? `+${(b.annualEstimatedOperatingProfitRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                  ? hasFinance && hasCost
+                                    ? `+${(b.annualEstimatedOperatingProfitRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                    : 'Скрыто'
                                   : '—'}
                               </td>
                             </tr>
@@ -3673,38 +3755,43 @@ export function GrowthScenariosShowcase({
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.modelsCount}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono">
-                            {(
-                              v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
-                              1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance
+                              ? `${(
+                                  v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                                  1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono text-[11px]">
                             {v11ScenarioSummary.multiBrandSummary.procurementBreakdownText}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono">
-                            {(
-                              v11ScenarioSummary.multiBrandSummary.groupTotal
-                                .totalProcurementBudgetRub / 1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasCost
+                              ? `${(
+                                  v11ScenarioSummary.multiBrandSummary.groupTotal
+                                    .totalProcurementBudgetRub / 1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
-                            {(
-                              v11ScenarioSummary.multiBrandSummary.groupTotal
-                                .firstWaveStartBudgetRub / 1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasCost
+                              ? `${(
+                                  v11ScenarioSummary.multiBrandSummary.groupTotal
+                                    .firstWaveStartBudgetRub / 1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
-                            {v11ScenarioSummary.multiBrandSummary.groupTotal
-                              .verifiedOwnMoneyRequiredRub !== null
+                            {!hasCost
+                              ? 'Скрыто'
+                              : v11ScenarioSummary.multiBrandSummary.groupTotal
+                                  .verifiedOwnMoneyRequiredRub !== null
                               ? `${(
                                   v11ScenarioSummary.multiBrandSummary.groupTotal
                                     .verifiedOwnMoneyRequiredRub / 1_000_000
@@ -3714,14 +3801,14 @@ export function GrowthScenariosShowcase({
                               : v11ScenarioSummary.multiBrandSummary.ownMoneyStatusLabel}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono text-[#157347]">
-                            +
-                            {(
-                              v11ScenarioSummary.multiBrandSummary.groupTotal
-                                .annualEstimatedOperatingProfitRub / 1_000_000
-                            )
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance && hasCost
+                              ? `+${(
+                                  v11ScenarioSummary.multiBrandSummary.groupTotal
+                                    .annualEstimatedOperatingProfitRub / 1_000_000
+                                )
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                         </tr>
                       </tfoot>
@@ -3900,7 +3987,9 @@ export function GrowthScenariosShowcase({
                                 {grp.totalPacks.toLocaleString('ru-RU')} компл.
                               </td>
                               <td className="py-2 px-3.5 text-right font-bold text-[#141413]">
-                                {grp.totalBudgetRub.toLocaleString('ru-RU')} ₽
+                                {hasCost
+                                  ? `${grp.totalBudgetRub.toLocaleString('ru-RU')} ₽`
+                                  : 'Скрыто'}
                               </td>
                             </tr>
                           ))}
@@ -4014,13 +4103,15 @@ export function GrowthScenariosShowcase({
                   <option value="В архиве">В архиве</option>
                 </select>
 
-                <button
-                  type="button"
-                  onClick={() => setNewModelModalOpen(true)}
-                  className="h-9 px-3.5 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
-                >
-                  + Добавить модель
-                </button>
+                {!isReadOnlyRole && (
+                  <button
+                    type="button"
+                    onClick={() => setNewModelModalOpen(true)}
+                    className="h-9 px-3.5 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
+                  >
+                    + Добавить модель
+                  </button>
+                )}
               </div>
             </div>
 
@@ -4051,9 +4142,10 @@ export function GrowthScenariosShowcase({
                       Переключить на Сценарий №2 (150 млн)
                     </button>
                   )}
-                  {(brandFilterLocal === 'NA_TELE' ||
-                    brandFilterLocal === 'AKUSHA' ||
-                    brandFilterLocal === 'LISKANI') && (
+                  {!isReadOnlyRole &&
+                    (brandFilterLocal === 'NA_TELE' ||
+                      brandFilterLocal === 'AKUSHA' ||
+                      brandFilterLocal === 'LISKANI') && (
                     <>
                       <button
                         type="button"
@@ -4102,53 +4194,57 @@ export function GrowthScenariosShowcase({
 
             {catalogViewMode === 'grid' ? (
               /* Группы товаров + Раздельные каталоги по брендам + Прямое разбиение по партиям и датам */
-              <PeaklyCatalogGroupsAndBrandsView
-                models={models}
-                filteredModels={filteredModels}
-                currentScenario={currentScenario}
-                scenarios={scenarios}
-                brandFilter={brandFilterLocal}
-                multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
-                onSelectBrandFilter={(bCode) => {
-                  if (
-                    bCode === 'FUKAI' &&
-                    currentScenario.id === 1 &&
-                    !includeGroupPortfolioInS1
-                  ) {
-                    setIncludeGroupPortfolioInS1(true);
-                  }
-                  setBrandFilterLocal(bCode);
-                  setBrandFilter(bCode);
-                }}
-                selectedScenarioByBrand={selectedScenarioByBrand}
-                onSelectScenarioForBrand={(bCode, scenId) => {
-                  setSelectedScenarioForBrand(bCode, scenId);
-                }}
-                onSelectActiveScenarioId={(scenId) => {
-                  setSelectedScenarioId(scenId);
-                }}
-                onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-                  setDraftScenBrand(bCode);
-                  setDraftScenTitle(defaultTitle);
-                  setDraftCopyFromScenarioId(0);
-                  setNewScenarioModalOpen(true);
-                }}
-                onOpenModelPassport={(modelId) => navigateScreen('model', modelId)}
-                onUpdateModel={handleUpdateModel}
-                onDeleteModel={handleDeleteOrArchiveModel}
-                onOpenCreateModel={(defaultBrandCode) => {
-                  if (defaultBrandCode) {
-                    setDraftBrand(defaultBrandCode);
-                  }
-                  setNewModelModalOpen(true);
-                }}
-                onQuickAdjustDecPacks={handleQuickAdjustDecPacks}
-                onCyclePriority={handleCycleCardPriority}
-                onLaunchStarterCabinet={handleLaunchStarterCabinet}
-                onLaunchAllCabinets={handleLaunchAllCabinets}
-                onResetStarterCabinets={handleResetStarterCabinets}
-                notify={notify}
-              />
+              <div data-tour="model-passport">
+                <PeaklyCatalogGroupsAndBrandsView
+                  models={models}
+                  filteredModels={filteredModels}
+                  currentScenario={currentScenario}
+                  scenarios={scenarios}
+                  brandFilter={brandFilterLocal}
+                  multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
+                  onSelectBrandFilter={(bCode) => {
+                    if (
+                      bCode === 'FUKAI' &&
+                      currentScenario.id === 1 &&
+                      !includeGroupPortfolioInS1
+                    ) {
+                      setIncludeGroupPortfolioInS1(true);
+                    }
+                    setBrandFilterLocal(bCode);
+                    setBrandFilter(bCode);
+                  }}
+                  selectedScenarioByBrand={selectedScenarioByBrand}
+                  onSelectScenarioForBrand={(bCode, scenId) => {
+                    setSelectedScenarioForBrand(bCode, scenId);
+                  }}
+                  onSelectActiveScenarioId={(scenId) => {
+                    setSelectedScenarioId(scenId);
+                  }}
+                  onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
+                    if (isReadOnlyRole) return;
+                    setDraftScenBrand(bCode);
+                    setDraftScenTitle(defaultTitle);
+                    setDraftCopyFromScenarioId(0);
+                    setNewScenarioModalOpen(true);
+                  }}
+                  onOpenModelPassport={(modelId) => navigateScreen('model', modelId)}
+                  onUpdateModel={isReadOnlyRole ? () => {} : handleUpdateModel}
+                  onDeleteModel={isReadOnlyRole ? () => {} : handleDeleteOrArchiveModel}
+                  onOpenCreateModel={(defaultBrandCode) => {
+                    if (isReadOnlyRole) return;
+                    if (defaultBrandCode) {
+                      setDraftBrand(defaultBrandCode);
+                    }
+                    setNewModelModalOpen(true);
+                  }}
+                  onQuickAdjustDecPacks={handleQuickAdjustDecPacks}
+                  onCyclePriority={handleCycleCardPriority}
+                  onLaunchStarterCabinet={isReadOnlyRole ? () => {} : handleLaunchStarterCabinet}
+                  onLaunchAllCabinets={isReadOnlyRole ? () => {} : handleLaunchAllCabinets}
+                  onResetStarterCabinets={isReadOnlyRole ? () => {} : handleResetStarterCabinets}
+                  notify={notify}
+                />
+              </div>
             ) : (
               /* Компактная табличная матрица всех SKU на одном экране */
               <div className="overflow-x-auto rounded-[14px] border-[1.5px] border-[#CECDC4]">
@@ -4230,60 +4326,68 @@ export function GrowthScenariosShowcase({
                             className="py-2.5 px-3 text-center"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="inline-flex items-center gap-0.5 bg-[#F5F5F1] border border-[#CECDC4] rounded-[7px] px-1 py-0.5">
-                              <button
-                                type="button"
-                                onClick={(e) =>
-                                  handleQuickAdjustDecPacks(
-                                    mod,
-                                    Math.max(0, met.targetMonthPacks - 200),
-                                    e
-                                  )
-                                }
-                                className="h-5 w-5 rounded text-[12px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] cursor-pointer"
-                              >
-                                −
-                              </button>
-                              <input
-                                type="number"
-                                min={0}
-                                step={100}
-                                value={met.targetMonthPacks}
-                                onChange={(e) =>
-                                  handleQuickAdjustDecPacks(
-                                    mod,
-                                    Number(e.target.value) || 0,
-                                    e
-                                  )
-                                }
-                                className="w-14 text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) =>
-                                  handleQuickAdjustDecPacks(
-                                    mod,
-                                    met.targetMonthPacks + 200,
-                                    e
-                                  )
-                                }
-                                className="h-5 w-5 rounded text-[12px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] cursor-pointer"
-                              >
-                                +
-                              </button>
-                            </div>
+                            {isReadOnlyRole ? (
+                              <span className="font-mono text-[11.5px] font-bold text-[#141413]">
+                                {met.targetMonthPacks.toLocaleString('ru-RU')}
+                              </span>
+                            ) : (
+                              <div className="inline-flex items-center gap-0.5 bg-[#F5F5F1] border border-[#CECDC4] rounded-[7px] px-1 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) =>
+                                    handleQuickAdjustDecPacks(
+                                      mod,
+                                      Math.max(0, met.targetMonthPacks - 200),
+                                      e
+                                    )
+                                  }
+                                  className="h-5 w-5 rounded text-[12px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] cursor-pointer"
+                                >
+                                  −
+                                </button>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={100}
+                                  value={met.targetMonthPacks}
+                                  onChange={(e) =>
+                                    handleQuickAdjustDecPacks(
+                                      mod,
+                                      Number(e.target.value) || 0,
+                                      e
+                                    )
+                                  }
+                                  className="w-14 text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) =>
+                                    handleQuickAdjustDecPacks(
+                                      mod,
+                                      met.targetMonthPacks + 200,
+                                      e
+                                    )
+                                  }
+                                  className="h-5 w-5 rounded text-[12px] font-bold text-[#3F3E3A] hover:bg-white hover:text-[#141413] cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono font-bold text-[#141413] whitespace-nowrap">
-                            {(met.targetMonthRevenueRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance
+                              ? `${(met.targetMonthRevenueRub / 1_000_000)
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono font-semibold text-[#262624] whitespace-nowrap">
-                            {(met.annualRevenueRub / 1_000_000)
-                              .toFixed(2)
-                              .replace('.', ',')}{' '}
-                            млн ₽
+                            {hasFinance
+                              ? `${(met.annualRevenueRub / 1_000_000)
+                                  .toFixed(2)
+                                  .replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono text-[11.5px] text-[#5E5D58] whitespace-nowrap">
                             {met.goalSharePct.toFixed(1).replace('.', ',')}%
@@ -4312,10 +4416,14 @@ export function GrowthScenariosShowcase({
                             {sumDecPacks.toLocaleString('ru-RU')} компл.
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-[#157347]">
-                            {(sumDecRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                            {hasFinance
+                              ? `${(sumDecRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-3 px-4 text-right font-mono">
-                            {(sumYearRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                            {hasFinance
+                              ? `${(sumYearRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-3 px-4 text-right font-mono">100%</td>
                         </tr>
@@ -4339,7 +4447,7 @@ export function GrowthScenariosShowcase({
                     </p>
                   </div>
                   <a
-                    href="docs/acting-2027/BORNERS_2027_acting_assortment.pdf"
+                    href={resolvePublicAssetUrl('docs/acting-2027/BORNERS_2027_acting_assortment.pdf')}
                     target="_blank"
                     rel="noreferrer"
                     className="h-8 px-3.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[11.5px] font-semibold inline-flex items-center transition"
@@ -4389,13 +4497,19 @@ export function GrowthScenariosShowcase({
                             {sku.totalBuyoutsSets.toLocaleString('ru-RU')}
                           </td>
                           <td className="py-2.5 px-4 text-right font-bold text-[#141413]">
-                            {(sku.totalRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ({sku.totalRevenueRub.toLocaleString('ru-RU')} ₽)
+                            {hasFinance
+                              ? `${(sku.totalRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн (${sku.totalRevenueRub.toLocaleString('ru-RU')} ₽)`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-4 text-right text-[#5E5D58]">
-                            {(sku.decemberRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн
+                            {hasFinance
+                              ? `${(sku.decemberRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн`
+                              : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-4 text-right text-[#5E5D58]">
-                            {(sku.totalCostOfGoodsRub / 1_000_000).toFixed(2).replace('.', ',')} млн
+                            {hasCost
+                              ? `${(sku.totalCostOfGoodsRub / 1_000_000).toFixed(2).replace('.', ',')} млн`
+                              : 'Скрыто'}
                           </td>
                         </tr>
                       ))}
@@ -4411,13 +4525,19 @@ export function GrowthScenariosShowcase({
                           {ACTING_2027_CONTROL_TOTALS.annualBuyoutsSets.toLocaleString('ru-RU')}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          267,73 млн ({ACTING_2027_CONTROL_TOTALS.annualRevenueRub.toLocaleString('ru-RU')} ₽)
+                          {hasFinance
+                            ? `267,73 млн (${ACTING_2027_CONTROL_TOTALS.annualRevenueRub.toLocaleString('ru-RU')} ₽)`
+                            : 'Скрыто'}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          22,73 млн ({ACTING_2027_CONTROL_TOTALS.decemberRevenueRub.toLocaleString('ru-RU')} ₽)
+                          {hasFinance
+                            ? `22,73 млн (${ACTING_2027_CONTROL_TOTALS.decemberRevenueRub.toLocaleString('ru-RU')} ₽)`
+                            : 'Скрыто'}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          91,46 млн ({ACTING_2027_CONTROL_TOTALS.annualCostOfGoodsRub.toLocaleString('ru-RU')} ₽)
+                          {hasCost
+                            ? `91,46 млн (${ACTING_2027_CONTROL_TOTALS.annualCostOfGoodsRub.toLocaleString('ru-RU')} ₽)`
+                            : 'Скрыто'}
                         </td>
                       </tr>
                     </tfoot>
@@ -4791,10 +4911,49 @@ export function GrowthScenariosShowcase({
         <PdfConstructorModal
           concept={conceptForPdf}
           onClose={() => setPdfModalOpen(false)}
-          onSaveToConcept={() => {
+          onSaveToConcept={(updates) => {
+            if (isReadOnlyRole) return;
+            const linked = concepts.find(
+              (c) =>
+                !c.isArchived &&
+                (c.id === conceptForPdf.id ||
+                  c.linkedScenarioModelId === activeModel.id ||
+                  c.code.trim().toUpperCase() === activeModel.code.trim().toUpperCase())
+            );
+            if (linked) {
+              updateConcept(linked.id, updates);
+            }
+
+            const v11Model = ensureModelUnifiedV11(activeModel);
+            const nextUnitsInPack =
+              typeof updates.packUnitsCount === 'number' && updates.packUnitsCount > 0
+                ? Math.round(updates.packUnitsCount)
+                : v11Model.unitsInPack || 1;
+            const nextUnitCostRub =
+              typeof updates.plannedUnitCost === 'number' && updates.plannedUnitCost > 0
+                ? Math.round(updates.plannedUnitCost * nextUnitsInPack)
+                : v11Model.unitCostRub;
+            const nextFactoryName =
+              typeof updates.supplierName === 'string' && updates.supplierName.trim().length > 0
+                ? updates.supplierName.trim()
+                : v11Model.sharedSupplyAndFact!.factoryParams.factoryName;
+
+            handleUpdateModel({
+              ...v11Model,
+              unitsInPack: nextUnitsInPack,
+              unitCostRub: nextUnitCostRub,
+              sharedSupplyAndFact: {
+                ...v11Model.sharedSupplyAndFact!,
+                factoryParams: {
+                  ...v11Model.sharedSupplyAndFact!.factoryParams,
+                  factoryName: nextFactoryName,
+                },
+              },
+            });
+
             notify(
               'success',
-              `PDF ТЗ для ${activeModel.code} ${activeModel.title} сформирован`
+              `PDF ТЗ для ${activeModel.code} ${activeModel.title} сформирован и сохранён в карточку`
             );
           }}
         />

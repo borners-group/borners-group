@@ -42,6 +42,7 @@ import {
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   exportStructuredScenarioPlan,
+  getBrandUnitConfig,
   getCategoryWbNormsForBrand,
   getEffectiveModelBuyoutRatePct,
   getModelChannelSplit,
@@ -56,11 +57,19 @@ import {
   updateModelScenarioMonthBuyouts,
   updateModelScenarioMonthOrders,
   updateModelScenarioPrice,
+  updateModelScenarioSingleMonthPrice,
   updateModelUnitCostWithVariants,
   type ModelAuditEntry,
   type ModelScalingStage,
   type ValueStatusCode,
 } from '@/lib/unifiedBusinessEngine';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
+import { usePlatform } from '@/context/PlatformContext';
 import { FullscreenPhotoLightbox } from '@/components/sections/FullscreenPhotoLightbox';
 import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurementMvpWorkbench';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
@@ -79,8 +88,8 @@ interface ScenarioModelCardScreenProps {
   onBackToScenarios: () => void;
   onOpenSalesPlan: () => void;
   onUpdateModel: (updated: ScenarioModelSpec) => void;
-  onDuplicateModel: (model: ScenarioModelSpec) => void;
-  onDeleteOrArchiveModel: (model: ScenarioModelSpec) => void;
+  onDuplicateModel?: (model: ScenarioModelSpec) => void;
+  onDeleteOrArchiveModel?: (model: ScenarioModelSpec) => void;
   onOpenPdfModal: () => void;
   notify: (type: 'success' | 'warning' | 'error', title: string, desc?: string) => void;
 }
@@ -158,8 +167,49 @@ export function ScenarioModelCardScreen({
   onOpenPdfModal,
   notify,
 }: ScenarioModelCardScreenProps) {
+  const { currentUser } = usePlatform();
   const model = useMemo(() => ensureModelUnifiedV11(rawModel), [rawModel]);
   const shared = model.sharedSupplyAndFact!;
+  const unitCfg = useMemo(() => getBrandUnitConfig(model), [model]);
+  const primaryUnitShort = model.primaryUnitLabel || unitCfg.primaryUnit || 'компл.';
+  const secondaryUnitShort = model.secondaryUnitLabel || unitCfg.secondaryUnit || 'изд.';
+  const hasDistinctSecondary = !(
+    model.unitsInPack === 1 && primaryUnitShort === secondaryUnitShort
+  );
+  const modelBrandCode = useMemo(
+    () =>
+      normalizePortfolioBrandCode(
+        detectModelBrandPortfolioLabel(model) || model.brandId || 'BORNERS'
+      ),
+    [model]
+  );
+  const prodProfile = useMemo(
+    () =>
+      getBrandProductionProfile(
+        detectModelBrandPortfolioLabel(model) || model.brandId,
+        `${model.title || ''} ${model.categoryLabel || ''} ${model.construction?.fit || ''} ${model.waistband?.width || ''}`
+      ),
+    [model]
+  );
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const canEdit = canUserEditBrand(
+    currentUser,
+    modelBrandCode === 'ALL' ? 'BORNERS' : modelBrandCode
+  );
+  const auditAuthor = currentUser?.fullName || 'Владелец';
+  const fpShares = shared.factoryParams.sizeSharesPct;
+  const isGenericSizeShares =
+    (fpShares.S === 10 &&
+      fpShares.M === 25 &&
+      fpShares.L === 35 &&
+      fpShares.XL === 20 &&
+      fpShares.XXL === 10) ||
+    (fpShares.S === 12 &&
+      fpShares.M === 26 &&
+      fpShares.L === 30 &&
+      fpShares.XL === 20 &&
+      fpShares.XXL === 12);
 
   // Четыре вкладки без технических номеров (Стр. 2 ТЗ): «Продукт» / «Продажи» / «Закупки» / «Финансы»
   const [activeTab, setActiveTab] = useState<
@@ -196,6 +246,12 @@ export function ScenarioModelCardScreen({
     }
     return 'product';
   });
+
+  useEffect(() => {
+    if (!hasFinance && activeTab === 'finance') {
+      setActiveTab('product');
+    }
+  }, [hasFinance, activeTab]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -364,6 +420,7 @@ export function ScenarioModelCardScreen({
     afterValue?: string,
     bumpPassport = false
   ) => {
+    if (!canEdit) return;
     const baseS = ensureModelUnifiedV11(nextModel).sharedSupplyAndFact!;
     const nextPassportVer = bumpPassport
       ? baseS.passportVersion + 1
@@ -371,7 +428,7 @@ export function ScenarioModelCardScreen({
     const entry: ModelAuditEntry = {
       id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      author: 'Владелец',
+      author: auditAuthor,
       category,
       summary,
       beforeValue,
@@ -404,6 +461,7 @@ export function ScenarioModelCardScreen({
   };
 
   const handleSaveButtonClick = () => {
+    if (!canEdit) return;
     setIsEditing(false);
     setHasUnsavedDraft(false);
     setCreatingBrandOpen(false);
@@ -417,6 +475,7 @@ export function ScenarioModelCardScreen({
 
   // Смена бренда модели (BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ / свой бренд, Раздел 4.2 ТЗ)
   const handleBrandSelectChange = (nextBrandLabel: string) => {
+    if (!canEdit) return;
     if (nextBrandLabel === '__CREATE_NEW__') {
       setCreatingBrandOpen(true);
       return;
@@ -431,19 +490,20 @@ export function ScenarioModelCardScreen({
     ) {
       return;
     }
-    const switched = changeModelBrandWithAudit(model, clean, 'Владелец');
+    const switched = changeModelBrandWithAudit(model, clean, auditAuthor);
     onUpdateModel(switched);
     setHasUnsavedDraft(false);
     triggerSavedFeedback(`Бренд изменён на «${detectModelBrandPortfolioLabel(switched)}»`);
   };
 
   const handleCreateCustomBrand = () => {
+    if (!canEdit) return;
     const clean = newBrandDraft.trim();
     if (!clean) return;
     const nextCustomList = Array.from(
       new Set([...(shared.customBrandOptions || []), clean])
     );
-    const switched = changeModelBrandWithAudit(model, clean, 'Владелец');
+    const switched = changeModelBrandWithAudit(model, clean, auditAuthor);
     onUpdateModel({
       ...switched,
       sharedSupplyAndFact: {
@@ -459,6 +519,7 @@ export function ScenarioModelCardScreen({
 
   // Смена статуса жизненного цикла модели (Стр. 3 ТЗ)
   const handleStageStatusChange = (nextStatus: ModelPassportStageStatus) => {
+    if (!canEdit) return;
     const nextScaling = mapStageStatusToScalingStage(nextStatus);
     const nextLaunchStatus: ScenarioModelSpec['launchStatus'] =
       nextStatus === 'Приостановлен'
@@ -489,12 +550,13 @@ export function ScenarioModelCardScreen({
 
   // Смена количества изделий в комплекте с подтверждением (Стр. 3 ТЗ)
   const handleUnitsInPackChange = (nextUnitsRaw: number) => {
+    if (!canEdit) return;
     const clean = Math.max(1, Math.min(24, Math.round(nextUnitsRaw || 1)));
     if (clean === model.unitsInPack) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        `Изменить комплектацию с ${model.unitsInPack} на ${clean} изд. в комплекте? Это пересчитает физические единицы в продажах и закупках.`
+        `Изменить комплектацию с ${model.unitsInPack} на ${clean} ${secondaryUnitShort} в 1 ${primaryUnitShort}? Это пересчитает физические единицы в продажах и закупках.`
       )
     ) {
       return;
@@ -505,7 +567,7 @@ export function ScenarioModelCardScreen({
         unitsInPack: clean,
       },
       'product',
-      'Изменено количество изделий в комплекте',
+      'Изменено количество единиц в комплекте',
       `${model.unitsInPack} шт.`,
       `${clean} шт.`,
       true
@@ -514,6 +576,7 @@ export function ScenarioModelCardScreen({
 
   // Загрузка одной или нескольких фотографий сразу с надёжным сжатием для localStorage (Стр. 3 ТЗ)
   const handleUploadOriginalPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
@@ -599,6 +662,7 @@ export function ScenarioModelCardScreen({
 
   // Сделать выбранное фото главным (Стр. 3 ТЗ)
   const handleSetMainGalleryPhoto = (photoId: string) => {
+    if (!canEdit) return;
     const target = model.gallery.find((g) => g.id === photoId);
     if (!target) return;
     const reordered = [
@@ -621,6 +685,7 @@ export function ScenarioModelCardScreen({
 
   // Перестановка миниатюр местами (Стр. 3 ТЗ)
   const handleMoveGalleryPhoto = (photoId: string, direction: -1 | 1) => {
+    if (!canEdit) return;
     const idx = filteredGallery.findIndex((g) => g.id === photoId);
     if (idx < 0) return;
     const targetIdx = idx + direction;
@@ -642,6 +707,7 @@ export function ScenarioModelCardScreen({
 
   // Удаление фото (разрешено в том числе когда фотография одна в карточке)
   const handleRemoveGalleryPhoto = (photoId?: string) => {
+    if (!canEdit) return;
     const targetId = photoId || activeGalleryItem?.id;
     const remaining = targetId
       ? model.gallery.filter(
@@ -671,6 +737,7 @@ export function ScenarioModelCardScreen({
 
   // Загрузка фабричного PDF
   const handleUploadFactoryPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     const file = e.target.files?.[0];
     if (!file) return;
     const pdfId = `pdf-u-${Date.now()}`;
@@ -698,6 +765,7 @@ export function ScenarioModelCardScreen({
   };
 
   const handleRemovePdf = async (pdfId: string) => {
+    if (!canEdit) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm('Удалить прикреплённый PDF-файл из карточки?')
@@ -718,27 +786,29 @@ export function ScenarioModelCardScreen({
 
   // Обновление цены в текущем сценарии
   const handleScenarioPriceChange = (nextPriceRub: number) => {
+    if (!canEdit) return;
     const clean = Math.max(0, Math.round(nextPriceRub));
     const prevPrice = plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub;
     const updatedModel = updateModelScenarioPrice(model, scenario.id, clean);
     commitWithAudit(
       updatedModel,
       'sales',
-      `Изменена цена комплекта в ${scenario.title}`,
+      `Изменена цена (${primaryUnitShort}) в ${scenario.title}`,
       `${prevPrice} ₽`,
       `${clean} ₽`
     );
   };
 
-  // Обновление закупочной себестоимости комплекта
+  // Обновление закупочной себестоимости
   const handleUnitCostChange = (nextCostRub: number) => {
+    if (!canEdit || !hasCost) return;
     const clean = Math.max(0, Math.round(nextCostRub));
     const prev = model.unitCostRub;
     const updatedModel = updateModelUnitCostWithVariants(model, clean);
     commitWithAudit(
       updatedModel,
       'finance',
-      'Изменена закупочная себестоимость комплекта (выкупы неизменны)',
+      `Изменена закупочная себестоимость (${primaryUnitShort}, выкупы неизменны)`,
       `${prev} ₽`,
       clean > 0 ? `${clean} ₽` : 'Не заполнено'
     );
@@ -746,6 +816,7 @@ export function ScenarioModelCardScreen({
 
   // Обновление плановых выкупов конкретного месяца
   const handleMonthBuyoutsChange = (monthIdx: number, nextPacks: number) => {
+    if (!canEdit) return;
     const clean = Math.max(0, Math.round(nextPacks));
     const prev = plan.monthlyPacks[monthIdx] || 0;
     const updatedModel = updateModelScenarioMonthBuyouts(
@@ -758,13 +829,14 @@ export function ScenarioModelCardScreen({
       updatedModel,
       'sales',
       `Изменён план выкупов за ${MONTHS_SHORT_RU[monthIdx]} (${scenario.title})`,
-      `${prev} компл.`,
-      `${clean} компл.`
+      `${prev} ${primaryUnitShort}`,
+      `${clean} ${primaryUnitShort}`
     );
   };
 
   // Обновление плановых заказов (до выкупа) конкретного месяца — автоматически пересчитывает выкупы по текущему % выкупа
   const handleMonthOrdersChange = (monthIdx: number, nextOrdersPacks: number) => {
+    if (!canEdit) return;
     const cleanOrders = Math.max(0, Math.round(nextOrdersPacks));
     const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenario.id);
     const prevOrders = baseMetrics.monthlyOrdersPacks[monthIdx] || 0;
@@ -787,6 +859,7 @@ export function ScenarioModelCardScreen({
 
   // Изменение процента выкупа модели (% выкупа)
   const handleBuyoutRateChange = (nextPct: number) => {
+    if (!canEdit) return;
     const updated = updateModelBuyoutRatePct(model, nextPct, {
       scenarioId: scenario.id,
       syncProcurementToOrders: true,
@@ -796,6 +869,7 @@ export function ScenarioModelCardScreen({
 
   // Переключение учёта % выкупа в закупках
   const handleToggleProcurementByOrders = (enabled: boolean) => {
+    if (!canEdit) return;
     const updated = toggleModelProcurementByOrders(model, enabled);
     onUpdateModel(updated);
     notify(
@@ -811,6 +885,8 @@ export function ScenarioModelCardScreen({
     skuIndex: number,
     patch: LiskaniSizeVariantPatch
   ) => {
+    if (!canEdit) return;
+    if (patch.unitCostRub !== undefined && !hasCost) return;
     if (!model.liskaniSizeVariants) return;
     const updatedModel = updateLiskaniModelSizeVariant(
       model,
@@ -834,6 +910,7 @@ export function ScenarioModelCardScreen({
     actualPacksRaw: string,
     actualPriceRaw?: string
   ) => {
+    if (!canEdit) return;
     const currentAct = shared.actualSalesByMonth[monthIdx] || {
       monthIdx,
       actualBuyoutsPacks: null,
@@ -872,8 +949,8 @@ export function ScenarioModelCardScreen({
       `Обновлён факт продаж за ${MONTHS_SHORT_RU[monthIdx]}`,
       currentAct.actualBuyoutsPacks === null
         ? 'Не заполнено'
-        : `${currentAct.actualBuyoutsPacks} компл.`,
-      nextActualPacks === null ? 'Не заполнено' : `${nextActualPacks} компл.`
+        : `${currentAct.actualBuyoutsPacks} ${primaryUnitShort}`,
+      nextActualPacks === null ? 'Не заполнено' : `${nextActualPacks} ${primaryUnitShort}`
     );
   };
 
@@ -1031,9 +1108,10 @@ export function ScenarioModelCardScreen({
                 {/* Быстрый выбор бренда прямо в шапке или форме */}
                 <select
                   aria-label="Бренд модели"
+                  disabled={!canEdit}
                   value={brandPortfolioLabel}
                   onChange={(e) => handleBrandSelectChange(e.target.value)}
-                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-bold cursor-pointer"
+                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-bold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {availableBrandOptions.map((b) => (
                     <option key={b} value={b}>
@@ -1046,11 +1124,12 @@ export function ScenarioModelCardScreen({
                 {/* Статус жизненного цикла модели (Идея / В разработке / Тест / Масштабирование / Действующий / Приостановлен) */}
                 <select
                   aria-label="Статус модели"
+                  disabled={!canEdit}
                   value={currentStageStatus}
                   onChange={(e) =>
                     handleStageStatusChange(e.target.value as ModelPassportStageStatus)
                   }
-                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-semibold cursor-pointer"
+                  className="h-6 px-2 rounded-[6px] bg-[#F4F4F0] hover:border-[#141413] text-[#141413] border border-[#CECDC4] text-[11px] font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {STAGE_STATUS_OPTIONS.map((st) => (
                     <option key={st} value={st}>
@@ -1066,7 +1145,9 @@ export function ScenarioModelCardScreen({
                 )}
 
                 <span className="text-[11px] text-[#5E5D58]">
-                  {model.unitsInPack} изд. в компл. · ID: {model.id}
+                  {hasDistinctSecondary
+                    ? `${model.unitsInPack} ${secondaryUnitShort} в 1 ${primaryUnitShort} · ID: ${model.id}`
+                    : `Ед. учёта: ${primaryUnitShort} · ID: ${model.id}`}
                 </span>
               </div>
 
@@ -1080,8 +1161,11 @@ export function ScenarioModelCardScreen({
                   <strong className="text-[#141413]">
                     {formatMln(pnl.annualRevenueRub)}
                   </strong>{' '}
-                  ({pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} компл. /{' '}
-                  {pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} изд.)
+                  ({pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} {primaryUnitShort}
+                  {hasDistinctSecondary
+                    ? ` / ${pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} ${secondaryUnitShort}`
+                    : ''}
+                  )
                 </span>
               </div>
             </div>
@@ -1126,8 +1210,9 @@ export function ScenarioModelCardScreen({
 
             <button
               type="button"
-              onClick={() => setIsEditing((v) => !v)}
-              className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer ${
+              disabled={!canEdit}
+              onClick={() => canEdit && setIsEditing((v) => !v)}
+              className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 isEditing
                   ? 'bg-[#E6E5DE] text-[#141413] border-[#9E9D94]'
                   : 'bg-white hover:bg-[#F5F5F1] text-[#141413] border-[#CECDC4]'
@@ -1138,8 +1223,9 @@ export function ScenarioModelCardScreen({
 
             <button
               type="button"
+              disabled={!canEdit}
               onClick={handleSaveButtonClick}
-              className="h-9 px-3.5 rounded-[9px] bg-[#157347] hover:bg-[#115C39] text-white text-[12.5px] font-semibold border-[1.5px] border-[#157347] transition cursor-pointer"
+              className="h-9 px-3.5 rounded-[9px] bg-[#157347] hover:bg-[#115C39] text-white text-[12.5px] font-semibold border-[1.5px] border-[#157347] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Сохранить
             </button>
@@ -1175,21 +1261,25 @@ export function ScenarioModelCardScreen({
                   </button>
                   <button
                     type="button"
+                    disabled={!canEdit}
                     onClick={() => {
+                      if (!canEdit) return;
                       setMenuOpen(false);
-                      onDuplicateModel(model);
+                      onDuplicateModel?.(model);
                     }}
-                    className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer"
+                    className="w-full px-3.5 py-2 text-left hover:bg-[#F5F5F1] font-medium text-[#141413] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Создать цветовой вариант
                   </button>
                   <button
                     type="button"
+                    disabled={!canEdit}
                     onClick={() => {
+                      if (!canEdit) return;
                       setMenuOpen(false);
-                      onDeleteOrArchiveModel(model);
+                      onDeleteOrArchiveModel?.(model);
                     }}
-                    className="w-full px-3.5 py-2 text-left hover:bg-[#FFF2F2] text-[#B42318] font-medium cursor-pointer"
+                    className="w-full px-3.5 py-2 text-left hover:bg-[#FFF2F2] text-[#B42318] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Удалить / В архив
                   </button>
@@ -1359,18 +1449,21 @@ export function ScenarioModelCardScreen({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
               <label className="space-y-1">
                 <span className="font-semibold text-[#3F3E3A] block">
-                  4. Изделий в компл.
+                  4. Ед. в 1 {primaryUnitShort}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
                     min={1}
                     max={24}
+                    disabled={!canEdit}
                     value={model.unitsInPack}
                     onChange={(e) => handleUnitsInPackChange(Number(e.target.value))}
-                    className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-mono font-bold text-[#141413]"
+                    className="h-9 w-full rounded-[8px] border border-[#CECDC4] bg-white px-2.5 font-mono font-bold text-[#141413] disabled:opacity-60"
                   />
-                  <span className="text-[11px] text-[#5E5D58] shrink-0">компл.</span>
+                  <span className="text-[11px] text-[#5E5D58] shrink-0">
+                    {secondaryUnitShort}
+                  </span>
                 </div>
               </label>
 
@@ -1640,25 +1733,28 @@ export function ScenarioModelCardScreen({
                   </button>
                   <button
                     type="button"
+                    disabled={!canEdit}
                     onClick={() => handleRemoveGalleryPhoto(activeGalleryItem?.id)}
                     title="Удалить текущую фотографию из карточки"
-                    className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border-[1.5px] border-[#FECACA] text-[12px] font-semibold text-[#B42318] inline-flex items-center gap-1 cursor-pointer transition"
+                    className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border-[1.5px] border-[#FECACA] text-[12px] font-semibold text-[#B42318] inline-flex items-center gap-1 cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     <span>Удалить фото</span>
                   </button>
                 </>
               )}
-              <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold inline-flex items-center shrink-0 cursor-pointer transition">
-                <span>+ Загрузить фото</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleUploadOriginalPhotos}
-                  className="hidden"
-                />
-              </label>
+              {canEdit && (
+                <label className="h-8.5 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold inline-flex items-center shrink-0 cursor-pointer transition">
+                  <span>+ Загрузить фото</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleUploadOriginalPhotos}
+                    className="hidden"
+                  />
+                </label>
+              )}
             </div>
           </div>
         </div>
@@ -1696,22 +1792,26 @@ export function ScenarioModelCardScreen({
               <div className="text-[11.5px] text-[#5E5D58]">
                 {formatRub(selMonthRevRub)} · Выкупы:{' '}
                 <strong className="text-[#141413]">
-                  {selMonthPacks.toLocaleString('ru-RU')} компл.
-                </strong>{' '}
-                ({selMonthUnits.toLocaleString('ru-RU')} изд.)
+                  {selMonthPacks.toLocaleString('ru-RU')} {primaryUnitShort}
+                </strong>
+                {hasDistinctSecondary
+                  ? ` (${selMonthUnits.toLocaleString('ru-RU')} ${secondaryUnitShort})`
+                  : ''}
               </div>
             </div>
 
-            {/* Карточка 2: Цена комплекта */}
+            {/* Карточка 2: Цена комплекта / единицы */}
             <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-[#3F3E3A]">
-                  Цена комплекта
+                  {primaryUnitShort === 'компл.'
+                    ? 'Цена комплекта'
+                    : `Цена за 1 ${primaryUnitShort}`}
                 </span>
                 <StatusPill status={pnl.revenueStatus} />
               </div>
 
-              {isEditing ? (
+              {isEditing && canEdit ? (
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -1730,10 +1830,16 @@ export function ScenarioModelCardScreen({
               )}
 
               <div className="text-[11.5px] text-[#5E5D58]">
-                За 1 компл. ({model.unitsInPack} шт.) ·{' '}
-                <strong className="text-[#141413]">
-                  {formatRub(pnl.avgRealizedPricePerUnitRub)} / изд.
-                </strong>
+                {hasDistinctSecondary ? (
+                  <>
+                    За 1 {primaryUnitShort} ({model.unitsInPack} {secondaryUnitShort}) ·{' '}
+                    <strong className="text-[#141413]">
+                      {formatRub(pnl.avgRealizedPricePerUnitRub)} / {secondaryUnitShort}
+                    </strong>
+                  </>
+                ) : (
+                  <>Розничная цена за 1 {primaryUnitShort}</>
+                )}
               </div>
             </div>
 
@@ -1743,10 +1849,12 @@ export function ScenarioModelCardScreen({
                 <span className="text-[12px] font-bold text-[#3F3E3A]">
                   Себестоимость под ключ
                 </span>
-                <StatusPill status={pnl.costStatus} />
+                {hasCost && <StatusPill status={pnl.costStatus} />}
               </div>
 
-              {isEditing ? (
+              {!hasCost ? (
+                <div className="text-[17px] font-bold text-[#686762]">Скрыто</div>
+              ) : isEditing && canEdit ? (
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -1770,8 +1878,12 @@ export function ScenarioModelCardScreen({
               )}
 
               <div className="text-[11.5px] text-[#5E5D58]">
-                {pnl.unitCostPerSingleItemRub !== null
-                  ? `За 1 компл. · ${pnl.unitCostPerSingleItemRub.toLocaleString('ru-RU')} ₽ / изд.`
+                {!hasCost
+                  ? 'Недоступно для вашей роли'
+                  : pnl.unitCostPerSingleItemRub !== null
+                  ? hasDistinctSecondary
+                    ? `За 1 ${primaryUnitShort} · ${pnl.unitCostPerSingleItemRub.toLocaleString('ru-RU')} ₽ / ${secondaryUnitShort}`
+                    : `За 1 ${primaryUnitShort}`
                   : 'Себестоимость не указана (0 ₽ не подставляется)'}
               </div>
             </div>
@@ -1780,12 +1892,21 @@ export function ScenarioModelCardScreen({
             <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-[#3F3E3A]">
-                  Прибыль с комплекта
+                  {primaryUnitShort === 'компл.'
+                    ? 'Прибыль с комплекта'
+                    : `Прибыль с 1 ${primaryUnitShort}`}
                 </span>
-                <StatusPill status={pnl.operatingProfitStatus} />
+                {hasFinance && hasCost && <StatusPill status={pnl.operatingProfitStatus} />}
               </div>
 
-              {pnl.unitOperatingProfitRub !== null ? (
+              {!hasFinance || !hasCost ? (
+                <>
+                  <div className="text-[17px] font-bold text-[#686762]">Скрыто</div>
+                  <div className="text-[11px] text-[#5E5D58]">
+                    Финансовые показатели скрыты для вашей роли
+                  </div>
+                </>
+              ) : pnl.unitOperatingProfitRub !== null ? (
                 <>
                   <div
                     className={`text-[23px] font-bold tracking-[-0.02em] ${
@@ -1801,7 +1922,7 @@ export function ScenarioModelCardScreen({
                     </span>
                   </div>
                   <div className="text-[11.5px] text-[#5E5D58]">
-                    Остаётся с 1 компл. · За год:{' '}
+                    Остаётся с 1 {primaryUnitShort} · За год:{' '}
                     <strong className="text-[#141413]">
                       {formatMln(pnl.annualOperatingProfitRub || 0)}
                     </strong>
@@ -1837,12 +1958,12 @@ export function ScenarioModelCardScreen({
                 }`}
               >
                 {procurement.hasDeficit
-                  ? `Наличие товара: дефицит ${procurement.totalDeficitPacks.toLocaleString('ru-RU')} комплектов`
+                  ? `Наличие товара: дефицит ${procurement.totalDeficitPacks.toLocaleString('ru-RU')} ${primaryUnitShort}`
                   : 'Наличие товара: достаточно'}
               </span>
               <span className="text-[12px] text-[#52524E]">
-                (Склад: {procurement.netOpeningAvailablePacks.toLocaleString('ru-RU')} компл. · Утв. PO:{' '}
-                {procurement.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} компл.)
+                (Склад: {procurement.netOpeningAvailablePacks.toLocaleString('ru-RU')} {primaryUnitShort} · Утв. PO:{' '}
+                {procurement.totalApprovedReceiptsPacks.toLocaleString('ru-RU')} {primaryUnitShort})
               </span>
             </div>
 
@@ -1869,7 +1990,7 @@ export function ScenarioModelCardScreen({
                 { id: 'product', label: 'Продукт' },
                 { id: 'sales', label: 'Продажи' },
                 { id: 'procurement', label: 'Закупки' },
-                { id: 'finance', label: 'Финансы' },
+                ...(hasFinance ? ([{ id: 'finance', label: 'Финансы' }] as const) : []),
               ] as const
             ).map((tab) => {
               const isAct = activeTab === tab.id;
@@ -1982,10 +2103,15 @@ export function ScenarioModelCardScreen({
                 <div className="space-y-2 text-[12.5px] text-[#141413]">
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">
-                      Тип и комплектация ({model.unitsInPack} изд. = 1 компл.):
+                      Тип и комплектация
+                      {hasDistinctSecondary
+                        ? ` (${model.unitsInPack} ${secondaryUnitShort} = 1 ${primaryUnitShort})`
+                        : ` (${primaryUnitShort})`}
+                      :
                     </span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.construction.type}
                       placeholder="Например: Комплект штор 2 полотна / Комплект"
                       onChange={(e) =>
@@ -2001,7 +2127,7 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60"
                     />
                   </label>
                   <label className="block space-y-0.5">
@@ -2131,55 +2257,97 @@ export function ScenarioModelCardScreen({
                           })}
                         </div>
                       </>
+                    ) : isGenericSizeShares &&
+                      (modelBrandCode === 'AKUSHA' || modelBrandCode === 'LISKANI') &&
+                      prodProfile.sizes.length > 5 ? (
+                      <>
+                        <span className="text-[#5E5D58] text-[11px] font-semibold">
+                          Доли размеров ({prodProfile.sizes[0]}–{prodProfile.sizes[prodProfile.sizes.length - 1]}, %):
+                        </span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {prodProfile.sizes.map((sz) => (
+                            <span
+                              key={sz}
+                              className="rounded-[6px] bg-white border border-[#CECDC4] px-2 py-0.5 text-[10.5px] font-mono font-bold text-[#141413]"
+                            >
+                              {sz}{' '}
+                              <span className="text-[#157347]">
+                                ({prodProfile.sizeSharesPct[sz] ?? Math.round(100 / prodProfile.sizes.length)}%)
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      </>
                     ) : (
                       <>
                         <span className="text-[#5E5D58] text-[11px] font-semibold">
                           Доли размеров / вариантов (%):
                         </span>
                         <div className="grid grid-cols-5 gap-1 mt-1">
-                          {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz) => (
-                            <label
-                              key={sz}
-                              className="rounded-[6px] bg-white border border-[#CECDC4] px-1.5 py-1 flex flex-col items-center"
-                            >
-                              <span className="text-[9.5px] font-bold text-[#5E5D58]">
-                                {sz}
-                              </span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={shared.factoryParams.sizeSharesPct[sz]}
-                                onChange={(e) => {
-                                  const nextVal = Math.max(
-                                    0,
-                                    Math.min(100, Math.round(Number(e.target.value) || 0))
-                                  );
-                                  commitWithAudit(
-                                    {
-                                      ...model,
-                                      sharedSupplyAndFact: {
-                                        ...shared,
-                                        factoryParams: {
-                                          ...shared.factoryParams,
-                                          sizeSharesPct: {
-                                            ...shared.factoryParams.sizeSharesPct,
-                                            [sz]: nextVal,
+                          {(['S', 'M', 'L', 'XL', 'XXL'] as const).map((sz, szIdx) => {
+                            const displaySz =
+                              (modelBrandCode === 'NA_TELE' ||
+                                modelBrandCode === 'AKUSHA' ||
+                                modelBrandCode === 'LISKANI') &&
+                              prodProfile.sizes.length >= 5
+                                ? prodProfile.sizes.length === 5
+                                  ? prodProfile.sizes[szIdx]
+                                  : szIdx < 4
+                                  ? prodProfile.sizes[szIdx]
+                                  : prodProfile.sizes.slice(4).join('/')
+                                : sz;
+                            const displayShare =
+                              isGenericSizeShares &&
+                              modelBrandCode === 'NA_TELE' &&
+                              prodProfile.sizes.length === 5
+                                ? prodProfile.sizeSharesPct[prodProfile.sizes[szIdx]] ??
+                                  shared.factoryParams.sizeSharesPct[sz]
+                                : shared.factoryParams.sizeSharesPct[sz];
+                            return (
+                              <label
+                                key={sz}
+                                className="rounded-[6px] bg-white border border-[#CECDC4] px-1.5 py-1 flex flex-col items-center"
+                              >
+                                <span className="text-[9.5px] font-bold text-[#5E5D58]">
+                                  {displaySz}
+                                </span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  disabled={!canEdit}
+                                  value={displayShare}
+                                  onChange={(e) => {
+                                    const nextVal = Math.max(
+                                      0,
+                                      Math.min(100, Math.round(Number(e.target.value) || 0))
+                                    );
+                                    commitWithAudit(
+                                      {
+                                        ...model,
+                                        sharedSupplyAndFact: {
+                                          ...shared,
+                                          factoryParams: {
+                                            ...shared.factoryParams,
+                                            sizeSharesPct: {
+                                              ...shared.factoryParams.sizeSharesPct,
+                                              [sz]: nextVal,
+                                            },
                                           },
                                         },
                                       },
-                                    },
-                                    'product',
-                                    `Изменена доля размера ${sz}`,
-                                    `${shared.factoryParams.sizeSharesPct[sz]}%`,
-                                    `${nextVal}%`,
-                                    true
-                                  );
-                                }}
-                                className="w-full text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none"
-                              />
-                            </label>
-                          ))}
+                                      'product',
+                                      `Изменена доля размера ${displaySz}`,
+                                      `${displayShare}%`,
+                                      `${nextVal}%`,
+                                      true
+                                    );
+                                  }}
+                                  className="w-full text-center font-mono text-[11px] font-bold text-[#141413] bg-transparent focus:outline-none disabled:opacity-60"
+                                />
+                              </label>
+                            );
+                          })}
                         </div>
                       </>
                     )}
@@ -2216,7 +2384,7 @@ export function ScenarioModelCardScreen({
                       Размерная матрица полотен, штрихкодов, себестоимости и плана заказов ({model.title})
                     </h3>
                     <p className="text-[11.5px] text-[#5E5D58]">
-                      Все {model.liskaniSizeVariants.length} размерных SKU этого цвета из файла «Ассортимент 2027 (269 SKU)» и «План заказов 2027 (выкупы 57%)». Вы можете редактировать себестоимость, цену, артикул WB, баркод и объём заказа прямо в таблице.
+                      Все {model.liskaniSizeVariants.length} размерных SKU этого цвета из файла «Ассортимент 2027 (269 SKU)» и «План заказов 2027 (выкупы {Math.round(model.buyoutRatePct || 57)}%)». Вы можете редактировать себестоимость, цену, артикул WB, баркод и объём заказа прямо в таблице.
                     </p>
                   </div>
 
@@ -2256,16 +2424,16 @@ export function ScenarioModelCardScreen({
                         <th className="py-2.5 px-3 text-right">Себест., ₽</th>
                         <th className="py-2.5 px-3 text-right">Цена реал., ₽</th>
                         <th className="py-2.5 px-3 text-right">
-                          Заказать ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), компл.
+                          Заказать ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), {primaryUnitShort}
                         </th>
                         <th className="py-2.5 px-3 text-right">
                           Заказы ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), ₽
                         </th>
                         <th className="py-2.5 px-3 text-right">
-                          Выкупы 57% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), компл.
+                          Выкупы {Math.round(model.buyoutRatePct || 57)}% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), {primaryUnitShort}
                         </th>
                         <th className="py-2.5 px-3 text-right">
-                          Выкупы 57% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), ₽
+                          Выкупы {Math.round(model.buyoutRatePct || 57)}% ({liskaniSizeMonthFilter === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskaniSizeMonthFilter]}), ₽
                         </th>
                       </tr>
                     </thead>
@@ -2305,6 +2473,7 @@ export function ScenarioModelCardScreen({
                             <td className="py-2 px-3 font-mono text-[11.5px]">
                               <input
                                 type="text"
+                                disabled={!canEdit}
                                 value={sv.wbNmId}
                                 placeholder="Новый SKU"
                                 onChange={(e) =>
@@ -2312,12 +2481,13 @@ export function ScenarioModelCardScreen({
                                     wbNmId: e.target.value,
                                   })
                                 }
-                                className="h-7 w-28 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11.5px] text-[#141413]"
+                                className="h-7 w-28 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11.5px] text-[#141413] disabled:opacity-60"
                               />
                             </td>
                             <td className="py-2 px-3 font-mono text-[11.5px]">
                               <input
                                 type="text"
+                                disabled={!canEdit}
                                 value={sv.barcode}
                                 placeholder="Штрихкод"
                                 onChange={(e) =>
@@ -2325,35 +2495,41 @@ export function ScenarioModelCardScreen({
                                     barcode: e.target.value,
                                   })
                                 }
-                                className="h-7 w-32 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11px] text-[#5E5D58]"
+                                className="h-7 w-32 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 font-mono text-[11px] text-[#5E5D58] disabled:opacity-60"
                               />
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              {hasCost ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={10}
+                                  disabled={!canEdit}
+                                  value={sv.unitCostRub}
+                                  onChange={(e) =>
+                                    handleUpdateLiskaniSizeVariant(sv.skuIndex, {
+                                      unitCostRub: Number(e.target.value),
+                                    })
+                                  }
+                                  className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-semibold text-[#141413] disabled:opacity-60"
+                                />
+                              ) : (
+                                <span className="font-mono text-[11px] text-[#686762]">Скрыто</span>
+                              )}
                             </td>
                             <td className="py-2 px-3 text-right">
                               <input
                                 type="number"
                                 min={0}
                                 step={10}
-                                value={sv.unitCostRub}
-                                onChange={(e) =>
-                                  handleUpdateLiskaniSizeVariant(sv.skuIndex, {
-                                    unitCostRub: Number(e.target.value),
-                                  })
-                                }
-                                className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-semibold text-[#141413]"
-                              />
-                            </td>
-                            <td className="py-2 px-3 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                step={10}
+                                disabled={!canEdit}
                                 value={sv.retailPriceRub}
                                 onChange={(e) =>
                                   handleUpdateLiskaniSizeVariant(sv.skuIndex, {
                                     retailPriceRub: Number(e.target.value),
                                   })
                                 }
-                                className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-bold text-[#141413]"
+                                className="h-7 w-20 rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-right font-mono font-bold text-[#141413] disabled:opacity-60"
                               />
                             </td>
                             <td className="py-2 px-3 text-right font-mono font-semibold text-[#141413]">
@@ -2363,6 +2539,7 @@ export function ScenarioModelCardScreen({
                                 <input
                                   type="number"
                                   min={0}
+                                  disabled={!canEdit}
                                   value={ordPacks}
                                   onChange={(e) =>
                                     handleUpdateLiskaniSizeVariant(sv.skuIndex, {
@@ -2372,7 +2549,7 @@ export function ScenarioModelCardScreen({
                                       },
                                     })
                                   }
-                                  className="h-7 w-20 rounded-[6px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2 text-right font-mono font-bold text-[#141413]"
+                                  className="h-7 w-20 rounded-[6px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2 text-right font-mono font-bold text-[#141413] disabled:opacity-60"
                                 />
                               )}
                             </td>
@@ -2450,7 +2627,10 @@ export function ScenarioModelCardScreen({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-[15px] font-bold text-[#141413]">
-                    Цвета, палитры и варианты модели ({model.unitsInPack} изд. в 1 компл.)
+                    Цвета, палитры и варианты модели
+                    {hasDistinctSecondary
+                      ? ` (${model.unitsInPack} ${secondaryUnitShort} в 1 ${primaryUnitShort})`
+                      : ` (${primaryUnitShort})`}
                   </h3>
                   <p className="text-[11.5px] text-[#5E5D58]">
                     Все названия палитр, оттенки, HEX-цвета и артикулы редактируются прямо в карточке
@@ -2458,11 +2638,15 @@ export function ScenarioModelCardScreen({
                 </div>
                 <button
                   type="button"
+                  disabled={!canEdit}
                   onClick={() => {
+                    if (!canEdit) return;
                     const newPal = {
                       id: `pal-${Date.now()}`,
                       title: `Палитра — ${model.title}`,
-                      subtitle: `${model.unitsInPack} изд. · ${brandPortfolioLabel}`,
+                      subtitle: hasDistinctSecondary
+                        ? `${model.unitsInPack} ${secondaryUnitShort} · ${brandPortfolioLabel}`
+                        : `${primaryUnitShort} · ${brandPortfolioLabel}`,
                       statusLabel: 'В плане',
                       colors: [
                         {
@@ -2755,16 +2939,18 @@ export function ScenarioModelCardScreen({
                   </h3>
                 </div>
 
-                <label className="h-8 px-3 rounded-[9px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[12px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1.5 cursor-pointer transition">
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Прикрепить PDF фабрики</span>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    onChange={handleUploadFactoryPdf}
-                    className="hidden"
-                  />
-                </label>
+                {canEdit && (
+                  <label className="h-8 px-3 rounded-[9px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[12px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1.5 cursor-pointer transition">
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Прикрепить PDF фабрики</span>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleUploadFactoryPdf}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
 
               {(model.attachedPdfs || []).length === 0 ? (
@@ -2774,7 +2960,9 @@ export function ScenarioModelCardScreen({
               ) : (
                 <div className="space-y-2">
                   {(model.attachedPdfs || []).map((pdf) => {
-                    const url = pdfUrlsById[pdf.id] || pdf.staticUrl || '';
+                    const url =
+                      pdfUrlsById[pdf.id] ||
+                      (pdf.staticUrl ? resolvePublicAssetUrl(pdf.staticUrl) : '');
                     return (
                       <div
                         key={pdf.id}
@@ -2818,7 +3006,7 @@ export function ScenarioModelCardScreen({
                               </a>
                             </>
                           )}
-                          {!pdf.staticUrl && (
+                          {!pdf.staticUrl && canEdit && (
                             <button
                               type="button"
                               onClick={() => handleRemovePdf(pdf.id)}
@@ -2832,13 +3020,21 @@ export function ScenarioModelCardScreen({
                     );
                   })}
 
-                  {previewPdfId && pdfUrlsById[previewPdfId] && (
-                    <iframe
-                      title="Предпросмотр фабричной техкарты PDF"
-                      src={pdfUrlsById[previewPdfId]}
-                      className="w-full h-[420px] rounded-[12px] border border-[#DED8CC] bg-white mt-2"
-                    />
-                  )}
+                  {previewPdfId &&
+                    (pdfUrlsById[previewPdfId] ||
+                      (model.attachedPdfs || []).find((p) => p.id === previewPdfId)?.staticUrl) && (
+                      <iframe
+                        title="Предпросмотр фабричной техкарты PDF"
+                        src={
+                          pdfUrlsById[previewPdfId] ||
+                          resolvePublicAssetUrl(
+                            (model.attachedPdfs || []).find((p) => p.id === previewPdfId)
+                              ?.staticUrl || ''
+                          )
+                        }
+                        className="w-full h-[420px] rounded-[12px] border border-[#DED8CC] bg-white mt-2"
+                      />
+                    )}
                 </div>
               )}
             </div>
@@ -2918,7 +3114,7 @@ export function ScenarioModelCardScreen({
                     </span>
                   </div>
                   <p className="text-[12px] text-[#475569] mt-0.5">
-                    При выкупе {baseMetrics.buyoutRatePct}% из 100 заказов выкупаются {baseMetrics.buyoutRatePct} {model.primaryUnitLabel || 'компл.'} — система автоматически считает нужный объём заказов и партий закупки.
+                    При выкупе {baseMetrics.buyoutRatePct}% из 100 заказов выкупаются {baseMetrics.buyoutRatePct} {primaryUnitShort} — система автоматически считает нужный объём заказов и партий закупки.
                   </p>
                 </div>
 
@@ -2927,8 +3123,9 @@ export function ScenarioModelCardScreen({
                     <button
                       key={pctPreset}
                       type="button"
+                      disabled={!canEdit}
                       onClick={() => handleBuyoutRateChange(pctPreset)}
-                      className={`h-8 px-2.5 rounded-[7px] font-mono text-[11.5px] font-bold border cursor-pointer transition ${
+                      className={`h-8 px-2.5 rounded-[7px] font-mono text-[11.5px] font-bold border cursor-pointer transition disabled:opacity-60 disabled:cursor-not-allowed ${
                         baseMetrics.buyoutRatePct === pctPreset
                           ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
                           : 'bg-white text-[#334155] border-[#CBD5E1] hover:bg-[#F1F5F9]'
@@ -2943,9 +3140,10 @@ export function ScenarioModelCardScreen({
                       min={5}
                       max={100}
                       step={1}
+                      disabled={!canEdit}
                       value={baseMetrics.buyoutRatePct}
                       onChange={(e) => handleBuyoutRateChange(Number(e.target.value))}
-                      className="h-8 w-20 rounded-[7px] border border-[#0F172A] bg-white px-2.5 pr-6 font-mono text-[13px] font-extrabold text-right text-[#0F172A]"
+                      className="h-8 w-20 rounded-[7px] border border-[#0F172A] bg-white px-2.5 pr-6 font-mono text-[13px] font-extrabold text-right text-[#0F172A] disabled:opacity-60"
                     />
                     <span className="absolute right-2 text-[11px] font-bold text-[#64748B] pointer-events-none">
                       %
@@ -2961,7 +3159,7 @@ export function ScenarioModelCardScreen({
                   </div>
                   <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
                     {baseMetrics.annualPacks.toLocaleString('ru-RU')}{' '}
-                    {model.primaryUnitLabel || 'компл.'} · {formatMln(baseMetrics.annualRevenueRub)}
+                    {primaryUnitShort} · {formatMln(baseMetrics.annualRevenueRub)}
                   </div>
                 </div>
 
@@ -2971,7 +3169,7 @@ export function ScenarioModelCardScreen({
                   </div>
                   <div className="font-mono text-[15px] font-extrabold text-emerald-700 mt-0.5">
                     {baseMetrics.annualOrdersPacks.toLocaleString('ru-RU')}{' '}
-                    {model.primaryUnitLabel || 'компл.'} · {formatMln(baseMetrics.annualOrdersRub)}
+                    {primaryUnitShort} · {formatMln(baseMetrics.annualOrdersRub)}
                   </div>
                 </div>
 
@@ -2982,18 +3180,19 @@ export function ScenarioModelCardScreen({
                     </div>
                     <div className="text-[12px] font-bold text-[#0F172A] mt-0.5">
                       {isModelProcurementByOrdersActive(model)
-                        ? `Под заказы ×${baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')} (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${model.primaryUnitLabel || 'компл.'})`
-                        : `Под выкупы ×1,00 (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${model.primaryUnitLabel || 'компл.'})`}
+                        ? `Под заказы ×${baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')} (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${primaryUnitShort})`
+                        : `Под выкупы ×1,00 (${procurement.annualDemandPacks.toLocaleString('ru-RU')} ${primaryUnitShort})`}
                     </div>
                   </div>
                   <button
                     type="button"
+                    disabled={!canEdit}
                     onClick={() =>
                       handleToggleProcurementByOrders(
                         !isModelProcurementByOrdersActive(model)
                       )
                     }
-                    className={`h-8 px-3 rounded-[8px] text-[11.5px] font-bold border cursor-pointer transition shrink-0 ${
+                    className={`h-8 px-3 rounded-[8px] text-[11.5px] font-bold border cursor-pointer transition shrink-0 disabled:opacity-60 disabled:cursor-not-allowed ${
                       isModelProcurementByOrdersActive(model)
                         ? 'bg-emerald-600 text-white border-emerald-700'
                         : 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1] hover:bg-[#E2E8F0]'
@@ -3062,21 +3261,25 @@ export function ScenarioModelCardScreen({
                     <Download className="h-3.5 w-3.5" />
                     <span>Экспорт JSON</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => importPlanInputRef.current?.click()}
-                    className="h-7.5 px-2.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#DED8CC] text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    <span>Импорт плана</span>
-                  </button>
-                  <input
-                    ref={importPlanInputRef}
-                    type="file"
-                    accept=".json,.csv"
-                    onChange={handleImportSkuPlanFile}
-                    className="hidden"
-                  />
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => importPlanInputRef.current?.click()}
+                        className="h-7.5 px-2.5 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#DED8CC] text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>Импорт плана</span>
+                      </button>
+                      <input
+                        ref={importPlanInputRef}
+                        type="file"
+                        accept=".json,.csv"
+                        onChange={handleImportSkuPlanFile}
+                        className="hidden"
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -3105,12 +3308,14 @@ export function ScenarioModelCardScreen({
                         <div
                           style={{ height: `${hPct}%` }}
                           className="w-full max-w-[34px] rounded-t-[8px] bg-emerald-600/85 transition-all"
-                          title={`${mLabel}: ${packs.toLocaleString('ru-RU')} компл. = ${formatRub(rev)}`}
+                          title={`${mLabel}: ${packs.toLocaleString('ru-RU')} ${primaryUnitShort} = ${formatRub(rev)}`}
                         />
                         <span className="text-[11px] font-semibold text-[#1D1D1F]">
                           {mLabel}
                         </span>
-                        <span className="text-[10px] text-[#6E6E73]">{packs} к.</span>
+                        <span className="text-[10px] text-[#6E6E73]">
+                          {packs} {primaryUnitShort}
+                        </span>
                       </div>
                     );
                   })}
@@ -3124,7 +3329,7 @@ export function ScenarioModelCardScreen({
                     <tr className="bg-[#F7F7F4] border-b-[1.5px] border-[#DFDED6] text-[11px] uppercase tracking-wider text-[#5E5D58]">
                       <th className="py-2.5 px-4">Месяц</th>
                       <th className="py-2.5 px-4">Цена, ₽</th>
-                      <th className="py-2.5 px-4">Выкупы, комплектов</th>
+                      <th className="py-2.5 px-4">Выкупы ({primaryUnitShort})</th>
                       <th className="py-2.5 px-4">
                         Заказы (при {baseMetrics.buyoutRatePct}% выкупа)
                       </th>
@@ -3132,7 +3337,9 @@ export function ScenarioModelCardScreen({
                       <th className="py-2.5 px-4">Выручка, ₽</th>
                       {showSalesExtraTools && (
                         <>
-                          <th className="py-2.5 px-4">Факт выкупов (компл.)</th>
+                          <th className="py-2.5 px-4">
+                            Факт выкупов ({primaryUnitShort})
+                          </th>
                           <th className="py-2.5 px-4">Статус</th>
                         </>
                       )}
@@ -3163,34 +3370,29 @@ export function ScenarioModelCardScreen({
                                 type="number"
                                 min={0}
                                 step={10}
+                                disabled={!canEdit}
                                 value={planPrice}
                                 onChange={(e) => {
+                                  if (!canEdit) return;
                                   const val = Math.max(
                                     0,
                                     Math.round(Number(e.target.value))
                                   );
-                                  const nextPrices = plan.monthlyPricesRub.map((pr, idx) =>
-                                    idx === mIdx ? val : pr
+                                  const updatedModel = updateModelScenarioSingleMonthPrice(
+                                    model,
+                                    scenario.id,
+                                    mIdx,
+                                    val
                                   );
                                   commitWithAudit(
-                                    {
-                                      ...model,
-                                      plansByScenario: {
-                                        ...model.plansByScenario,
-                                        [scenario.id]: {
-                                          ...plan,
-                                          scenarioId: scenario.id,
-                                          monthlyPricesRub: nextPrices,
-                                        },
-                                      },
-                                    },
+                                    updatedModel,
                                     'sales',
                                     `Изменена цена ${mLabel} (${scenario.title})`,
                                     `${planPrice} ₽`,
                                     `${val} ₽`
                                   );
                                 }}
-                                className="h-7.5 w-24 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-semibold text-[#141413]"
+                                className="h-7.5 w-24 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-semibold text-[#141413] disabled:opacity-60"
                               />
                               <span className="text-[11px] text-[#5E5D58]">₽</span>
                             </div>
@@ -3201,14 +3403,18 @@ export function ScenarioModelCardScreen({
                                 type="number"
                                 min={0}
                                 step={50}
+                                disabled={!canEdit}
                                 value={planPacks}
                                 onChange={(e) =>
                                   handleMonthBuyoutsChange(mIdx, Number(e.target.value))
                                 }
-                                className="h-7.5 w-28 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-bold text-[#141413]"
+                                className="h-7.5 w-28 rounded-[7px] border border-[#CECDC4] bg-white px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                               />
                               <span className="text-[11.5px] text-[#5E5D58]">
-                                {model.primaryUnitLabel || 'компл.'} ({planUnits.toLocaleString('ru-RU')} изд.)
+                                {primaryUnitShort}
+                                {hasDistinctSecondary
+                                  ? ` (${planUnits.toLocaleString('ru-RU')} ${secondaryUnitShort})`
+                                  : ''}
                               </span>
                             </div>
                           </td>
@@ -3218,14 +3424,15 @@ export function ScenarioModelCardScreen({
                                 type="number"
                                 min={0}
                                 step={50}
+                                disabled={!canEdit}
                                 value={planOrdersPacks}
                                 onChange={(e) =>
                                   handleMonthOrdersChange(mIdx, Number(e.target.value))
                                 }
-                                className="h-7.5 w-28 rounded-[7px] border border-emerald-600/40 bg-emerald-50/40 px-2 font-mono font-bold text-emerald-800"
+                                className="h-7.5 w-28 rounded-[7px] border border-emerald-600/40 bg-emerald-50/40 px-2 font-mono font-bold text-emerald-800 disabled:opacity-60"
                               />
                               <span className="text-[11.5px] text-[#5E5D58]">
-                                {model.primaryUnitLabel || 'компл.'}
+                                {primaryUnitShort}
                               </span>
                             </div>
                           </td>
@@ -3241,12 +3448,13 @@ export function ScenarioModelCardScreen({
                                 <input
                                   type="number"
                                   min={0}
+                                  disabled={!canEdit}
                                   placeholder="Не заполнено"
                                   value={actPacks === null ? '' : actPacks}
                                   onChange={(e) =>
                                     handleMonthActualSaleChange(mIdx, e.target.value)
                                   }
-                                  className="h-7.5 w-28 rounded-[7px] border border-[#DED8CC] bg-[#FAF8F4] px-2 text-[12px]"
+                                  className="h-7.5 w-28 rounded-[7px] border border-[#DED8CC] bg-[#FAF8F4] px-2 text-[12px] disabled:opacity-60"
                                 />
                               </td>
                               <td className="py-2 px-4">
@@ -3265,11 +3473,15 @@ export function ScenarioModelCardScreen({
                         ср. {formatRub(pnl.avgRealizedPricePerPackRub)}
                       </td>
                       <td className="py-3 px-4 font-mono">
-                        {baseMetrics.annualPacks.toLocaleString('ru-RU')} компл. ({baseMetrics.annualUnits.toLocaleString('ru-RU')} изд.)
+                        {baseMetrics.annualPacks.toLocaleString('ru-RU')}{' '}
+                        {primaryUnitShort}
+                        {hasDistinctSecondary
+                          ? ` (${baseMetrics.annualUnits.toLocaleString('ru-RU')} ${secondaryUnitShort})`
+                          : ''}
                       </td>
                       <td className="py-3 px-4 font-mono text-emerald-700">
                         {baseMetrics.annualOrdersPacks.toLocaleString('ru-RU')}{' '}
-                        {model.primaryUnitLabel || 'компл.'} (×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})
+                        {primaryUnitShort} (×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})
                       </td>
                       <td className="py-3 px-4 font-mono text-[#334155]">
                         {formatRub(baseMetrics.annualOrdersRub)} ({formatMln(baseMetrics.annualOrdersRub)})
@@ -3290,6 +3502,7 @@ export function ScenarioModelCardScreen({
         {activeTab === 'procurement' && (
           <div className="p-4 md:p-6">
             <SkuProcurementMvpWorkbench
+              key={model.id}
               model={model}
               currentScenario={scenario}
               onUpdateModel={onUpdateModel}
@@ -3300,7 +3513,7 @@ export function ScenarioModelCardScreen({
         )}
 
         {/* ==================== ВКЛАДКА «ФИНАНСЫ» (Раздел 05 ТЗ, Стр. 5 и 6) ==================== */}
-        {activeTab === 'finance' && (
+        {activeTab === 'finance' && hasFinance && (
           <div className="p-5 md:p-6 space-y-6">
             {/* БАННЕР АВТОЗАПОЛНЕНИЯ НОРМАТИВОВ WB В 1 КЛИК (если у модели-гипотезы не заполнена логистика / комиссия / себестоимость) */}
             {(!pnl.logisticsFilled || !pnl.expensesFilled || pnl.unitCostPerPackRub === null) && (
@@ -3314,71 +3527,81 @@ export function ScenarioModelCardScreen({
                     {getCategoryWbNormsForBrand(model).marketplaceFeePct}%, логистика{' '}
                     {getCategoryWbNormsForBrand(model).logisticsRub} ₽, реклама ДРР{' '}
                     {getCategoryWbNormsForBrand(model).adsPct}%, OPEX{' '}
-                    {getCategoryWbNormsForBrand(model).allocatedFixedOpexRubPerPack} ₽/компл.) и сразу рассчитать чистую прибыль.
+                    {getCategoryWbNormsForBrand(model).allocatedFixedOpexRubPerPack} ₽/{primaryUnitShort}) и сразу рассчитать чистую прибыль.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const updated = applyCategoryWbUnitEconomics(model, {
-                      fillMissingCost: true,
-                      forceOverwriteRates: true,
-                    });
-                    commitWithAudit(
-                      updated,
-                      'finance',
-                      'Применены отраслевые нормативы юнит-экономики WB (комиссия, логистика, ДРР, OPEX)',
-                      'Не заполнено',
-                      `WB ${updated.marketplaceFeePct}% · Лог. ${updated.logisticsRub} ₽ · ДРР ${updated.adsPct}%`
-                    );
-                    notify(
-                      'success',
-                      'Юнит-экономика WB заполнена',
-                      `Комиссия ${updated.marketplaceFeePct}%, логистика ${updated.logisticsRub} ₽, ДРР ${updated.adsPct}%`
-                    );
-                  }}
-                  className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition shrink-0"
-                >
-                  ⚡ Заполнить отраслевые нормативы WB
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = applyCategoryWbUnitEconomics(model, {
+                        fillMissingCost: true,
+                        forceOverwriteRates: true,
+                      });
+                      commitWithAudit(
+                        updated,
+                        'finance',
+                        'Применены отраслевые нормативы юнит-экономики WB (комиссия, логистика, ДРР, OPEX)',
+                        'Не заполнено',
+                        `WB ${updated.marketplaceFeePct}% · Лог. ${updated.logisticsRub} ₽ · ДРР ${updated.adsPct}%`
+                      );
+                      notify(
+                        'success',
+                        'Юнит-экономика WB заполнена',
+                        `Комиссия ${updated.marketplaceFeePct}%, логистика ${updated.logisticsRub} ₽, ДРР ${updated.adsPct}%`
+                      );
+                    }}
+                    className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition shrink-0"
+                  >
+                    ⚡ Заполнить отраслевые нормативы WB
+                  </button>
+                )}
               </div>
             )}
 
-            {/* ВЕРХНЯЯ СЕТКА: БЛОК А (Сколько остаётся с одного комплекта) + БЛОК Б (Результат за выбранный период) */}
+            {/* ВЕРХНЯЯ СЕТКА: БЛОК А (Сколько остаётся с одной ед.) + БЛОК Б (Результат за выбранный период) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* БЛОК А. Сколько остаётся с одного комплекта (Стр. 5 ТЗ) */}
               <div className="lg:col-span-6 rounded-2xl bg-white border border-[#E2E6EE] p-4 md:p-5 space-y-3 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
                   <div>
                     <h3 className="text-[15px] font-bold text-[#141413]">
-                      Блок А. Сколько остаётся с одного комплекта
+                      {primaryUnitShort === 'компл.'
+                        ? 'Блок А. Сколько остаётся с одного комплекта'
+                        : `Блок А. Сколько остаётся с 1 ед. (${primaryUnitShort})`}
                     </h3>
                     <p className="text-[11.5px] text-[#5E5D58]">
-                      Последовательный расчёт расходов на 1 комплект ({model.unitsInPack} изд.)
+                      Последовательный расчёт расходов на 1 {primaryUnitShort}
+                      {hasDistinctSecondary
+                        ? ` (${model.unitsInPack} ${secondaryUnitShort})`
+                        : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {(!pnl.logisticsFilled || !pnl.expensesFilled || pnl.unitCostPerPackRub === null) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = applyCategoryWbUnitEconomics(model, {
-                            fillMissingCost: true,
-                            forceOverwriteRates: true,
-                          });
-                          commitWithAudit(
-                            updated,
-                            'finance',
-                            'Автозаполнение нормативов WB',
-                            'Не заполнено',
-                            `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
-                          );
-                        }}
-                        className="h-7 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-700 text-[11px] font-semibold cursor-pointer transition"
-                      >
-                        ⚡ Авто-нормы WB
-                      </button>
-                    )}
+                    {canEdit &&
+                      (!pnl.logisticsFilled ||
+                        !pnl.expensesFilled ||
+                        pnl.unitCostPerPackRub === null) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = applyCategoryWbUnitEconomics(model, {
+                              fillMissingCost: true,
+                              forceOverwriteRates: true,
+                            });
+                            commitWithAudit(
+                              updated,
+                              'finance',
+                              'Автозаполнение нормативов WB',
+                              'Не заполнено',
+                              `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
+                            );
+                          }}
+                          className="h-7 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-700 text-[11px] font-semibold cursor-pointer transition"
+                        >
+                          ⚡ Авто-нормы WB
+                        </button>
+                      )}
                     <StatusPill status={pnl.operatingProfitStatus} />
                   </div>
                 </div>
@@ -3386,7 +3609,9 @@ export function ScenarioModelCardScreen({
                 <div className="divide-y divide-[#EFECE4] text-[13px]">
                   <div className="py-2 flex items-center justify-between gap-2">
                     <span className="font-semibold text-[#141413]">
-                      Цена продажи комплекта
+                      {primaryUnitShort === 'компл.'
+                        ? 'Цена продажи комплекта'
+                        : `Цена продажи (${primaryUnitShort})`}
                     </span>
                     <span className="font-mono font-bold text-[#141413]">
                       {formatRub(pnl.avgRealizedPricePerPackRub)}
@@ -3395,7 +3620,9 @@ export function ScenarioModelCardScreen({
 
                   <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-[#3F3E3A]">Закупочная себестоимость</span>
-                    {pnl.unitCostPerPackRub !== null ? (
+                    {!hasCost ? (
+                      <span className="font-semibold text-[#64748B]">Скрыто</span>
+                    ) : pnl.unitCostPerPackRub !== null ? (
                       <span className="font-mono font-semibold text-[#141413]">
                         −{formatRub(pnl.unitCostPerPackRub)}
                       </span>
@@ -3453,7 +3680,9 @@ export function ScenarioModelCardScreen({
                   </div>
 
                   <div className="py-2 flex items-center justify-between gap-2">
-                    <span className="text-[#3F3E3A]">Постоянные расходы (доля на компл.)</span>
+                    <span className="text-[#3F3E3A]">
+                      Постоянные расходы (доля на 1 {primaryUnitShort})
+                    </span>
                     {pnl.unitAllocatedOpexRub !== null ? (
                       <span className="font-mono font-semibold text-[#141413]">
                         −{formatRub(pnl.unitAllocatedOpexRub)}
@@ -3466,9 +3695,15 @@ export function ScenarioModelCardScreen({
                   {/* Итог Блока А */}
                   <div className="pt-3 mt-1 flex flex-wrap items-center justify-between gap-2">
                     <span className="font-bold text-[#141413]">
-                      Остаётся с продажи комплекта
+                      {primaryUnitShort === 'компл.'
+                        ? 'Остаётся с продажи комплекта'
+                        : `Остаётся с продажи (${primaryUnitShort})`}
                     </span>
-                    {pnl.unitOperatingProfitRub !== null ? (
+                    {!hasCost ? (
+                      <span className="font-mono text-[15px] font-bold text-[#64748B]">
+                        Скрыто
+                      </span>
+                    ) : pnl.unitOperatingProfitRub !== null ? (
                       <span
                         className={`font-mono text-[17px] font-extrabold ${
                           pnl.unitOperatingProfitRub >= 0
@@ -3493,9 +3728,11 @@ export function ScenarioModelCardScreen({
                       Сколько остаётся после расходов на продажу, %
                     </span>
                     <span className="font-mono font-bold text-[#141413]">
-                      {pnl.operatingMarginPct !== null
-                        ? `${pnl.operatingMarginPct}%`
-                        : 'Не рассчитано'}
+                      {!hasCost
+                        ? 'Скрыто'
+                        : pnl.operatingMarginPct !== null
+                          ? `${pnl.operatingMarginPct}%`
+                          : 'Не рассчитано'}
                     </span>
                   </div>
                 </div>
@@ -3510,8 +3747,8 @@ export function ScenarioModelCardScreen({
                     </h3>
                     <p className="text-[11.5px] text-[#5E5D58]">
                       {financePeriodMode === 'month'
-                        ? `Месяц: ${MONTHS_SHORT_RU[selectedMonthIdx]} ${scenario.year} (${periodPacks.toLocaleString('ru-RU')} компл.)`
-                        : `Весь ${scenario.year} год (${periodPacks.toLocaleString('ru-RU')} компл.)`}
+                        ? `Месяц: ${MONTHS_SHORT_RU[selectedMonthIdx]} ${scenario.year} (${periodPacks.toLocaleString('ru-RU')} ${primaryUnitShort})`
+                        : `Весь ${scenario.year} год (${periodPacks.toLocaleString('ru-RU')} ${primaryUnitShort})`}
                     </p>
                   </div>
 
@@ -3567,7 +3804,8 @@ export function ScenarioModelCardScreen({
                       {formatMln(periodRevenueRub)}
                     </div>
                     <div className="text-[11px] text-[#5E5D58]">
-                      {formatRub(periodRevenueRub)} · {periodPacks.toLocaleString('ru-RU')} компл.
+                      {formatRub(periodRevenueRub)} · {periodPacks.toLocaleString('ru-RU')}{' '}
+                      {primaryUnitShort}
                     </div>
                   </div>
 
@@ -3575,13 +3813,18 @@ export function ScenarioModelCardScreen({
                     <span className="text-[11.5px] font-semibold text-[#5E5D58]">
                       2. Стоимость проданного товара
                     </span>
-                    {periodCogsRub !== null ? (
+                    {!hasCost ? (
+                      <div className="text-[15px] font-bold text-[#64748B] pt-1">
+                        Скрыто
+                      </div>
+                    ) : periodCogsRub !== null ? (
                       <>
                         <div className="font-mono text-[19px] font-bold text-[#141413]">
                           {formatMln(periodCogsRub)}
                         </div>
                         <div className="text-[11px] text-[#5E5D58]">
-                          {formatRub(periodCogsRub)} (по {formatRub(pnl.unitCostPerPackRub || 0)}/компл.)
+                          {formatRub(periodCogsRub)} (по {formatRub(pnl.unitCostPerPackRub || 0)}/
+                          {primaryUnitShort})
                         </div>
                       </>
                     ) : (
@@ -3615,7 +3858,11 @@ export function ScenarioModelCardScreen({
                     <span className="text-[11.5px] font-semibold text-[#5E5D58]">
                       4. Расчётная операционная прибыль
                     </span>
-                    {periodOperatingProfitRub !== null ? (
+                    {!hasCost ? (
+                      <div className="text-[15px] font-bold text-[#64748B] pt-1">
+                        Скрыто
+                      </div>
+                    ) : periodOperatingProfitRub !== null ? (
                       <>
                         <div
                           className={`font-mono text-[19px] font-bold ${
@@ -3671,45 +3918,47 @@ export function ScenarioModelCardScreen({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = applyCategoryWbUnitEconomics(model, {
-                          fillMissingCost: true,
-                          forceOverwriteRates: true,
-                        });
-                        commitWithAudit(
-                          updated,
-                          'finance',
-                          'Применены отраслевые нормативы WB в Блоке В',
-                          `${model.marketplaceFeePct}% / ${model.logisticsRub} ₽`,
-                          `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
-                        );
-                        notify('success', 'Применены отраслевые нормативы WB');
-                      }}
-                      className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
-                    >
-                      ⚡ Применить нормативы WB
-                    </button>
-                    {model.logisticsRub > 0 && (
+                  {canEdit && (
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          const updated = applyCategoryWbUnitEconomics(model, {
+                            fillMissingCost: true,
+                            forceOverwriteRates: true,
+                          });
                           commitWithAudit(
-                            { ...model, logisticsRub: 0 },
+                            updated,
                             'finance',
-                            'Очищено поле логистики (проверка защиты от ложной прибыли)',
-                            `${model.logisticsRub} ₽`,
-                            'Не заполнено'
-                          )
-                        }
-                        className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[11.5px] font-semibold cursor-pointer"
+                            'Применены отраслевые нормативы WB в Блоке В',
+                            `${model.marketplaceFeePct}% / ${model.logisticsRub} ₽`,
+                            `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
+                          );
+                          notify('success', 'Применены отраслевые нормативы WB');
+                        }}
+                        className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
                       >
-                        Очистить поле логистики
+                        ⚡ Применить нормативы WB
                       </button>
-                    )}
-                  </div>
+                      {model.logisticsRub > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            commitWithAudit(
+                              { ...model, logisticsRub: 0 },
+                              'finance',
+                              'Очищено поле логистики (проверка защиты от ложной прибыли)',
+                              `${model.logisticsRub} ₽`,
+                              'Не заполнено'
+                            )
+                          }
+                          className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[11.5px] font-semibold cursor-pointer"
+                        >
+                          Очистить поле логистики
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Редактируемые поля с человеческими названиями и пояснением под каждым полем */}
@@ -3718,17 +3967,24 @@ export function ScenarioModelCardScreen({
                     <span className="font-semibold text-[#141413] block">
                       Закупочная себестоимость, ₽
                     </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={10}
-                      value={model.unitCostRub > 0 ? model.unitCostRub : ''}
-                      placeholder="Не заполнено"
-                      onChange={(e) => handleUnitCostChange(Number(e.target.value))}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
-                    />
+                    {!hasCost ? (
+                      <div className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 flex items-center font-semibold text-[#64748B]">
+                        Скрыто
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        min={0}
+                        step={10}
+                        disabled={!canEdit}
+                        value={model.unitCostRub > 0 ? model.unitCostRub : ''}
+                        placeholder="Не заполнено"
+                        onChange={(e) => handleUnitCostChange(Number(e.target.value))}
+                        className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
+                      />
+                    )}
                     <span className="text-[10.5px] text-[#6E6E73] block">
-                      Цена фабрики с доставкой в РФ за 1 компл.
+                      Цена фабрики с доставкой в РФ за 1 {primaryUnitShort}
                     </span>
                   </label>
 
@@ -3741,6 +3997,7 @@ export function ScenarioModelCardScreen({
                       min={0}
                       max={60}
                       step={0.5}
+                      disabled={!canEdit}
                       value={model.marketplaceFeePct}
                       onChange={(e) => {
                         const val = Math.max(0, Number(e.target.value));
@@ -3760,7 +4017,7 @@ export function ScenarioModelCardScreen({
                           `${val}%`
                         );
                       }}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                     />
                     <span className="text-[10.5px] text-[#6E6E73] block">
                       Удержание площадки с цены продажи
@@ -3775,6 +4032,7 @@ export function ScenarioModelCardScreen({
                       type="number"
                       min={0}
                       step={5}
+                      disabled={!canEdit}
                       value={model.logisticsRub > 0 ? model.logisticsRub : ''}
                       placeholder="Не заполнено"
                       onChange={(e) => {
@@ -3799,7 +4057,7 @@ export function ScenarioModelCardScreen({
                           val > 0 ? `${val} ₽` : 'Не заполнено'
                         );
                       }}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                     />
                     <span className="text-[10.5px] text-[#6E6E73] block">
                       Логистика WB до клиента с учётом возвратов
@@ -3815,6 +4073,7 @@ export function ScenarioModelCardScreen({
                       min={0}
                       max={50}
                       step={0.5}
+                      disabled={!canEdit}
                       value={model.adsPct}
                       onChange={(e) => {
                         const val = Math.max(0, Number(e.target.value));
@@ -3834,10 +4093,10 @@ export function ScenarioModelCardScreen({
                           `${val}%`
                         );
                       }}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                     />
                     <span className="text-[10.5px] text-[#6E6E73] block">
-                      Доля рекламных расходов от цены комплекта
+                      Доля рекламных расходов от цены 1 {primaryUnitShort}
                     </span>
                   </label>
 
@@ -3849,6 +4108,7 @@ export function ScenarioModelCardScreen({
                       type="number"
                       min={0}
                       step={5}
+                      disabled={!canEdit}
                       value={shared.otherVariableRubPerPack}
                       onChange={(e) => {
                         const val = Math.max(0, Math.round(Number(e.target.value)));
@@ -3866,7 +4126,7 @@ export function ScenarioModelCardScreen({
                           `${val} ₽`
                         );
                       }}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                     />
                     <span className="text-[10.5px] text-[#6E6E73] block">
                       Упаковка, маркировка «Честный знак», брак
@@ -3881,6 +4141,7 @@ export function ScenarioModelCardScreen({
                       type="number"
                       min={0}
                       step={5}
+                      disabled={!canEdit}
                       value={
                         shared.allocatedFixedOpexRubPerPack === null
                           ? ''
@@ -3902,17 +4163,17 @@ export function ScenarioModelCardScreen({
                             },
                           },
                           'finance',
-                          'Обновлены постоянные расходы на комплект',
+                          `Обновлены постоянные расходы на 1 ${primaryUnitShort}`,
                           shared.allocatedFixedOpexRubPerPack === null
                             ? 'Не задано'
                             : `${shared.allocatedFixedOpexRubPerPack} ₽`,
                           val === null ? 'Не задано' : `${val} ₽`
                         );
                       }}
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
                     />
                     <span className="text-[10.5px] text-[#6E6E73] block">
-                      Доля команды, офиса и сервисов на 1 комплект
+                      Доля команды, офиса и сервисов на 1 {primaryUnitShort}
                     </span>
                   </label>
                 </div>
@@ -3924,7 +4185,7 @@ export function ScenarioModelCardScreen({
                       <tr className="bg-[#F7F7F4] border-b border-[#DED8CC] text-[11px] uppercase text-[#5E5D58]">
                         <th className="py-2 px-3">Статья доходов и расходов</th>
                         <th className="py-2 px-3">Как считается</th>
-                        <th className="py-2 px-3">На 1 комплект</th>
+                        <th className="py-2 px-3">На 1 {primaryUnitShort}</th>
                         <th className="py-2 px-3">За {scenario.year} год</th>
                         <th className="py-2 px-3">Доля от выручки</th>
                       </tr>
@@ -3933,7 +4194,7 @@ export function ScenarioModelCardScreen({
                       <tr>
                         <td className="py-2 px-3 font-bold text-[#141413]">Выручка</td>
                         <td className="py-2 px-3 text-[#5E5D58]">
-                          Выкупы × средняя цена комплекта
+                          Выкупы × средняя цена ({primaryUnitShort})
                         </td>
                         <td className="py-2 px-3 font-mono font-semibold">
                           {formatRub(pnl.avgRealizedPricePerPackRub)}
@@ -3948,22 +4209,28 @@ export function ScenarioModelCardScreen({
                           Стоимость проданного товара
                         </td>
                         <td className="py-2 px-3 text-[#5E5D58]">
-                          Выкупы × закупочная себестоимость комплекта
+                          Выкупы × закупочная себестоимость ({primaryUnitShort})
                         </td>
                         <td className="py-2 px-3 font-mono">
-                          {pnl.unitCostPerPackRub !== null
-                            ? `−${formatRub(pnl.unitCostPerPackRub)}`
-                            : 'Не заполнено'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.unitCostPerPackRub !== null
+                              ? `−${formatRub(pnl.unitCostPerPackRub)}`
+                              : 'Не заполнено'}
                         </td>
                         <td className="py-2 px-3 font-mono">
-                          {pnl.annualCogsRub !== null
-                            ? `−${formatRub(pnl.annualCogsRub)}`
-                            : 'Не заполнено'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.annualCogsRub !== null
+                              ? `−${formatRub(pnl.annualCogsRub)}`
+                              : 'Не заполнено'}
                         </td>
                         <td className="py-2 px-3 font-mono">
-                          {pnl.annualCogsRub !== null && pnl.annualRevenueRub > 0
-                            ? `${Math.round((pnl.annualCogsRub / pnl.annualRevenueRub) * 1000) / 10}%`
-                            : '—'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.annualCogsRub !== null && pnl.annualRevenueRub > 0
+                              ? `${Math.round((pnl.annualCogsRub / pnl.annualRevenueRub) * 1000) / 10}%`
+                              : '—'}
                         </td>
                       </tr>
                       <tr>
@@ -3996,15 +4263,17 @@ export function ScenarioModelCardScreen({
                             : 'Не заполнено'}
                         </td>
                         <td className="py-2 px-3 font-mono">
-                          {pnl.contributionMarginPct !== null
-                            ? `Остаётся ${pnl.contributionMarginPct}%`
-                            : '—'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.contributionMarginPct !== null
+                              ? `Остаётся ${pnl.contributionMarginPct}%`
+                              : '—'}
                         </td>
                       </tr>
                       <tr>
                         <td className="py-2 px-3 text-[#3F3E3A]">Постоянные расходы</td>
                         <td className="py-2 px-3 text-[#5E5D58]">
-                          Выкупы × доля постоянных расходов на 1 комплект
+                          Выкупы × доля постоянных расходов на 1 {primaryUnitShort}
                         </td>
                         <td className="py-2 px-3 font-mono">
                           {pnl.unitAllocatedOpexRub !== null
@@ -4026,19 +4295,25 @@ export function ScenarioModelCardScreen({
                           Выручка − себестоимость − расходы на продажу − постоянные расходы
                         </td>
                         <td className="py-2.5 px-3 font-mono">
-                          {pnl.unitOperatingProfitRub !== null
-                            ? formatRub(pnl.unitOperatingProfitRub)
-                            : 'Не рассчитано'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.unitOperatingProfitRub !== null
+                              ? formatRub(pnl.unitOperatingProfitRub)
+                              : 'Не рассчитано'}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-[#157347]">
-                          {pnl.annualOperatingProfitRub !== null
-                            ? formatRub(pnl.annualOperatingProfitRub)
-                            : pnl.operatingProfitNotCalculatedReason}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.annualOperatingProfitRub !== null
+                              ? formatRub(pnl.annualOperatingProfitRub)
+                              : pnl.operatingProfitNotCalculatedReason}
                         </td>
                         <td className="py-2.5 px-3 font-mono">
-                          {pnl.operatingMarginPct !== null
-                            ? `${pnl.operatingMarginPct}%`
-                            : '—'}
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.operatingMarginPct !== null
+                              ? `${pnl.operatingMarginPct}%`
+                              : '—'}
                         </td>
                       </tr>
                     </tbody>
@@ -4064,6 +4339,7 @@ export function ScenarioModelCardScreen({
                   <label className="inline-flex items-center gap-1.5 text-[11.5px] text-[#3F3E3A] bg-[#F7F7F4] border border-[#CECDC4] rounded-[8px] px-2.5 py-1.5 cursor-pointer">
                     <input
                       type="checkbox"
+                      disabled={!canEdit}
                       checked={Boolean(shared.wbPayoutScheduleConfirmed)}
                       onChange={(e) =>
                         commitWithAudit(
@@ -4102,14 +4378,19 @@ export function ScenarioModelCardScreen({
                   <span className="text-[11.5px] font-semibold text-[#5E5D58]">
                     1. Общая стоимость плановых партий
                   </span>
-                  {procurement.totalRecommendedBudgetRub !== null ? (
+                  {!hasCost ? (
+                    <div className="text-[15px] font-bold text-[#64748B] pt-1">
+                      Скрыто
+                    </div>
+                  ) : procurement.totalRecommendedBudgetRub !== null ? (
                     <>
                       <div className="font-mono text-[19px] font-bold text-[#141413]">
                         {formatMln(procurement.totalRecommendedBudgetRub)}
                       </div>
                       <div className="text-[11px] text-[#5E5D58]">
                         {formatRub(procurement.totalRecommendedBudgetRub)} ·{' '}
-                        {procurement.totalRecommendedPacks.toLocaleString('ru-RU')} компл. по ещё не утверждённому плану
+                        {procurement.totalRecommendedPacks.toLocaleString('ru-RU')}{' '}
+                        {primaryUnitShort} по ещё не утверждённому плану
                       </div>
                     </>
                   ) : (
@@ -4124,7 +4405,11 @@ export function ScenarioModelCardScreen({
                   <span className="text-[11.5px] font-semibold text-[#5E5D58]">
                     2. Следующий платёж фабрике
                   </span>
-                  {pnl.nextFactoryPayment ? (
+                  {!hasCost ? (
+                    <div className="text-[15px] font-bold text-[#64748B] pt-1">
+                      Скрыто
+                    </div>
+                  ) : pnl.nextFactoryPayment ? (
                     <>
                       <div className="font-mono text-[19px] font-bold text-[#141413]">
                         {formatRub(pnl.nextFactoryPayment.amountRub)} · {pnl.nextFactoryPayment.dateIso}
@@ -4151,16 +4436,22 @@ export function ScenarioModelCardScreen({
                     3. Максимально потребуется собственных денег
                   </span>
                   {pnl.verifiedPeakCapitalDeficitRub !== null ? (
-                    <>
-                      <div className="font-mono text-[19px] font-bold text-[#B42318]">
-                        {pnl.verifiedPeakCapitalDeficitRub > 0
-                          ? formatMln(pnl.verifiedPeakCapitalDeficitRub)
-                          : '0 ₽ (хватает выручки)'}
+                    !hasCost ? (
+                      <div className="text-[15px] font-bold text-[#64748B] pt-1">
+                        Скрыто
                       </div>
-                      <div className="text-[11px] text-[#5E5D58]">
-                        {formatRub(pnl.verifiedPeakCapitalDeficitRub)} · наибольший минус денег во времени
-                      </div>
-                    </>
+                    ) : (
+                      <>
+                        <div className="font-mono text-[19px] font-bold text-[#B42318]">
+                          {pnl.verifiedPeakCapitalDeficitRub > 0
+                            ? formatMln(pnl.verifiedPeakCapitalDeficitRub)
+                            : '0 ₽ (хватает выручки)'}
+                        </div>
+                        <div className="text-[11px] text-[#5E5D58]">
+                          {formatRub(pnl.verifiedPeakCapitalDeficitRub)} · наибольший минус денег во времени
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <div className="text-[13.5px] font-bold text-[#9A5B00] pt-0.5">
@@ -4195,9 +4486,11 @@ export function ScenarioModelCardScreen({
                         </td>
                         {pnl.monthlyCashFlow.map((cf) => (
                           <td key={cf.monthLabel} className="py-2 px-2.5 font-mono text-[#B42318]">
-                            {cf.outflowProcurementRub > 0
-                              ? `−${(cf.outflowProcurementRub / 1_000_000).toFixed(2).replace('.', ',')}м`
-                              : '0'}
+                            {!hasCost
+                              ? 'Скрыто'
+                              : cf.outflowProcurementRub > 0
+                                ? `−${(cf.outflowProcurementRub / 1_000_000).toFixed(2).replace('.', ',')}м`
+                                : '0'}
                           </td>
                         ))}
                       </tr>
@@ -4225,11 +4518,16 @@ export function ScenarioModelCardScreen({
                           <td
                             key={cf.monthLabel}
                             className={`py-2 px-2.5 font-mono ${
-                              cf.netCashFlowRub >= 0 ? 'text-[#157347]' : 'text-[#B42318]'
+                              !hasCost
+                                ? 'text-[#64748B]'
+                                : cf.netCashFlowRub >= 0
+                                  ? 'text-[#157347]'
+                                  : 'text-[#B42318]'
                             }`}
                           >
-                            {cf.netCashFlowRub >= 0 ? '+' : ''}
-                            {(cf.netCashFlowRub / 1_000_000).toFixed(2).replace('.', ',')}м
+                            {!hasCost
+                              ? 'Скрыто'
+                              : `${cf.netCashFlowRub >= 0 ? '+' : ''}${(cf.netCashFlowRub / 1_000_000).toFixed(2).replace('.', ',')}м`}
                           </td>
                         ))}
                       </tr>

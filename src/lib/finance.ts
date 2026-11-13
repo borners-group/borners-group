@@ -280,6 +280,12 @@ export function canUserAccessSection(user: AppUser, section: NavSectionId): bool
       section
     );
   }
+  if (section === 'settings') {
+    return false;
+  }
+  if (section === 'team' && user.role === 'Viewer') {
+    return false;
+  }
   if (section === 'finance') {
     return user.canViewFinance;
   }
@@ -557,17 +563,94 @@ export interface ParsedImportRow {
 }
 
 export function parseCsvContent(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return { headers: [], rows: [] };
+  const cleaned = (text || '').replace(/^\uFEFF/, '');
+  if (!cleaned.trim()) return { headers: [], rows: [] };
 
-  const delimiter = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-  const headers = lines[0].split(delimiter).map((h) => h.trim().replace(/^"|"$/g, ''));
+  // Detect delimiter on first logical header row outside quotes
+  let semiCount = 0;
+  let tabCount = 0;
+  let commaCount = 0;
+  let inQuotesDetect = false;
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (ch === '"') {
+      if (inQuotesDetect && cleaned[i + 1] === '"') {
+        i++;
+      } else {
+        inQuotesDetect = !inQuotesDetect;
+      }
+      continue;
+    }
+    if (!inQuotesDetect) {
+      if (ch === '\r' || ch === '\n') {
+        if (semiCount + tabCount + commaCount > 0 || i > 0) break;
+      } else if (ch === ';') {
+        semiCount++;
+      } else if (ch === '\t') {
+        tabCount++;
+      } else if (ch === ',') {
+        commaCount++;
+      }
+    }
+  }
+  const delimiter =
+    semiCount > 0 && semiCount >= commaCount && semiCount >= tabCount
+      ? ';'
+      : tabCount > 0 && tabCount >= commaCount
+      ? '\t'
+      : ',';
 
-  const rows = lines.slice(1).map((line) => {
-    const cols = line.split(delimiter).map((c) => c.trim().replace(/^"|"$/g, ''));
+  // RFC-4180 quote-aware record & cell tokenizer
+  const rawRows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (cleaned[i + 1] === '"') {
+          currentCell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentCell += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === delimiter) {
+        currentRow.push(currentCell.trim());
+        currentCell = '';
+      } else if (ch === '\r' || ch === '\n') {
+        if (ch === '\r' && cleaned[i + 1] === '\n') {
+          i++;
+        }
+        currentRow.push(currentCell.trim());
+        currentCell = '';
+        if (currentRow.some((cell) => cell.length > 0)) {
+          rawRows.push(currentRow);
+        }
+        currentRow = [];
+      } else {
+        currentCell += ch;
+      }
+    }
+  }
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.some((cell) => cell.length > 0)) {
+      rawRows.push(currentRow);
+    }
+  }
+
+  if (rawRows.length === 0) return { headers: [], rows: [] };
+
+  const headers = rawRows[0].map((h) => h.trim());
+  const rows = rawRows.slice(1).map((cols) => {
     const record: Record<string, string> = {};
     headers.forEach((h, i) => {
       record[h] = cols[i] ?? '';

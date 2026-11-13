@@ -154,17 +154,21 @@ export function BentoAtlasNav({
         metricBadge: '2 бренда',
         contour: 'strategy',
       },
-      {
-        id: 'presentation-mode',
-        title: 'Презентация стратегии 2027',
-        subtitle: 'Полноэкранный режим слайдов для защиты стратегии',
-        metricBadge: '16 слайдов',
-        contour: 'strategy',
-        onCustomSelect: () => {
-          onSetPlatformMode('strategy');
-          onClose();
-        },
-      },
+      ...(canUserAccessSection(currentUser, 'brand-strategy')
+        ? [
+            {
+              id: 'presentation-mode',
+              title: 'Презентация стратегии 2027',
+              subtitle: 'Полноэкранный режим слайдов для защиты стратегии',
+              metricBadge: '8 слайдов',
+              contour: 'strategy' as const,
+              onCustomSelect: () => {
+                onSetPlatformMode('strategy');
+                onClose();
+              },
+            },
+          ]
+        : []),
       ...(draftModules.brandPortfolio
         ? [
             {
@@ -390,20 +394,22 @@ export function BentoAtlasNav({
               >
                 Рабочая система
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onSetPlatformMode('strategy');
-                  onClose();
-                }}
-                className={`px-3 py-1 rounded-[7px] transition cursor-pointer ${
-                  platformMode === 'strategy'
-                    ? 'bg-white text-[#141413] shadow-2xs'
-                    : 'text-[#5E5D58] hover:text-[#141413]'
-                }`}
-              >
-                Презентация
-              </button>
+              {canUserAccessSection(currentUser, 'brand-strategy') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSetPlatformMode('strategy');
+                    onClose();
+                  }}
+                  className={`px-3 py-1 rounded-[7px] transition cursor-pointer ${
+                    platformMode === 'strategy'
+                      ? 'bg-white text-[#141413] shadow-2xs'
+                      : 'text-[#5E5D58] hover:text-[#141413]'
+                  }`}
+                >
+                  Презентация
+                </button>
+              )}
             </div>
 
             <button
@@ -517,16 +523,18 @@ export function BentoAtlasNav({
               Гид по системе (5 шагов)
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenDraftAdmin();
-              }}
-              className="h-8 px-3 rounded-[8px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] font-semibold cursor-pointer transition"
-            >
-              Черновик разделов ({enabledDraftCount}/{totalDraftCount})
-            </button>
+            {(currentUser.role === 'Owner' || currentUser.role === 'Admin') && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenDraftAdmin();
+                }}
+                className="h-8 px-3 rounded-[8px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] font-semibold cursor-pointer transition"
+              >
+                Черновик разделов ({enabledDraftCount}/{totalDraftCount})
+              </button>
+            )}
 
             <button
               type="button"

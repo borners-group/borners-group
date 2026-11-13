@@ -28,6 +28,13 @@ import {
   updateModelScenarioMonthBuyouts,
   updateModelScenarioSingleMonthPrice,
 } from '@/lib/unifiedBusinessEngine';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
+import { usePlatform } from '@/context/PlatformContext';
 
 interface ScenarioSalesPlanScreenProps {
   model: ScenarioModelSpec;
@@ -48,6 +55,7 @@ export function ScenarioSalesPlanScreen({
   onUpdateModel,
   notify,
 }: ScenarioSalesPlanScreenProps) {
+  const { currentUser } = usePlatform();
   const [periodMode, setPeriodMode] = useState<'year' | 'monthly' | 'quarterly'>(
     'monthly'
   );
@@ -58,8 +66,23 @@ export function ScenarioSalesPlanScreen({
   const metrics = computeModelScenarioMetrics(model, scenario);
   const { plan } = metrics;
   const modelBrandLabel = detectModelBrandPortfolioLabel(model);
-  const modelBrandCode = normalizePortfolioBrandCode(modelBrandLabel);
-  const unitConfig = getBrandUnitConfig(modelBrandLabel);
+  const modelBrandCode = normalizePortfolioBrandCode(modelBrandLabel || model.brandId);
+  const unitConfig = getBrandUnitConfig(model);
+  const primaryUnit = model.primaryUnitLabel || unitConfig.primaryUnit || 'компл.';
+  const secondaryUnit = model.secondaryUnitLabel || unitConfig.secondaryUnit || 'шт.';
+  const hasDistinctSecondary = !(
+    model.unitsInPack === 1 && primaryUnit === secondaryUnit
+  );
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const canEdit = canUserEditBrand(
+    currentUser,
+    modelBrandCode === 'ALL' ? 'BORNERS' : modelBrandCode
+  );
+  const prodProfile = getBrandProductionProfile(
+    modelBrandLabel || model.brandId,
+    `${model.title || ''} ${model.categoryLabel || ''} ${model.construction?.fit || ''} ${model.waistband?.width || ''}`
+  );
   const compatibleScenarios = allScenarios.filter(
     (sc) =>
       sc.id === scenario.id ||
@@ -73,6 +96,7 @@ export function ScenarioSalesPlanScreen({
     field: 'packs' | 'price' | 'receipts',
     value: number
   ) => {
+    if (!canEdit) return;
     const cleanVal = Math.max(0, Math.round(value || 0));
     if (field === 'packs') {
       onUpdateModel(
@@ -104,6 +128,7 @@ export function ScenarioSalesPlanScreen({
   };
 
   const toggleScheduleConflictDemo = () => {
+    if (!canEdit) return;
     const isCurrentlyConflict =
       plan.salesStartMonthIdx < plan.warehouseArrivalMonthIdx;
     const nextPlan = {
@@ -138,6 +163,7 @@ export function ScenarioSalesPlanScreen({
   };
 
   const autoReplenishDeficit = () => {
+    if (!canEdit) return;
     const nextReceipts = [...plan.monthlyReceiptsPacks];
     let running = plan.initialStockPacks;
     for (let m = 0; m < 12; m++) {
@@ -166,20 +192,147 @@ export function ScenarioSalesPlanScreen({
     ...metrics.monthlyRevenuesRub.map((r) => r / 1_000_000)
   );
 
-  // Квартальная агрегация для переключателя «Поквартально»
+  // Квартальная агрегация для переключателей «Годовой план» и «Поквартально»
   const quarters = [0, 1, 2, 3].map((q) => {
     const mIndices = [q * 3, q * 3 + 1, q * 3 + 2];
     const packs = mIndices.reduce((acc, idx) => acc + (plan.monthlyPacks[idx] || 0), 0);
+    const receipts = mIndices.reduce(
+      (acc, idx) => acc + (plan.monthlyReceiptsPacks[idx] || 0),
+      0
+    );
+    const ordersPacks = mIndices.reduce(
+      (acc, idx) => acc + (metrics.monthlyOrdersPacks[idx] || 0),
+      0
+    );
     const revRub = mIndices.reduce(
       (acc, idx) => acc + (metrics.monthlyRevenuesRub[idx] || 0),
       0
     );
+    const avgPriceRub =
+      packs > 0 ? Math.round(revRub / packs) : metrics.avgRetailPriceRub;
+    const shareOfYearPct =
+      metrics.annualRevenueRub > 0
+        ? Math.round((revRub / metrics.annualRevenueRub) * 1000) / 10
+        : 0;
     return {
+      qNum: q + 1,
+      shortLabel: `Q${q + 1}`,
       label: `Q${q + 1} (${MONTHS_SHORT_RU[mIndices[0]]}–${MONTHS_SHORT_RU[mIndices[2]]})`,
       packs,
+      receipts,
+      ordersPacks,
       revRub,
+      avgPriceRub,
+      shareOfYearPct,
     };
   });
+
+  const maxQuarterRevRub = Math.max(1, ...quarters.map((q) => q.revRub));
+
+  // Динамическая детализация по размерам (LISKANI шторы / обувные сетки AKUSHA / XS–XL NA_TELE / S–4XL)
+  const sizeBreakdownInfo = (() => {
+    const targetPacks = Math.max(0, Math.round(plan.firstOrderPacks || 0));
+    const variants = model.liskaniSizeVariants || [];
+    if (variants.length > 0) {
+      const variantBuyouts = variants.map((sv) =>
+        (sv.monthlyBuyoutsUnits || []).reduce((acc: number, v: number) => acc + Math.max(0, v || 0), 0)
+      );
+      const totalVarBuyouts = variantBuyouts.reduce((a, b) => a + b, 0);
+      const rawShares =
+        totalVarBuyouts > 0
+          ? variantBuyouts.map((b) => (b / totalVarBuyouts) * 100)
+          : variants.map(() => 100 / variants.length);
+      const exactPacks = rawShares.map((sh) => (targetPacks * sh) / 100);
+      const floored = exactPacks.map((x) => Math.floor(x));
+      let rem = targetPacks - floored.reduce((a, b) => a + b, 0);
+      const order = exactPacks
+        .map((val, idx) => ({ idx, frac: val - floored[idx] }))
+        .sort((a, b) => b.frac - a.frac);
+      for (let k = 0; k < order.length && rem > 0; k++) {
+        floored[order[k].idx] += 1;
+        rem -= 1;
+      }
+      return {
+        gridTitle: `размерному ряду штор (${variants[0].sizeCm}–${variants[variants.length - 1].sizeCm} см)`,
+        items: variants.map((sv, idx) => ({
+          size: sv.sizeCm,
+          sharePct: Math.round(rawShares[idx] * 10) / 10,
+          packs: floored[idx],
+        })),
+      };
+    }
+
+    const fpShares = model.sharedSupplyAndFact?.factoryParams?.sizeSharesPct;
+    const isGeneric =
+      !fpShares ||
+      (fpShares.S === 10 &&
+        fpShares.M === 25 &&
+        fpShares.L === 35 &&
+        fpShares.XL === 20 &&
+        fpShares.XXL === 10) ||
+      (fpShares.S === 12 &&
+        fpShares.M === 26 &&
+        fpShares.L === 30 &&
+        fpShares.XL === 20 &&
+        fpShares.XXL === 12);
+    const useProfileShares =
+      isGeneric ||
+      prodProfile.sizes.length !== 5 ||
+      modelBrandCode === 'AKUSHA' ||
+      modelBrandCode === 'LISKANI' ||
+      modelBrandCode === 'NA_TELE';
+    const slotKeys = ['S', 'M', 'L', 'XL', 'XXL'] as const;
+    const rawWeights = prodProfile.sizes.map((sz, idx) =>
+      useProfileShares
+        ? Math.max(0, prodProfile.sizeSharesPct[sz] ?? 0)
+        : Math.max(0, fpShares?.[slotKeys[idx] || 'S'] ?? 0)
+    );
+    const totalW = rawWeights.reduce((a, b) => a + b, 0) || 100;
+    const normShares = rawWeights.map((w) => (w / totalW) * 100);
+    const exactPacks = normShares.map((sh) => (targetPacks * sh) / 100);
+    const floored = exactPacks.map((x) => Math.floor(x));
+    let rem = targetPacks - floored.reduce((a, b) => a + b, 0);
+    const order = exactPacks
+      .map((val, idx) => ({ idx, frac: val - floored[idx] }))
+      .sort((a, b) => b.frac - a.frac);
+    for (let k = 0; k < order.length && rem > 0; k++) {
+      floored[order[k].idx] += 1;
+      rem -= 1;
+    }
+    const rangeStr =
+      prodProfile.sizes.length > 1
+        ? `${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]}`
+        : prodProfile.sizes[0] || '';
+    return {
+      gridTitle: `размерной сетке ${rangeStr}`,
+      items: prodProfile.sizes.map((sz, idx) => ({
+        size: sz,
+        sharePct: Math.round(normShares[idx] * 10) / 10,
+        packs: floored[idx],
+      })),
+    };
+  })();
+
+  const paletteBreakdownItems = (() => {
+    const palettes = model.palettes || [];
+    if (palettes.length === 0) return [];
+    const targetPacks = Math.max(0, Math.round(plan.firstOrderPacks || 0));
+    const rawShares = palettes.map((p) => {
+      const anyPal = p as { sharePct?: number };
+      return typeof anyPal.sharePct === 'number' && anyPal.sharePct > 0
+        ? anyPal.sharePct
+        : 100 / palettes.length;
+    });
+    const sumS = rawShares.reduce((a, b) => a + b, 0) || 100;
+    const normShares = rawShares.map((s) => (s / sumS) * 100);
+    return palettes.map((p, idx) => ({
+      id: p.id || `pal-${idx}`,
+      name: p.title || `Вариант ${idx + 1}`,
+      hex: p.colors?.[0]?.hex || '#CBD5E1',
+      sharePct: Math.round(normShares[idx]),
+      packs: Math.round((targetPacks * normShares[idx]) / 100),
+    }));
+  })();
 
   const firstOrderSumMln =
     Math.round(((plan.firstOrderPacks * model.unitCostRub) / 1_000_000) * 100) / 100;
@@ -202,7 +355,11 @@ export function ScenarioSalesPlanScreen({
             </h2>
           </div>
           <p className="text-[12.5px] text-[#5E5D58]">
-            {model.title} · Комплект {model.unitsInPack} шт. · Старт продаж:{' '}
+            {model.title} ·{' '}
+            {hasDistinctSecondary
+              ? `${primaryUnit} (${model.unitsInPack} ${secondaryUnit})`
+              : `Ед. учёта: ${primaryUnit}`}{' '}
+            · Старт продаж:{' '}
             {MONTHS_SHORT_RU[plan.salesStartMonthIdx].toLowerCase()} {scenario.year} ·{' '}
             <span className="text-[#157347] font-semibold">Автосохранение активно</span>
           </p>
@@ -264,21 +421,23 @@ export function ScenarioSalesPlanScreen({
             </span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onUpdateModel({ ...model });
-              notify(
-                'success',
-                '✓ План продаж и карточка сохранены',
-                `${detectModelBrandPortfolioLabel(model)} ${model.code} · Сценарий №${scenario.id}`
-              );
-            }}
-            className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Сохранить</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                onUpdateModel({ ...model });
+                notify(
+                  'success',
+                  '✓ План продаж и карточка сохранены',
+                  `${detectModelBrandPortfolioLabel(model)} ${model.code} · Сценарий №${scenario.id}`
+                );
+              }}
+              className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Сохранить</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -298,13 +457,15 @@ export function ScenarioSalesPlanScreen({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={toggleScheduleConflictDemo}
-            className="h-8 px-3.5 rounded-[8px] bg-white hover:bg-[#FCE8E5] border border-[#E05246] text-[12px] font-semibold text-[#9E2418] cursor-pointer"
-          >
-            Синхронизировать со складом (18 марта)
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={toggleScheduleConflictDemo}
+              className="h-8 px-3.5 rounded-[8px] bg-white hover:bg-[#FCE8E5] border border-[#E05246] text-[12px] font-semibold text-[#9E2418] cursor-pointer"
+            >
+              Синхронизировать со складом (18 марта)
+            </button>
+          )}
         </div>
       )}
 
@@ -328,7 +489,10 @@ export function ScenarioSalesPlanScreen({
               {metrics.annualPacks.toLocaleString('ru-RU')}
             </div>
             <div className="text-[11px] text-[#6E6E73]">
-              {unitConfig.primaryUnit} ({metrics.annualUnits.toLocaleString('ru-RU')} шт.)
+              {primaryUnit}
+              {hasDistinctSecondary
+                ? ` (${metrics.annualUnits.toLocaleString('ru-RU')} ${secondaryUnit})`
+                : ''}
             </div>
           </div>
 
@@ -338,14 +502,17 @@ export function ScenarioSalesPlanScreen({
               {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
             </div>
             <div className="text-[11px] text-[#6E6E73]">
-              за 1 {unitConfig.primaryUnit} ({model.unitsInPack} шт.)
+              за 1 {primaryUnit}
+              {hasDistinctSecondary ? ` (${model.unitsInPack} ${secondaryUnit})` : ''}
             </div>
           </div>
 
           <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
             <div className="text-[11.5px] text-[#6E6E73]">Закупка (всего)</div>
             <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
-              {(metrics.totalPurchaseNeedRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽
+              {hasCost
+                ? `${(metrics.totalPurchaseNeedRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
+                : 'Скрыто'}
             </div>
             <div className="text-[11px] text-[#6E6E73]">себестоимость с доставкой</div>
           </div>
@@ -353,10 +520,12 @@ export function ScenarioSalesPlanScreen({
           <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
             <div className="text-[11.5px] text-[#6E6E73]">Ожидаемая прибыль</div>
             <div className="text-[22px] font-bold tracking-[-0.02em] text-[#2E6B4E]">
-              {(metrics.annualProfitRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽
+              {hasFinance && hasCost
+                ? `${(metrics.annualProfitRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
+                : 'Скрыто'}
             </div>
             <div className="text-[11px] font-semibold text-[#2E6B4E]">
-              маржинальность {metrics.unitMarginPct}%
+              {hasFinance && hasCost ? `маржинальность ${metrics.unitMarginPct}%` : 'Финансы скрыты'}
             </div>
           </div>
         </div>
@@ -369,7 +538,11 @@ export function ScenarioSalesPlanScreen({
                 Прогноз продаж и выручки
               </h3>
               <p className="text-[11.5px] text-[#6E6E73]">
-                Помесячная динамика · выход на пик к декабрю {scenario.year}
+                {periodMode === 'year'
+                  ? `Годовой план Q1–Q4 и сводный итог ${scenario.year} года`
+                  : periodMode === 'quarterly'
+                    ? `Поквартальная динамика Q1–Q4 ${scenario.year}`
+                    : `Помесячная динамика · выход на пик к декабрю ${scenario.year}`}
               </p>
             </div>
 
@@ -410,52 +583,54 @@ export function ScenarioSalesPlanScreen({
               <p className="text-[12.5px] text-[#6E6E73] max-w-sm mx-auto">
                 Для этой модели в выбранном сценарии ещё не заполнены помесячные продажи.
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const starterPacks =
-                    modelBrandCode === 'NA_TELE'
-                      ? [160, 190, 230, 270, 310, 340, 380, 420, 470, 520, 610, 650]
-                      : modelBrandCode === 'AKUSHA'
-                      ? [65, 80, 120, 145, 130, 95, 110, 190, 240, 210, 180, 160]
-                      : modelBrandCode === 'LISKANI'
-                      ? [220, 240, 280, 310, 320, 300, 310, 360, 420, 480, 560, 590]
-                      : modelBrandCode === 'FUKAI'
-                      ? [180, 200, 230, 250, 260, 270, 290, 320, 350, 390, 450, 480]
-                      : [850, 960, 1120, 1280, 1420, 1550, 1680, 1850, 2050, 2320, 2740, 2980];
-                  const ratePct = Math.max(5, Math.min(100, metrics.buyoutRatePct || 85));
-                  const pricesRub =
-                    Array.isArray(plan.monthlyPricesRub) && plan.monthlyPricesRub.length === 12
-                      ? plan.monthlyPricesRub.map((p) => p || model.retailPriceRub || 1990)
-                      : Array(12).fill(model.retailPriceRub || 1990);
-                  const ordersPacks = starterPacks.map((b) =>
-                    Math.round(b / (ratePct / 100))
-                  );
-                  const ordersRub = ordersPacks.map((ord, idx) =>
-                    Math.round(ord * (pricesRub[idx] || model.retailPriceRub || 1990))
-                  );
-                  onUpdateModel({
-                    ...model,
-                    plansByScenario: {
-                      ...model.plansByScenario,
-                      [scenario.id]: {
-                        ...plan,
-                        scenarioId: scenario.id,
-                        monthlyPacks: starterPacks,
-                        monthlyPricesRub: pricesRub,
-                        monthlyOrdersPacks: ordersPacks,
-                        monthlyOrdersRub: ordersRub,
-                        monthlyRevenuesRubOverride: undefined,
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const starterPacks =
+                      modelBrandCode === 'NA_TELE'
+                        ? [160, 190, 230, 270, 310, 340, 380, 420, 470, 520, 610, 650]
+                        : modelBrandCode === 'AKUSHA'
+                        ? [65, 80, 120, 145, 130, 95, 110, 190, 240, 210, 180, 160]
+                        : modelBrandCode === 'LISKANI'
+                        ? [220, 240, 280, 310, 320, 300, 310, 360, 420, 480, 560, 590]
+                        : modelBrandCode === 'FUKAI'
+                        ? [180, 200, 230, 250, 260, 270, 290, 320, 350, 390, 450, 480]
+                        : [850, 960, 1120, 1280, 1420, 1550, 1680, 1850, 2050, 2320, 2740, 2980];
+                    const ratePct = Math.max(5, Math.min(100, metrics.buyoutRatePct || 85));
+                    const pricesRub =
+                      Array.isArray(plan.monthlyPricesRub) && plan.monthlyPricesRub.length === 12
+                        ? plan.monthlyPricesRub.map((p) => p || model.retailPriceRub || 1990)
+                        : Array(12).fill(model.retailPriceRub || 1990);
+                    const ordersPacks = starterPacks.map((b) =>
+                      Math.round(b / (ratePct / 100))
+                    );
+                    const ordersRub = ordersPacks.map((ord, idx) =>
+                      Math.round(ord * (pricesRub[idx] || model.retailPriceRub || 1990))
+                    );
+                    onUpdateModel({
+                      ...model,
+                      plansByScenario: {
+                        ...model.plansByScenario,
+                        [scenario.id]: {
+                          ...plan,
+                          scenarioId: scenario.id,
+                          monthlyPacks: starterPacks,
+                          monthlyPricesRub: pricesRub,
+                          monthlyOrdersPacks: ordersPacks,
+                          monthlyOrdersRub: ordersRub,
+                          monthlyRevenuesRubOverride: undefined,
+                        },
                       },
-                    },
-                  });
-                  notify('success', 'Базовый помесячный план продаж создан');
-                }}
-                className="h-9 px-4 rounded-[10px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#CECDC4] text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Добавить план</span>
-              </button>
+                    });
+                    notify('success', 'Базовый помесячный план продаж создан');
+                  }}
+                  className="h-9 px-4 rounded-[10px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#1D1D1F] border border-[#CECDC4] text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Добавить план</span>
+                </button>
+              )}
             </div>
           ) : displayMode === 'chart' ? (
             <>
@@ -466,11 +641,117 @@ export function ScenarioSalesPlanScreen({
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-[#1D1D1F]" />
-                  Продажи, тыс. {unitConfig.primaryUnit}
+                  Продажи, {primaryUnit}
                 </span>
               </div>
 
-              {periodMode === 'quarterly' ? (
+              {periodMode === 'year' ? (
+                <div className="space-y-3.5 pt-2 pb-1">
+                  {/* Сводная годовая плашка 2027 */}
+                  <div className="rounded-[14px] bg-[#FAF4EC] border border-[#E2D3BD] p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-[#8B6F47]">
+                        Сводный годовой план {scenario.year} · {scenario.title}
+                      </div>
+                      <div className="text-[22px] font-bold text-[#1D1D1F] mt-0.5">
+                        {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                      </div>
+                      <div className="text-[12px] text-[#5A564F]">
+                        Выкупы: <strong>{metrics.annualPacks.toLocaleString('ru-RU')} {primaryUnit}</strong> · Заказы (при {metrics.buyoutRatePct}%):{' '}
+                        <strong>{metrics.annualOrdersPacks.toLocaleString('ru-RU')} {primaryUnit}</strong>
+                      </div>
+                    </div>
+                    <div className="text-right space-y-0.5">
+                      <div className="text-[11px] text-[#6E6E73]">Средняя цена</div>
+                      <div className="font-mono text-[16px] font-bold text-[#1D1D1F]">
+                        {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
+                      </div>
+                      <div className="text-[11px] font-semibold text-[#2E6B4E]">
+                        {metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Квартальные столбики + доли Q1–Q4 + Итого за год */}
+                  <div className="grid grid-cols-4 gap-2.5 items-end h-[132px] pt-3 px-2 rounded-[14px] bg-[#FAF8F4] border border-[#EAE4D8] pb-2.5">
+                    {quarters.map((q) => {
+                      const revMln = q.revRub / 1_000_000;
+                      const barPct = Math.max(
+                        12,
+                        Math.min(100, Math.round((q.revRub / maxQuarterRevRub) * 100))
+                      );
+                      return (
+                        <div
+                          key={q.label}
+                          onClick={() => setPeriodMode('monthly')}
+                          title={`${q.label}: ${revMln.toFixed(2)} млн ₽ (${q.packs.toLocaleString('ru-RU')} ${primaryUnit})`}
+                          className="h-full flex flex-col justify-end items-center gap-1 cursor-pointer group"
+                        >
+                          <span className="text-[10.5px] font-bold text-[#1D1D1F]">
+                            {revMln.toFixed(1).replace('.', ',')} м
+                          </span>
+                          <div className="w-full h-[76px] flex items-end justify-center px-2">
+                            <div
+                              style={{ height: `${barPct}%` }}
+                              className="w-full rounded-t-[7px] bg-[#D69A84] group-hover:bg-[#C67A82] transition-all"
+                            />
+                          </div>
+                          <span className="text-[11px] font-bold text-[#1D1D1F]">
+                            {q.shortLabel} ({q.shareOfYearPct}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="overflow-hidden rounded-[12px] border border-[#E6E0D4]">
+                    <table className="w-full text-left border-collapse text-[12px]">
+                      <thead className="bg-[#F5F2EB] text-[#6E6E73]">
+                        <tr>
+                          <th className="py-2 px-3 font-semibold">Период</th>
+                          <th className="py-2 px-2 font-semibold text-right">
+                            Выкупы ({primaryUnit})
+                          </th>
+                          <th className="py-2 px-2 font-semibold text-right">Ср. цена</th>
+                          <th className="py-2 px-3 font-semibold text-right">Выручка</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#EFECE4] bg-white">
+                        {quarters.map((q) => (
+                          <tr key={q.label} className="hover:bg-[#FAF8F4]">
+                            <td className="py-1.5 px-3 font-semibold text-[#1D1D1F]">
+                              {q.label}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-[#1D1D1F]">
+                              {q.packs.toLocaleString('ru-RU')}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-[#5A564F]">
+                              {q.avgPriceRub.toLocaleString('ru-RU')} ₽
+                            </td>
+                            <td className="py-1.5 px-3 text-right font-mono font-bold text-[#1D1D1F]">
+                              {(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#F5F2EB] border-t border-[#DED8CC] font-bold text-[#1D1D1F]">
+                          <td className="py-2 px-3">Итого за {scenario.year} год</td>
+                          <td className="py-2 px-2 text-right font-mono">
+                            {metrics.annualPacks.toLocaleString('ru-RU')} {primaryUnit}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono">
+                            {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-[#2E6B4E]">
+                            {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              ) : periodMode === 'quarterly' ? (
                 <div className="grid grid-cols-4 gap-3 pt-4 pb-2">
                   {quarters.map((q) => {
                     const revMln = q.revRub / 1_000_000;
@@ -487,7 +768,7 @@ export function ScenarioSalesPlanScreen({
                             {revMln.toFixed(1).replace('.', ',')} млн ₽
                           </div>
                           <div className="text-[11.5px] text-[#8B6F47] font-medium">
-                            {q.packs.toLocaleString('ru-RU')} компл.
+                            {q.packs.toLocaleString('ru-RU')} {primaryUnit}
                           </div>
                         </div>
                       </div>
@@ -506,7 +787,7 @@ export function ScenarioSalesPlanScreen({
                     </div>
                     <div className="text-[#5A564F] text-[10px]">
                       {(metrics.targetMonthPacks / 1000).toFixed(1).replace('.', ',')}{' '}
-                      тыс. компл.
+                      тыс. {primaryUnit}
                     </div>
                   </div>
 
@@ -525,7 +806,7 @@ export function ScenarioSalesPlanScreen({
                           onClick={() => setDisplayMode('table')}
                           title={`${mName}: ${revMln.toFixed(2)} млн ₽ (${plan.monthlyPacks[
                             idx
-                          ].toLocaleString('ru-RU')} компл.) — нажмите для редактирования`}
+                          ].toLocaleString('ru-RU')} ${primaryUnit}) — нажмите для редактирования`}
                           className="h-full flex flex-col justify-end items-center gap-1.5 group cursor-pointer"
                         >
                           <div className="text-[10px] font-semibold text-[#6E6E73] group-hover:text-[#1D1D1F]">
@@ -574,7 +855,7 @@ export function ScenarioSalesPlanScreen({
                       .toFixed(1)
                       .replace('.', ',')}{' '}
                     млн ₽ ({(plan.monthlyPacks[plan.salesStartMonthIdx] || 0).toLocaleString('ru-RU')}{' '}
-                    компл.)
+                    {primaryUnit})
                   </div>
                 </div>
                 <div className="rounded-[12px] bg-[#FAF4F0] border border-[#E8D5C8] p-3">
@@ -585,42 +866,118 @@ export function ScenarioSalesPlanScreen({
                     {(metrics.targetMonthRevenueRub / 1_000_000)
                       .toFixed(1)
                       .replace('.', ',')}{' '}
-                    млн ₽ ({metrics.targetMonthPacks.toLocaleString('ru-RU')} комплектов)
+                    млн ₽ ({metrics.targetMonthPacks.toLocaleString('ru-RU')} {primaryUnit})
                   </div>
                 </div>
               </div>
             </>
+          ) : periodMode === 'year' ? (
+            /* РЕЖИМ ТАБЛИЦЫ ДЛЯ ГОДОВОГО ПЛАНА (Q1–Q4 + ИТОГ ЗА ГОД) */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-[11.5px] text-[#5A564F] bg-[#FAF8F4] px-3 py-2 rounded-[10px] border border-[#E6E0D4]">
+                <span>
+                  Квартальная и годовая сводка {scenario.year} ({primaryUnit}). Для помесячной правки переключитесь на «Помесячно».
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPeriodMode('monthly')}
+                  className="text-[11px] font-semibold text-[#8B6F47] hover:underline shrink-0 ml-2 cursor-pointer"
+                >
+                  Помесячная правка →
+                </button>
+              </div>
+              <div className="overflow-hidden rounded-[12px] border border-[#E6E0D4]">
+                <table className="w-full text-left border-collapse text-[12px]">
+                  <thead className="bg-[#F5F2EB] text-[#6E6E73]">
+                    <tr>
+                      <th className="py-2 px-3 font-semibold">Квартал / Период</th>
+                      <th className="py-2 px-2 font-semibold text-right">
+                        Продажи ({primaryUnit})
+                      </th>
+                      <th className="py-2 px-2 font-semibold text-right">Ср. цена</th>
+                      <th className="py-2 px-2 font-semibold text-right">
+                        Поступление ({primaryUnit})
+                      </th>
+                      <th className="py-2 px-3 font-semibold text-right">Выручка</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EFECE4]">
+                    {quarters.map((q) => (
+                      <tr key={q.label} className="hover:bg-[#FAF8F4]">
+                        <td className="py-2 px-3 font-semibold text-[#1D1D1F]">
+                          {q.label}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono font-semibold text-[#1D1D1F]">
+                          {q.packs.toLocaleString('ru-RU')}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-[#5A564F]">
+                          {q.avgPriceRub.toLocaleString('ru-RU')} ₽
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-[#5A564F]">
+                          {q.receipts.toLocaleString('ru-RU')}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-[#1D1D1F]">
+                          {(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-[#F5F2EB] border-t border-[#DED8CC] font-bold text-[#1D1D1F]">
+                      <td className="py-2.5 px-3">Итого за {scenario.year} год</td>
+                      <td className="py-2.5 px-2 text-right font-mono">
+                        {metrics.annualPacks.toLocaleString('ru-RU')} {primaryUnit}
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono">
+                        {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono">
+                        {plan.monthlyReceiptsPacks
+                          .reduce((a, b) => a + (b || 0), 0)
+                          .toLocaleString('ru-RU')}{' '}
+                        {primaryUnit}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-[#2E6B4E]">
+                        {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
           ) : (
             /* РЕЖИМ ТАБЛИЦЫ (РЕДАКТИРОВАНИЕ ПОМЕСЯЧНОГО ПЛАНА — ТЕСТ 04) */
             <div className="space-y-3">
               <div className="flex items-center justify-between text-[11.5px] text-[#5A564F] bg-[#FAF8F4] px-3 py-2 rounded-[10px] border border-[#E6E0D4]">
                 <span>
-                  Измените комплекты или цену за любой месяц — годовая выручка модели и
+                  Измените объём ({primaryUnit}) или цену за любой месяц — годовая выручка модели и
                   сценария пересчитается мгновенно.
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onUpdateModel({
-                      ...model,
-                      plansByScenario: {
-                        ...model.plansByScenario,
-                        [scenario.id]: {
-                          ...plan,
-                          monthlyPacks: Array(12).fill(0),
-                          monthlyReceiptsPacks: Array(12).fill(0),
-                          monthlyOrdersPacks: Array(12).fill(0),
-                          monthlyOrdersRub: Array(12).fill(0),
-                          monthlyRevenuesRubOverride: undefined,
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateModel({
+                        ...model,
+                        plansByScenario: {
+                          ...model.plansByScenario,
+                          [scenario.id]: {
+                            ...plan,
+                            monthlyPacks: Array(12).fill(0),
+                            monthlyReceiptsPacks: Array(12).fill(0),
+                            monthlyOrdersPacks: Array(12).fill(0),
+                            monthlyOrdersRub: Array(12).fill(0),
+                            monthlyRevenuesRubOverride: undefined,
+                          },
                         },
-                      },
-                    });
-                    notify('warning', 'План очищен (показано пустое состояние)');
-                  }}
-                  className="text-[11px] font-semibold text-[#B85D35] hover:underline shrink-0 ml-2 cursor-pointer"
-                >
-                  Очистить план
-                </button>
+                      });
+                      notify('warning', 'План очищен (показано пустое состояние)');
+                    }}
+                    className="text-[11px] font-semibold text-[#B85D35] hover:underline shrink-0 ml-2 cursor-pointer"
+                  >
+                    Очистить план
+                  </button>
+                )}
               </div>
 
               <div className="max-h-[310px] overflow-y-auto rounded-[12px] border border-[#E6E0D4]">
@@ -628,9 +985,13 @@ export function ScenarioSalesPlanScreen({
                   <thead className="bg-[#F5F2EB] text-[#6E6E73] sticky top-0">
                     <tr>
                       <th className="py-2 px-3 font-semibold">Месяц</th>
-                      <th className="py-2 px-2 font-semibold">Продажи, компл.</th>
+                      <th className="py-2 px-2 font-semibold">
+                        Продажи ({primaryUnit})
+                      </th>
                       <th className="py-2 px-2 font-semibold">Цена, ₽</th>
-                      <th className="py-2 px-2 font-semibold">Поступление, компл.</th>
+                      <th className="py-2 px-2 font-semibold">
+                        Поступление ({primaryUnit})
+                      </th>
                       <th className="py-2 px-3 font-semibold text-right">Выручка</th>
                     </tr>
                   </thead>
@@ -645,6 +1006,7 @@ export function ScenarioSalesPlanScreen({
                           <td className="py-1.5 px-2">
                             <input
                               type="number"
+                              disabled={!canEdit}
                               value={plan.monthlyPacks[idx]}
                               onChange={(e) =>
                                 updateMonthPackOrPrice(
@@ -653,12 +1015,13 @@ export function ScenarioSalesPlanScreen({
                                   Number(e.target.value)
                                 )
                               }
-                              className="w-24 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-white font-semibold text-[#1D1D1F]"
+                              className="w-24 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-white font-semibold text-[#1D1D1F] disabled:opacity-60"
                             />
                           </td>
                           <td className="py-1.5 px-2">
                             <input
                               type="number"
+                              disabled={!canEdit}
                               value={plan.monthlyPricesRub[idx]}
                               onChange={(e) =>
                                 updateMonthPackOrPrice(
@@ -667,12 +1030,13 @@ export function ScenarioSalesPlanScreen({
                                   Number(e.target.value)
                                 )
                               }
-                              className="w-20 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-white text-[#1D1D1F]"
+                              className="w-20 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-white text-[#1D1D1F] disabled:opacity-60"
                             />
                           </td>
                           <td className="py-1.5 px-2">
                             <input
                               type="number"
+                              disabled={!canEdit}
                               value={plan.monthlyReceiptsPacks[idx]}
                               onChange={(e) =>
                                 updateMonthPackOrPrice(
@@ -681,7 +1045,7 @@ export function ScenarioSalesPlanScreen({
                                   Number(e.target.value)
                                 )
                               }
-                              className="w-20 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-[#FAF8F4] text-[#1D1D1F]"
+                              className="w-20 h-7 px-2 rounded-[6px] border border-[#D6CFC2] bg-[#FAF8F4] text-[#1D1D1F] disabled:opacity-60"
                             />
                           </td>
                           <td className="py-1.5 px-3 text-right font-bold text-[#1D1D1F]">
@@ -705,21 +1069,24 @@ export function ScenarioSalesPlanScreen({
                 План производства и поставок
               </h3>
               <p className="text-[11px] text-[#6E6E73]">
-                Кликните на этап для изменения дат
+                {canEdit ? 'Кликните на этап для изменения дат' : 'Этапы производства и отгрузки'}
               </p>
             </div>
           </div>
 
           <div className="space-y-2">
             {model.productionSteps.map((step) => {
-              const isEditing = editingStepId === step.id;
+              const isEditing = canEdit && editingStepId === step.id;
               return (
                 <div
                   key={step.id}
-                  onClick={() =>
-                    setEditingStepId(isEditing ? null : step.id)
-                  }
-                  className={`rounded-[12px] border p-2.5 transition cursor-pointer ${
+                  onClick={() => {
+                    if (!canEdit) return;
+                    setEditingStepId(isEditing ? null : step.id);
+                  }}
+                  className={`rounded-[12px] border p-2.5 transition ${
+                    canEdit ? 'cursor-pointer' : ''
+                  } ${
                     step.status === 'done'
                       ? 'bg-[#F4FAF6] border-[#CBE5D6]'
                       : step.status === 'in_progress'
@@ -760,6 +1127,7 @@ export function ScenarioSalesPlanScreen({
                         type="text"
                         value={step.datesLabel}
                         onChange={(e) => {
+                          if (!canEdit) return;
                           const val = e.target.value;
                           const nextSteps = model.productionSteps.map((s) =>
                             s.id === step.id ? { ...s, datesLabel: val } : s
@@ -780,6 +1148,7 @@ export function ScenarioSalesPlanScreen({
                             key={st.id}
                             type="button"
                             onClick={() => {
+                              if (!canEdit) return;
                               const nextSteps = model.productionSteps.map((s) =>
                                 s.id === step.id ? { ...s, status: st.id } : s
                               );
@@ -802,15 +1171,17 @@ export function ScenarioSalesPlanScreen({
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={toggleScheduleConflictDemo}
-            className="w-full h-8 rounded-[9px] border border-[#E2D5C1] bg-[#FAF6EE] hover:bg-[#F3ECE0] text-[11px] font-semibold text-[#7A5C38] transition cursor-pointer"
-          >
-            {metrics.hasScheduleConflict
-              ? 'Вернуть склад на 18 марта'
-              : 'Тест конфликта: склад 12 апреля'}
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={toggleScheduleConflictDemo}
+              className="w-full h-8 rounded-[9px] border border-[#E2D5C1] bg-[#FAF6EE] hover:bg-[#F3ECE0] text-[11px] font-semibold text-[#7A5C38] transition cursor-pointer"
+            >
+              {metrics.hasScheduleConflict
+                ? 'Вернуть склад на 18 марта'
+                : 'Тест конфликта: склад 12 апреля'}
+            </button>
+          )}
         </div>
 
         {/* 5.4. ПРАВАЯ КОЛОНКА: ЗАКУПКИ И ОСТАТКИ (Стр. 15 макета + ТЕСТ 06) */}
@@ -832,26 +1203,38 @@ export function ScenarioSalesPlanScreen({
                 Обеспечено
               </span>
             </div>
-            <div className="text-[22px] font-bold text-[#1D1D1F] leading-tight">
-              {(plan.firstOrderPacks * model.unitsInPack).toLocaleString('ru-RU')} шт.
-            </div>
-            <div className="text-[12px] text-[#5A564F]">
-              ({plan.firstOrderPacks.toLocaleString('ru-RU')} комплектов по{' '}
-              {model.unitsInPack} шт.)
-            </div>
+            {hasDistinctSecondary ? (
+              <>
+                <div className="text-[22px] font-bold text-[#1D1D1F] leading-tight">
+                  {(plan.firstOrderPacks * model.unitsInPack).toLocaleString('ru-RU')}{' '}
+                  {secondaryUnit}
+                </div>
+                <div className="text-[12px] text-[#5A564F]">
+                  ({plan.firstOrderPacks.toLocaleString('ru-RU')} {primaryUnit} по{' '}
+                  {model.unitsInPack} {secondaryUnit})
+                </div>
+              </>
+            ) : (
+              <div className="text-[22px] font-bold text-[#1D1D1F] leading-tight">
+                {plan.firstOrderPacks.toLocaleString('ru-RU')} {primaryUnit}
+              </div>
+            )}
 
             <div className="pt-2 border-t border-[#E5DEC9] space-y-1 text-[11.5px]">
               <div className="flex justify-between">
                 <span className="text-[#6E6E73]">Себестоимость с доставкой в РФ:</span>
                 <span className="font-bold text-[#1D1D1F]">
-                  {model.unitCostRub} ₽ / компл. (
-                  {Math.round(model.unitCostRub / model.unitsInPack)} ₽ / шт.)
+                  {!hasCost
+                    ? 'Скрыто'
+                    : hasDistinctSecondary
+                      ? `${model.unitCostRub} ₽ / ${primaryUnit} (${Math.round(model.unitCostRub / model.unitsInPack)} ₽ / ${secondaryUnit})`
+                      : `${model.unitCostRub} ₽ / ${primaryUnit}`}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#6E6E73]">Сумма 1-го заказа:</span>
                 <span className="font-bold text-[#1D1D1F]">
-                  {firstOrderSumMln.toFixed(2).replace('.', ',')} млн ₽
+                  {hasCost ? `${firstOrderSumMln.toFixed(2).replace('.', ',')} млн ₽` : 'Скрыто'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -880,38 +1263,42 @@ export function ScenarioSalesPlanScreen({
                   .slice(0, 3)
                   .map(
                     (d) =>
-                      `${d.monthLabel} (−${d.missingPacks.toLocaleString('ru-RU')} компл.)`
+                      `${d.monthLabel} (−${d.missingPacks.toLocaleString('ru-RU')} ${primaryUnit})`
                   )
                   .join(', ')}
               </p>
-              <button
-                type="button"
-                onClick={autoReplenishDeficit}
-                className="w-full h-8 rounded-[8px] bg-[#C93B2B] hover:bg-[#A82E20] text-white text-[11.5px] font-semibold cursor-pointer"
-              >
-                Добавить поставки под план продаж
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={autoReplenishDeficit}
+                  className="w-full h-8 rounded-[8px] bg-[#C93B2B] hover:bg-[#A82E20] text-white text-[11.5px] font-semibold cursor-pointer"
+                >
+                  Добавить поставки под план продаж
+                </button>
+              )}
             </div>
           ) : (
             <div className="rounded-[12px] bg-[#F3FAF6] border border-[#C6E4D2] px-3 py-2 text-[11.5px] text-[#256044] font-medium flex items-center justify-between">
               <span>✓ Остатки покрывают все 12 мес. продаж</span>
-              <button
-                type="button"
-                onClick={() =>
-                  updateMonthPackOrPrice(5, 'packs', plan.monthlyPacks[5] + 18000)
-                }
-                className="text-[10.5px] underline cursor-pointer"
-              >
-                Тест дефицита
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateMonthPackOrPrice(5, 'packs', plan.monthlyPacks[5] + 18000)
+                  }
+                  className="text-[10.5px] underline cursor-pointer"
+                >
+                  Тест дефицита
+                </button>
+              )}
             </div>
           )}
 
-          {/* График остатков на складе (комплекты) */}
+          {/* График остатков на складе */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[11.5px]">
               <span className="font-bold text-[#1D1D1F]">
-                График остатков на складе (комплекты)
+                График остатков на складе ({primaryUnit})
               </span>
               <span className="text-[10.5px] text-[#8B6F47]">--- Страховой запас</span>
             </div>
@@ -930,7 +1317,7 @@ export function ScenarioSalesPlanScreen({
                 return (
                   <div
                     key={MONTHS_SHORT_RU[idx]}
-                    title={`${MONTHS_SHORT_RU[idx]}: ${stock.toLocaleString('ru-RU')} компл.`}
+                    title={`${MONTHS_SHORT_RU[idx]}: ${stock.toLocaleString('ru-RU')} ${primaryUnit}`}
                     className="flex-1 h-full flex flex-col justify-end items-center gap-1"
                   >
                     <div
@@ -959,27 +1346,49 @@ export function ScenarioSalesPlanScreen({
           </button>
 
           {showSizeMatrix && (
-            <div className="rounded-[12px] border border-[#E6E0D4] bg-[#FAF8F4] p-3 space-y-2 text-[11px]">
-              <div className="font-bold text-[#1D1D1F]">
-                Распределение партии ({plan.firstOrderPacks.toLocaleString('ru-RU')} компл.)
-                по размерной горке S–2XL:
-              </div>
-              <div className="grid grid-cols-5 gap-1.5 text-center">
-                {[
-                  { size: 'S', share: '12%' },
-                  { size: 'M', share: '26%' },
-                  { size: 'L', share: '32%' },
-                  { size: 'XL', share: '20%' },
-                  { size: '2XL', share: '10%' },
-                ].map((s) => (
-                  <div
-                    key={s.size}
-                    className="rounded-[8px] bg-white border border-[#E5DEC9] p-1.5"
-                  >
-                    <div className="font-bold text-[#1D1D1F]">{s.size}</div>
-                    <div className="text-[#8B6F47] font-semibold">{s.share}</div>
+            <div className="rounded-[12px] border border-[#E6E0D4] bg-[#FAF8F4] p-3 space-y-3 text-[11px]">
+              {paletteBreakdownItems.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="font-bold text-[#1D1D1F]">
+                    Цвета / палитры модели ({paletteBreakdownItems.length}):
                   </div>
-                ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {paletteBreakdownItems.map((pal) => (
+                      <div
+                        key={pal.id}
+                        className="inline-flex items-center gap-1.5 rounded-[8px] bg-white border border-[#E5DEC9] px-2 py-1"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full border border-black/10 shrink-0"
+                          style={{ backgroundColor: pal.hex }}
+                        />
+                        <span className="font-semibold text-[#1D1D1F]">{pal.name}</span>
+                        <span className="text-[#8B6F47] font-semibold">{pal.sharePct}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <div className="font-bold text-[#1D1D1F]">
+                  Распределение партии ({plan.firstOrderPacks.toLocaleString('ru-RU')}{' '}
+                  {primaryUnit}) по {sizeBreakdownInfo.gridTitle}:
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 text-center">
+                  {sizeBreakdownInfo.items.map((s) => (
+                    <div
+                      key={s.size}
+                      className="rounded-[8px] bg-white border border-[#E5DEC9] p-1.5"
+                    >
+                      <div className="font-bold text-[#1D1D1F]">{s.size}</div>
+                      <div className="text-[#8B6F47] font-semibold">{s.sharePct}%</div>
+                      <div className="font-mono text-[10px] text-[#5A564F]">
+                        {s.packs.toLocaleString('ru-RU')} {primaryUnit}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

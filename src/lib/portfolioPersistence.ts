@@ -58,6 +58,7 @@ export const STORAGE_KEY_ACTIVE_SCENARIO_ID = 'borners_active_scenario_id_v1';
 export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
+export const STORAGE_KEY_DELETED_SCENARIOS = 'borners_deleted_scenario_ids_v1';
 export const STORAGE_KEY_PORTFOLIO_UPDATED_AT = 'borners_portfolio_updated_at_v1';
 export const STORAGE_KEY_BACKUP_UPDATED_AT = 'borners_backup_updated_at_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
@@ -531,6 +532,8 @@ export interface UserSavedModelPlanBackup {
   adsPct?: number;
   buyoutRatePct?: number;
   procureByOrdersVolume?: boolean;
+  responsiblePerson?: string;
+  hasActualSalesOrPurchases?: boolean;
   priority?: ModelPriorityLevel;
   launchStatus: ScenarioModelSpec['launchStatus'];
   gallery?: ScenarioModelSpec['gallery'];
@@ -538,10 +541,39 @@ export interface UserSavedModelPlanBackup {
   fabric?: ScenarioModelSpec['fabric'];
   construction?: ScenarioModelSpec['construction'];
   waistband?: ScenarioModelSpec['waistband'];
+  productionSteps?: ScenarioModelSpec['productionSteps'];
   attachedPdfs?: ScenarioModelSpec['attachedPdfs'];
   liskaniSizeVariants?: ScenarioModelSpec['liskaniSizeVariants'];
   plansByScenario: ScenarioModelSpec['plansByScenario'];
   sharedSupplyAndFact?: ScenarioModelSpec['sharedSupplyAndFact'];
+}
+
+const LOCKED_SCENARIO_IDS_PERSISTENCE = new Set<number>([
+  1,
+  ACTING_2027_SCENARIO_ID,
+  LISKANI_2027_SCENARIO_ID,
+  AKUSHA_2027_SCENARIO_ID,
+]);
+
+export function getDeletedScenariosRegistry(): number[] {
+  const list = safeGetStorageJson<number[]>(STORAGE_KEY_DELETED_SCENARIOS);
+  if (!Array.isArray(list)) return [];
+  return Array.from(
+    new Set(
+      list
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n) && !LOCKED_SCENARIO_IDS_PERSISTENCE.has(n))
+    )
+  );
+}
+
+export function markScenarioAsDeletedInStorage(scenarioId: number): void {
+  const cleanId = Number(scenarioId);
+  if (!Number.isFinite(cleanId) || LOCKED_SCENARIO_IDS_PERSISTENCE.has(cleanId)) return;
+  const prev = getDeletedScenariosRegistry();
+  if (!prev.includes(cleanId)) {
+    safeSetStorageJson(STORAGE_KEY_DELETED_SCENARIOS, [...prev, cleanId]);
+  }
 }
 
 export function getDeletedModelsRegistry(): string[] {
@@ -655,6 +687,8 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       adsPct: m.adsPct,
       buyoutRatePct: m.buyoutRatePct,
       procureByOrdersVolume: m.procureByOrdersVolume,
+      responsiblePerson: m.responsiblePerson,
+      hasActualSalesOrPurchases: m.hasActualSalesOrPurchases,
       priority: m.priority,
       launchStatus: m.launchStatus,
       gallery: backupGallery,
@@ -662,6 +696,7 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
       fabric: m.fabric,
       construction: m.construction,
       waistband: m.waistband,
+      productionSteps: m.productionSteps,
       attachedPdfs: m.attachedPdfs,
       liskaniSizeVariants: m.liskaniSizeVariants,
       plansByScenario: m.plansByScenario,
@@ -768,6 +803,11 @@ export function overlayBackupOntoModels(
           saved.procureByOrdersVolume !== undefined
             ? saved.procureByOrdersVolume
             : m.procureByOrdersVolume,
+        responsiblePerson: saved.responsiblePerson ?? m.responsiblePerson,
+        hasActualSalesOrPurchases:
+          saved.hasActualSalesOrPurchases !== undefined
+            ? saved.hasActualSalesOrPurchases
+            : m.hasActualSalesOrPurchases,
         priority: saved.priority ?? m.priority,
         launchStatus: saved.launchStatus ?? m.launchStatus,
         gallery: resolvedGallery,
@@ -775,7 +815,9 @@ export function overlayBackupOntoModels(
         fabric: saved.fabric || m.fabric,
         construction: saved.construction || m.construction,
         waistband: saved.waistband || m.waistband,
-        attachedPdfs: saved.attachedPdfs || m.attachedPdfs,
+        productionSteps: saved.productionSteps || m.productionSteps,
+        attachedPdfs:
+          saved.attachedPdfs !== undefined ? saved.attachedPdfs : m.attachedPdfs,
         liskaniSizeVariants: saved.liskaniSizeVariants || m.liskaniSizeVariants,
         plansByScenario: saved.plansByScenario || m.plansByScenario,
         sharedSupplyAndFact: saved.sharedSupplyAndFact || m.sharedSupplyAndFact,
@@ -841,9 +883,9 @@ export function overlayBackupOntoModels(
         adsPct: saved.adsPct ?? 10,
         buyoutRatePct: saved.buyoutRatePct,
         procureByOrdersVolume: saved.procureByOrdersVolume,
-        responsiblePerson: 'Владелец бренда',
+        responsiblePerson: saved.responsiblePerson || 'Владелец бренда',
         priority: saved.priority || 'Высокий',
-        hasActualSalesOrPurchases: false,
+        hasActualSalesOrPurchases: saved.hasActualSalesOrPurchases ?? false,
         liskaniSizeVariants: saved.liskaniSizeVariants,
         palettes: Array.isArray(saved.palettes) ? saved.palettes : [],
         gallery: Array.isArray(saved.gallery) ? saved.gallery : [],
@@ -873,7 +915,7 @@ export function overlayBackupOntoModels(
           touchFeel: 'Комфортная фактура',
           swatchHex: '#1E293B',
         },
-        productionSteps: [],
+        productionSteps: Array.isArray(saved.productionSteps) ? saved.productionSteps : [],
         plansByScenario: saved.plansByScenario || {},
       };
 
@@ -894,6 +936,7 @@ export function overlayBackupOntoModels(
 export function persistPortfolioModels(modelsList: ScenarioModelSpec[]): ScenarioModelSpec[] {
   const deletedReg = getDeletedModelsRegistry();
   const clean = modelsList.filter((m) => !isModelMarkedDeleted(m, deletedReg));
+  touchPortfolioUpdatedAt();
   safeSetStorageJson(STORAGE_KEY_MODELS, clean);
   syncUserPlansBackup(clean);
   return clean;
@@ -909,6 +952,7 @@ export function deleteModelFromPortfolio(
       m.id !== modelToDelete.id &&
       m.code.trim().toUpperCase() !== modelToDelete.code.trim().toUpperCase()
   );
+  touchPortfolioUpdatedAt();
   safeSetStorageJson(STORAGE_KEY_MODELS, remaining);
   syncUserPlansBackup(remaining);
   return remaining;
@@ -951,7 +995,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       );
       if (idx >= 0) {
         if (
-          (!merged[idx].attachedPdfs || merged[idx].attachedPdfs.length === 0) &&
+          merged[idx].attachedPdfs === undefined &&
           itemMod.attachedPdfs &&
           itemMod.attachedPdfs.length > 0
         ) {
@@ -1216,6 +1260,9 @@ export function mergeCloudPortfolioSnapshot(params: {
   shouldPushLocalToCloud: boolean;
 } {
   const deletedReg = params.deletedRegistry ?? getDeletedModelsRegistry();
+  const cloudHadDeletedModels = (params.cloudModels || []).some(
+    (cm) => Boolean(cm && cm.id && cm.code && isModelMarkedDeleted(cm, deletedReg))
+  );
 
   const isAcceptableModel = (m: ScenarioModelSpec | null | undefined): m is ScenarioModelSpec => {
     if (!m || !m.id || !m.code) return false;
@@ -1322,7 +1369,7 @@ export function mergeCloudPortfolioSnapshot(params: {
 
   return {
     models: merged,
-    shouldPushLocalToCloud: addedLocalMissingInCloud,
+    shouldPushLocalToCloud: addedLocalMissingInCloud || cloudHadDeletedModels,
   };
 }
 

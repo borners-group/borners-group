@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Upload, FileText, Plus, Trash2, Check } from 'lucide-react';
 import { ProductConcept } from '@/types/platform';
+import { usePlatform } from '@/context/PlatformContext';
+import { canUserEditBrand, canUserViewCostPrice } from '@/lib/finance';
 import {
   compressImageFileToDataUrl,
   downloadEditorialPdfDocument,
@@ -14,22 +16,36 @@ import {
   getBrandProductionProfile,
 } from '@/lib/brandProductionConfig';
 
+export interface PdfInitialBlocksConfig {
+  includePhotos?: boolean;
+  includeSpecs?: boolean;
+  includeSizeMatrix?: boolean;
+  includePricing?: boolean;
+  includeTerms?: boolean;
+  multiCurrency?: boolean;
+}
+
 interface PdfConstructorModalProps {
   concept: ProductConcept;
   onClose: () => void;
   onSaveToConcept?: (patch: Partial<ProductConcept>) => void;
+  initialBlocksConfig?: PdfInitialBlocksConfig;
 }
 
 export function PdfConstructorModal({
   concept,
   onClose,
   onSaveToConcept,
+  initialBlocksConfig,
 }: PdfConstructorModalProps) {
+  const { currentUser, notify } = usePlatform();
+  const hasCostAccess = canUserViewCostPrice(currentUser);
   const existingOrder = concept.productionOrders?.[0];
   const prodProfile = useMemo(
     () => getBrandProductionProfile(concept.brandId, concept.name),
     [concept.brandId, concept.name]
   );
+  const canEdit = canUserEditBrand(currentUser, prodProfile.brandCode);
 
   const brandLabel = prodProfile.brandLabel;
   const defaultZhProductLabel =
@@ -172,13 +188,24 @@ export function PdfConstructorModal({
   }, [prodProfile.sizes, packsBySize]);
 
   // Переключатели блоков: что именно отобразить в PDF перед скачиванием
-  const [includePhotos, setIncludePhotos] = useState<boolean>(true);
-  const [includeBilingualSpecs, setIncludeBilingualSpecs] = useState<boolean>(true);
-  const [includePricing, setIncludePricing] = useState<boolean>(true);
+  const [includePhotos, setIncludePhotos] = useState<boolean>(
+    initialBlocksConfig?.includePhotos ?? true
+  );
+  const [includeBilingualSpecs, setIncludeBilingualSpecs] = useState<boolean>(
+    initialBlocksConfig?.includeSpecs ?? true
+  );
+  const [includePricing, setIncludePricing] = useState<boolean>(
+    hasCostAccess ? (initialBlocksConfig?.includePricing ?? true) : false
+  );
   const [showRubInPdf, setShowRubInPdf] = useState<boolean>(false);
   const [includeTotalSumColumn, setIncludeTotalSumColumn] = useState<boolean>(true);
-  const [includeSizeMatrix, setIncludeSizeMatrix] = useState<boolean>(true);
-  const [includeFactoryTerms, setIncludeFactoryTerms] = useState<boolean>(true);
+  const [includeSizeMatrix, setIncludeSizeMatrix] = useState<boolean>(
+    initialBlocksConfig?.includeSizeMatrix ?? true
+  );
+  const [includeFactoryTerms, setIncludeFactoryTerms] = useState<boolean>(
+    initialBlocksConfig?.includeTerms ?? true
+  );
+  const effectiveIncludePricing = includePricing && hasCostAccess;
 
   // Двуязычные строки: Крупный китайский (中文) сверху + мелкий русский снизу
   const [bilingualRows, setBilingualRows] = useState<
@@ -252,10 +279,14 @@ export function PdfConstructorModal({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [onClose]);
 
   // Вычисление мультивалютных цен (за 1 шт. и за всю партию в CNY, USD, RUB)
@@ -316,6 +347,90 @@ export function PdfConstructorModal({
     e.target.value = '';
   };
 
+  const buildConceptUpdatesPayload = (): Partial<ProductConcept> => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const updatedOrder = {
+      ...(existingOrder || {
+        id: `po-pdf-${Date.now()}`,
+        orderNumber: 'PO-2027-01',
+        contactPerson: 'Менеджер производства',
+        approvedSampleVersion: concept.samples?.[0]?.versionCode || 'Версия 1',
+        internalStatus: 'order_placed' as const,
+        sizeBreakdown: packsBySize,
+        packColorComposition:
+          concept.colorCombinations?.join(', ') || 'Базовая палитра паспорта SKU',
+        packConfiguration: `${unitsPerPack} ед. в комплекте`,
+        packagingDetails:
+          'Фирменная упаковка со штрихкодом EAN-13 / Честный ЗНАК',
+        orderVersion: 1,
+        approvedAt: todayIso,
+        chineseVerified: true,
+        qcNotes: 'AQL 1.5',
+        logisticsTracking: '',
+      }),
+      factoryName,
+      materialAndColors: cleanTechPackText(
+        bilingualRows[1]?.ruSmall || existingOrder?.materialAndColors,
+        prodProfile.defaultMaterialRu
+      ),
+      packsBySize,
+      unitsPerPack,
+      totalUnits: currencyMetrics.totalUnits,
+      unitPrice: hasCostAccess
+        ? primaryCurrency === 'RUB'
+          ? currencyMetrics.unitRub
+          : primaryCurrency === 'CNY'
+          ? currencyMetrics.unitCny
+          : currencyMetrics.unitUsd
+        : existingOrder?.unitPrice || 0,
+      currency: primaryCurrency,
+      plannedReadyDate,
+      paymentTerms,
+    };
+
+    const updates: Partial<ProductConcept> = {
+      imageUrl: frontPhotoUrl,
+      ...(hasCostAccess ? { plannedUnitCost: currencyMetrics.unitRub } : {}),
+      packUnitsCount: unitsPerPack,
+      supplierName: factoryName,
+      // Всегда храним plannedUnitCost в рублях ('RUB'), чтобы при повторном открытии конструктора не умножать рубли на курс юаня!
+      currency: 'RUB',
+      productionOrders: [updatedOrder, ...(concept.productionOrders?.slice(1) || [])],
+      techPack: {
+        ...concept.techPack,
+        zh: {
+          ...concept.techPack.zh,
+          construction: cleanTechPackText(
+            bilingualRows[0]?.zhLarge || concept.techPack.zh.construction,
+            prodProfile.defaultConstructionZh
+          ),
+          compositionAndDensity: cleanTechPackText(
+            bilingualRows[1]?.zhLarge || concept.techPack.zh.compositionAndDensity,
+            prodProfile.defaultMaterialZh
+          ),
+        },
+        ru: {
+          ...concept.techPack.ru,
+          construction: cleanTechPackText(
+            bilingualRows[0]?.ruSmall || concept.techPack.ru.construction,
+            prodProfile.defaultConstructionRu
+          ),
+          compositionAndDensity: cleanTechPackText(
+            bilingualRows[1]?.ruSmall || concept.techPack.ru.compositionAndDensity,
+            prodProfile.defaultMaterialRu
+          ),
+        },
+      },
+    };
+    return updates;
+  };
+
+  const handleSaveSettingsOnly = () => {
+    if (!canEdit || !onSaveToConcept) return;
+    onSaveToConcept(buildConceptUpdatesPayload());
+    notify('success', 'Параметры конструктора PDF сохранены в карточку');
+  };
+
   const handleDownloadPdf = () => {
     const brandLabel = formatLabBrandLabel(concept.brandId);
 
@@ -340,7 +455,7 @@ export function PdfConstructorModal({
         `${pcs.toLocaleString('ru-RU')} 件 (${prodProfile.itemsUnitLabelRu})`,
       ];
 
-      if (!includePricing) return baseRow;
+      if (!effectiveIncludePricing) return baseRow;
       if (!includeTotalSumColumn) return [...baseRow, unitPriceCell];
       return [...baseRow, unitPriceCell, sumCell];
     });
@@ -348,6 +463,38 @@ export function PdfConstructorModal({
     const totalSumCell = showRubInPdf
       ? `¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} / $${currencyMetrics.totalUsd.toLocaleString('ru-RU')} (${currencyMetrics.totalRub.toLocaleString('ru-RU')} ₽)`
       : `¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} ($${currencyMetrics.totalUsd.toLocaleString('ru-RU')})`;
+
+    const pctMatches = paymentTerms.match(/(\d+)\s*%/g);
+    const dynamicPaymentClauseZh =
+      pctMatches && pctMatches.length >= 2
+        ? `${pctMatches[0]} 定金，${pctMatches[1]} 尾款验货合格(AQL 1.5)发货前付清`
+        : pctMatches && pctMatches.length === 1 && paymentTerms.includes('100%')
+        ? `100% 预付款结算 (${paymentTerms}) · 验货合格(AQL 1.5)发货`
+        : `${paymentTerms} · 验货合格(AQL 1.5)发货`;
+
+    const termsNoteZh = includeFactoryTerms
+      ? `付款及交货条款：${dynamicPaymentClauseZh} · 交货期：${plannedReadyDate}${
+          effectiveIncludePricing
+            ? ` · 合同总金额：¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} CNY / $${currencyMetrics.totalUsd.toLocaleString('ru-RU')} USD${
+                showRubInPdf
+                  ? ` (${currencyMetrics.totalRub.toLocaleString('ru-RU')} RUB)`
+                  : ''
+              }`
+            : ''
+        }`
+      : undefined;
+
+    const termsNoteRu = includeFactoryTerms
+      ? `Условия оплаты: ${paymentTerms} · Готовность: ${plannedReadyDate}.${
+          effectiveIncludePricing
+            ? ` Итого партия: ¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} CNY | $${currencyMetrics.totalUsd.toLocaleString('ru-RU')} USD${
+                showRubInPdf
+                  ? ` | ${currencyMetrics.totalRub.toLocaleString('ru-RU')} ₽`
+                  : ''
+              }.`
+            : ''
+        }`
+      : undefined;
 
     const sectionsToRender: NonNullable<Parameters<typeof downloadEditorialPdfDocument>[0]>['sections'] = [];
 
@@ -369,13 +516,13 @@ export function PdfConstructorModal({
       });
     }
 
-    if (includeSizeMatrix || includePricing) {
+    if (includeSizeMatrix || effectiveIncludePricing) {
       const tableHeadersBase = [
         '尺码 (Размер)',
         `组数 (${prodProfile.packUnitLabelRu})`,
         `总数量 (${prodProfile.itemsUnitLabelRu} ×${unitsPerPack})`,
       ];
-      const tableHeaders = !includePricing
+      const tableHeaders = !effectiveIncludePricing
         ? tableHeadersBase
         : !includeTotalSumColumn
         ? [
@@ -403,22 +550,31 @@ export function PdfConstructorModal({
         ? `¥${currencyMetrics.unitCny} / $${currencyMetrics.unitUsd} (${currencyMetrics.unitRub}₽)`
         : `¥${currencyMetrics.unitCny} / $${currencyMetrics.unitUsd}`;
 
-      const tableFooter = !includePricing
+      const tableFooter = !effectiveIncludePricing
         ? tableFooterBase
         : !includeTotalSumColumn
         ? [...tableFooterBase, unitFooterCell]
         : [...tableFooterBase, unitFooterCell, totalSumCell];
 
+      const summaryOnlyHeaders = tableHeaders.slice(1);
+      const summaryOnlyRow = tableFooter.slice(1);
+
       sectionsToRender.push({
         badge: '02 · 尺码及金额',
-        titleZh: includePricing
-          ? `二、大货尺码配比及订单金额明细 (${prodProfile.sizeGridLabelZh})`
-          : `二、大货尺码及数量配比明细表 (${prodProfile.sizeGridLabelZh})`,
-        title: includePricing
-          ? `${prodProfile.sizeGridLabelRu} и расчёт заказа (${
+        titleZh: includeSizeMatrix
+          ? effectiveIncludePricing
+            ? `二、大货尺码配比及订单金额明细 (${prodProfile.sizeGridLabelZh})`
+            : `二、大货尺码及数量配比明细表 (${prodProfile.sizeGridLabelZh})`
+          : '二、大货订单总量及合同金额汇总',
+        title: includeSizeMatrix
+          ? effectiveIncludePricing
+            ? `${prodProfile.sizeGridLabelRu} и расчёт заказа (${
+                showRubInPdf ? 'CNY / USD / RUB' : 'CNY ¥ / USD $ — без рублей'
+              })`
+            : `${prodProfile.sizeGridLabelRu} без отображения цен`
+          : `Сводный расчёт заказа без размерной разбивки (${
               showRubInPdf ? 'CNY / USD / RUB' : 'CNY ¥ / USD $ — без рублей'
-            })`
-          : `${prodProfile.sizeGridLabelRu} без отображения цен`,
+            })`,
         subtitle: `每组 ${unitsPerPack} 件 (${prodProfile.packUnitLabelRu} · ×${unitsPerPack} — ${prodProfile.itemsUnitLabelRu.toLowerCase()})`,
         table: includeSizeMatrix
           ? {
@@ -426,30 +582,17 @@ export function PdfConstructorModal({
               rows: sizeRows,
               footer: tableFooter,
             }
-          : undefined,
-        noteZh: includeFactoryTerms
-          ? `付款及交货条款：30% 定金，70% 尾款验货合格(AQL 1.5)发货前付清 · 交货期：${plannedReadyDate}${
-              includePricing
-                ? ` · 合同总金额：¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} CNY / $${currencyMetrics.totalUsd.toLocaleString('ru-RU')} USD${
-                    showRubInPdf
-                      ? ` (${currencyMetrics.totalRub.toLocaleString('ru-RU')} RUB)`
-                      : ''
-                  }`
-                : ''
-            }`
-          : undefined,
-        note: includeFactoryTerms
-          ? `Условия оплаты: ${paymentTerms} · Готовность: ${plannedReadyDate}.${
-              includePricing
-                ? ` Итого партия: ¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} CNY | $${currencyMetrics.totalUsd.toLocaleString('ru-RU')} USD${
-                    showRubInPdf
-                      ? ` | ${currencyMetrics.totalRub.toLocaleString('ru-RU')} ₽`
-                      : ''
-                  }.`
-                : ''
-            }`
-          : undefined,
+          : {
+              headers: summaryOnlyHeaders,
+              rows: [summaryOnlyRow],
+            },
+        noteZh: termsNoteZh,
+        note: termsNoteRu,
       });
+    } else if (includeFactoryTerms && sectionsToRender.length > 0) {
+      const lastSec = sectionsToRender[sectionsToRender.length - 1];
+      lastSec.noteZh = termsNoteZh;
+      lastSec.note = termsNoteRu;
     }
 
     downloadEditorialPdfDocument({
@@ -525,79 +668,8 @@ export function PdfConstructorModal({
       }`,
     });
 
-    if (onSaveToConcept) {
-      const todayIso = new Date().toISOString().slice(0, 10);
-      const updatedOrder = {
-        ...(existingOrder || {
-          id: `po-pdf-${Date.now()}`,
-          orderNumber: 'PO-2027-01',
-          contactPerson: 'Менеджер производства',
-          approvedSampleVersion: concept.samples?.[0]?.versionCode || 'Версия 1',
-          internalStatus: 'order_placed' as const,
-          sizeBreakdown: packsBySize,
-          packColorComposition:
-            concept.colorCombinations?.join(', ') || 'Базовая палитра паспорта SKU',
-          packConfiguration: `${unitsPerPack} ед. в комплекте`,
-          packagingDetails:
-            'Фирменная упаковка со штрихкодом EAN-13 / Честный ЗНАК',
-          orderVersion: 1,
-          approvedAt: todayIso,
-          chineseVerified: true,
-          qcNotes: 'AQL 1.5',
-          logisticsTracking: '',
-        }),
-        factoryName,
-        materialAndColors: cleanTechPackText(
-          bilingualRows[1]?.ruSmall || existingOrder?.materialAndColors,
-          prodProfile.defaultMaterialRu
-        ),
-        packsBySize,
-        unitsPerPack,
-        totalUnits: currencyMetrics.totalUnits,
-        unitPrice:
-          primaryCurrency === 'RUB'
-            ? currencyMetrics.unitRub
-            : primaryCurrency === 'CNY'
-            ? currencyMetrics.unitCny
-            : currencyMetrics.unitUsd,
-        currency: primaryCurrency,
-        plannedReadyDate,
-        paymentTerms,
-      };
-
-      onSaveToConcept({
-        imageUrl: frontPhotoUrl,
-        plannedUnitCost: currencyMetrics.unitRub,
-        packUnitsCount: unitsPerPack,
-        supplierName: factoryName,
-        currency: primaryCurrency,
-        productionOrders: [updatedOrder, ...(concept.productionOrders?.slice(1) || [])],
-        techPack: {
-          ...concept.techPack,
-          zh: {
-            ...concept.techPack.zh,
-            construction: cleanTechPackText(
-              bilingualRows[0]?.zhLarge || concept.techPack.zh.construction,
-              prodProfile.defaultConstructionZh
-            ),
-            compositionAndDensity: cleanTechPackText(
-              bilingualRows[1]?.zhLarge || concept.techPack.zh.compositionAndDensity,
-              prodProfile.defaultMaterialZh
-            ),
-          },
-          ru: {
-            ...concept.techPack.ru,
-            construction: cleanTechPackText(
-              bilingualRows[0]?.ruSmall || concept.techPack.ru.construction,
-              prodProfile.defaultConstructionRu
-            ),
-            compositionAndDensity: cleanTechPackText(
-              bilingualRows[1]?.ruSmall || concept.techPack.ru.compositionAndDensity,
-              prodProfile.defaultMaterialRu
-            ),
-          },
-        },
-      });
+    if (onSaveToConcept && canEdit) {
+      onSaveToConcept(buildConceptUpdatesPayload());
     }
   };
 
@@ -645,6 +717,16 @@ export function PdfConstructorModal({
           </div>
 
           <div className="flex items-center gap-2.5">
+            {canEdit && onSaveToConcept && (
+              <button
+                type="button"
+                onClick={handleSaveSettingsOnly}
+                className="inline-flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#181715] bg-white hover:bg-[#F5F2EB] text-[#181715] px-4 py-2.5 text-[13px] font-semibold transition cursor-pointer"
+              >
+                <Check className="h-4 w-4 text-[#1F6E50]" />
+                <span>Сохранить в карточку</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDownloadPdf}
@@ -738,24 +820,28 @@ export function PdfConstructorModal({
                     checked: includeBilingualSpecs,
                     onChange: setIncludeBilingualSpecs,
                   },
-                  {
-                    label: 'Валюты и цены (单价 / 金额)',
-                    sub: 'Себестоимость 1 шт. и бюджет заказа',
-                    checked: includePricing,
-                    onChange: setIncludePricing,
-                  },
-                  {
-                    label: 'Столбец «Сумма» (合计金额)',
-                    sub: 'Итоговая сумма по каждому размеру в таблице',
-                    checked: includeTotalSumColumn,
-                    onChange: setIncludeTotalSumColumn,
-                  },
-                  {
-                    label: 'Сумма в рублях (RUB ₽)',
-                    sub: 'Включить или отключить показ рублей ₽ в столбцах',
-                    checked: showRubInPdf,
-                    onChange: setShowRubInPdf,
-                  },
+                  ...(hasCostAccess
+                    ? [
+                        {
+                          label: 'Валюты и цены (单价 / 金额)',
+                          sub: 'Себестоимость 1 шт. и бюджет заказа',
+                          checked: includePricing,
+                          onChange: setIncludePricing,
+                        },
+                        {
+                          label: 'Столбец «Сумма» (合计金额)',
+                          sub: 'Итоговая сумма по каждому размеру в таблице',
+                          checked: includeTotalSumColumn,
+                          onChange: setIncludeTotalSumColumn,
+                        },
+                        {
+                          label: 'Сумма в рублях (RUB ₽)',
+                          sub: 'Включить или отключить показ рублей ₽ в столбцах',
+                          checked: showRubInPdf,
+                          onChange: setShowRubInPdf,
+                        },
+                      ]
+                    : []),
                   {
                     label: `Размерная сетка (${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]})`,
                     sub: `${prodProfile.packUnitLabelRu} и ${prodProfile.itemsUnitLabelRu.toLowerCase()} по размерам`,
@@ -924,6 +1010,11 @@ export function PdfConstructorModal({
             </div>
 
             {/* БЛОК 2: МУЛЬТИВАЛЮТНЫЙ КАЛЬКУЛЯТОР (CNY ¥ / USD $ / RUB ₽) */}
+            {!hasCostAccess ? (
+              <div className="rounded-[14px] bg-white border-[1.5px] border-[#CFC8BC] p-5 text-[13px] text-[#5C5852]">
+                Себестоимость и закупочные цены скрыты согласно правам вашей роли. Спецификация формируется в режиме ТЗ без отображения цен.
+              </div>
+            ) : (
             <div className="rounded-[14px] bg-white border-[1.5px] border-[#CFC8BC] p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE6DF] pb-3">
                 <div>
@@ -1121,6 +1212,7 @@ export function PdfConstructorModal({
                 </label>
               </div>
             </div>
+            )}
 
             {/* БЛОК 3: КРУПНЫЙ КИТАЙСКИЙ + МАЛЕНЬКИЙ РУССКИЙ (РЕДАКТОР СТРОК) */}
             <div className="rounded-[14px] bg-white border-[1.5px] border-[#CFC8BC] p-5 space-y-4">
@@ -1321,6 +1413,18 @@ export function PdfConstructorModal({
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[11.5px] font-medium text-[#5C5852] mb-1">
+                  Условия оплаты (отображаются в PDF на русском и китайском):
+                </label>
+                <input
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  placeholder="30% депозит / 70% перед отгрузкой после QC"
+                  className="w-full rounded-[8px] border border-[#D4CDC2] bg-white px-3 py-1.5 text-[13px] text-[#181715]"
+                />
+              </div>
+
               <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 pt-1">
                 {orderedSizes.map((sz) => (
                   <div
@@ -1362,7 +1466,7 @@ export function PdfConstructorModal({
               </div>
 
               {/* ВИЗУАЛЬНЫЙ ЛИСТ A4 */}
-              <div className="bg-[#FAF8F5] rounded-[12px] border-2 border-[#181715] shadow-lg p-5 space-y-4">
+              <div className="pdf-paper-preview bg-[#FAF8F5] rounded-[12px] border-2 border-[#181715] shadow-lg p-5 space-y-4">
                 <div className="border-b-2 border-[#181715] pb-3 flex items-start justify-between gap-2">
                   <div>
                     <div className="font-mono text-[10px] uppercase tracking-widest text-[#7A756D]">
@@ -1451,7 +1555,7 @@ export function PdfConstructorModal({
                 )}
 
                 {/* Превью мультивалютного итога */}
-                {(includePricing || includeSizeMatrix) && (
+                {(effectiveIncludePricing || includeSizeMatrix) && (
                   <div className="rounded-[8px] bg-[#181715] text-white p-3.5 space-y-1.5">
                     <div className="flex items-center justify-between text-[11px] font-mono text-[#D4CDC2]">
                       <span>
@@ -1459,12 +1563,12 @@ export function PdfConstructorModal({
                         {currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件)
                       </span>
                       <span>
-                        {includePricing
+                        {effectiveIncludePricing
                           ? `${showRubInPdf ? 'CNY / USD / RUB ₽' : 'CNY ¥ / USD $ (без ₽)'}`
                           : 'БЕЗ ЦЕН'}
                       </span>
                     </div>
-                    {includePricing && (
+                    {effectiveIncludePricing && (
                       <div
                         className={`grid ${
                           showRubInPdf ? 'grid-cols-3' : 'grid-cols-2'
@@ -1492,6 +1596,17 @@ export function PdfConstructorModal({
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {includeFactoryTerms && (
+                  <div className="rounded-[8px] bg-white border border-[#D4CDC2] px-3 py-2 text-[11px] text-[#4A4742] space-y-0.5">
+                    <div className="font-semibold text-[#181715]">
+                      Условия: {paymentTerms}
+                    </div>
+                    <div className="text-[#6E6A63]">
+                      Фабрика: {factoryName} · Готовность: {plannedReadyDate}
+                    </div>
                   </div>
                 )}
               </div>

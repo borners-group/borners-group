@@ -37,17 +37,25 @@ import {
   MultiBrandPortfolioSummaryResult,
   RecommendedProcurementBatch,
   approveRecommendedBatch,
+  computeMultiBrandPortfolioSummary,
   computePortfolioProcurementWavesSummary,
   computeProcurementPlan,
   computeWhatIfSensitivitySimulation,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
+  getBrandProductionProfile,
   getBrandUnitConfig,
   getScenariosForBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
   removeApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
+import { safeGetStorageJson } from '@/lib/safeStorage';
 import {
   isBrandScenarioExplicitlyNone,
   resolveEffectiveScenarioForModel,
@@ -92,6 +100,7 @@ export interface BrandCabinetsMatrixTableProps {
   onLaunchStarterCabinet?: (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => void;
   onLaunchAllCabinets?: () => void;
   onResetStarterCabinets?: () => void;
+  wbLagUnspecified?: boolean;
 }
 
 export function BrandCabinetsMatrixTable({
@@ -106,8 +115,14 @@ export function BrandCabinetsMatrixTable({
   onLaunchStarterCabinet,
   onLaunchAllCabinets,
   onResetStarterCabinets,
+  wbLagUnspecified = false,
 }: BrandCabinetsMatrixTableProps) {
-  const { concepts, navigateTo } = usePlatform();
+  const { currentUser, concepts, navigateTo } = usePlatform();
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const canEditAllStarter = (['AKUSHA', 'LISKANI', 'NA_TELE'] as const).every((c) =>
+    canUserEditBrand(currentUser, c)
+  );
   const gt = multiBrandSummary.groupTotal;
   const activeCount = multiBrandSummary.brands.filter(
     (b) => b.hasScenario && b.hasModels && b.annualRevenueRub > 0
@@ -137,6 +152,7 @@ export function BrandCabinetsMatrixTable({
                 activeBrandFilter !== 'ALL' &&
                 normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
               const isActive = b.hasScenario && b.hasModels;
+              const canEditBrandRow = canUserEditBrand(currentUser, b.brandCode);
               const rndCount = concepts.filter(
                 (c) =>
                   !c.isArchived &&
@@ -211,8 +227,10 @@ export function BrandCabinetsMatrixTable({
                     <div className="flex items-center gap-1.5 w-full max-w-[295px]">
                       <select
                         aria-label={`Сценарий развития бренда ${b.displayCode}`}
+                        disabled={!canEditBrandRow}
                         value={b.selectedScenarioId ?? ''}
                         onChange={(e) => {
+                          if (!canEditBrandRow) return;
                           const raw = e.target.value;
                           const nextId = raw === '' ? null : Number(raw);
                           onSelectScenarioForBrand(b.brandCode, nextId);
@@ -224,7 +242,9 @@ export function BrandCabinetsMatrixTable({
                             onSelectActiveScenarioId(nextId, b.brandCode);
                           }
                         }}
-                        className={`h-8 flex-1 min-w-0 px-2.5 rounded-[8px] border text-[11.5px] font-semibold focus:outline-none focus:border-[#334155] cursor-pointer truncate ${
+                        className={`h-8 flex-1 min-w-0 px-2.5 rounded-[8px] border text-[11.5px] font-semibold focus:outline-none focus:border-[#334155] truncate ${
+                          canEditBrandRow ? 'cursor-pointer' : 'opacity-65 cursor-not-allowed'
+                        } ${
                           b.hasScenario
                             ? 'bg-[#F8FAFC] hover:bg-white border-[#CBD5E1] text-[#111827]'
                             : 'bg-[#F8FAFC] border-dashed border-[#CBD5E1] text-[#64748B]'
@@ -237,33 +257,39 @@ export function BrandCabinetsMatrixTable({
                           </option>
                         ))}
                       </select>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpenCreateScenarioForBrand(
-                            b.brandCode,
-                            `${b.displayCode} — План развития 2027`
-                          )
-                        }
-                        title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
-                        className="h-8 w-8 shrink-0 rounded-[8px] bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#475569] hover:text-[#111827] flex items-center justify-center transition cursor-pointer"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
+                      {canEditBrandRow && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenCreateScenarioForBrand(
+                              b.brandCode,
+                              `${b.displayCode} — План развития 2027`
+                            )
+                          }
+                          title={`Создать новый сценарий развития для бренда ${b.displayCode}`}
+                          className="h-8 w-8 shrink-0 rounded-[8px] bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#475569] hover:text-[#111827] flex items-center justify-center transition cursor-pointer"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
 
                   {/* 3. Продажи (Год / Дек) */}
                   <td className="py-3 px-3 align-middle text-right">
                     {isActive ? (
-                      <div>
-                        <div className="font-mono text-[13px] font-extrabold text-[#111827]">
-                          {formatMln(b.annualRevenueRub)}
+                      hasFinance ? (
+                        <div>
+                          <div className="font-mono text-[13px] font-extrabold text-[#111827]">
+                            {formatMln(b.annualRevenueRub)}
+                          </div>
+                          <div className="font-mono text-[10.5px] text-[#64748B]">
+                            дек: {formatMln(b.decemberRevenueRub)}
+                          </div>
                         </div>
-                        <div className="font-mono text-[10.5px] text-[#64748B]">
-                          дек: {formatMln(b.decemberRevenueRub)}
-                        </div>
-                      </div>
+                      ) : (
+                        <span className="font-mono text-[11.5px] text-[#64748B]">Скрыто</span>
+                      )
                     ) : (
                       <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
                     )}
@@ -277,7 +303,7 @@ export function BrandCabinetsMatrixTable({
                           {b.totalProcurementQuantity.toLocaleString('ru-RU')} {b.primaryUnit}
                         </div>
                         <div className="font-mono text-[10.5px] text-[#64748B]">
-                          {formatMln(b.totalProcurementBudgetRub)}
+                          {hasCost ? formatMln(b.totalProcurementBudgetRub) : 'Скрыто'}
                         </div>
                       </div>
                     ) : (
@@ -288,14 +314,18 @@ export function BrandCabinetsMatrixTable({
                   {/* 5. Старт Q1 (Аванс) */}
                   <td className="py-3 px-3 align-middle text-right">
                     {isActive ? (
-                      <div>
-                        <div className="font-mono text-[12.5px] font-bold text-[#111827]">
-                          {formatMln(b.firstWaveStartBudgetRub)}
+                      hasCost ? (
+                        <div>
+                          <div className="font-mono text-[12.5px] font-bold text-[#111827]">
+                            {formatMln(b.firstWaveStartBudgetRub)}
+                          </div>
+                          <div className="font-mono text-[10.5px] text-[#64748B]">
+                            аванс: {formatMln(b.firstWavePrepaymentRub)}
+                          </div>
                         </div>
-                        <div className="font-mono text-[10.5px] text-[#64748B]">
-                          аванс: {formatMln(b.firstWavePrepaymentRub)}
-                        </div>
-                      </div>
+                      ) : (
+                        <span className="font-mono text-[11.5px] text-[#64748B]">Скрыто</span>
+                      )
                     ) : (
                       <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
                     )}
@@ -304,17 +334,26 @@ export function BrandCabinetsMatrixTable({
                   {/* 6. Пик своих денег */}
                   <td className="py-3 px-3 align-middle text-right">
                     {isActive ? (
-                      <div>
-                        <div className="font-mono text-[12.5px] font-bold text-[#334155]">
-                          {b.verifiedOwnMoneyRequiredRub !== null
-                            ? formatMln(b.verifiedOwnMoneyRequiredRub)
-                            : '—'}
+                      !hasCost || !hasFinance ? (
+                        <span className="font-mono text-[11.5px] text-[#64748B]">Скрыто</span>
+                      ) : (
+                        <div>
+                          <div className="font-mono text-[12.5px] font-bold text-[#334155]">
+                            {b.verifiedOwnMoneyRequiredRub !== null
+                              ? formatMln(b.verifiedOwnMoneyRequiredRub)
+                              : wbLagUnspecified
+                              ? 'Лаг WB не задан'
+                              : '—'}
+                          </div>
+                          <div className="text-[10px] font-medium text-amber-800">
+                            {b.verifiedOwnMoneyRequiredRub === null && wbLagUnspecified
+                              ? 'график WB не указан'
+                              : `пик: ${b.peakMonthLabel || 'Янв'}${
+                                  b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ' · с WB'
+                                }`}
+                          </div>
                         </div>
-                        <div className="text-[10px] font-medium text-amber-800">
-                          пик: {b.peakMonthLabel || 'Янв'}
-                          {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ' · с WB'}
-                        </div>
-                      </div>
+                      )
                     ) : (
                       <span className="font-mono text-[12px] text-[#CBD5E1]">—</span>
                     )}
@@ -328,15 +367,19 @@ export function BrandCabinetsMatrixTable({
                     }}
                   >
                     {isActive ? (
-                      <div>
-                        <div className="font-mono text-[13px] font-extrabold text-[#059669]">
-                          +{formatMln(b.annualEstimatedOperatingProfitRub)}
+                      !hasCost || !hasFinance ? (
+                        <span className="font-mono text-[11.5px] text-[#64748B]">Скрыто</span>
+                      ) : (
+                        <div>
+                          <div className="font-mono text-[13px] font-extrabold text-[#059669]">
+                            +{formatMln(b.annualEstimatedOperatingProfitRub)}
+                          </div>
+                          <div className="font-mono text-[10.5px] text-[#64748B]">
+                            Себест.: {formatMln(b.annualSoldGoodsCostRub)}
+                          </div>
                         </div>
-                        <div className="font-mono text-[10.5px] text-[#64748B]">
-                          Себест.: {formatMln(b.annualSoldGoodsCostRub)}
-                        </div>
-                      </div>
-                    ) : (
+                      )
+                    ) : canEditBrandRow ? (
                       <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                         {onLaunchStarterCabinet &&
                           (b.brandCode === 'AKUSHA' ||
@@ -377,6 +420,8 @@ export function BrandCabinetsMatrixTable({
                           + Товар
                         </button>
                       </div>
+                    ) : (
+                      <span className="font-mono text-[11px] text-[#94A3B8]">—</span>
                     )}
                   </td>
                 </tr>
@@ -404,7 +449,7 @@ export function BrandCabinetsMatrixTable({
                   <span className="px-2 py-0.5 rounded-[5px] bg-white border border-[#CBD5E1] font-mono text-[10px] text-[#334155]">
                     {gt.modelsCount} SKU
                   </span>
-                  {activeCount < 5 && onLaunchAllCabinets && (
+                  {canEditAllStarter && activeCount < 5 && onLaunchAllCabinets && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -416,7 +461,7 @@ export function BrandCabinetsMatrixTable({
                       ⚡ Подключить все 5 кабинетов
                     </button>
                   )}
-                  {activeCount > 2 && onResetStarterCabinets && (
+                  {canEditAllStarter && activeCount > 2 && onResetStarterCabinets && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -431,27 +476,40 @@ export function BrandCabinetsMatrixTable({
                 </div>
               </td>
               <td className="py-3 px-3 text-right font-mono font-extrabold text-[#111827]">
-                {formatMln(gt.annualRevenueRub)}
+                {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто'}
               </td>
               <td className="py-3 px-3 text-right font-mono text-[#111827]">
-                {formatMln(gt.totalProcurementBudgetRub)}
+                {hasCost ? formatMln(gt.totalProcurementBudgetRub) : 'Скрыто'}
               </td>
               <td className="py-3 px-3 text-right font-mono text-[#111827]">
-                {formatMln(gt.firstWaveStartBudgetRub)}
+                {hasCost ? formatMln(gt.firstWaveStartBudgetRub) : 'Скрыто'}
               </td>
               <td className="py-3 px-3 text-right font-mono text-[#334155]">
-                <div>
-                  {gt.verifiedOwnMoneyRequiredRub !== null
-                    ? formatMln(gt.verifiedOwnMoneyRequiredRub)
-                    : '—'}
-                </div>
-                <div className="text-[10px] font-semibold text-amber-800">
-                  пик: {gt.peakMonthLabel || 'Янв'}
-                  {gt.selfFundingMonthLabel ? ` → с ${gt.selfFundingMonthLabel}` : ''}
-                </div>
+                {!hasCost || !hasFinance ? (
+                  'Скрыто'
+                ) : (
+                  <>
+                    <div>
+                      {gt.verifiedOwnMoneyRequiredRub !== null
+                        ? formatMln(gt.verifiedOwnMoneyRequiredRub)
+                        : wbLagUnspecified
+                        ? 'Лаг WB не задан'
+                        : '—'}
+                    </div>
+                    <div className="text-[10px] font-semibold text-amber-800">
+                      {gt.verifiedOwnMoneyRequiredRub === null && wbLagUnspecified
+                        ? 'график WB не указан'
+                        : `пик: ${gt.peakMonthLabel || 'Янв'}${
+                            gt.selfFundingMonthLabel ? ` → с ${gt.selfFundingMonthLabel}` : ''
+                          }`}
+                    </div>
+                  </>
+                )}
               </td>
               <td className="py-3 px-4 text-right font-mono font-extrabold text-[#059669]">
-                +{formatMln(gt.annualEstimatedOperatingProfitRub)}
+                {!hasCost || !hasFinance
+                  ? 'Скрыто'
+                  : `+${formatMln(gt.annualEstimatedOperatingProfitRub)}`}
               </td>
             </tr>
           </tfoot>
@@ -543,7 +601,7 @@ export interface PeaklyMasterCabinetsSummaryProps {
 }
 
 export function PeaklyMasterCabinetsSummary({
-  multiBrandSummary,
+  multiBrandSummary: rawMultiBrandSummary,
   models,
   selectedScenarioByBrand,
   scenarios,
@@ -561,7 +619,76 @@ export function PeaklyMasterCabinetsSummary({
   onOpenStrategySummary,
   onOpenStudioCanvas,
 }: PeaklyMasterCabinetsSummaryProps) {
-  const { concepts, navigateTo } = usePlatform();
+  const { currentUser, concepts, navigateTo } = usePlatform();
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const canEditAllStarter = (['AKUSHA', 'LISKANI', 'NA_TELE'] as const).every((c) =>
+    canUserEditBrand(currentUser, c)
+  );
+  const [financeParams, setFinanceParams] = useState<{
+    initialCashMln: number;
+    wbLagMonths: number;
+  }>(() => {
+    const saved = safeGetStorageJson<{ initialCashMln?: number; wbLagMonths?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return {
+      initialCashMln: typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0,
+      wbLagMonths: typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0,
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncFinanceParams = () => {
+      const saved = safeGetStorageJson<{ initialCashMln?: number; wbLagMonths?: number }>(
+        'borners_finance_contour_params_v1'
+      );
+      const nextCash = typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0;
+      const nextLag = typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0;
+      setFinanceParams((prev) =>
+        prev.initialCashMln === nextCash && prev.wbLagMonths === nextLag
+          ? prev
+          : { initialCashMln: nextCash, wbLagMonths: nextLag }
+      );
+    };
+    window.addEventListener('borners-finance-params-changed', syncFinanceParams);
+    window.addEventListener('storage', syncFinanceParams);
+    return () => {
+      window.removeEventListener('borners-finance-params-changed', syncFinanceParams);
+      window.removeEventListener('storage', syncFinanceParams);
+    };
+  }, []);
+
+  const wbLagUnspecified = financeParams.wbLagMonths < 0;
+  const multiBrandSummary = useMemo(() => {
+    if (
+      models &&
+      models.length > 0 &&
+      scenarios &&
+      scenarios.length > 0 &&
+      (financeParams.initialCashMln !== 0 || financeParams.wbLagMonths !== 0)
+    ) {
+      return computeMultiBrandPortfolioSummary(
+        models,
+        scenarios,
+        selectedScenarioByBrand || {},
+        {
+          initialCashRub: Math.round((Number(financeParams.initialCashMln) || 0) * 1_000_000),
+          settlementLagMonths: financeParams.wbLagMonths < 0 ? null : financeParams.wbLagMonths,
+          wbPayoutScheduleSpecified: financeParams.wbLagMonths >= 0,
+        }
+      );
+    }
+    return rawMultiBrandSummary;
+  }, [
+    rawMultiBrandSummary,
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    financeParams.initialCashMln,
+    financeParams.wbLagMonths,
+  ]);
   const rawGradUid = React.useId();
   const gradUid = useMemo(() => rawGradUid.replace(/[^a-zA-Z0-9_-]/g, ''), [rawGradUid]);
   const [cabinetsMatrixOpen, setCabinetsMatrixOpen] = useState(isStandaloneHome);
@@ -831,35 +958,54 @@ export function PeaklyMasterCabinetsSummary({
   const kpiRings = useMemo(() => {
     const r = 37;
     const circ = 2 * Math.PI * r;
+    const canSeeProfit = hasFinance && hasCost;
     return [
       {
         id: 'margin',
         label: 'МАРЖА ВЫРУЧКИ',
-        valueText: `${Math.round(groupMarginPct)}%`,
-        subText: `↑ +${groupMarginPct.toFixed(1).replace('.', ',')} ₽ со 100 ₽`,
-        pctFill: Math.min(100, Math.max(8, groupMarginPct * 1.6)),
+        valueText: canSeeProfit ? `${Math.round(groupMarginPct)}%` : 'Скрыто',
+        subText: canSeeProfit
+          ? `↑ +${groupMarginPct.toFixed(1).replace('.', ',')} ₽ со 100 ₽`
+          : 'Доступ по роли',
+        pctFill: canSeeProfit ? Math.min(100, Math.max(8, groupMarginPct * 1.6)) : 0,
         color: '#10B981',
         circ,
         r,
-        onClick: () => onNavigateSection('finance'),
+        onClick: () => {
+          if (hasFinance) onNavigateSection('finance');
+        },
       },
       {
         id: 'roi',
         label: 'ОТДАЧА КАПИТАЛА',
-        valueText: ownCapitalRoiMult ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : '×3,2',
-        subText: ownCapitalRoiMult ? `↑ ${Math.round(ownCapitalRoiMult * 100)}% годовых` : '↑ с оборота',
-        pctFill: 86,
+        valueText: !canSeeProfit
+          ? 'Скрыто'
+          : wbLagUnspecified
+          ? '—'
+          : ownCapitalRoiMult
+          ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
+          : '×3,2',
+        subText: !canSeeProfit
+          ? 'Доступ по роли'
+          : wbLagUnspecified
+          ? 'Лаг WB не задан'
+          : ownCapitalRoiMult
+          ? `↑ ${Math.round(ownCapitalRoiMult * 100)}% годовых`
+          : '↑ с оборота',
+        pctFill: !canSeeProfit || wbLagUnspecified ? 0 : 86,
         color: '#10B981',
         circ,
         r,
-        onClick: () => onNavigateSection('finance'),
+        onClick: () => {
+          if (hasFinance) onNavigateSection('finance');
+        },
       },
       {
         id: 'reinvest',
         label: 'ПАРТИЙ С ОБОРОТА WB',
-        valueText: `${selfFundedProcurementPct}%`,
-        subText: '↑ без своих денег',
-        pctFill: selfFundedProcurementPct,
+        valueText: !hasCost ? 'Скрыто' : wbLagUnspecified ? '—' : `${selfFundedProcurementPct}%`,
+        subText: !hasCost ? 'Доступ по роли' : wbLagUnspecified ? 'Лаг WB не задан' : '↑ без своих денег',
+        pctFill: !hasCost || wbLagUnspecified ? 0 : selfFundedProcurementPct,
         color: '#10B981',
         circ,
         r,
@@ -878,9 +1024,9 @@ export function PeaklyMasterCabinetsSummary({
       {
         id: 'cogs',
         label: 'СЕБЕСТОИМОСТЬ',
-        valueText: `${Math.round(cogsPct)}%`,
-        subText: '↓ норма ≤ 25% цены',
-        pctFill: Math.min(100, Math.max(12, cogsPct * 2.2)),
+        valueText: hasCost ? `${Math.round(cogsPct)}%` : 'Скрыто',
+        subText: hasCost ? '↓ норма ≤ 25% цены' : 'Доступ по роли',
+        pctFill: hasCost ? Math.min(100, Math.max(12, cogsPct * 2.2)) : 0,
         color: '#0D9488',
         circ,
         r,
@@ -897,7 +1043,16 @@ export function PeaklyMasterCabinetsSummary({
         },
       },
     ];
-  }, [groupMarginPct, ownCapitalRoiMult, selfFundedProcurementPct, cogsPct, onNavigateSection]);
+  }, [
+    groupMarginPct,
+    ownCapitalRoiMult,
+    selfFundedProcurementPct,
+    cogsPct,
+    onNavigateSection,
+    hasFinance,
+    hasCost,
+    wbLagUnspecified,
+  ]);
 
   const selectedMonthPoint =
     trendChartData.coords[selectedTrendMonthIdx] ||
@@ -1081,9 +1236,11 @@ export function PeaklyMasterCabinetsSummary({
               }`}
             >
               <span>Все (5)</span>
-              <span className="font-mono text-[11px] opacity-80">
-                {(holdingTotal.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
-              </span>
+              {hasFinance && (
+                <span className="font-mono text-[11px] opacity-80">
+                  {(holdingTotal.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
+                </span>
+              )}
             </button>
 
             {multiBrandSummary.brands.map((b) => {
@@ -1120,7 +1277,7 @@ export function PeaklyMasterCabinetsSummary({
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${accent.accentBar}`} />
                   <span>{b.displayCode}</span>
-                  {hasRev && (
+                  {hasRev && hasFinance && (
                     <span className="font-mono text-[11px] opacity-75">
                       {(b.annualRevenueRub / 1_000_000).toFixed(0)} млн
                     </span>
@@ -1130,7 +1287,7 @@ export function PeaklyMasterCabinetsSummary({
             })}
           </div>
 
-          {activeBrandsCount < 5 && onLaunchAllCabinets && (
+          {canEditAllStarter && activeBrandsCount < 5 && onLaunchAllCabinets && (
             <button
               type="button"
               onClick={onLaunchAllCabinets}
@@ -1141,7 +1298,7 @@ export function PeaklyMasterCabinetsSummary({
             </button>
           )}
 
-          {activeBrandsCount > 3 && onResetStarterCabinets && (
+          {canEditAllStarter && activeBrandsCount > 3 && onResetStarterCabinets && (
             <button
               type="button"
               onClick={onResetStarterCabinets}
@@ -1187,31 +1344,33 @@ export function PeaklyMasterCabinetsSummary({
                 Запустите подготовленную стартовую матрицу из 3 флагманских SKU с заполненной юнит-экономикой WB и помесячным планом на 2027 год в один клик — или добавьте свои товары вручную.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {onLaunchStarterCabinet &&
-                (selectedBrandRow.brandCode === 'AKUSHA' ||
-                  selectedBrandRow.brandCode === 'LISKANI' ||
-                  selectedBrandRow.brandCode === 'NA_TELE') && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onLaunchStarterCabinet(
-                        selectedBrandRow.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
-                      )
-                    }
-                    className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer shadow-2xs"
-                  >
-                    🚀 Запустить стартовую матрицу {selectedBrandRow.displayCode} (3 SKU)
-                  </button>
-                )}
-              <button
-                type="button"
-                onClick={() => onOpenCreateModelForBrand(selectedBrandRow.brandCode)}
-                className="h-9 px-3.5 rounded-xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] text-xs font-medium cursor-pointer"
-              >
-                + Свой товар
-              </button>
-            </div>
+            {canUserEditBrand(currentUser, selectedBrandRow.brandCode) && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onLaunchStarterCabinet &&
+                  (selectedBrandRow.brandCode === 'AKUSHA' ||
+                    selectedBrandRow.brandCode === 'LISKANI' ||
+                    selectedBrandRow.brandCode === 'NA_TELE') && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onLaunchStarterCabinet(
+                          selectedBrandRow.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                        )
+                      }
+                      className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer shadow-2xs"
+                    >
+                      🚀 Запустить стартовую матрицу {selectedBrandRow.displayCode} (3 SKU)
+                    </button>
+                  )}
+                <button
+                  type="button"
+                  onClick={() => onOpenCreateModelForBrand(selectedBrandRow.brandCode)}
+                  className="h-9 px-3.5 rounded-xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] text-xs font-medium cursor-pointer"
+                >
+                  + Свой товар
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1263,15 +1422,21 @@ export function PeaklyMasterCabinetsSummary({
 
               <div className="mt-3 flex flex-wrap items-baseline gap-3">
                 <div className="font-mono text-4xl sm:text-5xl lg:text-[54px] font-extrabold tracking-[-0.03em] tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
-                  <AnimatedMlnValue
-                    valueRub={gt.annualEstimatedOperatingProfitRub}
-                    prefix="+"
-                    unitClassName="text-xl sm:text-2xl font-bold tracking-normal text-emerald-700 dark:text-emerald-400/90 font-sans ml-1.5"
-                  />
+                  {hasFinance && hasCost ? (
+                    <AnimatedMlnValue
+                      valueRub={gt.annualEstimatedOperatingProfitRub}
+                      prefix="+"
+                      unitClassName="text-xl sm:text-2xl font-bold tracking-normal text-emerald-700 dark:text-emerald-400/90 font-sans ml-1.5"
+                    />
+                  ) : (
+                    <span>Скрыто</span>
+                  )}
                 </div>
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-[13px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
-                  ↑ рентабельность {groupMarginPct.toFixed(1).replace('.', ',')}%
-                </span>
+                {hasFinance && hasCost && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs sm:text-[13px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                    ↑ рентабельность {groupMarginPct.toFixed(1).replace('.', ',')}%
+                  </span>
+                )}
               </div>
 
               <p className="mt-2 text-xs sm:text-[13.5px] font-medium text-[#334155] dark:text-[#94A3B8]">
@@ -1291,10 +1456,13 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                  {formatMln(gt.annualRevenueRub)}
+                  {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто'}
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-[#475569] dark:text-[#94A3B8]">
-                  Пик декабря: <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(gt.decemberRevenueRub)}</strong>
+                  Пик декабря:{' '}
+                  <strong className="font-mono font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+                    {hasFinance ? formatMln(gt.decemberRevenueRub) : 'Скрыто'}
+                  </strong>
                 </div>
               </div>
 
@@ -1308,7 +1476,7 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                  {formatMln(trendChartData.totalPayoutYearRub)}
+                  {hasFinance ? formatMln(trendChartData.totalPayoutYearRub) : 'Скрыто'}
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-[#475569] dark:text-[#94A3B8]">
                   После комиссии и логистики WB
@@ -1329,17 +1497,39 @@ export function PeaklyMasterCabinetsSummary({
                     3. Пик своих денег
                   </span>
                   <span className="font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                    {ownCapitalRoiMult ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : 'Реинвест'}
+                    {!hasFinance || !hasCost
+                      ? 'Скрыто'
+                      : wbLagUnspecified
+                      ? 'Лаг WB?'
+                      : ownCapitalRoiMult
+                      ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
+                      : 'Реинвест'}
                   </span>
                 </div>
                 <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                  {gt.verifiedOwnMoneyRequiredRub ? formatMln(gt.verifiedOwnMoneyRequiredRub) : 'Из оборота'}
+                  {!hasFinance || !hasCost
+                    ? 'Скрыто'
+                    : gt.verifiedOwnMoneyRequiredRub !== null
+                    ? gt.verifiedOwnMoneyRequiredRub > 0
+                      ? formatMln(gt.verifiedOwnMoneyRequiredRub)
+                      : 'Из оборота'
+                    : wbLagUnspecified
+                    ? 'Лаг WB не задан'
+                    : 'Из оборота'}
                 </div>
                 <div className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-300 font-semibold leading-snug">
-                  📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027{' '}
-                  <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                    · {gt.selfFundingMonthLabel ? `с ${gt.selfFundingMonthLabel} — в плюс с WB` : `${selfFundedProcurementPct}% партий с WB`}
-                  </span>
+                  {!hasFinance || !hasCost ? (
+                    <span>Доступ к себестоимости и финансам ограничен</span>
+                  ) : wbLagUnspecified ? (
+                    <span>Укажите лаг выплат WB в 04 · Финансы</span>
+                  ) : (
+                    <>
+                      📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027{' '}
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                        · {gt.selfFundingMonthLabel ? `с ${gt.selfFundingMonthLabel} — в плюс с WB` : `${selfFundedProcurementPct}% партий с WB`}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1357,38 +1547,46 @@ export function PeaklyMasterCabinetsSummary({
               </span>
             </div>
 
-            <div className="text-[16px] sm:text-[17px] font-bold text-[#0F172A] dark:text-white leading-snug">
-              Из каждых 100 ₽ выручки{' '}
-              <span className="text-emerald-700 dark:text-emerald-400 underline decoration-emerald-500/50 underline-offset-4">
-                +{groupMarginPct.toFixed(1).replace('.', ',')} ₽ остаются чистой прибылью
-              </span>
-            </div>
+            {hasFinance && hasCost ? (
+              <>
+                <div className="text-[16px] sm:text-[17px] font-bold text-[#0F172A] dark:text-white leading-snug">
+                  Из каждых 100 ₽ выручки{' '}
+                  <span className="text-emerald-700 dark:text-emerald-400 underline decoration-emerald-500/50 underline-offset-4">
+                    +{groupMarginPct.toFixed(1).replace('.', ',')} ₽ остаются чистой прибылью
+                  </span>
+                </div>
 
-            {/* Наглядная двухцветная полоса 100 ₽ прямо внутри карточки */}
-            <div className="space-y-1.5">
-              <div className="h-3 w-full rounded-full bg-[#E2E8F0] dark:bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
-                <div
-                  style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
-                  className="h-full rounded-l-full bg-[#94A3B8]"
-                />
-                <div
-                  style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
-                  className="h-full rounded-r-full bg-emerald-500"
-                />
-              </div>
-              <div className="flex items-center justify-between text-[11.5px] font-mono">
-                <span className="text-[#475569] dark:text-[#CBD5E1]">
-                  Затраты и WB: <strong>{totalExpensesPct.toFixed(1).replace('.', ',')} ₽</strong>
-                </span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                  Чистыми: +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
-                </span>
-              </div>
-            </div>
+                {/* Наглядная двухцветная полоса 100 ₽ прямо внутри карточки */}
+                <div className="space-y-1.5">
+                  <div className="h-3 w-full rounded-full bg-[#E2E8F0] dark:bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
+                    <div
+                      style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
+                      className="h-full rounded-l-full bg-[#94A3B8]"
+                    />
+                    <div
+                      style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
+                      className="h-full rounded-r-full bg-emerald-500"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11.5px] font-mono">
+                    <span className="text-[#475569] dark:text-[#CBD5E1]">
+                      Затраты и WB: <strong>{totalExpensesPct.toFixed(1).replace('.', ',')} ₽</strong>
+                    </span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                      Чистыми: +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
+                    </span>
+                  </div>
+                </div>
 
-            <p className="text-xs text-[#475569] dark:text-[#CBD5E1] leading-relaxed pt-1 border-t border-[#E2E8F0] dark:border-white/10">
-              Собственный капитал запускает только 1-ю волну — дальше <strong className="text-[#0F172A] dark:text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
-            </p>
+                <p className="text-xs text-[#475569] dark:text-[#CBD5E1] leading-relaxed pt-1 border-t border-[#E2E8F0] dark:border-white/10">
+                  Собственный капитал запускает только 1-ю волну — дальше <strong className="text-[#0F172A] dark:text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-[#475569] dark:text-[#CBD5E1] leading-relaxed">
+                Детализация рентабельности и себестоимости скрыта в соответствии с правами вашей роли.
+              </p>
+            )}
           </div>
         </div>
       </div>

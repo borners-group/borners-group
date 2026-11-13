@@ -4,6 +4,7 @@ import {
   computeModelScenarioMetrics,
 } from './scenarioData.ts';
 import { getActingSkuByWbOrVendor } from './actingAssortment2027.ts';
+import { isUnverifiedActingSku } from './scenarioS1_100M.ts';
 import {
   type CanonicalBrandCode,
   computeProcurementPlan,
@@ -571,11 +572,8 @@ export function computeProductGroupMetrics(
     )[0];
 
     if (earliestPo) {
-      const prepayPct = m.sharedSupplyAndFact?.factoryParams.prepaymentPct ?? 30;
       firstWaveStartRub += earliestPo.totalOrderRub;
-      firstWavePrepayRub += Math.round(
-        (earliestPo.totalOrderRub * prepayPct) / 100
-      );
+      firstWavePrepayRub += earliestPo.prepaymentRub;
       if (
         earliestPo.orderPlacementDateIso &&
         (!earliestOrderDateIso ||
@@ -672,7 +670,8 @@ export const ALL_CANONICAL_BRANDS: CanonicalBrandCode[] = [
 export function buildBrandCatalogSections(
   models: ScenarioModelSpec[],
   scenarioByBrand: Partial<Record<CanonicalBrandCode, GrowthScenarioDef>>,
-  fallbackScenario: GrowthScenarioDef
+  fallbackScenario: GrowthScenarioDef,
+  includeGroupPortfolioInS1: boolean = false
 ): BrandCatalogSectionSummary[] {
   const activeModels = models.filter(
     (m) =>
@@ -712,6 +711,8 @@ export function buildBrandCatalogSections(
             Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
             Boolean(m.plansByScenario[100])
         )
+      : brandCode === 'BORNERS' && activeScen.id === 1 && !includeGroupPortfolioInS1
+      ? brandModels.filter((m) => !isUnverifiedActingSku(m.code))
       : brandModels;
 
     for (const m of scopedModelsForTotals) {
@@ -737,12 +738,8 @@ export function buildBrandCatalogSections(
         (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
       )[0];
       if (earliestPo) {
-        const prepayPct =
-          m.sharedSupplyAndFact?.factoryParams.prepaymentPct ?? 30;
         firstWaveStartRub += earliestPo.totalOrderRub;
-        firstWavePrepayRub += Math.round(
-          (earliestPo.totalOrderRub * prepayPct) / 100
-        );
+        firstWavePrepayRub += earliestPo.prepaymentRub;
         if (
           earliestPo.orderPlacementDateIso &&
           (!earliestOrderDateIso ||
@@ -772,7 +769,10 @@ export function buildBrandCatalogSections(
       primaryUnit: cfg.primaryUnit,
       secondaryUnit: cfg.secondaryUnit,
       activeScenario: activeScen || fallbackScenario,
-      models: brandModels,
+      models:
+        brandCode === 'BORNERS' && activeScen?.id === 1 && !includeGroupPortfolioInS1
+          ? scopedModelsForTotals
+          : brandModels,
       decRevenueRub,
       annualRevenueRub,
       annualPacks,

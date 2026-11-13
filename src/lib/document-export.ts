@@ -1243,6 +1243,54 @@ export function downloadXlsxWorkbook(fileName: string, sheets: XlsxSheetSpec[]):
 // 4. ГОТОВЫЕ ГЕНЕРАТОРЫ PDF И EXCEL ДЛЯ ВСЕХ ДОКУМЕНТОВ И РАЗДЕЛОВ ПЛАТФОРМЫ
 // -----------------------------------------------------------------------------
 
+function allocateBatchPacksByProfileSizes(
+  totalPacks: number,
+  sizes: string[],
+  sharesPct: Record<string, number>
+): number[] {
+  if (sizes.length === 0) return [];
+  const weights = sizes.map((sz) => Math.max(0, sharesPct[sz] ?? Math.round(100 / sizes.length)));
+  const weightSum = weights.reduce((a, b) => a + b, 0) || 100;
+  const raw = weights.map((w) => (totalPacks * w) / weightSum);
+  const floors = raw.map((v) => Math.floor(v));
+  let rem = totalPacks - floors.reduce((a, b) => a + b, 0);
+  const order = raw
+    .map((v, i) => ({ i, frac: v - floors[i] }))
+    .sort((a, b) => b.frac - a.frac);
+  for (let k = 0; k < order.length && rem > 0; k++) {
+    floors[order[k].i] += 1;
+    rem -= 1;
+  }
+  return floors;
+}
+
+function resolvePaymentTermsZh(paymentTerms?: string): string {
+  const raw = (paymentTerms || '').trim();
+  if (!raw) return '30%定金/70%尾款';
+  if (/100\s*%/.test(raw) && !/\d+\s*%?\s*[\/\-—+·]\s*\d+/.test(raw)) {
+    return '100%预付';
+  }
+  const pairMatch = raw.match(
+    /(\d{1,3})\s*%?\s*(?:[\/\-—+·]|предоплат\S*\s*[,;и·\s]*)\s*(\d{1,3})/i
+  );
+  if (pairMatch) {
+    const a = Number(pairMatch[1]);
+    const b = Number(pairMatch[2]);
+    if (a > 0 && b >= 0 && a + b === 100) {
+      return `${a}%定金/${b}%尾款`;
+    }
+  }
+  const singleMatch = raw.match(/(\d{1,3})\s*%/);
+  if (singleMatch) {
+    const p = Number(singleMatch[1]);
+    if (p > 0 && p < 100) {
+      return `${p}%定金/${100 - p}%尾款`;
+    }
+    if (p === 100) return '100%预付';
+  }
+  return '30%定金/70%尾款';
+}
+
 export function exportDocumentAsPdf(
   doc: DocumentItem,
   opts?: {
@@ -1262,42 +1310,83 @@ export function exportDocumentAsPdf(
   // 1. Техническое задание для фабрики (Кит/Англ/Рус)
   if (doc.id === 'doc-1' || doc.category === 'производство' || linkedConcept) {
     const c = linkedConcept;
+    const docProfile = getBrandProductionProfile(
+      c?.brandId || doc.brandId,
+      c?.name || doc.title
+    );
+    const docPackUnits = Math.max(1, c?.packUnitsCount || docProfile.defaultPackUnits);
+    const docSizeRange =
+      docProfile.sizes.length > 0
+        ? `${docProfile.sizes[0]} – ${docProfile.sizes[docProfile.sizes.length - 1]}`
+        : docProfile.sizeGridLabelRu;
+    const totalSampleBatchPacks = 3000;
+    const allocatedPacks = allocateBatchPacksByProfileSizes(
+      totalSampleBatchPacks,
+      docProfile.sizes,
+      docProfile.sizeSharesPct
+    );
+    const packShortRu =
+      docProfile.brandCode === 'AKUSHA'
+        ? 'пар'
+        : docProfile.brandCode === 'LISKANI'
+        ? 'компл.'
+        : 'наб.';
+    const pcsShortRu =
+      docProfile.brandCode === 'AKUSHA'
+        ? 'пар'
+        : docProfile.brandCode === 'LISKANI'
+        ? 'полот.'
+        : 'шт.';
+    const dynamicSizeRows = docProfile.sizes.map((sz, idx) => {
+      const packs = allocatedPacks[idx] || 0;
+      const pcs = packs * docPackUnits;
+      const sharePct = docProfile.sizeSharesPct[sz] ?? Math.round(100 / docProfile.sizes.length);
+      return [
+        sz,
+        `${sharePct}%`,
+        `${packs.toLocaleString('ru-RU')} ${packShortRu}`,
+        `${pcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
+        'Эталон утверждён',
+      ];
+    });
+    const totalSampleBatchPcs = totalSampleBatchPacks * docPackUnits;
+
     downloadEditorialPdfDocument({
       fileName: doc.fileName.replace(/\.[^/.]+$/, '') + '.pdf',
-      docCode: c?.code || 'BRN-BL-2027',
+      docCode: c?.code || linkedProduct?.sku || doc.id.toUpperCase(),
       categoryLabel: 'Производственное ТЗ (RU / EN / ZH)',
       brandLabel,
       title: doc.title,
       subtitle:
-        'Трёхъязычная производственная спецификация для швейной фабрики: материалы, конструкция, табель мер и размерная сетка заказа',
+        'Трёхъязычная производственная спецификация для фабрики: материалы, конструкция, табель мер и размерная сетка заказа',
       metaGrid: [
-        { label: 'Артикул / Код', value: c?.code || linkedProduct?.sku || 'BRN-BL-2027' },
-        { label: 'Фабрика-исполнитель', value: c?.supplierName || 'Guangdong Apex Intimate' },
-        { label: 'Стандарт качества', value: 'AQL 1.5 · Стирка 40°C' },
+        { label: 'Артикул / Код', value: c?.code || linkedProduct?.sku || doc.id.toUpperCase() },
+        { label: 'Фабрика-исполнитель', value: c?.supplierName || docProfile.defaultFactoryNameZh },
+        { label: 'Стандарт качества', value: 'AQL 1.5 · Контроль партии' },
         { label: 'Автор и дата', value: `${doc.uploadedBy} · ${doc.uploadedAt}` },
       ],
       sections: [
         {
           badge: 'RU · РУССКИЙ',
-          title: 'Спецификация модели и требования к пошиву',
+          title: 'Спецификация модели и требования к производству',
           subtitle: 'Раздел 01',
           rows: [
             {
               label: 'Наименование модели',
-              value: c?.techPack?.ru?.modelName || 'Боксеры BORNERS BIG LOVE (Лимитированная капсула)',
+              value: c?.techPack?.ru?.modelName || doc.title,
             },
             {
-              label: 'Основное полотно и плотность',
-              value: c?.techPack?.ru?.compositionAndDensity || '92% Австрийский микромодал Lenzing, 8% Эластан · 190 г/м²',
+              label: 'Основной материал и плотность',
+              value: c?.techPack?.ru?.compositionAndDensity || docProfile.defaultMaterialRu,
               highlight: true,
             },
             {
               label: 'Конструкция и лекало',
-              value: c?.techPack?.ru?.construction || 'Анатомический 3D-гульфик без среднего заднего шва',
+              value: c?.techPack?.ru?.construction || docProfile.defaultConstructionRu,
             },
             {
-              label: 'Поясная резинка и швы',
-              value: c?.techPack?.ru?.waistbandSpec || 'Мягкая жаккардовая резинка 38 мм с изнанкой микрофибра · Плоские швы 4 иглы / 6 нитей',
+              label: 'Фурнитура / окантовка и швы',
+              value: c?.techPack?.ru?.waistbandSpec || docProfile.defaultWaistbandOrTrimRu,
             },
           ],
         },
@@ -1308,41 +1397,45 @@ export function exportDocumentAsPdf(
           rows: [
             {
               label: 'Style & Construction (EN)',
-              value: c?.techPack?.en?.construction || '3D Anatomical Pouch Boxer Brief, Seamless Back Panel, Flatlock 4-Needle 6-Thread',
+              value: c?.techPack?.en?.construction || docProfile.defaultConstructionEn,
             },
             {
               label: '款式与工艺结构 (ZH 中文)',
-              value: c?.techPack?.zh?.construction || '3D立体囊袋平角内裤，后档无中缝设计，四针六线无骨平缝工艺',
+              value: c?.techPack?.zh?.construction || docProfile.defaultConstructionZh,
             },
             {
               label: 'Fabric & GSM (EN)',
-              value: c?.techPack?.en?.compositionAndDensity || '92% Lenzing MicroModal + 8% Elastane, 190 GSM, Pre-shrunk ≤ 2.5%',
+              value: c?.techPack?.en?.compositionAndDensity || docProfile.defaultMaterialEn,
             },
             {
               label: '面料成分与克重 (ZH 中文)',
-              value: c?.techPack?.zh?.compositionAndDensity || '92% 兰精超细莫代尔 + 8% 氨纶，克重 190g/m²，水洗缩水率 ≤ 2.5%',
+              value: c?.techPack?.zh?.compositionAndDensity || docProfile.defaultMaterialZh,
               highlight: true,
             },
           ],
         },
         {
           badge: 'SIZE MATRIX',
-          title: 'Размерная сетка и распределение тиража партии (S – 4XL)',
-          subtitle: 'Комплектация: 3 шт. в наборе',
+          title: `Размерная сетка и распределение тиража партии (${docSizeRange})`,
+          subtitle: `Комплектация: ${docPackUnits} ед. (${docProfile.packUnitLabelRu})`,
           table: {
-            headers: ['Размер (Size / 尺码)', 'Обхват талии (см)', 'Наборов (Packs / 盒)', 'Штук белья (Pcs / 件)', 'Статус лекала'],
-            rows: [
-              ['S (44–46)', '74–79 см', '150 наб.', '450 шт.', 'Эталон утверждён'],
-              ['M (46–48)', '80–85 см', '450 наб.', '1 350 шт.', 'Эталон утверждён'],
-              ['L (48–50)', '86–91 см', '750 наб.', '2 250 шт.', 'Эталон утверждён'],
-              ['XL (50–52)', '92–97 см', '600 наб.', '1 800 шт.', 'Эталон утверждён'],
-              ['2XL (52–54)', '98–104 см', '450 наб.', '1 350 шт.', 'Эталон утверждён'],
-              ['3XL (54–56)', '105–111 см', '300 наб.', '900 шт.', 'Эталон утверждён'],
-              ['4XL (56–58)', '112–118 см', '300 наб.', '900 шт.', 'Эталон утверждён'],
+            headers: [
+              'Размер (Size / 尺码)',
+              'Доля в матрице (%)',
+              `${docProfile.packUnitLabelRu} (Packs)`,
+              `${docProfile.itemsUnitLabelRu} (Pcs)`,
+              'Статус лекала',
             ],
-            footer: ['ИТОГО ПАРТИЯ (TOTAL)', 'S – 4XL', '3 000 наборов', '9 000 штук белья', 'AQL 1.5 PASS'],
+            rows: dynamicSizeRows,
+            footer: [
+              'ИТОГО ПАРТИЯ (TOTAL)',
+              docSizeRange,
+              `${totalSampleBatchPacks.toLocaleString('ru-RU')} ${packShortRu}`,
+              `${totalSampleBatchPcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
+              'AQL 1.5 PASS',
+            ],
           },
-          note: 'Упаковка: индивидуальный матовый тубус / зип-пакет 180 мкм с маркировкой Честный ЗНАК (DataMatrix) и EAN-13.',
+          note: 'Упаковка: индивидуальная фирменная упаковка с маркировкой Честный ЗНАК (DataMatrix) и EAN-13.',
         },
       ],
       footerRight: `УТВЕРЖДЕНО · ${doc.uploadedAt} · v2.4`,
@@ -1585,7 +1678,7 @@ export function exportDocumentAsExcel(
         height: 22,
         cells: [
           { value: r.periodLabel, style: even ? 5 : 6 },
-          { value: r.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS', style: even ? 5 : 6 },
+          { value: formatLabBrandLabel(r.brandId), style: even ? 5 : 6 },
           { value: 'Базовый', style: even ? 5 : 6 },
           { value: r.plannedBuyoutUnits, type: 'number', style: even ? 7 : 8 },
           { value: r.avgSellingPriceRub, type: 'number', style: even ? 9 : 10 },
@@ -1646,7 +1739,7 @@ export function exportDocumentAsExcel(
         cells: [
           { value: p.sku, style: even ? 5 : 6 },
           { value: p.name, style: even ? 5 : 6 },
-          { value: p.brandId === 'NA_TELE' ? 'НА ТЕЛЕ' : 'BORNERS', style: even ? 5 : 6 },
+          { value: formatLabBrandLabel(p.brandId), style: even ? 5 : 6 },
           { value: p.collection, style: even ? 5 : 6 },
           { value: p.economics.actualRetailPrice, type: 'number', style: even ? 9 : 10 },
           { value: p.economics.unitCostPrice, type: 'number', style: even ? 9 : 10 },
@@ -1674,8 +1767,17 @@ export function exportDocumentAsExcel(
     return;
   }
 
-  // Для производственного ТЗ / Заказа фабрике — строим красивую двухлистную Excel-спецификацию (Лист 1: ТЗ RU/EN/ZH, Лист 2: Табель размеров и заказ S–4XL)
+  // Для производственного ТЗ / Заказа фабрике — строим красивую двухлистную Excel-спецификацию (Лист 1: ТЗ RU/EN/ZH, Лист 2: Табель размеров и заказ)
   const c = linkedConcept;
+  const docProfile = getBrandProductionProfile(
+    c?.brandId || doc.brandId,
+    c?.name || doc.title
+  );
+  const docPackUnits = Math.max(1, c?.packUnitsCount || docProfile.defaultPackUnits);
+  const docSizeRange =
+    docProfile.sizes.length > 0
+      ? `${docProfile.sizes[0]} – ${docProfile.sizes[docProfile.sizes.length - 1]}`
+      : docProfile.sizeGridLabelRu;
   const specRows: XlsxRow[] = [
     {
       height: 36,
@@ -1706,72 +1808,72 @@ export function exportDocumentAsExcel(
       height: 26,
       cells: [
         { value: 'Наименование и код модели', style: 5 },
-        { value: c?.techPack?.ru?.modelName || 'Боксеры BORNERS BIG LOVE (BRN-BL-2027)', style: 5 },
-        { value: c?.techPack?.en?.modelName || 'BORNERS BIG LOVE Boxer Brief (BRN-BL-2027)', style: 5 },
-        { value: c?.techPack?.zh?.modelName || 'BORNERS BIG LOVE 男士莫代尔平角内裤 (BRN-BL-2027)', style: 5 },
+        { value: c?.techPack?.ru?.modelName || doc.title, style: 5 },
+        { value: c?.techPack?.en?.modelName || `${docProfile.brandLabel} · ${doc.title}`, style: 5 },
+        { value: c?.techPack?.zh?.modelName || `${docProfile.brandLabel} · ${docProfile.defaultCategoryZh}`, style: 5 },
       ],
     },
     {
       height: 28,
       cells: [
         { value: 'Конструкция и посадка', style: 6 },
-        { value: c?.techPack?.ru?.construction || 'Анатомический 3D-гульфик без среднего заднего шва', style: 6 },
-        { value: c?.techPack?.en?.construction || '3D Anatomical Pouch, Seamless Back Panel', style: 6 },
-        { value: c?.techPack?.zh?.construction || '3D立体囊袋剪裁，后片无中缝防夹臀设计', style: 6 },
+        { value: c?.techPack?.ru?.construction || docProfile.defaultConstructionRu, style: 6 },
+        { value: c?.techPack?.en?.construction || docProfile.defaultConstructionEn, style: 6 },
+        { value: c?.techPack?.zh?.construction || docProfile.defaultConstructionZh, style: 6 },
       ],
     },
     {
       height: 26,
       cells: [
         { value: 'Основной материал и состав', style: 5 },
-        { value: c?.techPack?.ru?.compositionAndDensity || '92% микромодал Lenzing + 8% эластан, 190 г/м²', style: 5 },
-        { value: c?.techPack?.en?.compositionAndDensity || '92% Lenzing MicroModal + 8% Elastane, 190 GSM', style: 5 },
-        { value: c?.techPack?.zh?.compositionAndDensity || '92% 兰精超细莫代尔 + 8% 氨纶，克重 190g/m²', style: 5 },
+        { value: c?.techPack?.ru?.compositionAndDensity || docProfile.defaultMaterialRu, style: 5 },
+        { value: c?.techPack?.en?.compositionAndDensity || docProfile.defaultMaterialEn, style: 5 },
+        { value: c?.techPack?.zh?.compositionAndDensity || docProfile.defaultMaterialZh, style: 5 },
       ],
     },
     {
       height: 26,
       cells: [
-        { value: 'Поясная резинка', style: 6 },
-        { value: c?.techPack?.ru?.waistbandSpec || 'Жаккардовая резинка 38 мм с микрофиброй на изнанке', style: 6 },
-        { value: c?.techPack?.en?.waistbandSpec || '38mm Soft Brushed Jacquard Elastic Waistband', style: 6 },
-        { value: c?.techPack?.zh?.waistbandSpec || '38mm 超柔磨毛提花松紧腰带，不起卷不勒腰', style: 6 },
+        { value: 'Фурнитура / окантовка', style: 6 },
+        { value: c?.techPack?.ru?.waistbandSpec || docProfile.defaultWaistbandOrTrimRu, style: 6 },
+        { value: c?.techPack?.en?.waistbandSpec || docProfile.defaultWaistbandOrTrimRu, style: 6 },
+        { value: c?.techPack?.zh?.waistbandSpec || docProfile.defaultWaistbandOrTrimZh, style: 6 },
       ],
     },
     {
       height: 26,
       cells: [
         { value: 'Швы и обработка', style: 5 },
-        { value: c?.techPack?.ru?.seamsSpec || 'Плоские бельевые швы (4 иглы, 6 нитей)', style: 5 },
-        { value: c?.techPack?.en?.seamsSpec || 'Flatlock 4-Needle 6-Thread Seamless Stitching', style: 5 },
-        { value: c?.techPack?.zh?.seamsSpec || '四针六线无骨平缝工艺，每英寸14针', style: 5 },
+        { value: c?.techPack?.ru?.seamsSpec || docProfile.defaultConstructionRu, style: 5 },
+        { value: c?.techPack?.en?.seamsSpec || docProfile.defaultConstructionEn, style: 5 },
+        { value: c?.techPack?.zh?.seamsSpec || docProfile.defaultConstructionZh, style: 5 },
       ],
     },
     {
       height: 26,
       cells: [
         { value: 'Цвета и Pantone', style: 6 },
-        { value: c?.techPack?.ru?.colorAndPantone || 'Терракотовый + Тёмно-синий + Графит', style: 6 },
-        { value: c?.techPack?.en?.colorAndPantone || 'Terracotta + Deep Navy + Graphite', style: 6 },
-        { value: c?.techPack?.zh?.colorAndPantone || '赤陶色 + 深藏青 + 石墨灰 (色牢度 ≥ 4.5级)', style: 6 },
+        { value: c?.techPack?.ru?.colorAndPantone || 'По утверждённой карте цветов', style: 6 },
+        { value: c?.techPack?.en?.colorAndPantone || 'Approved colorway', style: 6 },
+        { value: c?.techPack?.zh?.colorAndPantone || '按确认色卡配比生产 (色牢度 ≥ 4.5级)', style: 6 },
       ],
     },
     {
       height: 26,
       cells: [
         { value: 'Упаковка и маркировка', style: 5 },
-        { value: c?.techPack?.ru?.packagingSpec || 'Матовый тубус / зип-пакет 180 мкм + Честный ЗНАК', style: 5 },
-        { value: c?.techPack?.en?.packagingSpec || 'Matte Pouch 180um + EAN-13 & DataMatrix Barcode', style: 5 },
-        { value: c?.techPack?.zh?.packagingSpec || '180微米磨砂拉链袋/礼盒 + EAN-13及俄罗斯诚实标签', style: 5 },
+        { value: c?.techPack?.ru?.packagingSpec || `Фирменная упаковка (${docPackUnits} ед.) + Честный ЗНАК`, style: 5 },
+        { value: c?.techPack?.en?.packagingSpec || 'Brand Packaging + EAN-13 & DataMatrix Barcode', style: 5 },
+        { value: c?.techPack?.zh?.packagingSpec || '独立品牌包装 + EAN-13及俄罗斯诚实标签', style: 5 },
       ],
     },
     {
       height: 26,
       cells: [
         { value: 'Контроль качества (QC)', style: 6 },
-        { value: c?.techPack?.ru?.qualityRequirements || 'AQL 1.5, усадка после стирки 40°C не более 2,5%', style: 6 },
-        { value: c?.techPack?.en?.qualityRequirements || 'AQL 1.5 Inspection, Wash Shrinkage ≤ 2.5%', style: 6 },
-        { value: c?.techPack?.zh?.qualityRequirements || 'AQL 1.5 验货标准，40°C水洗缩水率 ≤ 2.5%', style: 6 },
+        { value: c?.techPack?.ru?.qualityRequirements || 'AQL 1.5 перед отгрузкой партии', style: 6 },
+        { value: c?.techPack?.en?.qualityRequirements || 'AQL 1.5 Pre-Shipment Inspection', style: 6 },
+        { value: c?.techPack?.zh?.qualityRequirements || 'AQL 1.5 验货标准', style: 6 },
       ],
     },
   ];
@@ -1780,14 +1882,14 @@ export function exportDocumentAsExcel(
     {
       height: 36,
       mergeAcross: 5,
-      cells: [{ value: `РАЗМЕРНАЯ МАТРИЦА И РАСЧЁТ ЗАКАЗА ПАРТИИ (S – 4XL)`, style: 1 }],
+      cells: [{ value: `РАЗМЕРНАЯ МАТРИЦА И РАСЧЁТ ЗАКАЗА ПАРТИИ (${docSizeRange})`, style: 1 }],
     },
     {
       height: 24,
       mergeAcross: 5,
       cells: [
         {
-          value: `Комплектация: 3 шт. в наборе  |  Стандарт приёмки: AQL 1.5  |  Валюта расчёта: RUB (₽)`,
+          value: `Комплектация: ${docPackUnits} ед. (${docProfile.packUnitLabelRu})  |  Стандарт приёмки: AQL 1.5  |  Валюта расчёта: RUB (₽)`,
           style: 2,
         },
       ],
@@ -1797,45 +1899,45 @@ export function exportDocumentAsExcel(
       height: 28,
       cells: [
         { value: 'Размер (Size)', style: 4 },
-        { value: 'Российский размер', style: 4 },
-        { value: 'Количество наборов (Packs)', style: 4 },
-        { value: 'Штук белья (Pcs)', style: 4 },
-        { value: 'Себестоимость 1 шт. (₽)', style: 4 },
+        { value: 'Доля в матрице (%)', style: 4 },
+        { value: `Количество (${docProfile.packUnitLabelRu})`, style: 4 },
+        { value: `${docProfile.itemsUnitLabelRu} (Pcs)`, style: 4 },
+        { value: 'Себестоимость 1 ед. (₽)', style: 4 },
         { value: 'Сумма по размеру (₽)', style: 4 },
       ],
     },
   ];
 
-  const sizeSpec = [
-    { sz: 'S', ru: '44–46', packs: 150, unitPrice: 360 },
-    { sz: 'M', ru: '46–48', packs: 450, unitPrice: 360 },
-    { sz: 'L', ru: '48–50', packs: 750, unitPrice: 360 },
-    { sz: 'XL', ru: '50–52', packs: 600, unitPrice: 360 },
-    { sz: '2XL', ru: '52–54', packs: 450, unitPrice: 375 },
-    { sz: '3XL', ru: '54–56', packs: 300, unitPrice: 390 },
-    { sz: '4XL', ru: '56–58', packs: 300, unitPrice: 390 },
-  ];
+  const defaultBatchPacks = 3000;
+  const allocatedBatchPacks = allocateBatchPacksByProfileSizes(
+    defaultBatchPacks,
+    docProfile.sizes,
+    docProfile.sizeSharesPct
+  );
+  const baseUnitCostRub = Math.max(1, Math.round(c?.plannedUnitCost || 360));
 
   let totalPacks = 0;
   let totalPcs = 0;
   let totalRub = 0;
 
-  sizeSpec.forEach((row, idx) => {
+  docProfile.sizes.forEach((sz, idx) => {
     const even = idx % 2 === 0;
-    const pcs = row.packs * 3;
-    const sum = pcs * row.unitPrice;
-    totalPacks += row.packs;
+    const packs = allocatedBatchPacks[idx] || 0;
+    const pcs = packs * docPackUnits;
+    const sum = pcs * baseUnitCostRub;
+    const sharePct = docProfile.sizeSharesPct[sz] ?? Math.round(100 / docProfile.sizes.length);
+    totalPacks += packs;
     totalPcs += pcs;
     totalRub += sum;
 
     sizeRows.push({
       height: 22,
       cells: [
-        { value: row.sz, style: even ? 5 : 6 },
-        { value: row.ru, style: even ? 5 : 6 },
-        { value: row.packs, type: 'number', style: even ? 7 : 8 },
+        { value: sz, style: even ? 5 : 6 },
+        { value: `${sharePct}%`, style: even ? 5 : 6 },
+        { value: packs, type: 'number', style: even ? 7 : 8 },
         { value: pcs, type: 'number', style: even ? 7 : 8 },
-        { value: row.unitPrice, type: 'number', style: even ? 9 : 10 },
+        { value: baseUnitCostRub, type: 'number', style: even ? 9 : 10 },
         { value: sum, type: 'number', style: even ? 9 : 10 },
       ],
     });
@@ -1845,10 +1947,10 @@ export function exportDocumentAsExcel(
     height: 28,
     cells: [
       { value: 'ИТОГО ПО ЗАКАЗУ', style: 11 },
-      { value: 'S – 4XL', style: 11 },
+      { value: docSizeRange, style: 11 },
       { value: totalPacks, type: 'number', style: 11 },
       { value: totalPcs, type: 'number', style: 11 },
-      { value: Math.round(totalRub / totalPcs), type: 'number', style: 12 },
+      { value: totalPcs > 0 ? Math.round(totalRub / totalPcs) : baseUnitCostRub, type: 'number', style: 12 },
       { value: totalRub, type: 'number', style: 12 },
     ],
   });
@@ -1867,6 +1969,16 @@ export function exportDocumentAsExcel(
   ]);
 }
 
+export interface PdfBlocksConfig {
+  photosFrontBack?: boolean;
+  bilingualSpecs?: boolean;
+  sizeMatrix?: boolean;
+  unitAndTotalPrice?: boolean;
+  multiCurrency?: boolean;
+  qualityAndHonestSign?: boolean;
+  canViewCostPrice?: boolean;
+}
+
 export function exportConceptProductionPdf(
   concept: ProductConcept,
   orderInfo: {
@@ -1881,28 +1993,25 @@ export function exportConceptProductionPdf(
     plannedReadyDate: string;
     paymentTerms: string;
     orderVersion: number;
-  }
+  },
+  pdfBlocksConfig?: PdfBlocksConfig
 ): void {
   const normBrand = normalizeLabBrandCode(concept.brandId);
   const brandLabel = formatLabBrandLabel(concept.brandId);
   const profile = getBrandProductionProfile(concept.brandId, concept.name);
-  const factoryZh =
-    normBrand === 'AKUSHA'
-      ? '温州阿库莎童鞋制造厂 (温州)'
-      : normBrand === 'LISKANI'
-      ? '绍兴柯桥家纺窗帘定制工坊 (绍兴)'
-      : normBrand === 'NA_TELE'
-      ? '汕头无痕贴身内衣制造厂 (广东)'
-      : '广东奥佩克内衣有限公司 (佛山)';
-  const defaultTitleZh =
-    normBrand === 'AKUSHA'
-      ? `AKUSHA 儿童鞋履 · ${concept.name}`
-      : normBrand === 'LISKANI'
-      ? `LISKANI 家居窗帘套装 · ${concept.name}`
-      : normBrand === 'NA_TELE'
-      ? `НА ТЕЛЕ 无痕贴身内衣 · ${concept.name}`
-      : `${brandLabel} 男士莫代尔内裤 · ${concept.name}`;
+  const factoryZh = profile.defaultFactoryNameZh;
+  const categoryZhShort = profile.defaultCategoryZh.split(' (')[0];
+  const defaultTitleZh = `${brandLabel} ${categoryZhShort} · ${concept.name}`;
   const defaultBackCaption = `${profile.defaultDetailCaptionRu} (${orderInfo.approvedSampleVersion})`;
+
+  const showPhotos = pdfBlocksConfig?.photosFrontBack !== false;
+  const showBilingualSpecs = pdfBlocksConfig?.bilingualSpecs !== false;
+  const showSizeMatrix = pdfBlocksConfig?.sizeMatrix !== false;
+  const showUnitAndTotalPrice = pdfBlocksConfig?.unitAndTotalPrice !== false;
+  const showMultiCurrency = pdfBlocksConfig?.multiCurrency !== false;
+  const showQualityAndHonestSign = pdfBlocksConfig?.qualityAndHonestSign !== false;
+  const canSeeCost = pdfBlocksConfig?.canViewCostPrice !== false;
+  const paymentTermsZh = resolvePaymentTermsZh(orderInfo.paymentTerms);
 
   const extraSizeKeys = Object.keys(orderInfo.packsBySize || {}).filter(
     (k) => !profile.sizes.includes(k) && (orderInfo.packsBySize[k] || 0) > 0
@@ -1924,12 +2033,22 @@ export function exportConceptProductionPdf(
     totalPacks += packs;
     totalPcs += pcs;
     const sum = pcs * (orderInfo.unitPrice || 0);
-    return [
+    const baseCols = [
       sz,
       `${packs.toLocaleString('ru-RU')} ${packShortRu}`,
       `${pcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
-      `${orderInfo.unitPrice} ${orderInfo.currency}`,
-      `${sum.toLocaleString('ru-RU')} ${orderInfo.currency}`,
+    ];
+    if (!showUnitAndTotalPrice) {
+      return baseCols;
+    }
+    if (!canSeeCost) {
+      return [...baseCols, 'Скрыто', 'Скрыто'];
+    }
+    const currSuffix = showMultiCurrency ? ` ${orderInfo.currency}` : '';
+    return [
+      ...baseCols,
+      `${orderInfo.unitPrice}${currSuffix}`,
+      `${sum.toLocaleString('ru-RU')}${currSuffix}`,
     ];
   });
 
@@ -1958,6 +2077,98 @@ export function exportConceptProductionPdf(
     profile.defaultMaterialRu
   );
 
+  const sections: EditorialPdfSection[] = [];
+  if (showBilingualSpecs) {
+    const bilingualSpecs = [
+      {
+        labelZh: '款式名称与版型',
+        labelRu: 'Модель и конструкция',
+        zhLarge: resolvedConstructionZh,
+        ruSmall: `${concept.name} · ${resolvedConstructionRu}`,
+        highlight: true,
+      },
+      {
+        labelZh: '面料成分与克重',
+        labelRu: 'Состав материала и плотность',
+        zhLarge: resolvedCompZh,
+        ruSmall: resolvedCompRu,
+        highlight: true,
+      },
+      {
+        labelZh: '礼盒颜色配比',
+        labelRu: 'Комплектация и палитра',
+        zhLarge: `每组 ${orderInfo.unitsPerPack} 件装 · 颜色按确认色卡配比`,
+        ruSmall: `${orderInfo.unitsPerPack} ед. в упаковке: ${orderInfo.packColorComposition}`,
+      },
+      ...(showQualityAndHonestSign
+        ? [
+            {
+              labelZh: '品控标准与检验',
+              labelRu: 'Контроль качества и маркировка',
+              zhLarge: '执行 AQL 1.5 验货标准 · 每件粘贴俄罗斯诚实标签 (DataMatrix)',
+              ruSmall:
+                'Приёмка AQL 1.5 перед отгрузкой · Маркировка Честный ЗНАК (DataMatrix) и EAN-13',
+            },
+          ]
+        : []),
+    ];
+    sections.push({
+      badge: '01 · 工艺标准',
+      titleZh: '一、产品工艺规格与面辅料标准',
+      title: 'Спецификация изделия, материалы и стандарты пошива (перевод на русский)',
+      subtitle: `Утверждено · ${orderInfo.approvedSampleVersion}`,
+      bilingualSpecs,
+    });
+  }
+
+  if (showSizeMatrix) {
+    const currSuffix = showMultiCurrency ? ` ${orderInfo.currency}` : '';
+    const tableHeaders = showUnitAndTotalPrice
+      ? [
+          '尺码 (Размер)',
+          `包装数 (${profile.packUnitLabelRu})`,
+          `总数量 (${profile.itemsUnitLabelRu})`,
+          `单价 (Цена 1 ед.${currSuffix})`,
+          `合计金额 (Сумма${currSuffix})`,
+        ]
+      : [
+          '尺码 (Размер)',
+          `包装数 (${profile.packUnitLabelRu})`,
+          `总数量 (${profile.itemsUnitLabelRu})`,
+        ];
+    const tableFooter = showUnitAndTotalPrice
+      ? [
+          '合计总订单 (ИТОГО)',
+          `${totalPacks.toLocaleString('ru-RU')} ${packShortRu}`,
+          `${totalPcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
+          canSeeCost ? `${orderInfo.unitPrice}${currSuffix}` : 'Скрыто',
+          canSeeCost ? `${totalSum.toLocaleString('ru-RU')}${currSuffix}` : 'Скрыто',
+        ]
+      : [
+          '合计总订单 (ИТОГО)',
+          `${totalPacks.toLocaleString('ru-RU')} ${packShortRu}`,
+          `${totalPcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
+        ];
+    sections.push({
+      badge: '02 · 尺码明细',
+      titleZh: `二、大货尺码配比及订单金额明细 (${profile.sizeGridLabelZh})`,
+      title: `${profile.sizeGridLabelRu} (${sizeRangeShort}) и расчёт стоимости партии`,
+      subtitle: `每组 ${orderInfo.unitsPerPack} 件 (В 1 упаковке: ${orderInfo.unitsPerPack} ед.)`,
+      table: {
+        headers: tableHeaders,
+        rows: sizeRows,
+        footer: tableFooter,
+      },
+      ...(showQualityAndHonestSign
+        ? {
+            noteZh:
+              '验货标准：出货前执行 AQL 1.5 抽检 · 包装粘贴 EAN-13 及俄罗斯诚实标签 (DataMatrix)',
+            note: 'Контроль качества AQL 1.5 перед отгрузкой. Маркировка Честный ЗНАК и EAN-13 на каждой индивидуальной упаковке.',
+          }
+        : {}),
+    });
+  }
+
   downloadEditorialPdfDocument({
     fileName: `ТЗ_Заказ_Фабрика_${concept.code}_v${orderInfo.orderVersion}.pdf`,
     docCode: `${concept.code} · v${orderInfo.orderVersion}`,
@@ -1971,73 +2182,17 @@ export function exportConceptProductionPdf(
       { label: '款号 · Код модели', value: concept.code, subValueRu: `Артикул ${concept.code}` },
       { label: '生产工厂 · Фабрика', value: factoryZh, subValueRu: orderInfo.factoryName },
       { label: '交货日期 · Готовность', value: orderInfo.plannedReadyDate, subValueRu: 'Срок сдачи партии' },
-      { label: '结算货币 · Валюта', value: `${orderInfo.currency} · 30%定金/70%尾款`, subValueRu: orderInfo.paymentTerms },
+      {
+        label: showMultiCurrency ? '结算货币 · Валюта' : '付款方式 · Оплата',
+        value: showMultiCurrency ? `${orderInfo.currency} · ${paymentTermsZh}` : paymentTermsZh,
+        subValueRu: orderInfo.paymentTerms,
+      },
     ],
-    frontPhotoUrl: frontPhoto,
-    backPhotoUrl: backPhoto,
+    frontPhotoUrl: showPhotos ? frontPhoto : undefined,
+    backPhotoUrl: showPhotos ? backPhoto : undefined,
     frontPhotoCaption: `${concept.name} (${concept.code}) — лицевая фотография товара`,
     backPhotoCaption: defaultBackCaption,
-    sections: [
-      {
-        badge: '01 · 工艺标准',
-        titleZh: '一、产品工艺规格与面辅料标准',
-        title: 'Спецификация изделия, материалы и стандарты пошива (перевод на русский)',
-        subtitle: `Утверждено · ${orderInfo.approvedSampleVersion}`,
-        bilingualSpecs: [
-          {
-            labelZh: '款式名称与版型',
-            labelRu: 'Модель и конструкция',
-            zhLarge: resolvedConstructionZh,
-            ruSmall: `${concept.name} · ${resolvedConstructionRu}`,
-            highlight: true,
-          },
-          {
-            labelZh: '面料成分与克重',
-            labelRu: 'Состав материала и плотность',
-            zhLarge: resolvedCompZh,
-            ruSmall: resolvedCompRu,
-            highlight: true,
-          },
-          {
-            labelZh: '礼盒颜色配比',
-            labelRu: 'Комплектация и палитра',
-            zhLarge: `每组 ${orderInfo.unitsPerPack} 件装 · 颜色按确认色卡配比`,
-            ruSmall: `${orderInfo.unitsPerPack} ед. в упаковке: ${orderInfo.packColorComposition}`,
-          },
-          {
-            labelZh: '品控标准与检验',
-            labelRu: 'Контроль качества и маркировка',
-            zhLarge: '执行 AQL 1.5 验货标准 · 每件粘贴俄罗斯诚实标签 (DataMatrix)',
-            ruSmall: 'Приёмка AQL 1.5 перед отгрузкой · Маркировка Честный ЗНАК (DataMatrix) и EAN-13',
-          },
-        ],
-      },
-      {
-        badge: '02 · 尺码明细',
-        titleZh: `二、大货尺码配比及订单金额明细 (${profile.sizeGridLabelZh})`,
-        title: `${profile.sizeGridLabelRu} (${sizeRangeShort}) и расчёт стоимости партии`,
-        subtitle: `每组 ${orderInfo.unitsPerPack} 件 (В 1 упаковке: ${orderInfo.unitsPerPack} ед.)`,
-        table: {
-          headers: [
-            '尺码 (Размер)',
-            `包装数 (${profile.packUnitLabelRu})`,
-            `总数量 (${profile.itemsUnitLabelRu})`,
-            `单价 (Цена 1 ед. ${orderInfo.currency})`,
-            `合计金额 (Сумма ${orderInfo.currency})`,
-          ],
-          rows: sizeRows,
-          footer: [
-            '合计总订单 (ИТОГО)',
-            `${totalPacks.toLocaleString('ru-RU')} ${packShortRu}`,
-            `${totalPcs.toLocaleString('ru-RU')} ${pcsShortRu}`,
-            `${orderInfo.unitPrice} ${orderInfo.currency}`,
-            `${totalSum.toLocaleString('ru-RU')} ${orderInfo.currency}`,
-          ],
-        },
-        noteZh: '验货标准：出货前执行 AQL 1.5 抽检 · 包装粘贴 EAN-13 及俄罗斯诚实标签 (DataMatrix)',
-        note: 'Контроль качества AQL 1.5 перед отгрузкой. Маркировка Честный ЗНАК и EAN-13 на каждой индивидуальной упаковке.',
-      },
-    ],
+    sections,
     footerRight: `ORDER v${orderInfo.orderVersion} · ${brandLabel}`,
   });
 }

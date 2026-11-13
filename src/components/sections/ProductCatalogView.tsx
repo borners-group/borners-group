@@ -17,7 +17,12 @@ import {
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
-import { formatCurrencyRub } from '@/lib/finance';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+  formatCurrencyRub,
+} from '@/lib/finance';
 import {
   GrowthScenarioDef,
   ScenarioModelSpec,
@@ -187,6 +192,7 @@ function computeNextBrandSkuCode(
 
 export function ProductCatalogView() {
   const {
+    currentUser,
     products,
     concepts,
     updateConcept,
@@ -198,6 +204,26 @@ export function ProductCatalogView() {
     archiveEntity,
     notify,
   } = usePlatform();
+
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const canEditModel = (m: ScenarioModelSpec) => {
+    const norm = normalizePortfolioBrandCode(
+      detectModelBrandPortfolioLabel(m) || m.brandId || 'BORNERS'
+    );
+    return canUserEditBrand(currentUser, norm === 'ALL' ? 'BORNERS' : norm);
+  };
+  const canCreateInActiveScope =
+    brandFilter === 'ALL'
+      ? (['BORNERS', 'FUKAI', 'NA_TELE', 'AKUSHA', 'LISKANI'] as const).some((c) =>
+          canUserEditBrand(currentUser, c)
+        )
+      : canUserEditBrand(
+          currentUser,
+          normalizePortfolioBrandCode(brandFilter) === 'ALL'
+            ? 'BORNERS'
+            : normalizePortfolioBrandCode(brandFilter)
+        );
 
   const [viewMode, setViewMode] = useState<'grid' | 'groups' | 'table' | 'liskani_269'>('grid');
   const [liskani269MonthIdx, setLiskani269MonthIdx] = useState<'ALL' | number>('ALL');
@@ -375,11 +401,49 @@ export function ProductCatalogView() {
     };
   });
 
+  useEffect(() => {
+    if (createModalOpen) return;
+    const norm = normalizePortfolioBrandCode(
+      brandFilter && brandFilter !== 'ALL' ? brandFilter : 'BORNERS'
+    );
+    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const preset = BRAND_CREATE_PRESETS[bCode] || BRAND_CREATE_PRESETS.BORNERS;
+    setNewSkuForm((prev) =>
+      prev.brandCode === bCode
+        ? prev
+        : {
+            ...prev,
+            brandCode: bCode,
+            sku: computeNextBrandSkuCode(scenarioModels, bCode),
+            category: preset.categories[0],
+            customCategory: '',
+            collection: preset.defaultCollection,
+            materials: preset.defaultComposition,
+            unitsInPack: preset.defaultUnitsInPack,
+            plannedRetailPrice: preset.defaultPrice,
+            unitCostPrice: preset.defaultCost,
+            buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
+          }
+    );
+  }, [brandFilter, createModalOpen, scenarioModels]);
+
+  const editableBrandCodes = useMemo(
+    () =>
+      (['BORNERS', 'LISKANI', 'AKUSHA', 'NA_TELE', 'FUKAI'] as const).filter((c) =>
+        canUserEditBrand(currentUser, c)
+      ),
+    [currentUser]
+  );
+
   const openCreateModalForBrand = (targetBrandInput?: string) => {
     const norm = normalizePortfolioBrandCode(
       targetBrandInput || (brandFilter !== 'ALL' ? brandFilter : 'BORNERS')
     );
-    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const candidate: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const bCode: CanonicalBrandCode = canUserEditBrand(currentUser, candidate)
+      ? candidate
+      : editableBrandCodes[0] || candidate;
+    if (!canUserEditBrand(currentUser, bCode)) return;
     const preset = BRAND_CREATE_PRESETS[bCode] || BRAND_CREATE_PRESETS.BORNERS;
     setNewSkuForm({
       brandCode: bCode,
@@ -422,6 +486,7 @@ export function ProductCatalogView() {
     e?: React.MouseEvent
   ) => {
     e?.stopPropagation();
+    if (!canEditModel(modelToDelete)) return;
     markModelAsDeletedInStorage(modelToDelete);
     updateModelsBatch((prev) =>
       prev.filter(
@@ -463,6 +528,10 @@ export function ProductCatalogView() {
     e: React.ChangeEvent<HTMLInputElement>,
     mod: ScenarioModelSpec
   ) => {
+    if (!canEditModel(mod)) {
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -521,8 +590,12 @@ export function ProductCatalogView() {
       newSkuForm.category === '__CUSTOM__'
         ? newSkuForm.customCategory.trim() || unitCfg.categoryDefault
         : newSkuForm.category || unitCfg.categoryDefault;
-    const retail = Math.max(0, Number(newSkuForm.plannedRetailPrice) || 1990);
-    const cost = Math.max(0, Number(newSkuForm.unitCostPrice) || 650);
+    const rawRetailStr = newSkuForm.plannedRetailPrice.trim();
+    const parsedRetail = rawRetailStr !== '' ? Number(rawRetailStr) : NaN;
+    const retail = Number.isFinite(parsedRetail) ? Math.max(0, parsedRetail) : 1990;
+    const rawCostStr = newSkuForm.unitCostPrice.trim();
+    const parsedCost = rawCostStr !== '' ? Number(rawCostStr) : NaN;
+    const cost = Number.isFinite(parsedCost) ? Math.max(0, parsedCost) : 650;
     const units = Math.max(
       1,
       Number(newSkuForm.unitsInPack) || unitCfg.secondaryPerPrimaryDefault
@@ -573,7 +646,7 @@ export function ProductCatalogView() {
       }
     }
 
-    const { model: createdScenarioModel } = createBrandProductModel(
+    const { model: rawCreatedModel } = createBrandProductModel(
       workingModels,
       workingScenarios,
       {
@@ -589,6 +662,13 @@ export function ProductCatalogView() {
         imageUrl: newSkuForm.imageUrl || undefined,
       }
     );
+    const createdScenarioModel: ScenarioModelSpec = {
+      ...rawCreatedModel,
+      retailPriceRub: retail === 0 ? 0 : rawCreatedModel.retailPriceRub,
+      unitCostRub: cost,
+      primaryUnitLabel: unitCfg.primaryUnit,
+      secondaryUnitLabel: unitCfg.secondaryUnit,
+    };
 
     if (createdScenarioModel.gallery.length > 0) {
       void saveModelGalleryToIdb(
@@ -716,18 +796,21 @@ export function ProductCatalogView() {
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={() => handleDeleteScenarioModel(activePassportModel)}
-              className="h-8 px-3 rounded-[8px] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#B42318] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>Удалить карточку</span>
-            </button>
+            {canEditModel(activePassportModel) && (
+              <button
+                type="button"
+                onClick={() => handleDeleteScenarioModel(activePassportModel)}
+                className="h-8 px-3 rounded-[8px] border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#B42318] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Удалить карточку</span>
+              </button>
+            )}
           </div>
         </div>
 
         <ScenarioModelCardScreen
+          key={activePassportModel.id}
           model={activePassportModel}
           scenario={effectiveScenario}
           allScenarios={scenarios}
@@ -762,26 +845,34 @@ export function ProductCatalogView() {
             }
           }}
           onUpdateModel={updateModelSpec}
-          onDuplicateModel={(m) => {
-            const copyBrand: CanonicalBrandCode =
-              modBrandCode === 'ALL' ? 'BORNERS' : modBrandCode;
-            const nextCode = computeNextBrandSkuCode(scenarioModels, copyBrand);
-            const copyId = `scen-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const copy: ScenarioModelSpec = {
-              ...m,
-              id: copyId,
-              code: nextCode,
-              title: `${m.title} (КОПИЯ)`,
-            };
-            unmarkModelAsDeletedInStorage(copy);
-            updateModelsBatch((prev) => [...prev, copy]);
-            if (copy.gallery?.length) {
-              void saveModelGalleryToIdb(copy.id, copy.gallery);
-            }
-            setActivePassportModelId(copy.id);
-            notify('success', `Создана копия модели ${copy.code}`);
-          }}
-          onDeleteOrArchiveModel={(m) => handleDeleteScenarioModel(m)}
+          onDuplicateModel={
+            canEditModel(activePassportModel)
+              ? (m) => {
+                  const copyBrand: CanonicalBrandCode =
+                    modBrandCode === 'ALL' ? 'BORNERS' : modBrandCode;
+                  const nextCode = computeNextBrandSkuCode(scenarioModels, copyBrand);
+                  const copyId = `scen-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                  const copy: ScenarioModelSpec = {
+                    ...m,
+                    id: copyId,
+                    code: nextCode,
+                    title: `${m.title} (КОПИЯ)`,
+                  };
+                  unmarkModelAsDeletedInStorage(copy);
+                  updateModelsBatch((prev) => [...prev, copy]);
+                  if (copy.gallery?.length) {
+                    void saveModelGalleryToIdb(copy.id, copy.gallery);
+                  }
+                  setActivePassportModelId(copy.id);
+                  notify('success', `Создана копия модели ${copy.code}`);
+                }
+              : undefined
+          }
+          onDeleteOrArchiveModel={
+            canEditModel(activePassportModel)
+              ? (m) => handleDeleteScenarioModel(m)
+              : undefined
+          }
           onOpenPdfModal={() => setPdfModalModel(activePassportModel)}
           notify={notify}
         />
@@ -808,6 +899,21 @@ export function ProductCatalogView() {
 
   const activeModalPreset =
     BRAND_CREATE_PRESETS[newSkuForm.brandCode] || BRAND_CREATE_PRESETS.BORNERS;
+  const liskaniPrimaryUnit = getBrandUnitConfig('LISKANI').primaryUnit;
+  const liskaniBuyoutRates = Array.from(
+    new Set(
+      (filteredModels.some((m) => (m.liskaniSizeVariants?.length || 0) > 0)
+        ? filteredModels
+        : brandFilteredModels
+      )
+        .filter((m) => matchesBrandFilter(m, 'LISKANI') || (m.liskaniSizeVariants?.length || 0) > 0)
+        .map((m) => Math.round(m.buyoutRatePct || 57))
+    )
+  );
+  const liskaniBannerBuyoutText =
+    liskaniBuyoutRates.length === 1 ? `ВЫКУП ${liskaniBuyoutRates[0]}%` : 'ВЫКУП %';
+  const liskaniTableBuyoutHeader =
+    liskaniBuyoutRates.length === 1 ? `Выкупы ${liskaniBuyoutRates[0]}%` : 'Выкупы %';
 
   return (
     <div className="space-y-5 pb-20">
@@ -896,14 +1002,16 @@ export function ProductCatalogView() {
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => openCreateModalForBrand()}
-              className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Добавить модель</span>
-            </button>
+            {canCreateInActiveScope && (
+              <button
+                type="button"
+                onClick={() => openCreateModalForBrand()}
+                className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Добавить модель</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1029,7 +1137,9 @@ export function ProductCatalogView() {
                     AKUSHA · ПЛАН 2027 (31 МОДЕЛЬ · 9 ГРУПП)
                   </span>
                   <span className="text-[13.5px] font-extrabold text-[#0F172A]">
-                    20 377 выкупленных пар · 47 808 заказов · 105,79 млн ₽ выручки · 37,45 млн ₽ себестоимость
+                    20 377 выкупленных пар · 47 808 заказов
+                    {hasFinance ? ' · 105,79 млн ₽ выручки' : ''}
+                    {hasCost ? ' · 37,45 млн ₽ себестоимость' : ''}
                   </span>
                 </div>
                 <p className="text-[12px] text-[#475569] mt-0.5">
@@ -1072,10 +1182,10 @@ export function ProductCatalogView() {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="px-2 py-0.5 rounded-[6px] bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] font-mono text-[10.5px] font-bold">
-                    LISKANI · ПЛАН 2027 (ВЫКУП 57%)
+                    LISKANI · ПЛАН 2027 ({liskaniBannerBuyoutText})
                   </span>
                   <span className="text-[13.5px] font-extrabold text-[#0F172A]">
-                    500,00 млн ₽ выкупов · 877,19 млн ₽ заказов · 289 889 компл.
+                    {hasFinance ? '500,00 млн ₽ выкупов · 877,19 млн ₽ заказов · ' : ''}289 889 {liskaniPrimaryUnit}
                   </span>
                 </div>
                 <p className="text-[12px] text-[#475569] mt-0.5">
@@ -1134,51 +1244,56 @@ export function ProductCatalogView() {
                 , перенесите готовые карточки из «Лаборатории R&D» в 1 клик или разверните стартовую матрицу.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => openCreateModalForBrand()}
-                  className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>+ Добавить первую модель</span>
-                </button>
-                {brandFilter !== 'ALL' && activeLabConceptsForFilter.length > 0 && (
+                {canCreateInActiveScope && (
                   <button
                     type="button"
-                    onClick={handleSyncBrandFromLab}
-                    className="h-9.5 px-4 rounded-[10px] bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                    onClick={() => openCreateModalForBrand()}
+                    className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
                   >
-                    <FlaskConical className="h-4 w-4" />
-                    <span>
-                      Перенести из Лаборатории R&D ({activeLabConceptsForFilter.length})
-                    </span>
+                    <Plus className="h-4 w-4" />
+                    <span>+ Добавить первую модель</span>
                   </button>
                 )}
-                {(() => {
-                  const normFilter = normalizePortfolioBrandCode(brandFilter);
-                  if (
-                    normFilter !== 'NA_TELE' &&
-                    normFilter !== 'AKUSHA' &&
-                    normFilter !== 'LISKANI'
-                  ) {
-                    return null;
-                  }
-                  return (
+                {canCreateInActiveScope &&
+                  brandFilter !== 'ALL' &&
+                  activeLabConceptsForFilter.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const res = launchStarterCabinet(normFilter);
-                        notify(
-                          'success',
-                          `Стартовая матрица ${formatLabBrandLabel(normFilter)} добавлена (${res.addedCount} SKU)`
-                        );
-                      }}
-                      className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                      onClick={handleSyncBrandFromLab}
+                      className="h-9.5 px-4 rounded-[10px] bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
                     >
-                      <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
+                      <FlaskConical className="h-4 w-4" />
+                      <span>
+                        Перенести из Лаборатории R&D ({activeLabConceptsForFilter.length})
+                      </span>
                     </button>
-                  );
-                })()}
+                  )}
+                {canCreateInActiveScope &&
+                  (() => {
+                    const normFilter = normalizePortfolioBrandCode(brandFilter);
+                    if (
+                      normFilter !== 'NA_TELE' &&
+                      normFilter !== 'AKUSHA' &&
+                      normFilter !== 'LISKANI'
+                    ) {
+                      return null;
+                    }
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const res = launchStarterCabinet(normFilter);
+                          notify(
+                            'success',
+                            `Стартовая матрица ${formatLabBrandLabel(normFilter)} добавлена (${res.addedCount} SKU)`
+                          );
+                        }}
+                        className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                      >
+                        <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
+                      </button>
+                    );
+                  })()}
                 <button
                   type="button"
                   onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
@@ -1206,6 +1321,13 @@ export function ProductCatalogView() {
                 const mainPhotoUrl = mainGallery?.url || mainGallery?.originalUrl || '';
                 const colors = mod.palettes[0]?.colors || [];
                 const categoryText = mod.categoryLabel || unitCfg.categoryDefault;
+                const canEditThisModel = canEditModel(mod);
+                const unitPackCaption =
+                  mod.unitsInPack === 1 && unitCfg.primaryUnit === unitCfg.secondaryUnit
+                    ? unitCfg.primaryUnit === 'пар'
+                      ? '1 пара'
+                      : `1 ${unitCfg.primaryUnit}`
+                    : `${mod.unitsInPack} ${unitCfg.secondaryUnit} / ${unitCfg.primaryUnit}`;
 
                 return (
                   <div
@@ -1241,14 +1363,16 @@ export function ProductCatalogView() {
                           <span className="px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] border border-[#CBD5E1] text-[10.5px] font-bold text-[#334155]">
                             {mod.modelStageStatus || mod.launchStatus}
                           </span>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteScenarioModel(mod, e)}
-                            title="Удалить карточку модели"
-                            className="h-6 w-6 rounded-[6px] bg-white hover:bg-[#FEF2F2] border border-[#CBD5E1] hover:border-[#FECACA] text-[#64748B] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none font-bold transition cursor-pointer"
-                          >
-                            ×
-                          </button>
+                          {canEditThisModel && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteScenarioModel(mod, e)}
+                              title="Удалить карточку модели"
+                              className="h-6 w-6 rounded-[6px] bg-white hover:bg-[#FEF2F2] border border-[#CBD5E1] hover:border-[#FECACA] text-[#64748B] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none font-bold transition cursor-pointer"
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1259,20 +1383,22 @@ export function ProductCatalogView() {
                           brandLabel={displayBrand}
                           customPhotoUrl={mainPhotoUrl}
                         />
-                        <label
-                          onClick={(e) => e.stopPropagation()}
-                          title="Загрузить или заменить фото карточки"
-                          className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
-                        >
-                          <ImagePlus className="h-3.5 w-3.5" />
-                          <span>{mainPhotoUrl ? 'Заменить фото' : '+ Фото'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleQuickUploadCardPhoto(e, mod)}
-                            className="hidden"
-                          />
-                        </label>
+                        {canEditThisModel && (
+                          <label
+                            onClick={(e) => e.stopPropagation()}
+                            title="Загрузить или заменить фото карточки"
+                            className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
+                          >
+                            <ImagePlus className="h-3.5 w-3.5" />
+                            <span>{mainPhotoUrl ? 'Заменить фото' : '+ Фото'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleQuickUploadCardPhoto(e, mod)}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
                       </div>
 
                       {/* Название и категория */}
@@ -1281,7 +1407,7 @@ export function ProductCatalogView() {
                           {mod.title}
                         </h3>
                         <div className="text-[12.5px] font-medium text-[#475569] mt-1">
-                          {categoryText} · {mod.unitsInPack} {unitCfg.secondaryUnit} / {unitCfg.primaryUnit}
+                          {categoryText} · {unitPackCaption}
                         </div>
                       </div>
 
@@ -1306,19 +1432,27 @@ export function ProductCatalogView() {
                         <div>
                           <div className="text-[11px] font-medium text-[#64748B]">Себестоимость</div>
                           <div className="font-mono text-[15px] font-bold text-[#334155] mt-0.5">
-                            {mod.unitCostRub > 0
+                            {!hasCost
+                              ? 'Скрыто'
+                              : mod.unitCostRub > 0
                               ? formatCurrencyRub(mod.unitCostRub)
                               : 'уточнить'}
                           </div>
                         </div>
                         <div className="text-right">
                           <div className="text-[11px] font-medium text-[#64748B]">
-                            {met.annualRevenueRub > 0 ? 'Маржа / Год' : 'План продаж / Год'}
+                            {!hasFinance || met.annualRevenueRub <= 0
+                              ? 'План продаж / Год'
+                              : !hasCost
+                              ? 'Выручка / Год'
+                              : 'Маржа / Год'}
                           </div>
                           <div className="font-mono text-[14px] font-extrabold text-emerald-600 mt-0.5">
-                            {met.annualRevenueRub > 0
-                              ? `${met.unitMarginPct.toFixed(0)}% · ${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
-                              : `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`}
+                            {!hasFinance || met.annualRevenueRub <= 0
+                              ? `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+                              : !hasCost
+                              ? `${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                              : `${met.unitMarginPct.toFixed(0)}% · ${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`}
                           </div>
                         </div>
                       </div>
@@ -1351,7 +1485,11 @@ export function ProductCatalogView() {
                       <div className="flex items-center justify-between pt-1 text-[12px] font-bold text-[#0F172A] group-hover:text-emerald-700">
                         <span className="inline-flex items-center gap-1.5">
                           <Edit3 className="h-3.5 w-3.5" />
-                          <span>Открыть и редактировать карточку</span>
+                          <span>
+                            {canEditThisModel
+                              ? 'Открыть и редактировать карточку'
+                              : 'Открыть карточку модели'}
+                          </span>
                         </span>
                         <span>→</span>
                       </div>
@@ -1422,6 +1560,13 @@ export function ProductCatalogView() {
                   ? computeModelScenarioMetrics({ ...mod, plansByScenario: {} }, activeScen)
                   : computeModelScenarioMetrics(mod, activeScen);
                 const accent = getModelBrandAccentStyles(displayBrand);
+                const canEditThisModel = canEditModel(mod);
+                const unitPackCaption =
+                  mod.unitsInPack === 1 && unitCfg.primaryUnit === unitCfg.secondaryUnit
+                    ? unitCfg.primaryUnit === 'пар'
+                      ? '1 пара'
+                      : `1 ${unitCfg.primaryUnit}`
+                    : `${mod.unitsInPack} ${unitCfg.secondaryUnit} / ${unitCfg.primaryUnit}`;
                 return (
                   <tr
                     key={mod.id}
@@ -1447,7 +1592,7 @@ export function ProductCatalogView() {
                     <td className="py-3.5 px-4 text-[#334155]">
                       <div>{mod.categoryLabel || unitCfg.categoryDefault}</div>
                       <div className="text-[11px] text-[#64748B]">
-                        {mod.unitsInPack} {unitCfg.secondaryUnit} / {unitCfg.primaryUnit}
+                        {unitPackCaption}
                       </div>
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
@@ -1456,17 +1601,23 @@ export function ProductCatalogView() {
                         : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono text-[#334155]">
-                      {mod.unitCostRub > 0
+                      {!hasCost
+                        ? 'Скрыто'
+                        : mod.unitCostRub > 0
                         ? formatCurrencyRub(mod.unitCostRub)
                         : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
-                      {met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
+                      {!hasCost || !hasFinance
+                        ? 'Скрыто'
+                        : met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
                         ? `${met.unitMarginPct.toFixed(1)}%`
                         : 'уточнить'}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
-                      {met.annualRevenueRub > 0
+                      {!hasFinance
+                        ? 'Скрыто'
+                        : met.annualRevenueRub > 0
                         ? `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
                         : `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`}
                     </td>
@@ -1480,16 +1631,18 @@ export function ProductCatalogView() {
                           }}
                           className="h-7.5 px-2.5 rounded-[7px] bg-[#EEF2F6] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-semibold transition cursor-pointer"
                         >
-                          Редактировать
+                          {canEditThisModel ? 'Редактировать' : 'Открыть'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteScenarioModel(mod, e)}
-                          title="Удалить карточку"
-                          className="h-7.5 w-7.5 rounded-[7px] border border-[#CBD5E1] bg-white hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#64748B] hover:text-[#DC2626] flex items-center justify-center transition cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {canEditThisModel && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteScenarioModel(mod, e)}
+                            title="Удалить карточку"
+                            className="h-7.5 w-7.5 rounded-[7px] border border-[#CBD5E1] bg-white hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#64748B] hover:text-[#DC2626] flex items-center justify-center transition cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1550,13 +1703,13 @@ export function ProductCatalogView() {
                   <th className="py-3 px-3 text-right">Себест.</th>
                   <th className="py-3 px-3 text-right">Цена</th>
                   <th className="py-3 px-3 text-right">
-                    Заказать ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), компл.
+                    Заказать ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), {liskaniPrimaryUnit}
                   </th>
                   <th className="py-3 px-3 text-right">
                     Заказы ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), ₽
                   </th>
                   <th className="py-3 px-3 text-right">
-                    Выкупы 57% ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), ₽
+                    {liskaniTableBuyoutHeader} ({liskani269MonthIdx === 'ALL' ? 'год' : MONTHS_SHORT_RU[liskani269MonthIdx]}), ₽
                   </th>
                 </tr>
               </thead>
@@ -1644,7 +1797,7 @@ export function ProductCatalogView() {
                               {sv.barcode || '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
-                              {sv.unitCostRub.toLocaleString('ru-RU')} ₽
+                              {hasCost ? `${sv.unitCostRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A]">
                               {sv.retailPriceRub.toLocaleString('ru-RU')} ₽
@@ -1653,10 +1806,10 @@ export function ProductCatalogView() {
                               {ordPacks.toLocaleString('ru-RU')}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
-                              {ordRub.toLocaleString('ru-RU')} ₽
+                              {hasFinance ? `${ordRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
-                              {buyRub.toLocaleString('ru-RU')} ₽
+                              {hasFinance ? `${buyRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                           </tr>
                         );
@@ -1704,11 +1857,21 @@ export function ProductCatalogView() {
                   onChange={(e) => handleModalBrandChange(e.target.value)}
                   className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3 text-[14px] bg-white font-bold text-[#0F172A] cursor-pointer"
                 >
-                  <option value="BORNERS">BORNERS (Мужское бельё и база)</option>
-                  <option value="LISKANI">LISKANI (Шторы и домашний текстиль)</option>
-                  <option value="AKUSHA">AKUSHA (Обувь и аксессуары)</option>
-                  <option value="NA_TELE">НА ТЕЛЕ (Женское бельё и одежда)</option>
-                  <option value="FUKAI">FUKAI (Базовые мультипаки WB)</option>
+                  {(
+                    [
+                      { code: 'BORNERS', label: 'BORNERS (Мужское бельё и база)' },
+                      { code: 'LISKANI', label: 'LISKANI (Шторы и домашний текстиль)' },
+                      { code: 'AKUSHA', label: 'AKUSHA (Обувь и аксессуары)' },
+                      { code: 'NA_TELE', label: 'НА ТЕЛЕ (Женское бельё и одежда)' },
+                      { code: 'FUKAI', label: 'FUKAI (Базовые мультипаки WB)' },
+                    ] as const
+                  )
+                    .filter((opt) => canUserEditBrand(currentUser, opt.code))
+                    .map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -1828,19 +1991,25 @@ export function ProductCatalogView() {
                 <label className="block font-bold text-[#0F172A] mb-1">
                   Себестоимость под ключ (₽)
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={newSkuForm.unitCostPrice}
-                  onChange={(e) =>
-                    setNewSkuForm({
-                      ...newSkuForm,
-                      unitCostPrice: e.target.value,
-                    })
-                  }
-                  className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] font-bold text-[#0F172A]"
-                />
+                {hasCost ? (
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={newSkuForm.unitCostPrice}
+                    onChange={(e) =>
+                      setNewSkuForm({
+                        ...newSkuForm,
+                        unitCostPrice: e.target.value,
+                      })
+                    }
+                    className="w-full h-10 rounded-xl border border-[#CBD5E1] px-3.5 text-[14px] font-bold text-[#0F172A]"
+                  />
+                ) : (
+                  <div className="w-full h-10 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-3.5 flex items-center text-[13px] font-semibold text-[#64748B]">
+                    Скрыто (доступ по роли)
+                  </div>
+                )}
               </div>
 
               <div className="sm:col-span-2 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] p-3.5 space-y-2">
@@ -1920,7 +2089,7 @@ export function ProductCatalogView() {
                   <div className="flex items-center gap-3 rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] p-2.5">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={newSkuForm.imageUrl}
+                      src={resolveCatalogAssetUrl(newSkuForm.imageUrl)}
                       alt="Превью"
                       className="h-16 w-20 object-contain rounded-lg bg-white border border-[#E2E8F0]"
                     />

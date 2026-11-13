@@ -149,13 +149,22 @@ export function FullscreenPhotoLightbox({
     };
   }, [open, onClose, goPrev, goNext, adjustZoom, resetToFit]);
 
-  if (!open || !currentItem) return null;
+  useEffect(() => {
+    if (!open || !currentItem) return;
+    const el = stageRef.current;
+    if (!el) return;
+    const onNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const step = e.deltaY < 0 ? 0.25 : -0.25;
+      adjustZoom(step);
+    };
+    el.addEventListener('wheel', onNativeWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onNativeWheel);
+    };
+  }, [open, currentItem, adjustZoom]);
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const step = e.deltaY < 0 ? 0.25 : -0.25;
-    adjustZoom(step);
-  };
+  if (!open || !currentItem) return null;
 
   const handleDoubleClick = () => {
     if (scale > 1.05) {
@@ -378,7 +387,6 @@ export function FullscreenPhotoLightbox({
       {/* ОСНОВНАЯ СЦЕНА ПРОСМОТРА ФОТО ЦЕЛИКОМ БЕЗ ОБРЕЗКИ */}
       <div
         ref={stageRef}
-        onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

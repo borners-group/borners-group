@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Download,
   Lock,
@@ -8,13 +8,15 @@ import {
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { FinancialScenario } from '@/types/platform';
+import { FinancialPlanRow, FinancialScenario } from '@/types/platform';
 import {
   ROLE_LABELS_RU,
   SCENARIO_LABELS_RU,
   calculatePlanFactVariance,
   calculateRevenueFromBuyouts,
   calculateUnitEconomics,
+  canUserEditBrand,
+  canUserViewBrandConcept,
   canUserViewCostPrice,
   canUserViewFinance,
   formatCompactRub,
@@ -24,12 +26,38 @@ import {
   ParsedImportRow,
 } from '@/lib/finance';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+
+const RU_MONTH_LABELS_2027 = [
+  { month: '2027-01', label: 'Январь 2027' },
+  { month: '2027-02', label: 'Февраль 2027' },
+  { month: '2027-03', label: 'Март 2027' },
+  { month: '2027-04', label: 'Апрель 2027' },
+  { month: '2027-05', label: 'Май 2027' },
+  { month: '2027-06', label: 'Июнь 2027' },
+  { month: '2027-07', label: 'Июль 2027' },
+  { month: '2027-08', label: 'Август 2027' },
+  { month: '2027-09', label: 'Сентябрь 2027' },
+  { month: '2027-10', label: 'Октябрь 2027' },
+  { month: '2027-11', label: 'Ноябрь 2027' },
+  { month: '2027-12', label: 'Декабрь 2027' },
+];
+
+function getBrandUnitSuffix(brandId: string): string {
+  const norm = brandId === 'ALL' ? 'ALL' : normalizeLabBrandCode(brandId);
+  if (norm === 'AKUSHA') return 'пар';
+  if (norm === 'LISKANI') return 'компл. штор';
+  if (norm === 'BORNERS') return 'компл.';
+  return 'шт.';
+}
 
 export function FinanceView() {
   const {
     products,
     launches,
     campaigns,
+    competitors,
     financialPlans,
     currentUser,
     brandFilter,
@@ -43,7 +71,11 @@ export function FinanceView() {
     notify,
   } = usePlatform();
 
+  const { models: liveScenarioModels } = useLiveScenarioPortfolio();
+
   const isStrategyMode = platformMode === 'strategy';
+  const isReadOnlyRole =
+    currentUser.role === 'Viewer' || currentUser.role === 'Partner';
 
   const [subTab, setSubTab] = useState<
     | 'overview'
@@ -56,41 +88,290 @@ export function FinanceView() {
   >('overview');
 
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [factDrafts, setFactDrafts] = useState<Record<string, string>>({});
 
   const hasFinance = canUserViewFinance(currentUser);
   const hasCostAccess = canUserViewCostPrice(currentUser);
 
-  const filteredPlans = useMemo(
-    () =>
-      financialPlans.filter(
-        (r) =>
-          r.scenario === financialScenario &&
-          (brandFilter === 'ALL' ||
-            normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
-      ),
-    [financialPlans, financialScenario, brandFilter]
+  const buildPlansForScenario = useCallback(
+    (sc: FinancialScenario): FinancialPlanRow[] => {
+      const scenarioFactor =
+        sc === 'Conservative' ? 0.82 : sc === 'Optimistic' ? 1.22 : 1;
+
+      const matchesBrand = (rawBrandId: string) => {
+        const norm = normalizeLabBrandCode(rawBrandId);
+        if (!canUserViewBrandConcept(currentUser, norm)) return false;
+        if (brandFilter === 'ALL') return true;
+        return norm === normalizeLabBrandCode(brandFilter);
+      };
+
+      const directRows = financialPlans.filter(
+        (r) => r.scenario === sc && matchesBrand(r.brandId)
+      );
+      const baseRows = financialPlans.filter(
+        (r) => r.scenario === 'Base' && matchesBrand(r.brandId)
+      );
+
+      if (sc === 'Base' && directRows.length > 0) {
+        return directRows;
+      }
+
+      let fallbackRows: FinancialPlanRow[] = [];
+
+      if (baseRows.length > 0) {
+        fallbackRows = baseRows.map((r) => {
+          const scaledUnits = Math.max(0, Math.round(r.plannedBuyoutUnits * scenarioFactor));
+          const scaledRev = Math.round(r.plannedRevenueRub * scenarioFactor);
+          const scaledProfit = Math.round(r.plannedOperatingProfitRub * scenarioFactor);
+          return {
+            ...r,
+            id: `synth-${normalizeLabBrandCode(r.brandId)}-${sc}-${r.periodMonth}`,
+            scenario: sc,
+            plannedBuyoutUnits: scaledUnits,
+            plannedRevenueRub: scaledRev,
+            plannedOperatingProfitRub: scaledProfit,
+          };
+        });
+      } else {
+        const targetBrands =
+          brandFilter === 'ALL'
+            ? (['BORNERS', 'NA_TELE', 'AKUSHA', 'LISKANI', 'FUKAI'] as const).filter(
+                (b) => canUserViewBrandConcept(currentUser, b)
+              )
+            : [normalizeLabBrandCode(brandFilter)].filter((b) =>
+                canUserViewBrandConcept(currentUser, b)
+              );
+
+        for (const b of targetBrands) {
+          const brandModels = liveScenarioModels.filter(
+            (sm) =>
+              sm.launchStatus !== 'В архиве' &&
+              normalizeLabBrandCode(detectModelBrandPortfolioLabel(sm)) === b
+          );
+
+          if (brandModels.length > 0) {
+            const monthRows: FinancialPlanRow[] = RU_MONTH_LABELS_2027.map(
+              ({ month, label }, mIdx) => {
+                let monthUnits = 0;
+                let monthRev = 0;
+                let monthProfit = 0;
+                for (const sm of brandModels) {
+                  const plan =
+                    sm.plansByScenario[1] ||
+                    sm.plansByScenario[100] ||
+                    sm.plansByScenario[200] ||
+                    Object.values(sm.plansByScenario)[0];
+                  const packs = plan?.monthlyPacks?.[mIdx] ?? 0;
+                  const price =
+                    plan?.monthlyPricesRub?.[mIdx] || sm.retailPriceRub || 0;
+                  const rev =
+                    plan?.monthlyRevenuesRubOverride?.[mIdx] ?? packs * price;
+                  const netUnitMarginRatio =
+                    sm.retailPriceRub > 0
+                      ? Math.max(
+                          0.16,
+                          Math.min(
+                            0.45,
+                            (sm.retailPriceRub *
+                              (1 - (sm.marketplaceFeePct + sm.adsPct) / 100) -
+                              sm.unitCostRub -
+                              sm.logisticsRub) /
+                              sm.retailPriceRub
+                          )
+                        )
+                      : 0.26;
+                  monthUnits += packs;
+                  monthRev += rev;
+                  monthProfit += rev * netUnitMarginRatio;
+                }
+                const finalUnits = Math.max(0, Math.round(monthUnits * scenarioFactor));
+                const finalRev = Math.max(0, Math.round(monthRev * scenarioFactor));
+                const finalAvgPrice =
+                  finalUnits > 0
+                    ? Math.round(finalRev / finalUnits)
+                    : brandModels[0]?.retailPriceRub || 2490;
+                const finalProfit = Math.round(monthProfit * scenarioFactor);
+
+                return {
+                  id: `synth-${b}-${sc}-${month}`,
+                  brandId: b,
+                  scenario: sc,
+                  periodMonth: month,
+                  periodLabel: label,
+                  currency: 'RUB' as const,
+                  plannedBuyoutUnits: finalUnits,
+                  actualBuyoutUnits: null,
+                  avgSellingPriceRub: finalAvgPrice,
+                  plannedRevenueRub: finalRev,
+                  actualRevenueRub: null,
+                  plannedOperatingProfitRub: finalProfit,
+                  actualOperatingProfitRub: null,
+                  fixedCostsRub: 650000,
+                  marketingBudgetRub: Math.round(finalRev * 0.1),
+                  launchInvestmentRub: mIdx === 0 ? 450000 : 0,
+                  sourceLabel: 'План портфеля 2027',
+                  isDemo: false,
+                  updatedAt: '2027-01-15',
+                  updatedBy: 'Система',
+                };
+              }
+            ).filter((r) => r.plannedRevenueRub > 0 || r.plannedBuyoutUnits > 0);
+
+            if (monthRows.length > 0) {
+              fallbackRows.push(...monthRows);
+              continue;
+            }
+          }
+
+          // Резервный план для бренда без активных сценарных SKU (например FUKAI)
+          const brandProds = products.filter(
+            (p) => !p.isArchived && normalizeLabBrandCode(p.brandId) === b
+          );
+          const avgPriceFallback =
+            brandProds.length > 0
+              ? Math.round(
+                  brandProds.reduce(
+                    (s, p) => s + (p.economics.actualRetailPrice || p.economics.plannedRetailPrice || 2490),
+                    0
+                  ) / brandProds.length
+                )
+              : 2490;
+          const baselineUnits6M = [680, 760, 890, 980, 1080, 1200];
+          RU_MONTH_LABELS_2027.slice(0, 6).forEach(({ month, label }, idx) => {
+            const units = Math.round(baselineUnits6M[idx] * scenarioFactor);
+            const rev = units * avgPriceFallback;
+            fallbackRows.push({
+              id: `synth-${b}-${sc}-${month}`,
+              brandId: b,
+              scenario: sc,
+              periodMonth: month,
+              periodLabel: label,
+              currency: 'RUB',
+              plannedBuyoutUnits: units,
+              actualBuyoutUnits: null,
+              avgSellingPriceRub: avgPriceFallback,
+              plannedRevenueRub: rev,
+              actualRevenueRub: null,
+              plannedOperatingProfitRub: Math.round(rev * 0.28),
+              actualOperatingProfitRub: null,
+              fixedCostsRub: 450000,
+              marketingBudgetRub: Math.round(rev * 0.1),
+              launchInvestmentRub: idx === 0 ? 350000 : 0,
+              sourceLabel: 'Базовый план бренда',
+              isDemo: false,
+              updatedAt: '2027-01-15',
+              updatedBy: 'Система',
+            });
+          });
+        }
+      }
+
+      if (directRows.length === 0) return fallbackRows;
+      const directMap = new Map(
+        directRows.map((r) => [
+          `${normalizeLabBrandCode(r.brandId)}:${r.periodMonth}`,
+          r,
+        ])
+      );
+      const merged = fallbackRows.map((fb) => {
+        const key = `${normalizeLabBrandCode(fb.brandId)}:${fb.periodMonth}`;
+        return directMap.get(key) || fb;
+      });
+      const fallbackKeys = new Set(
+        fallbackRows.map(
+          (fb) => `${normalizeLabBrandCode(fb.brandId)}:${fb.periodMonth}`
+        )
+      );
+      for (const dr of directRows) {
+        const key = `${normalizeLabBrandCode(dr.brandId)}:${dr.periodMonth}`;
+        if (!fallbackKeys.has(key)) {
+          merged.push(dr);
+        }
+      }
+      return merged;
+    },
+    [financialPlans, brandFilter, currentUser, liveScenarioModels, products]
   );
+
+  const filteredPlans = useMemo(
+    () => buildPlansForScenario(financialScenario),
+    [buildPlansForScenario, financialScenario]
+  );
+
+  const uniqueMonthsCount = useMemo(
+    () => new Set(filteredPlans.map((r) => r.periodMonth)).size,
+    [filteredPlans]
+  );
+
+  const commitFactRevenueDraft = (row: FinancialPlanRow, rawInput: string) => {
+    setFactDrafts((prev) => {
+      if (!(row.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[row.id];
+      return next;
+    });
+    const trimmed = rawInput.trim().replace(/\s+/g, '').replace(',', '.');
+    const nextVal = trimmed === '' ? null : Number(trimmed);
+    if (nextVal !== null && !Number.isFinite(nextVal)) return;
+    if (nextVal === row.actualRevenueRub) return;
+
+    const existsInState = financialPlans.some((fp) => fp.id === row.id);
+    if (existsInState) {
+      updateFinancialPlanRow(row.id, {
+        actualRevenueRub: nextVal,
+      });
+    } else {
+      const estProfit =
+        nextVal === null
+          ? null
+          : row.plannedRevenueRub > 0
+          ? Math.round(nextVal * (row.plannedOperatingProfitRub / row.plannedRevenueRub))
+          : 0;
+      addFinancialPlanRow({
+        brandId: normalizeLabBrandCode(row.brandId),
+        scenario: row.scenario,
+        periodMonth: row.periodMonth,
+        periodLabel: row.periodLabel,
+        currency: row.currency,
+        plannedBuyoutUnits: row.plannedBuyoutUnits,
+        actualBuyoutUnits: row.actualBuyoutUnits,
+        avgSellingPriceRub: row.avgSellingPriceRub,
+        plannedRevenueRub: row.plannedRevenueRub,
+        actualRevenueRub: nextVal,
+        plannedOperatingProfitRub: row.plannedOperatingProfitRub,
+        actualOperatingProfitRub: estProfit,
+        fixedCostsRub: row.fixedCostsRub,
+        marketingBudgetRub: row.marketingBudgetRub,
+        launchInvestmentRub: row.launchInvestmentRub,
+        sourceLabel: row.sourceLabel,
+        isDemo: false,
+      });
+    }
+  };
 
   const filteredProducts = useMemo(
     () =>
       products.filter(
         (p) =>
           !p.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(p.brandId)) &&
           (brandFilter === 'ALL' ||
             normalizeLabBrandCode(p.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [products, brandFilter]
+    [products, brandFilter, currentUser]
   );
 
   const filteredCampaigns = useMemo(
     () =>
       campaigns.filter(
         (c) =>
-          brandFilter === 'ALL' ||
-          c.brandId === 'ALL' ||
-          normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter)
+          (c.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))) &&
+          (brandFilter === 'ALL' ||
+            c.brandId === 'ALL' ||
+            normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [campaigns, brandFilter]
+    [campaigns, brandFilter, currentUser]
   );
 
   const filteredLaunches = useMemo(
@@ -98,10 +379,11 @@ export function FinanceView() {
       launches.filter(
         (l) =>
           !l.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(l.brandId)) &&
           (brandFilter === 'ALL' ||
             normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [launches, brandFilter]
+    [launches, brandFilter, currentUser]
   );
 
   const summary = useMemo(() => {
@@ -178,13 +460,13 @@ export function FinanceView() {
             ))}
           </div>
 
-          {!isStrategyMode && (
+          {!isStrategyMode && !isReadOnlyRole && (
             <button
               onClick={() => setImportModalOpen(true)}
               className="inline-flex items-center gap-2 h-11 rounded-xl bg-[#111111] text-white px-5 text-[15px] font-semibold hover:bg-neutral-800 transition cursor-pointer"
             >
               <Upload className="h-4 w-4" />
-              <span>Импорт таблиц CSV/XLSX</span>
+              <span>Импорт CSV</span>
             </button>
           )}
         </div>
@@ -193,7 +475,9 @@ export function FinanceView() {
       {/* 4 крупные финансовые карточки */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white rounded-2xl border border-[#E8E8E5] p-6">
-          <div className="text-[14px] font-medium text-[#737373]">Годовой план выручки</div>
+          <div className="text-[14px] font-medium text-[#737373]">
+            {uniqueMonthsCount >= 12 ? 'Годовой план выручки' : 'План выручки периода'}
+          </div>
           <div className="text-[34px] font-bold text-[#171717] mt-3">
             {formatCompactRub(summary.planYearRev)}
           </div>
@@ -257,7 +541,7 @@ export function FinanceView() {
           { id: 'campaigns', label: 'Окупаемость кампаний' },
           { id: 'launches', label: 'Экономика релизов' },
           { id: 'scenarios', label: 'Сравнение 3 сценариев' },
-          { id: 'import', label: 'Импорт CSV / Excel' },
+          { id: 'import', label: 'Импорт CSV' },
         ].map((t) => (
           <button
             key={t.id}
@@ -294,6 +578,15 @@ export function FinanceView() {
                   row.plannedRevenueRub,
                   row.actualRevenueRub
                 );
+                const canEditRow =
+                  !isStrategyMode &&
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(row.brandId));
+                const draftVal =
+                  factDrafts[row.id] !== undefined
+                    ? factDrafts[row.id]
+                    : row.actualRevenueRub !== null
+                    ? String(row.actualRevenueRub)
+                    : '';
                 return (
                   <tr key={row.id} className="hover:bg-[#F7F7F5]/60 transition">
                     <td className="py-4 px-6 font-semibold text-[#171717]">
@@ -306,7 +599,7 @@ export function FinanceView() {
                       {formatCurrencyRub(row.plannedRevenueRub)}
                     </td>
                     <td className="py-4 px-4 text-right">
-                      {isStrategyMode ? (
+                      {!canEditRow ? (
                         <span className="font-semibold text-[#171717]">
                           {row.actualRevenueRub !== null
                             ? formatCurrencyRub(row.actualRevenueRub)
@@ -316,12 +609,26 @@ export function FinanceView() {
                         <input
                           type="number"
                           placeholder="Нет данных"
-                          value={row.actualRevenueRub ?? ''}
+                          value={draftVal}
                           onChange={(e) => {
-                            const raw = e.target.value.trim();
-                            updateFinancialPlanRow(row.id, {
-                              actualRevenueRub: raw === '' ? null : Number(raw),
-                            });
+                            const val = e.target.value;
+                            setFactDrafts((prev) => ({
+                              ...prev,
+                              [row.id]: val,
+                            }));
+                          }}
+                          onBlur={(e) => commitFactRevenueDraft(row, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur();
+                            } else if (e.key === 'Escape') {
+                              setFactDrafts((prev) => {
+                                const next = { ...prev };
+                                delete next[row.id];
+                                return next;
+                              });
+                              e.currentTarget.blur();
+                            }
                           }}
                           className="w-40 text-right h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-[#F7F7F5]"
                         />
@@ -342,7 +649,8 @@ export function FinanceView() {
                       )}
                     </td>
                     <td className="py-4 px-4 text-right text-[#737373]">
-                      {row.plannedBuyoutUnits.toLocaleString('ru-RU')} шт.
+                      {row.plannedBuyoutUnits.toLocaleString('ru-RU')}{' '}
+                      {getBrandUnitSuffix(row.brandId)}
                     </td>
                     <td className="py-4 px-6 text-right font-semibold">
                       {formatCurrencyRub(row.plannedOperatingProfitRub)}
@@ -397,10 +705,10 @@ export function FinanceView() {
                         : 'Скрыто'}
                     </td>
                     <td className="py-4 px-4 text-right font-bold text-[#16805D]">
-                      {formatCurrencyRub(calc.unitProfitRub)}
+                      {hasCostAccess ? formatCurrencyRub(calc.unitProfitRub) : 'Скрыто'}
                     </td>
                     <td className="py-4 px-6 text-right font-bold text-[16px]">
-                      {calc.marginPct}%
+                      {hasCostAccess ? `${calc.marginPct}%` : 'Скрыто'}
                     </td>
                   </tr>
                 );
@@ -415,7 +723,7 @@ export function FinanceView() {
         <div className="bg-white rounded-2xl border border-[#E8E8E5] p-7 space-y-5">
           <div className="border-b border-[#E8E8E5] pb-4">
             <h3 className="text-[22px] font-bold">
-              Формула выручки: Выкупы (шт.) × Средняя цена реализации (₽)
+              Формула выручки: Выкупы × Средняя цена реализации (₽)
             </h3>
           </div>
           <table className="w-full text-left text-[15px]">
@@ -441,7 +749,8 @@ export function FinanceView() {
                       {formatLabBrandLabel(r.brandId)}
                     </td>
                     <td className="py-4 px-4 text-right">
-                      {r.plannedBuyoutUnits.toLocaleString('ru-RU')} шт.
+                      {r.plannedBuyoutUnits.toLocaleString('ru-RU')}{' '}
+                      {getBrandUnitSuffix(r.brandId)}
                     </td>
                     <td className="py-4 px-4 text-right">
                       {formatCurrencyRub(r.avgSellingPriceRub)}
@@ -532,12 +841,8 @@ export function FinanceView() {
       {subTab === 'scenarios' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {(['Conservative', 'Base', 'Optimistic'] as FinancialScenario[]).map((sc) => {
-            const rows = financialPlans.filter(
-              (r) =>
-                r.scenario === sc &&
-                (brandFilter === 'ALL' ||
-                  normalizeLabBrandCode(r.brandId) === normalizeLabBrandCode(brandFilter))
-            );
+            const rows = buildPlansForScenario(sc);
+            const scMonths = new Set(rows.map((r) => r.periodMonth)).size;
             const rev = rows.reduce((s, r) => s + r.plannedRevenueRub, 0);
             const prof = rows.reduce((s, r) => s + r.plannedOperatingProfitRub, 0);
             const units = rows.reduce((s, r) => s + r.plannedBuyoutUnits, 0);
@@ -563,7 +868,9 @@ export function FinanceView() {
                 </div>
 
                 <div>
-                  <div className="text-[13px] text-[#737373]">Годовая выручка</div>
+                  <div className="text-[13px] text-[#737373]">
+                    {scMonths >= 12 ? 'Годовая выручка' : 'Выручка периода'}
+                  </div>
                   <div className="text-[30px] font-bold mt-1">
                     {formatCompactRub(rev)}
                   </div>
@@ -576,7 +883,9 @@ export function FinanceView() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#737373]">Объём реализации:</span>
-                    <b>{units.toLocaleString('ru-RU')} шт.</b>
+                    <b>
+                      {units.toLocaleString('ru-RU')} {getBrandUnitSuffix(brandFilter)}
+                    </b>
                   </div>
                 </div>
               </div>
@@ -591,18 +900,18 @@ export function FinanceView() {
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E8E8E5] pb-5">
             <div>
               <h3 className="text-[22px] font-bold">
-                Пакетная загрузка данных из CSV / Excel (3 контура ТЗ)
+                Пакетная загрузка данных из CSV (3 контура ТЗ)
               </h3>
               <p className="text-[15px] text-[#737373] mt-1">
                 Проверка обязательных полей, маппинг колонок и защита от дубликатов артикулов перед записью в базу.
               </p>
             </div>
-            {!isStrategyMode && (
+            {!isStrategyMode && !isReadOnlyRole && (
               <button
                 onClick={() => setImportModalOpen(true)}
                 className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
               >
-                Открыть мастер импорта →
+                Импорт CSV →
               </button>
             )}
           </div>
@@ -666,15 +975,20 @@ export function FinanceView() {
         <CsvImportWizardModal
           onClose={() => setImportModalOpen(false)}
           existingProducts={products}
+          existingCompetitorNames={competitors.map((c) => c.brandName.trim().toUpperCase())}
           existingFinanceKeys={financialPlans
             .filter((f) => f.scenario === financialScenario)
             .map((f) => `${normalizeLabBrandCode(f.brandId)}:${f.periodMonth}`)}
           onImportProducts={(rows) => {
-            const parseCsvNum = (v?: string) =>
-              Number((v || '').replace(/\s+/g, '').replace(',', '.')) || 0;
+            const parseCsvNum = (v?: string): number => {
+              const raw = (v ?? '').trim().replace(/\s+/g, '').replace(',', '.');
+              return raw === '' ? Number.NaN : Number(raw);
+            };
             rows.forEach((r) => {
-              const retail = parseCsvNum(r.retailPriceRub) || 2290;
-              const cost = parseCsvNum(r.costPriceRub) || 450;
+              const parsedRetail = parseCsvNum(r.retailPriceRub);
+              const retail = Number.isFinite(parsedRetail) ? parsedRetail : 2290;
+              const parsedCost = parseCsvNum(r.costPriceRub);
+              const cost = Number.isFinite(parsedCost) ? parsedCost : 450;
               createProduct({
                 sku: r.sku || `SKU-${Date.now().toString().slice(-4)}`,
                 name: r.name || 'Импортированная модель',
@@ -720,32 +1034,71 @@ export function FinanceView() {
             setImportModalOpen(false);
           }}
           onImportFinance={(rows) => {
-            const parseCsvNum = (v?: string) =>
-              Number((v || '').replace(/\s+/g, '').replace(',', '.')) || 0;
+            const parseCsvNum = (v?: string): number => {
+              const raw = (v ?? '').trim().replace(/\s+/g, '').replace(',', '.');
+              return raw === '' ? Number.NaN : Number(raw);
+            };
             rows.forEach((r) => {
-              const units = parseCsvNum(r.plannedBuyoutUnits) || 4500;
-              const avgPrice = parseCsvNum(r.avgSellingPriceRub) || 2190;
-              const rev = parseCsvNum(r.plannedRevenueRub) || units * avgPrice;
-              const prof = parseCsvNum(r.plannedOperatingProfitRub) || Math.round(rev * 0.32);
-              addFinancialPlanRow({
-                brandId: normalizeLabBrandCode(r.brandId || 'BORNERS'),
-                scenario: financialScenario,
-                periodMonth: r.periodMonth || '2027-04',
-                periodLabel: r.periodLabel || 'Апрель 2027',
-                currency: 'RUB',
-                plannedBuyoutUnits: units,
-                actualBuyoutUnits: r.actualBuyoutUnits ? parseCsvNum(r.actualBuyoutUnits) : null,
-                avgSellingPriceRub: avgPrice,
-                plannedRevenueRub: rev,
-                actualRevenueRub: r.actualRevenueRub ? parseCsvNum(r.actualRevenueRub) : null,
-                plannedOperatingProfitRub: prof,
-                actualOperatingProfitRub: null,
-                fixedCostsRub: 850000,
-                marketingBudgetRub: 750000,
-                launchInvestmentRub: 400000,
-                sourceLabel: 'Импорт CSV',
-                isDemo: false,
-              });
+              const parsedUnits = parseCsvNum(r.plannedBuyoutUnits);
+              const units = Number.isFinite(parsedUnits) ? parsedUnits : 4500;
+              const parsedAvgPrice = parseCsvNum(r.avgSellingPriceRub);
+              const avgPrice = Number.isFinite(parsedAvgPrice) ? parsedAvgPrice : 2190;
+              const parsedRev = parseCsvNum(r.plannedRevenueRub);
+              const rev = Number.isFinite(parsedRev) ? parsedRev : units * avgPrice;
+              const parsedProf = parseCsvNum(r.plannedOperatingProfitRub);
+              const prof = Number.isFinite(parsedProf) ? parsedProf : Math.round(rev * 0.32);
+              const parsedActUnits = parseCsvNum(r.actualBuyoutUnits);
+              const actUnits = Number.isFinite(parsedActUnits) ? parsedActUnits : null;
+              const parsedActRev = parseCsvNum(r.actualRevenueRub);
+              const actRev = Number.isFinite(parsedActRev) ? parsedActRev : null;
+
+              const normBrand = normalizeLabBrandCode(r.brandId || 'BORNERS');
+              const normPeriod = (r.periodMonth || '2027-04').trim();
+              const existingRow = financialPlans.find(
+                (fp) =>
+                  fp.scenario === financialScenario &&
+                  normalizeLabBrandCode(fp.brandId) === normBrand &&
+                  fp.periodMonth === normPeriod
+              );
+
+              if (existingRow) {
+                updateFinancialPlanRow(existingRow.id, {
+                  periodLabel: r.periodLabel || existingRow.periodLabel,
+                  plannedBuyoutUnits: units,
+                  avgSellingPriceRub: avgPrice,
+                  plannedRevenueRub: rev,
+                  plannedOperatingProfitRub: prof,
+                  ...(actUnits !== null ? { actualBuyoutUnits: actUnits } : {}),
+                  ...(actRev !== null ? { actualRevenueRub: actRev } : {}),
+                  sourceLabel: 'Импорт CSV',
+                  isDemo: false,
+                });
+              } else {
+                addFinancialPlanRow({
+                  brandId: normBrand,
+                  scenario: financialScenario,
+                  periodMonth: normPeriod,
+                  periodLabel: r.periodLabel || 'Апрель 2027',
+                  currency: 'RUB',
+                  plannedBuyoutUnits: units,
+                  actualBuyoutUnits: actUnits,
+                  avgSellingPriceRub: avgPrice,
+                  plannedRevenueRub: rev,
+                  actualRevenueRub: actRev,
+                  plannedOperatingProfitRub: prof,
+                  actualOperatingProfitRub:
+                    actRev !== null
+                      ? rev > 0
+                        ? Math.round(actRev * (prof / rev))
+                        : 0
+                      : null,
+                  fixedCostsRub: 850000,
+                  marketingBudgetRub: 750000,
+                  launchInvestmentRub: 400000,
+                  sourceLabel: 'Импорт CSV',
+                  isDemo: false,
+                });
+              }
             });
             notify('success', `Импортировано строк финансового плана: ${rows.length}`);
             setImportModalOpen(false);
@@ -757,11 +1110,12 @@ export function FinanceView() {
 }
 
 // =============================================================================
-// МАСТЕР ИМПОРТА CSV / XLSX (3 ТИПА ПО П. 19 ТЗ + ЗАГРУЗКА ФАЙЛА С ДИСКА)
+// МАСТЕР ИМПОРТА CSV (3 ТИПА ПО П. 19 ТЗ + ЗАГРУЗКА ФАЙЛА С ДИСКА)
 // =============================================================================
 function CsvImportWizardModal({
   onClose,
   existingProducts,
+  existingCompetitorNames = [],
   existingFinanceKeys = [],
   onImportProducts,
   onImportCompetitors,
@@ -769,6 +1123,7 @@ function CsvImportWizardModal({
 }: {
   onClose: () => void;
   existingProducts: { sku: string }[];
+  existingCompetitorNames?: string[];
   existingFinanceKeys?: string[];
   onImportProducts: (rows: Record<string, string>[]) => void;
   onImportCompetitors: (rows: Record<string, string>[]) => void;
@@ -784,6 +1139,17 @@ function CsvImportWizardModal({
   const [duplicateResolution, setDuplicateResolution] = useState<'skip' | 'import_all'>(
     'skip'
   );
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   const parsed = useMemo(() => parseCsvContent(rawCsv), [rawCsv]);
 
@@ -812,14 +1178,21 @@ function CsvImportWizardModal({
       targetType === 'products'
         ? ['retailPriceRub', 'costPriceRub']
         : targetType === 'finance'
-        ? ['plannedBuyoutUnits', 'avgSellingPriceRub']
+        ? [
+            'plannedBuyoutUnits',
+            'avgSellingPriceRub',
+            'plannedRevenueRub',
+            'plannedOperatingProfitRub',
+            'actualBuyoutUnits',
+            'actualRevenueRub',
+          ]
         : [];
     const existingKeys = new Set(
       targetType === 'products'
-        ? existingProducts.map((p) => p.sku.toUpperCase())
-        : targetType === 'finance'
-        ? existingFinanceKeys.map((k) => k.toUpperCase())
-        : []
+        ? existingProducts.map((p) => p.sku.trim().toUpperCase())
+        : targetType === 'competitors'
+        ? existingCompetitorNames.map((n) => n.trim().toUpperCase())
+        : existingFinanceKeys.map((k) => k.trim().toUpperCase())
     );
     const uniqueTargetField =
       targetType === 'products'
@@ -836,18 +1209,36 @@ function CsvImportWizardModal({
       existingKeys,
       uniqueTargetField,
     });
-  }, [parsed, targetType, existingProducts, existingFinanceKeys]);
+  }, [parsed, targetType, existingProducts, existingCompetitorNames, existingFinanceKeys]);
+
+  const committableRows = useMemo(
+    () =>
+      validatedRows
+        .filter(
+          (r) =>
+            r.errors.length === 0 &&
+            (duplicateResolution === 'import_all' || !r.isDuplicate)
+        )
+        .map((r) => r.raw),
+    [validatedRows, duplicateResolution]
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-3xl bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-3xl bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
         <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
           <div>
             <div className="text-[12px] font-semibold uppercase text-[#737373]">
               Мастер импорта · Шаг {step} из 3
             </div>
             <h3 className="text-[22px] font-bold mt-1">
-              Импорт табличных данных (CSV / Excel)
+              Импорт CSV
             </h3>
           </div>
           <button
@@ -1040,26 +1431,20 @@ function CsvImportWizardModal({
                 ← Назад
               </button>
               <button
+                disabled={committableRows.length === 0}
                 onClick={() => {
-                  const rowsToCommit = validatedRows
-                    .filter(
-                      (r) =>
-                        r.errors.length === 0 &&
-                        (duplicateResolution === 'import_all' || !r.isDuplicate)
-                    )
-                    .map((r) => r.raw);
-
+                  if (committableRows.length === 0) return;
                   if (targetType === 'products') {
-                    onImportProducts(rowsToCommit);
+                    onImportProducts(committableRows);
                   } else if (targetType === 'competitors') {
-                    onImportCompetitors(rowsToCommit);
+                    onImportCompetitors(committableRows);
                   } else {
-                    onImportFinance(rowsToCommit);
+                    onImportFinance(committableRows);
                   }
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white font-semibold cursor-pointer"
+                className="h-11 px-6 rounded-xl bg-[#111111] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold cursor-pointer"
               >
-                Завершить импорт
+                Завершить импорт ({committableRows.length})
               </button>
             </div>
           </div>

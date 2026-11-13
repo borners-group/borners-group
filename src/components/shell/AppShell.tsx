@@ -27,6 +27,7 @@ import {
   ROLE_LABELS_RU,
   TASK_STATUS_LABELS_RU,
   canUserAccessSection,
+  canUserViewBrandConcept,
   canUserViewFinance,
 } from '@/lib/finance';
 import { DashboardView } from '@/components/sections/DashboardView';
@@ -718,6 +719,7 @@ export function AppShell() {
     ];
 
     for (const sec of allSections) {
+      if (!canUserAccessSection(currentUser, sec.id)) continue;
       if (
         sec.title.toLowerCase().includes(q) ||
         sec.keywords.includes(q)
@@ -794,11 +796,13 @@ export function AppShell() {
           id: `scen-sku-${m.id}`,
           category: 'SKU 2027',
           title: `${displayCode} — ${m.title}`,
-          subtitle: `${portfolioBrand} · Дек: ${(met.targetMonthRevenueRub / 1_000_000)
-            .toFixed(2)
-            .replace('.', ',')} млн ₽ · 2027: ${(met.annualRevenueRub / 1_000_000)
-            .toFixed(2)
-            .replace('.', ',')} млн ₽`,
+          subtitle: hasFin
+            ? `${portfolioBrand} · Дек: ${(met.targetMonthRevenueRub / 1_000_000)
+                .toFixed(2)
+                .replace('.', ',')} млн ₽ · 2027: ${(met.annualRevenueRub / 1_000_000)
+                .toFixed(2)
+                .replace('.', ',')} млн ₽`
+            : `${portfolioBrand} · ${m.categoryLabel || 'Модель портфеля 2027'}`,
           onSelect: () => openScenarioSkuPassport(m.id, `${displayCode} — ${m.title}`),
         });
       }
@@ -837,6 +841,7 @@ export function AppShell() {
 
     for (const c of concepts) {
       if (c.isArchived) continue;
+      if (!canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))) continue;
       const brandDisplay = formatLabBrandLabel(c.brandId);
       const brandSearch = `${brandDisplay.toLowerCase()} ${c.brandId.toLowerCase()}`;
       if (
@@ -879,39 +884,41 @@ export function AppShell() {
       }
     }
 
-    for (const pr of projects) {
-      if (pr.name.toLowerCase().includes(q)) {
-        results.push({
-          id: `pr-${pr.id}`,
-          category: 'Проект CRM',
-          title: pr.name,
-          subtitle: `${pr.brandId} · ${pr.quarter}`,
-          onSelect: () => {
-            setPlatformMode('management');
-            navigateTo('roadmap-tasks', { brandId: 'ALL' });
-            setGlobalSearchQuery('');
-            setSearchModalOpen(false);
-          },
-        });
+    if (canUserAccessSection(currentUser, 'roadmap-tasks')) {
+      for (const pr of projects) {
+        if (pr.name.toLowerCase().includes(q)) {
+          results.push({
+            id: `pr-${pr.id}`,
+            category: 'Проект CRM',
+            title: pr.name,
+            subtitle: `${pr.brandId} · ${pr.quarter}`,
+            onSelect: () => {
+              setPlatformMode('management');
+              navigateTo('roadmap-tasks', { brandId: 'ALL' });
+              setGlobalSearchQuery('');
+              setSearchModalOpen(false);
+            },
+          });
+        }
       }
-    }
 
-    for (const t of tasks) {
-      if (t.isArchived) continue;
-      if (t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) {
-        results.push({
-          id: `t-${t.id}`,
-          category: 'Задача CRM',
-          title: t.title,
-          subtitle: `${TASK_STATUS_LABELS_RU[t.status]} · до ${t.deadline}`,
-          onSelect: () => {
-            setPlatformMode('management');
-            navigateTo('roadmap-tasks', { brandId: 'ALL' });
-            setGlobalSearchQuery('');
-            setSearchModalOpen(false);
-            notify('success', 'Открыта доска CRM · Задачи', t.title);
-          },
-        });
+      for (const t of tasks) {
+        if (t.isArchived) continue;
+        if (t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) {
+          results.push({
+            id: `t-${t.id}`,
+            category: 'Задача CRM',
+            title: t.title,
+            subtitle: `${TASK_STATUS_LABELS_RU[t.status]} · до ${t.deadline}`,
+            onSelect: () => {
+              setPlatformMode('management');
+              navigateTo('roadmap-tasks', { brandId: 'ALL' });
+              setGlobalSearchQuery('');
+              setSearchModalOpen(false);
+              notify('success', 'Открыта доска CRM · Задачи', t.title);
+            },
+          });
+        }
       }
     }
 
@@ -934,20 +941,22 @@ export function AppShell() {
       }
     }
 
-    for (const comp of competitors) {
-      if (comp.brandName.toLowerCase().includes(q)) {
-        results.push({
-          id: `comp-${comp.id}`,
-          category: 'Конкурент',
-          title: comp.brandName,
-          subtitle: comp.positioning,
-          onSelect: () => {
-            setPlatformMode('management');
-            navigateTo('market-intelligence', { brandId: 'ALL' });
-            setGlobalSearchQuery('');
-            setSearchModalOpen(false);
-          },
-        });
+    if (canUserAccessSection(currentUser, 'market-intelligence')) {
+      for (const comp of competitors) {
+        if (comp.brandName.toLowerCase().includes(q)) {
+          results.push({
+            id: `comp-${comp.id}`,
+            category: 'Конкурент',
+            title: comp.brandName,
+            subtitle: comp.positioning,
+            onSelect: () => {
+              setPlatformMode('management');
+              navigateTo('market-intelligence', { brandId: 'ALL' });
+              setGlobalSearchQuery('');
+              setSearchModalOpen(false);
+            },
+          });
+        }
       }
     }
 
@@ -1023,6 +1032,10 @@ export function AppShell() {
     return list;
   }, [navHistory, currentUser]);
 
+  const isOwnerOrAdmin =
+    currentUser.role === 'Owner' || currentUser.role === 'Admin';
+  const hasFinanceAccess = canUserViewFinance(currentUser);
+
   const activeProductsCount = useMemo(
     () => products.filter((p) => !p.isArchived).length,
     [products]
@@ -1032,9 +1045,10 @@ export function AppShell() {
       concepts.filter(
         (c) =>
           !c.isArchived &&
-          !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage)
+          !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage) &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))
       ).length,
-    [concepts]
+    [concepts, currentUser]
   );
   const activeConceptsForBrandCount = useMemo(
     () =>
@@ -1042,10 +1056,13 @@ export function AppShell() {
         if (c.isArchived || ['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage)) {
           return false;
         }
+        if (!canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))) {
+          return false;
+        }
         if (!brandFilter || brandFilter === 'ALL') return true;
         return normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter);
       }).length,
-    [concepts, brandFilter]
+    [concepts, brandFilter, currentUser]
   );
   const openTasksCount = useMemo(
     () => tasks.filter((t) => !t.isArchived && t.status !== 'Done').length,
@@ -1135,7 +1152,10 @@ export function AppShell() {
           platformMode === 'management' &&
           (activeSection === 'launch-calendar' ||
             activeSection === 'marketing-growth'),
-        badge: annualMlnRounded > 0 ? `${annualMlnRounded} млн` : null,
+        badge:
+          hasFinanceAccess && annualMlnRounded > 0
+            ? `${annualMlnRounded} млн`
+            : null,
       },
       {
         key: 'procurement',
@@ -1512,21 +1532,23 @@ export function AppShell() {
 
                       {/* Быстрые сервисные действия */}
                       <div className="space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileMenuOpen(false);
-                            setPlatformMode(
-                              platformMode === 'strategy' ? 'management' : 'strategy'
-                            );
-                          }}
-                          className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
-                        >
-                          <span>Режим презентации слайдов</span>
-                          <span className="text-[11px] font-semibold text-[#686762]">
-                            {platformMode === 'strategy' ? 'Включён' : 'Выкл'}
-                          </span>
-                        </button>
+                        {canUserAccessSection(currentUser, 'brand-strategy') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileMenuOpen(false);
+                              setPlatformMode(
+                                platformMode === 'strategy' ? 'management' : 'strategy'
+                              );
+                            }}
+                            className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                          >
+                            <span>Режим презентации слайдов</span>
+                            <span className="text-[11px] font-semibold text-[#686762]">
+                              {platformMode === 'strategy' ? 'Включён' : 'Выкл'}
+                            </span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1545,22 +1567,24 @@ export function AppShell() {
                           <span className="text-[11px] text-[#8A8983]">5 шагов</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileMenuOpen(false);
-                            setDraftAdminModalOpen(true);
-                          }}
-                          className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
-                        >
-                          <span className="inline-flex items-center gap-2">
-                            <Settings className="h-3.5 w-3.5 text-[#686762]" />
-                            <span>Черновик разделов</span>
-                          </span>
-                          <span className="font-mono text-[11px] text-[#686762]">
-                            {enabledDraftCount}/{totalDraftCount}
-                          </span>
-                        </button>
+                        {isOwnerOrAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileMenuOpen(false);
+                              setDraftAdminModalOpen(true);
+                            }}
+                            className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <Settings className="h-3.5 w-3.5 text-[#686762]" />
+                              <span>Черновик разделов</span>
+                            </span>
+                            <span className="font-mono text-[11px] text-[#686762]">
+                              {enabledDraftCount}/{totalDraftCount}
+                            </span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1580,6 +1604,8 @@ export function AppShell() {
                         </button>
 
                         {/* Раздел 10.5 ТЗ: Резервная копия всех данных BORNERS GROUP (Экспорт + Импорт) */}
+                        {isOwnerOrAdmin && (
+                          <>
                         <button
                           type="button"
                           onClick={() => {
@@ -1739,6 +1765,8 @@ export function AppShell() {
                             }}
                           />
                         </label>
+                          </>
+                        )}
                       </div>
 
                       {/* Проверка роли доступа */}
@@ -1831,9 +1859,46 @@ export function AppShell() {
           <main className="flex-1 px-4 sm:px-6 lg:px-8 py-5 md:py-7 max-w-[1600px] w-full mx-auto space-y-6">
             {/* Режим интерактивной презентации стратегии (8 слайдов + лонгрид + весь экран) */}
             {platformMode === 'strategy' ? (
-              <StrategyPresentationDeck
-                onExitPresentation={() => setPlatformMode('management')}
-              />
+              canUserAccessSection(currentUser, 'brand-strategy') ? (
+                <StrategyPresentationDeck
+                  onExitPresentation={() => setPlatformMode('management')}
+                />
+              ) : (
+                <div className="rounded-2xl bg-white dark:bg-[#151A25] border border-[#D5DCE6] dark:border-[#242C3D] p-8 max-w-xl mx-auto text-center space-y-4 shadow-xs">
+                  <div className="text-[18px] font-bold text-[#141413] dark:text-[#EDF0F7]">
+                    Доступ к режиму презентации ограничен
+                  </div>
+                  <p className="text-[13.5px] text-[#5E5D58] dark:text-[#9CA3AF]">
+                    У вашей роли ({ROLE_LABELS_RU[currentUser.role]}) нет доступа к стратегической презентации.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlatformMode('management');
+                      navigateTo('dashboard');
+                    }}
+                    className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[13px] font-semibold cursor-pointer"
+                  >
+                    Вернуться на Главную
+                  </button>
+                </div>
+              )
+            ) : !canUserAccessSection(currentUser, activeSection) ? (
+              <div className="rounded-2xl bg-white dark:bg-[#151A25] border border-[#D5DCE6] dark:border-[#242C3D] p-8 max-w-xl mx-auto text-center space-y-4 shadow-xs">
+                <div className="text-[18px] font-bold text-[#141413] dark:text-[#EDF0F7]">
+                  Раздел недоступен для вашей роли
+                </div>
+                <p className="text-[13.5px] text-[#5E5D58] dark:text-[#9CA3AF]">
+                  Текущая роль ({ROLE_LABELS_RU[currentUser.role]}) не имеет доступа к данному разделу.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('dashboard')}
+                  className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[13px] font-semibold cursor-pointer"
+                >
+                  Вернуться на Главную
+                </button>
+              </div>
             ) : (
               <>
                 {activeSection === 'dashboard' && <DashboardView />}
@@ -1978,27 +2043,31 @@ export function AppShell() {
                         Контуры 2027 · Быстрый переход
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {[
-                          { id: 'dashboard' as const, label: 'Сводка сценариев' },
-                          { id: 'launch-calendar' as const, label: '02 · Матрица 12 мес.' },
-                          { id: 'roadmap-tasks' as const, label: '03 · Партии и PO' },
-                          { id: 'finance' as const, label: '04 · P&L и капитал' },
-                          { id: 'product-lab' as const, label: 'Лаборатория R&D' },
-                          { id: 'documents' as const, label: 'Документы и ТЗ PDF' },
-                        ].map((sec) => (
-                          <button
-                            key={sec.id}
-                            type="button"
-                            onClick={() => {
-                              setPlatformMode('management');
-                              navigateTo(sec.id);
-                              setSearchModalOpen(false);
-                            }}
-                            className="px-3 py-2 rounded-[9px] border-[1.5px] border-[#CECDC4] hover:border-[#141413] bg-[#F7F7F4] hover:bg-white text-left text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
-                          >
-                            {sec.label} →
-                          </button>
-                        ))}
+                        {(
+                          [
+                            { id: 'dashboard' as const, label: 'Сводка сценариев' },
+                            { id: 'launch-calendar' as const, label: '02 · Матрица 12 мес.' },
+                            { id: 'roadmap-tasks' as const, label: '03 · Партии и PO' },
+                            { id: 'finance' as const, label: '04 · P&L и капитал' },
+                            { id: 'product-lab' as const, label: 'Лаборатория R&D' },
+                            { id: 'documents' as const, label: 'Документы и ТЗ PDF' },
+                          ] as const
+                        )
+                          .filter((sec) => canUserAccessSection(currentUser, sec.id))
+                          .map((sec) => (
+                            <button
+                              key={sec.id}
+                              type="button"
+                              onClick={() => {
+                                setPlatformMode('management');
+                                navigateTo(sec.id);
+                                setSearchModalOpen(false);
+                              }}
+                              className="px-3 py-2 rounded-[9px] border-[1.5px] border-[#CECDC4] hover:border-[#141413] bg-[#F7F7F4] hover:bg-white text-left text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
+                            >
+                              {sec.label} →
+                            </button>
+                          ))}
                       </div>
                     </div>
 
@@ -2006,7 +2075,9 @@ export function AppShell() {
                       <div className="space-y-2 pt-2 border-t border-[#E4E3DC]">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-mono font-bold uppercase tracking-[0.06em] text-[#5E5D58]">
-                            Топ-5 драйверов выручки · {livePortfolio.currentScenario.title}
+                            {hasFinanceAccess
+                              ? `Топ-5 драйверов выручки · ${livePortfolio.currentScenario.title}`
+                              : `Ключевые модели · ${livePortfolio.currentScenario.title}`}
                           </span>
                           <span className="text-[11px] text-[#5E5D58]">
                             Паспорт SKU в 1 клик
@@ -2040,12 +2111,14 @@ export function AppShell() {
                                     {m.title}
                                   </span>
                                 </div>
-                                <span className="font-mono text-[12px] font-bold text-[#157347] shrink-0">
-                                  {(met.targetMonthRevenueRub / 1_000_000)
-                                    .toFixed(2)
-                                    .replace('.', ',')}{' '}
-                                  млн ₽/дек
-                                </span>
+                                {hasFinanceAccess && (
+                                  <span className="font-mono text-[12px] font-bold text-[#157347] shrink-0">
+                                    {(met.targetMonthRevenueRub / 1_000_000)
+                                      .toFixed(2)
+                                      .replace('.', ',')}{' '}
+                                    млн ₽/дек
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
@@ -2121,21 +2194,25 @@ export function AppShell() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => restoreEntity(item.entityType, item.id)}
-                          className="h-9 px-3.5 rounded-[8px] bg-[#1F6E50] hover:bg-[#17563E] text-white text-[12.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          <span>Восстановить</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => permanentlyDeleteEntity(item.entityType, item.id)}
-                          className="h-9 px-3 rounded-[8px] border border-[#C94B4B]/40 hover:bg-[#C94B4B] text-[#C94B4B] hover:text-white text-[12px] font-semibold transition cursor-pointer"
-                        >
-                          Удалить навсегда
-                        </button>
+                        {currentUser.role !== 'Viewer' && currentUser.role !== 'Partner' && (
+                          <button
+                            type="button"
+                            onClick={() => restoreEntity(item.entityType, item.id)}
+                            className="h-9 px-3.5 rounded-[8px] bg-[#1F6E50] hover:bg-[#17563E] text-white text-[12.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>Восстановить</span>
+                          </button>
+                        )}
+                        {isOwnerOrAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => permanentlyDeleteEntity(item.entityType, item.id)}
+                            className="h-9 px-3 rounded-[8px] border border-[#C94B4B]/40 hover:bg-[#C94B4B] text-[#C94B4B] hover:text-white text-[12px] font-semibold transition cursor-pointer"
+                          >
+                            Удалить навсегда
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -2147,17 +2224,19 @@ export function AppShell() {
                   <span className="text-[12.5px] text-[#5C5852]">
                     Нажмите на пустое место вокруг окна, чтобы закрыть корзину
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('Очистить корзину удалений безвозвратно?')) {
-                        emptyTrash();
-                      }
-                    }}
-                    className="h-9 px-4 rounded-[8px] border border-[#C94B4B] text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white text-[12.5px] font-semibold transition cursor-pointer"
-                  >
-                    Очистить всю корзину
-                  </button>
+                  {isOwnerOrAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Очистить корзину удалений безвозвратно?')) {
+                          emptyTrash();
+                        }
+                      }}
+                      className="h-9 px-4 rounded-[8px] border border-[#C94B4B] text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white text-[12.5px] font-semibold transition cursor-pointer"
+                    >
+                      Очистить всю корзину
+                    </button>
+                  )}
                 </div>
               )}
             </div>

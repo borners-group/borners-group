@@ -1080,7 +1080,9 @@ export function computeModelScenarioMetrics(
   const buyoutRatePct = inferDefaultBuyoutRatePctForModel(model, plan.buyoutRatePct);
   const orderMultiplier =
     buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 0;
-  const isAkushaModel = (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
+  const isAkushaModel =
+    (model.customBrandLabel || '').toUpperCase().includes('AKUSHA') ||
+    (model.code || '').toUpperCase().startsWith('AKU-');
 
   const actingSku = getActingSkuByWbOrVendor(model.code, model.title);
   const isUnmodifiedActingPlan =
@@ -1133,7 +1135,10 @@ export function computeModelScenarioMetrics(
           ) {
             return Math.round(storedOrder);
           }
-          return Math.round((cleanPacks * 100) / buyoutRatePct);
+          const isOfficialAkushaPreset = /^scen-akusha-0\d{2}$/.test(model.id || '');
+          return isOfficialAkushaPreset
+            ? Math.ceil((cleanPacks * 100) / buyoutRatePct)
+            : Math.round((cleanPacks * 100) / buyoutRatePct);
         });
 
   const monthlyOrdersRub =
@@ -1452,6 +1457,33 @@ export function autoDistributeScenarioByPriority(
     const nextPacks = updatedMap.get(m.id);
     if (!nextPacks) return m;
     const prevPlan = m.plansByScenario[scenario.id] || m.plansByScenario[1];
+    const isAkusha =
+      (m.customBrandLabel || '').toUpperCase().includes('AKUSHA') ||
+      (m.code || '').toUpperCase().startsWith('AKU-');
+    const buyoutPct = inferDefaultBuyoutRatePctForModel(m, prevPlan?.buyoutRatePct);
+    const shouldSyncOrders =
+      Array.isArray(prevPlan?.monthlyOrdersPacks) ||
+      Array.isArray(prevPlan?.monthlyOrdersRub) ||
+      m.buyoutRatePct !== undefined ||
+      prevPlan?.buyoutRatePct !== undefined;
+    const nextOrdersPacks = shouldSyncOrders
+      ? nextPacks.map((packs) => {
+          const clean = Math.max(0, Math.round(packs || 0));
+          if (buyoutPct <= 0) return 0;
+          if (buyoutPct >= 100) return clean;
+          return isAkusha
+            ? Math.ceil((clean * 100) / buyoutPct)
+            : Math.round((clean * 100) / buyoutPct);
+        })
+      : prevPlan?.monthlyOrdersPacks;
+    const nextOrdersRub =
+      shouldSyncOrders && nextOrdersPacks
+        ? nextOrdersPacks.map(
+            (ordPacks, idx) =>
+              ordPacks * (prevPlan?.monthlyPricesRub?.[idx] ?? m.retailPriceRub)
+          )
+        : prevPlan?.monthlyOrdersRub;
+
     return {
       ...m,
       plansByScenario: {
@@ -1461,6 +1493,13 @@ export function autoDistributeScenarioByPriority(
           scenarioId: scenario.id,
           monthlyPacks: nextPacks,
           monthlyReceiptsPacks: [...nextPacks],
+          monthlyRevenuesRubOverride: undefined,
+          ...(shouldSyncOrders
+            ? {
+                monthlyOrdersPacks: nextOrdersPacks,
+                monthlyOrdersRub: nextOrdersRub,
+              }
+            : {}),
         },
       },
     };

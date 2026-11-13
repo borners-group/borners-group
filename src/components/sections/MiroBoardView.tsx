@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import { MiroBoardItem, ProductConcept } from '@/types/platform';
+import { canUserEditBrand, canUserViewBrandConcept } from '@/lib/finance';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
@@ -170,10 +171,25 @@ export function MiroBoardView() {
     updateConcept,
     setSelectedConceptId,
     currentUser,
+    platformMode,
     brandFilter,
     navigateTo,
     notify,
   } = usePlatform();
+
+  const canEdit =
+    platformMode === 'management' &&
+    (currentUser.role === 'Owner' ||
+      currentUser.role === 'Admin' ||
+      (currentUser.role === 'Manager' &&
+        (brandFilter === 'ALL'
+          ? currentUser.assignedBrandIds.length > 0
+          : canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter)))));
+
+  const canEditItem = (item: MiroBoardItem) =>
+    canEdit &&
+    (item.brandId === 'ALL' ||
+      canUserEditBrand(currentUser, normalizeLabBrandCode(item.brandId)));
 
   const {
     models: liveScenarioModels,
@@ -182,13 +198,20 @@ export function MiroBoardView() {
   } = useLiveScenarioPortfolio();
 
   const handlePromoteMiroItemToRnD = (item: MiroBoardItem) => {
+    if (!canEditItem(item)) return;
     const rawBrand =
       item.brandId && item.brandId !== 'ALL'
         ? item.brandId
         : brandFilter && brandFilter !== 'ALL'
         ? brandFilter
+        : currentUser.role === 'Manager' && currentUser.assignedBrandIds.length > 0
+        ? currentUser.assignedBrandIds[0]
         : 'NA_TELE';
     const targetBrand = normalizeLabBrandCode(rawBrand);
+    if (!canUserEditBrand(currentUser, targetBrand)) {
+      notify('warning', 'Недостаточно прав для создания разработки этого бренда');
+      return;
+    }
     const conceptName =
       item.title?.trim() ||
       item.content?.trim().slice(0, 48) ||
@@ -307,11 +330,33 @@ export function MiroBoardView() {
   const timerRef = useRef<number | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      const rec = mediaRecorderRef.current;
+      if (rec) {
+        try {
+          if (rec.state !== 'inactive') {
+            rec.stop();
+          }
+        } catch {
+          // ignore
+        }
+        rec.stream?.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
+
   const visibleItems = (miroItems || []).filter(
     (item) =>
-      brandFilter === 'ALL' ||
-      item.brandId === 'ALL' ||
-      normalizeLabBrandCode(item.brandId) === normalizeLabBrandCode(brandFilter)
+      (brandFilter === 'ALL' ||
+        item.brandId === 'ALL' ||
+        normalizeLabBrandCode(item.brandId) === normalizeLabBrandCode(brandFilter)) &&
+      (item.brandId === 'ALL' ||
+        canUserViewBrandConcept(currentUser, normalizeLabBrandCode(item.brandId)))
   );
 
   // Перевод экранных координат мыши в мировые координаты бесконечного холста
@@ -339,10 +384,10 @@ export function MiroBoardView() {
 
   // Создание или удаление стрелки между двумя карточками
   const toggleArrowConnection = (sourceId: string, targetId: string) => {
-    if (!sourceId || !targetId || sourceId === targetId) return;
+    if (!canEdit || !sourceId || !targetId || sourceId === targetId) return;
     const sourceItem = (miroItems || []).find((m) => m.id === sourceId);
     const targetItem = (miroItems || []).find((m) => m.id === targetId);
-    if (!sourceItem || !targetItem) return;
+    if (!sourceItem || !targetItem || !canEditItem(sourceItem)) return;
 
     const currentLinks = sourceItem.connectedToIds || [];
     const exists = currentLinks.includes(targetId);
@@ -361,15 +406,20 @@ export function MiroBoardView() {
 
   const removeArrowConnection = (sourceId: string, targetId: string) => {
     const sourceItem = (miroItems || []).find((m) => m.id === sourceId);
-    if (!sourceItem) return;
+    if (!sourceItem || !canEditItem(sourceItem)) return;
     updateMiroItem(sourceId, {
       connectedToIds: (sourceItem.connectedToIds || []).filter((id) => id !== targetId),
     });
     notify('warning', 'Связь-стрелка удалена');
   };
 
-  const resolveCanvasBrandId = () =>
-    brandFilter === 'ALL' ? 'ALL' : normalizeLabBrandCode(brandFilter);
+  const resolveCanvasBrandId = () => {
+    if (brandFilter !== 'ALL') return normalizeLabBrandCode(brandFilter);
+    if (currentUser.role === 'Manager' && currentUser.assignedBrandIds.length > 0) {
+      return normalizeLabBrandCode(currentUser.assignedBrandIds[0]);
+    }
+    return 'ALL';
+  };
 
   const handleAddSticky = (color = '#FFF8D6') => {
     const pos = getNextCoordinates();
@@ -577,6 +627,15 @@ export function MiroBoardView() {
     const el = viewportRef.current;
     if (!el) return;
     const onNativeWheel = (e: WheelEvent) => {
+      if (
+        !e.ctrlKey &&
+        !e.metaKey &&
+        e.target instanceof HTMLTextAreaElement &&
+        document.activeElement === e.target &&
+        e.target.scrollHeight > e.target.clientHeight
+      ) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       if (e.ctrlKey || e.metaKey) {
@@ -604,6 +663,10 @@ export function MiroBoardView() {
       return;
     }
 
+    if (!canEditItem(item)) {
+      return;
+    }
+
     const tag = (e.target as HTMLElement).tagName;
     if (
       tag === 'INPUT' ||
@@ -622,6 +685,8 @@ export function MiroBoardView() {
 
   // Начало перетаскивания стрелки от узловой точки карточки
   const handleStartDragArrow = (e: React.MouseEvent, sourceId: string) => {
+    const src = (miroItems || []).find((m) => m.id === sourceId);
+    if (!src || !canEditItem(src)) return;
     e.stopPropagation();
     e.preventDefault();
     const worldPos = screenToWorld(e.clientX, e.clientY);
@@ -732,85 +797,90 @@ export function MiroBoardView() {
 
         {/* Кнопки инструментов холста */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleAddSticky('#FFF8D6')}
-            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#181715] hover:bg-[#2C2B29] text-white text-[12.5px] font-semibold transition cursor-pointer"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>+ Стикер</span>
-          </button>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleAddSticky('#FFF8D6')}
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#181715] hover:bg-[#2C2B29] text-white text-[12.5px] font-semibold transition cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>+ Стикер</span>
+              </button>
 
-          <label className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#181715] text-[12.5px] font-semibold transition cursor-pointer">
-            <ImageIcon className="h-3.5 w-3.5 text-[#B85D35]" />
-            <span>+ Фото (1–10)</span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUploadPhotos}
-              className="hidden"
-            />
-          </label>
+              <label className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#181715] text-[12.5px] font-semibold transition cursor-pointer">
+                <ImageIcon className="h-3.5 w-3.5 text-[#B85D35]" />
+                <span>+ Фото (1–10)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadPhotos}
+                  className="hidden"
+                />
+              </label>
 
-          {/* Кнопка записи голосового сообщения */}
-          {!isRecording ? (
-            <button
-              type="button"
-              onClick={startVoiceRecording}
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#B85D35] hover:bg-[#9E4B27] text-white text-[12.5px] font-semibold transition cursor-pointer"
-            >
-              <Mic className="h-3.5 w-3.5" />
-              <span>+ Записать голос</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={stopVoiceRecording}
-              className="inline-flex items-center gap-2 h-9 px-3.5 rounded-[8px] bg-[#C94B4B] text-white text-[12.5px] font-bold animate-pulse cursor-pointer"
-            >
-              <Square className="h-3.5 w-3.5 fill-current" />
-              <span>Стоп ({recordingSec} сек.) — сохранить</span>
-            </button>
+              {/* Кнопка записи голосового сообщения */}
+              {!isRecording ? (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#B85D35] hover:bg-[#9E4B27] text-white text-[12.5px] font-semibold transition cursor-pointer"
+                >
+                  <Mic className="h-3.5 w-3.5" />
+                  <span>+ Записать голос</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopVoiceRecording}
+                  className="inline-flex items-center gap-2 h-9 px-3.5 rounded-[8px] bg-[#C94B4B] text-white text-[12.5px] font-bold animate-pulse cursor-pointer"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                  <span>Стоп ({recordingSec} сек.) — сохранить</span>
+                </button>
+              )}
+
+              {/* Загрузка готового голосового файла */}
+              <label
+                title="Загрузить голосовое из Telegram / телефона (.ogg, .mp3, .wav, .m4a)"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-medium transition cursor-pointer"
+              >
+                <Upload className="h-3.5 w-3.5 text-[#5C5852]" />
+                <span>Аудиофайл</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleUploadAudioFile}
+                  className="hidden"
+                />
+              </label>
+
+              {/* Закрепить карточку R&D */}
+              <select
+                value={selectedConceptToPin}
+                onChange={(e) => {
+                  if (e.target.value) handlePinConcept(e.target.value);
+                }}
+                className="h-9 rounded-[8px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] px-2.5 text-[12px] font-medium text-[#181715] cursor-pointer max-w-[195px]"
+              >
+                <option value="">+ Карточка R&amp;D...</option>
+                {concepts
+                  .filter(
+                    (c) =>
+                      !c.isArchived &&
+                      canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId)) &&
+                      (brandFilter === 'ALL' ||
+                        normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
+                  )
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{formatLabBrandLabel(c.brandId)}] {c.code} · {c.name}
+                    </option>
+                  ))}
+              </select>
+            </>
           )}
-
-          {/* Загрузка готового голосового файла */}
-          <label
-            title="Загрузить голосовое из Telegram / телефона (.ogg, .mp3, .wav, .m4a)"
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-medium transition cursor-pointer"
-          >
-            <Upload className="h-3.5 w-3.5 text-[#5C5852]" />
-            <span>Аудиофайл</span>
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={handleUploadAudioFile}
-              className="hidden"
-            />
-          </label>
-
-          {/* Закрепить карточку R&D */}
-          <select
-            value={selectedConceptToPin}
-            onChange={(e) => {
-              if (e.target.value) handlePinConcept(e.target.value);
-            }}
-            className="h-9 rounded-[8px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] px-2.5 text-[12px] font-medium text-[#181715] cursor-pointer max-w-[195px]"
-          >
-            <option value="">+ Карточка R&amp;D...</option>
-            {concepts
-              .filter(
-                (c) =>
-                  !c.isArchived &&
-                  (brandFilter === 'ALL' ||
-                    normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
-              )
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  [{formatLabBrandLabel(c.brandId)}] {c.code} · {c.name}
-                </option>
-              ))}
-          </select>
 
           {/* Управление бесконечным холстом и масштабом */}
           <div className="inline-flex items-center rounded-[8px] border-[1.5px] border-[#CFC8BC] bg-white p-0.5">
@@ -844,20 +914,22 @@ export function MiroBoardView() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              notify(
-                'success',
-                '✓ Все карточки и связи на доске сохранены',
-                `Карточек на холсте: ${visibleItems.length} · Связей: ${arrowLinks.length}`
-              )
-            }
-            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#16805D] hover:bg-[#116649] text-white text-[12.5px] font-semibold transition cursor-pointer shadow-2xs"
-          >
-            <Check className="h-3.5 w-3.5" />
-            <span>Сохранить доску</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() =>
+                notify(
+                  'success',
+                  '✓ Все карточки и связи на доске сохранены',
+                  `Карточек на холсте: ${visibleItems.length} · Связей: ${arrowLinks.length}`
+                )
+              }
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#16805D] hover:bg-[#116649] text-white text-[12.5px] font-semibold transition cursor-pointer shadow-2xs"
+            >
+              <Check className="h-3.5 w-3.5" />
+              <span>Сохранить доску</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -948,7 +1020,7 @@ export function MiroBoardView() {
                 refY="4"
                 orient="auto"
               >
-                <path d="M 0 0 L 10 4 L 0 8 z" fill="#181715" />
+                <path d="M 0 0 L 10 4 L 0 8 z" fill="#E07A4F" />
               </marker>
             </defs>
 
@@ -961,10 +1033,12 @@ export function MiroBoardView() {
                   fill="none"
                   stroke="transparent"
                   strokeWidth={16}
-                  className="cursor-pointer"
+                  className={canEditItem(source) ? 'cursor-pointer' : 'cursor-default'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeArrowConnection(source.id, target.id);
+                    if (canEditItem(source)) {
+                      removeArrowConnection(source.id, target.id);
+                    }
                   }}
                 />
                 {/* Видимая кривая стрелка */}
@@ -974,7 +1048,7 @@ export function MiroBoardView() {
                   stroke="#B85D35"
                   strokeWidth={2.75}
                   markerEnd="url(#studio-arrowhead)"
-                  className="transition-all group-hover:stroke-[#181715]"
+                  className="transition-all group-hover:stroke-[#E07A4F]"
                 />
                 {/* Начальная точка стрелки */}
                 <circle
@@ -986,33 +1060,35 @@ export function MiroBoardView() {
                   strokeWidth={2.5}
                 />
                 {/* Кнопка удаления стрелки посередине дуги */}
-                <g
-                  transform={`translate(${geometry.midX}, ${geometry.midY})`}
-                  className="cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeArrowConnection(source.id, target.id);
-                  }}
-                >
-                  <title>Удалить эту стрелку</title>
-                  <circle
-                    r={10}
-                    fill="#FAF8F5"
-                    stroke="#B85D35"
-                    strokeWidth={1.75}
-                    className="group-hover:fill-[#B93829] group-hover:stroke-[#B93829] transition-colors"
-                  />
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize="10"
-                    fontWeight="bold"
-                    fill="#B85D35"
-                    className="group-hover:fill-white select-none"
+                {canEditItem(source) && (
+                  <g
+                    transform={`translate(${geometry.midX}, ${geometry.midY})`}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeArrowConnection(source.id, target.id);
+                    }}
                   >
-                    ✕
-                  </text>
-                </g>
+                    <title>Удалить эту стрелку</title>
+                    <circle
+                      r={10}
+                      fill="#FAF8F5"
+                      stroke="#B85D35"
+                      strokeWidth={1.75}
+                      className="group-hover:fill-[#B93829] group-hover:stroke-[#B93829] transition-colors"
+                    />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize="10"
+                      fontWeight="bold"
+                      fill="#B85D35"
+                      className="group-hover:fill-white select-none"
+                    >
+                      ✕
+                    </text>
+                  </g>
+                )}
               </g>
             ))}
 
@@ -1023,7 +1099,7 @@ export function MiroBoardView() {
                   activeDragSource.y + estimateCardHeight(activeDragSource) / 2
                 } L ${arrowCursorWorld.x} ${arrowCursorWorld.y}`}
                 fill="none"
-                stroke="#181715"
+                stroke="#E07A4F"
                 strokeWidth={2.5}
                 strokeDasharray="6 4"
                 markerEnd="url(#studio-arrowhead-active)"
@@ -1033,6 +1109,7 @@ export function MiroBoardView() {
 
           {/* КАРТОЧКИ НА БЕСКОНЕЧНОМ ХОЛСТЕ */}
           {visibleItems.map((item) => {
+            const itemEditable = canEditItem(item);
             const isConnectSource = connectingSourceId === item.id;
             const isConnectTargetCandidate =
               Boolean(connectingSourceId && connectingSourceId !== item.id) ||
@@ -1057,49 +1134,55 @@ export function MiroBoardView() {
                   width: `${item.width || 290}px`,
                   backgroundColor: item.color || '#FFF8D6',
                 }}
-                className={`group/card pointer-events-auto absolute rounded-[14px] border-2 p-4 space-y-2.5 transition-shadow ${
+                className={`miro-pastel-card group/card pointer-events-auto absolute rounded-[14px] border-2 p-4 space-y-2.5 transition-shadow ${
                   draggingId === item.id
                     ? 'border-[#181715] shadow-2xl z-30 cursor-grabbing'
                     : isConnectSource
                     ? 'border-[#B85D35] ring-4 ring-[#B85D35]/30 shadow-xl z-30'
                     : isConnectTargetCandidate
                     ? 'border-[#B85D35] hover:ring-4 hover:ring-[#B85D35]/40 shadow-lg z-20 cursor-pointer'
-                    : 'border-[#181715]/85 hover:border-[#181715] shadow-md z-10 cursor-grab'
+                    : `border-[#181715]/85 hover:border-[#181715] shadow-md z-10 ${
+                        itemEditable ? 'cursor-grab' : 'cursor-default'
+                      }`
                 }`}
               >
                 {/* 4 УЗЛОВЫЕ ТОЧКИ ПО КРАЯМ КАРТОЧКИ ДЛЯ ПЕРЕТАСКИВАНИЯ СТРЕЛОЧЕК */}
-                <button
-                  type="button"
-                  onMouseDown={(e) => handleStartDragArrow(e, item.id)}
-                  title="Потяните отсюда стрелку к другой карточке"
-                  className=" -top-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => handleStartDragArrow(e, item.id)}
-                  title="Потяните отсюда стрелку к другой карточке"
-                  className="-right-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => handleStartDragArrow(e, item.id)}
-                  title="Потяните отсюда стрелку к другой карточке"
-                  className="-bottom-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => handleStartDragArrow(e, item.id)}
-                  title="Потяните отсюда стрелку к другой карточке"
-                  className="-left-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
-                </button>
+                {itemEditable && (
+                  <>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      title="Потяните отсюда стрелку к другой карточке"
+                      className=" -top-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      title="Потяните отсюда стрелку к другой карточке"
+                      className="-right-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      title="Потяните отсюда стрелку к другой карточке"
+                      className="-bottom-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      title="Потяните отсюда стрелку к другой карточке"
+                      className="-left-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                    </button>
+                  </>
+                )}
 
                 {/* Верхняя полоска карточки */}
                 <div className="flex items-center justify-between gap-1.5 border-b border-black/10 pb-2">
@@ -1116,52 +1199,57 @@ export function MiroBoardView() {
                     </span>
                   </span>
 
-                  <div className="flex items-center gap-1">
-                    {/* Кнопка быстрого прикрепления стрелки в 1 клик */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConnectingSourceId((prev) =>
-                          prev === item.id ? null : item.id
-                        );
-                      }}
-                      className={`px-2 py-0.5 rounded-[5px] text-[10.5px] font-bold transition cursor-pointer inline-flex items-center gap-1 ${
-                        isConnectSource
-                          ? 'bg-[#B85D35] text-white'
-                          : 'bg-white/80 hover:bg-[#181715] text-[#181715] hover:text-white border border-black/20'
-                      }`}
-                      title="Прикрепить стрелочкой к другой карточке"
-                    >
-                      <span>↗ Стрелка</span>
-                    </button>
+                  {itemEditable && (
+                    <div className="flex items-center gap-1">
+                      {/* Кнопка быстрого прикрепления стрелки в 1 клик */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConnectingSourceId((prev) =>
+                            prev === item.id ? null : item.id
+                          );
+                        }}
+                        className={`px-2 py-0.5 rounded-[5px] text-[10.5px] font-bold transition cursor-pointer inline-flex items-center gap-1 ${
+                          isConnectSource
+                            ? 'bg-[#B85D35] text-white'
+                            : 'bg-white/80 hover:bg-[#181715] text-[#181715] hover:text-white border border-black/20'
+                        }`}
+                        title="Прикрепить стрелочкой к другой карточке"
+                      >
+                        <span>↗ Стрелка</span>
+                      </button>
 
-                    {item.type === 'sticky' &&
-                      STICKY_COLORS.map((c) => (
-                        <button
-                          key={c.hex}
-                          type="button"
-                          onClick={() => updateMiroItem(item.id, { color: c.hex })}
-                          style={{ backgroundColor: c.hex }}
-                          className="h-3.5 w-3.5 rounded-full border border-black/30 cursor-pointer"
-                          title={c.label}
-                        />
-                      ))}
-                    <button
-                      type="button"
-                      onClick={() => deleteMiroItem(item.id)}
-                      className="p-1 text-[#6E6A63] hover:text-[#B93829] cursor-pointer"
-                      title="Удалить с холста"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                      {item.type === 'sticky' &&
+                        STICKY_COLORS.map((c) => (
+                          <button
+                            key={c.hex}
+                            type="button"
+                            onClick={() => updateMiroItem(item.id, { color: c.hex })}
+                            style={{ backgroundColor: c.hex }}
+                            className="h-3.5 w-3.5 rounded-full border border-black/30 cursor-pointer"
+                            title={c.label}
+                          />
+                        ))}
+                      <button
+                        type="button"
+                        onClick={() => deleteMiroItem(item.id)}
+                        className="p-1 text-[#6E6A63] hover:text-[#B93829] cursor-pointer"
+                        title="Удалить с холста"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Заголовок карточки (редактируемый) */}
                 <input
                   value={item.title}
-                  onChange={(e) => updateMiroItem(item.id, { title: e.target.value })}
+                  readOnly={!itemEditable}
+                  onChange={(e) => {
+                    if (itemEditable) updateMiroItem(item.id, { title: e.target.value });
+                  }}
                   className="w-full bg-transparent text-[14.5px] font-bold text-[#181715] outline-none border-b border-transparent focus:border-black/25 pb-0.5"
                 />
 
@@ -1181,7 +1269,9 @@ export function MiroBoardView() {
                           <button
                             key={idx}
                             type="button"
-                            onClick={() => updateMiroItem(item.id, { imageUrl: u })}
+                            onClick={() => {
+                              if (itemEditable) updateMiroItem(item.id, { imageUrl: u });
+                            }}
                             className={`h-9 w-9 rounded border overflow-hidden shrink-0 cursor-pointer ${
                               item.imageUrl === u
                                 ? 'border-[#B85D35] border-2'
@@ -1219,7 +1309,10 @@ export function MiroBoardView() {
                 <textarea
                   rows={item.imageUrl || item.type === 'voice' ? 2 : 4}
                   value={item.content}
-                  onChange={(e) => updateMiroItem(item.id, { content: e.target.value })}
+                  readOnly={!itemEditable}
+                  onChange={(e) => {
+                    if (itemEditable) updateMiroItem(item.id, { content: e.target.value });
+                  }}
                   className="w-full bg-transparent text-[12.5px] text-[#3D3A36] leading-snug outline-none resize-none"
                 />
 
@@ -1236,17 +1329,19 @@ export function MiroBoardView() {
                         >
                           <span className="text-[#B85D35] font-bold">➔</span>
                           <span className="truncate max-w-[130px]">{targetObj.title}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeArrowConnection(item.id, targetId);
-                            }}
-                            className="text-[#8C867B] hover:text-[#B93829] cursor-pointer"
-                            title="Открепить стрелку"
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
+                          {itemEditable && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeArrowConnection(item.id, targetId);
+                              }}
+                              className="text-[#8C867B] hover:text-[#B93829] cursor-pointer"
+                              title="Открепить стрелку"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          )}
                         </span>
                       );
                     })}
@@ -1292,7 +1387,8 @@ export function MiroBoardView() {
                   </button>
                 )}
 
-                {!hasActiveLinkedConcept &&
+                {itemEditable &&
+                  !hasActiveLinkedConcept &&
                   (item.type === 'sticky' ||
                     item.type === 'photo' ||
                     item.type === 'voice' ||
@@ -1317,21 +1413,23 @@ export function MiroBoardView() {
                   <span>
                     {item.authorName} · {item.createdAt}
                   </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateMiroItem(item.id, {
-                        title: item.title,
-                        content: item.content,
-                      });
-                      notify('success', `✓ Карточка «${item.title}» сохранена`);
-                    }}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] bg-[#16805D] hover:bg-[#116649] text-white text-[10.5px] font-semibold transition cursor-pointer"
-                  >
-                    <Check className="h-2.5 w-2.5" />
-                    <span>Сохранить</span>
-                  </button>
+                  {itemEditable && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateMiroItem(item.id, {
+                          title: item.title,
+                          content: item.content,
+                        });
+                        notify('success', `✓ Карточка «${item.title}» сохранена`);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] bg-[#16805D] hover:bg-[#116649] text-white text-[10.5px] font-semibold transition cursor-pointer"
+                    >
+                      <Check className="h-2.5 w-2.5" />
+                      <span>Сохранить</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );

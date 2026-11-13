@@ -1,9 +1,93 @@
 // Единый движок архитектуры данных, закупок и финансов по ТЗ v1.1
 // «Единая платформа управления товарным бизнесом»: Продукт -> Продажи -> Закупки -> Финансы
 
-import type { GrowthScenarioDef, ScenarioModelSpec } from './scenarioData.ts';
+import {
+  computeModelScenarioMetrics,
+  type GrowthScenarioDef,
+  type ScenarioModelSpec,
+} from './scenarioData.ts';
 import { getActingSkuByWbOrVendor } from './actingAssortment2027.ts';
 import { getS1NewVariantByCodeOrId, isUnverifiedActingSku } from './scenarioS1_100M.ts';
+import { getBrandProductionProfile } from './brandProductionConfig.ts';
+export { getBrandProductionProfile };
+
+export function getPoArrivalYear(
+  po: Pick<ApprovedPurchaseOrder, 'requiredArrivalDateIso'>
+): number {
+  const match = (po.requiredArrivalDateIso || '').trim().match(/^(\d{4})-/);
+  if (match) {
+    const yr = Number(match[1]);
+    if (Number.isFinite(yr) && yr >= 2020 && yr <= 2100) return yr;
+  }
+  return 2027;
+}
+
+export function csvEscapeCell(
+  val: unknown,
+  delimiter: ',' | ';' = ';',
+  dataImageLabel = 'Локальное фото SKU'
+): string {
+  if (val === null || val === undefined) return '';
+  const rawStr = String(val);
+  const str = rawStr.trimStart().startsWith('data:image/')
+    ? dataImageLabel
+    : rawStr;
+  if (
+    str.includes(delimiter) ||
+    str.includes('"') ||
+    str.includes('\r') ||
+    str.includes('\n')
+  ) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function allocatePacksByDynamicSizes(
+  totalPacks: number,
+  sizes: string[],
+  sharesPct: Record<string, number>
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const sz of sizes) result[sz] = 0;
+  const cleanTotal = Math.max(0, Math.round(totalPacks || 0));
+  if (cleanTotal === 0 || sizes.length === 0) return result;
+
+  const rawWeights = sizes.map((sz) => Math.max(0, Number(sharesPct?.[sz] ?? 0)));
+  const weightSum = rawWeights.reduce((s, v) => s + v, 0);
+  const normalizedWeights =
+    weightSum > 0
+      ? rawWeights.map((w) => w / weightSum)
+      : sizes.map(() => 1 / sizes.length);
+
+  const quotas = sizes.map((sz, idx) => {
+    const exact = cleanTotal * normalizedWeights[idx];
+    const floored = Math.floor(exact);
+    return {
+      sz,
+      idx,
+      floored,
+      remainder: exact - floored,
+      weight: normalizedWeights[idx],
+    };
+  });
+
+  let rem = cleanTotal - quotas.reduce((sum, item) => sum + item.floored, 0);
+  const sorted = [...quotas].sort((a, b) => {
+    if (Math.abs(b.remainder - a.remainder) > 1e-9) return b.remainder - a.remainder;
+    if (Math.abs(b.weight - a.weight) > 1e-9) return b.weight - a.weight;
+    return a.idx - b.idx;
+  });
+
+  for (let i = 0; i < sorted.length && rem > 0; i++) {
+    sorted[i].floored += 1;
+    rem -= 1;
+  }
+  for (const q of quotas) {
+    result[q.sz] = q.floored;
+  }
+  return result;
+}
 
 export type ValueStatusCode =
   | 'fact'
@@ -1152,6 +1236,7 @@ export function computeProcurementPlan(
   const approvedByMonth = Array(12).fill(0);
   for (const po of shared.approvedOrders) {
     if (po.confirmedByFactory === false) continue;
+    if (getPoArrivalYear(po) !== year) continue;
     if (po.arrivalMonthIdx >= 0 && po.arrivalMonthIdx < 12) {
       approvedByMonth[po.arrivalMonthIdx] += po.packsQty;
     }
@@ -1163,29 +1248,17 @@ export function computeProcurementPlan(
   );
 
   // Раздел 5.3 ТЗ: если это сценарий 2028 года, переносим конечный физический остаток 31 декабря 2027 года в начальный остаток января 2028 года
-  if (year === 2028) {
+  if (year >= 2028) {
     if (plan.initialStockPacks > 0) {
       netOpeningAvailablePacks = Math.max(0, plan.initialStockPacks);
     } else {
-      const ref2027Id = scenario.copiedFromScenarioId || 1;
-      const plan2027 =
-        model.plansByScenario[ref2027Id] ||
-        model.plansByScenario[1] ||
-        Object.values(model.plansByScenario).find((p) => p.scenarioId !== scenario.id);
-      if (plan2027) {
-        let stock2027 = Math.max(
-          0,
-          (shared.actualOpeningStockPacks || plan2027.initialStockPacks || 0) -
-            shared.reservedStockPacks
-        );
-        for (let m27 = 0; m27 < 12; m27++) {
-          const rec27 =
-            (approvedByMonth[m27] || 0) + (plan2027.monthlyReceiptsPacks?.[m27] || 0);
-          const dem27 = Math.max(0, plan2027.monthlyPacks?.[m27] || 0);
-          stock2027 = Math.max(0, stock2027 + rec27 - dem27);
-        }
-        netOpeningAvailablePacks = stock2027;
-      }
+      const fallbackPlan2027 = Object.values(model.plansByScenario).find(
+        (p) => p.scenarioId !== scenario.id
+      );
+      const ref2027Id =
+        scenario.copiedFromScenarioId ||
+        (model.plansByScenario[1] ? 1 : fallbackPlan2027?.scenarioId || 1);
+      netOpeningAvailablePacks = computeCarryOverStock2027To2028(model, ref2027Id);
     }
   }
 
@@ -1391,7 +1464,7 @@ export function computeProcurementPlan(
         estimatedTotalRub,
         prepaymentRub,
         balancePaymentRub,
-        isUrgentPastOrderDate: recommendedOrderDateIso < '2027-01-01',
+        isUrgentPastOrderDate: recommendedOrderDateIso < `${year}-01-01`,
         isAdditionalOrder: confirmedReceiptsInPeriodPacks > 0,
         hasCustomPacksOverride,
         hasCustomDateOverride,
@@ -1424,7 +1497,7 @@ export function computeProcurementPlan(
 
   if (scalingStage === 'hypothesis' || scalingStage === 'test') {
     const hasConfirmedApprovedOrder = shared.approvedOrders.some(
-      (po) => po.confirmedByFactory !== false
+      (po) => po.confirmedByFactory !== false && getPoArrivalYear(po) === year
     );
     if (!hasConfirmedApprovedOrder && allPeriodBatches.length > 0) {
       recommendedBatches = [{ ...allPeriodBatches[0], isTestBatch: true }];
@@ -1448,6 +1521,7 @@ export function computeProcurementPlan(
   // но если изменился срок производства или целевая себестоимость — показываем расхождение!)
   const orderDiscrepancies: ApprovedOrderDiscrepancy[] = [];
   for (const po of shared.approvedOrders) {
+    if (getPoArrivalYear(po) !== year) continue;
     const recalcDate = subtractDaysFromMonthStart(year, po.arrivalMonthIdx, totalLeadDays);
     const daysShifted = totalLeadDays - po.leadTimeDaysAtApproval;
     const currentUnitCost = Math.max(0, model.unitCostRub || 0);
@@ -1924,6 +1998,31 @@ export function removeApprovedPurchaseOrder(
 export function serializePurchaseOrdersToCsv(
   items: { model: ScenarioModelSpec; po: ApprovedPurchaseOrder }[]
 ): string {
+  const brandSet = new Set(
+    items.map(({ model }) => getBrandUnitConfig(model).brandCode)
+  );
+  const singleBrand = brandSet.size === 1 ? Array.from(brandSet)[0] : null;
+  const packsColLabel =
+    singleBrand === 'AKUSHA'
+      ? 'Пар'
+      : singleBrand === 'LISKANI'
+      ? 'Компл. штор'
+      : 'Комплектов';
+  const perPackColLabel =
+    singleBrand === 'AKUSHA'
+      ? 'Пар в кор.'
+      : singleBrand === 'LISKANI'
+      ? 'Полотен в компл.'
+      : 'Изделий в компл.';
+  const physColLabel =
+    singleBrand === 'AKUSHA'
+      ? 'Пар обуви'
+      : singleBrand === 'LISKANI'
+      ? 'Полотен / ед.'
+      : 'Физических изделий';
+  const unitCostColLabel =
+    singleBrand === 'AKUSHA' ? 'Себест. за пару ₽' : 'Себест. за компл. ₽';
+
   const header = [
     'Номер PO',
     'Статус',
@@ -1933,10 +2032,10 @@ export function serializePurchaseOrdersToCsv(
     'Дата заказа',
     'Месяц прихода',
     'Дата прихода',
-    'Комплектов',
-    'Изделий в компл.',
-    'Физических изделий',
-    'Себест. за компл. ₽',
+    packsColLabel,
+    perPackColLabel,
+    physColLabel,
+    unitCostColLabel,
     'Сумма заказа ₽',
     'Предоплата ₽',
     'Доплата ₽',
@@ -1945,11 +2044,11 @@ export function serializePurchaseOrdersToCsv(
 
   const rows = items.map(({ model, po }) =>
     [
-      po.orderNumber,
-      PO_STATUS_LABELS_RU[po.status] || po.status,
-      model.code,
-      `"${(model.title || '').replace(/"/g, '""')}"`,
-      `"${(po.factoryName || '').replace(/"/g, '""')}"`,
+      csvEscapeCell(po.orderNumber, ';'),
+      csvEscapeCell(PO_STATUS_LABELS_RU[po.status] || po.status, ';'),
+      csvEscapeCell(model.code, ';'),
+      csvEscapeCell(model.title || '', ';'),
+      csvEscapeCell(po.factoryName || '', ';'),
       po.orderPlacementDateIso,
       MONTHS_SHORT[po.arrivalMonthIdx] || '',
       po.requiredArrivalDateIso,
@@ -1960,7 +2059,7 @@ export function serializePurchaseOrdersToCsv(
       po.totalOrderRub,
       po.prepaymentRub,
       po.balancePaymentRub,
-      `"${(po.note || '').replace(/"/g, '""')}"`,
+      csvEscapeCell(po.note || '', ';'),
     ].join(';')
   );
 
@@ -2199,24 +2298,28 @@ export function computeFinancialPnL(
     annualOperatingProfitRub !== null ? 'plan' : 'not_filled';
 
   // 4. График денежных потоков и потребность в оборотном капитале (Cash Flow)
+  const scenarioYear = scenario.year || 2027;
   const procurementOutflowsByMonth = Array(12).fill(0);
-  // Учитываем платежи по утверждённым заказам PO + по рекомендуемым партиям для полной картины потребности в капитале
+  // Учитываем платежи по подтверждённым заказам PO текущего года + по рекомендуемым партиям для полной картины потребности в капитале
   for (const po of procurement.approvedOrders) {
-    const orderMonth = Math.max(
-      0,
-      po.arrivalMonthIdx - Math.ceil(po.leadTimeDaysAtApproval / 30)
+    if (po.confirmedByFactory === false) continue;
+    if (getPoArrivalYear(po) !== scenarioYear) continue;
+    const arrIdx = Math.min(11, Math.max(0, po.arrivalMonthIdx));
+    const orderMonth = Math.min(
+      11,
+      Math.max(0, arrIdx - Math.ceil(po.leadTimeDaysAtApproval / 30))
     );
     procurementOutflowsByMonth[orderMonth] += po.prepaymentRub;
-    procurementOutflowsByMonth[Math.max(0, po.arrivalMonthIdx)] += po.balancePaymentRub;
+    procurementOutflowsByMonth[arrIdx] += po.balancePaymentRub;
   }
   for (const rb of procurement.recommendedBatches) {
-    const orderMonth = Math.max(
-      0,
-      rb.firstCoveredMonthIdx - Math.ceil(rb.totalLeadDays / 30)
+    const arrIdx = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
+    const orderMonth = Math.min(
+      11,
+      Math.max(0, arrIdx - Math.ceil(rb.totalLeadDays / 30))
     );
     procurementOutflowsByMonth[orderMonth] += rb.prepaymentRub;
-    procurementOutflowsByMonth[Math.max(0, rb.firstCoveredMonthIdx)] +=
-      rb.balancePaymentRub;
+    procurementOutflowsByMonth[arrIdx] += rb.balancePaymentRub;
   }
 
   const monthlyCashFlow: MonthlyCashFlowRow[] = [];
@@ -2259,7 +2362,10 @@ export function computeFinancialPnL(
 
   // Ближайший платёж фабрике по подтверждённому графику PO (Стр. 6 ТЗ)
   const confirmedPos = procurement.approvedOrders.filter(
-    (po) => po.confirmedByFactory !== false && po.status !== 'received'
+    (po) =>
+      po.confirmedByFactory !== false &&
+      po.status !== 'received' &&
+      getPoArrivalYear(po) === scenarioYear
   );
   let nextFactoryPayment: FinancialPnLResult['nextFactoryPayment'] = null;
   if (confirmedPos.length > 0) {
@@ -2267,19 +2373,24 @@ export function computeFinancialPnL(
       a.orderPlacementDateIso.localeCompare(b.orderPlacementDateIso)
     );
     const firstPo = sortedPos[0];
+    const lockedPrepayPct =
+      firstPo.totalOrderRub > 0
+        ? Math.round((firstPo.prepaymentRub / firstPo.totalOrderRub) * 100)
+        : shared.factoryParams.prepaymentPct;
+    const lockedBalancePct = Math.max(0, 100 - lockedPrepayPct);
     if (firstPo.status === 'approved') {
       nextFactoryPayment = {
         dateIso: firstPo.orderPlacementDateIso,
         amountRub: firstPo.prepaymentRub,
         orderNumber: firstPo.orderNumber,
-        label: `Предоплата ${shared.factoryParams.prepaymentPct}% по ${firstPo.orderNumber}`,
+        label: `Предоплата ${lockedPrepayPct}% по ${firstPo.orderNumber}`,
       };
     } else {
       nextFactoryPayment = {
         dateIso: firstPo.requiredArrivalDateIso,
         amountRub: firstPo.balancePaymentRub,
         orderNumber: firstPo.orderNumber,
-        label: `Доплата ${shared.factoryParams.balancePaymentPct}% по ${firstPo.orderNumber}`,
+        label: `Доплата ${lockedBalancePct}% по ${firstPo.orderNumber}`,
       };
     }
   }
@@ -2494,9 +2605,14 @@ export function exportStructuredScenarioPlan(
     if (raw.launchStatus === 'В архиве') continue;
     const m = ensureModelUnifiedV11(raw);
     const shared = m.sharedSupplyAndFact!;
-    const plan = m.plansByScenario[scenario.id] || m.plansByScenario[1];
+    const plan =
+      m.plansByScenario[scenario.id] ||
+      m.plansByScenario[202706] ||
+      m.plansByScenario[202705] ||
+      m.plansByScenario[1];
     if (!plan) continue;
     const s1Var = getS1NewVariantByCodeOrId(m.code) || getS1NewVariantByCodeOrId(m.id);
+    const metrics = computeModelScenarioMetrics(m, scenario);
 
     for (let idx = 0; idx < 12; idx++) {
       const dedupeKey = `${m.code.trim().toUpperCase()}__${idx + 1}`;
@@ -2526,7 +2642,7 @@ export function exportStructuredScenarioPlan(
         plannedPriceRub: price,
         plannedBuyoutsPacks: packs,
         plannedBuyoutsUnits: packs * m.unitsInPack,
-        plannedRevenueRub: packs * price,
+        plannedRevenueRub: metrics.monthlyRevenuesRub[idx] ?? packs * price,
         actualPriceRub: act?.actualPriceRub ?? null,
         actualBuyoutsPacks: act?.actualBuyoutsPacks ?? null,
         valueStatus: status,
@@ -2558,10 +2674,10 @@ export function serializeStructuredPlanToCsv(rows: StructuredPlanRowV11[]): stri
   const lines = rows.map((r) =>
     [
       r.scenarioId,
-      `"${r.skuCode.replace(/"/g, '""')}"`,
-      `"${r.modelId}"`,
-      `"${r.title.replace(/"/g, '""')}"`,
-      `"${r.brandLabel}"`,
+      `"${String(r.skuCode || '').replace(/"/g, '""')}"`,
+      `"${String(r.modelId || '').replace(/"/g, '""')}"`,
+      `"${String(r.title || '').replace(/"/g, '""')}"`,
+      `"${String(r.brandLabel || '').replace(/"/g, '""')}"`,
       r.unitsInPack,
       r.period,
       r.month,
@@ -2575,47 +2691,77 @@ export function serializeStructuredPlanToCsv(rows: StructuredPlanRowV11[]): stri
     ].join(',')
   );
 
-  return [header, ...lines].join('\n');
+  return `\uFEFF${[header, ...lines].join('\n')}`;
 }
 
-function splitCsvLineRespectingQuotes(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
+function splitCsvRecordsAndFields(text: string): string[][] {
+  const records: string[][] = [];
+  let row: string[] = [];
+  let field = '';
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
       } else {
-        inQuotes = !inQuotes;
+        field += ch;
       }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field.trim());
+      field = '';
+    } else if (ch === '\r') {
+      if (text[i + 1] === '\n') i += 1;
+      row.push(field.trim());
+      field = '';
+      if (row.some((cell) => cell.length > 0)) {
+        records.push(row);
+      }
+      row = [];
+    } else if (ch === '\n') {
+      row.push(field.trim());
+      field = '';
+      if (row.some((cell) => cell.length > 0)) {
+        records.push(row);
+      }
+      row = [];
     } else {
-      current += ch;
+      field += ch;
     }
   }
-  result.push(current.trim());
-  return result;
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field.trim());
+    if (row.some((cell) => cell.length > 0)) {
+      records.push(row);
+    }
+  }
+  return records;
 }
 
 export function parseStructuredPlanCsvOrJson(
   text: string,
   fallbackScenarioId = 1
 ): StructuredPlanRowV11[] {
-  const trimmed = text.trim();
+  const stripped = text.replace(/^\uFEFF/, '');
+  const trimmed = stripped.trim();
   if (!trimmed) return [];
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     const parsed = JSON.parse(trimmed);
     return Array.isArray(parsed) ? parsed : [];
   }
-  const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const records = splitCsvRecordsAndFields(trimmed);
   const rows: StructuredPlanRowV11[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLineRespectingQuotes(lines[i]);
+  for (let i = 1; i < records.length; i++) {
+    const cols = records[i];
     if (cols.length >= 10) {
       const units = Number(cols[5]) || 1;
       const price = Number(cols[8]) || 0;
@@ -2632,8 +2778,10 @@ export function parseStructuredPlanCsvOrJson(
         month: Number(cols[7]) || i,
         plannedPriceRub: price,
         plannedBuyoutsPacks: packs,
-        plannedBuyoutsUnits: Number(cols[10]) || packs * units,
-        plannedRevenueRub: Number(cols[11]) || packs * price,
+        plannedBuyoutsUnits:
+          cols[10] !== undefined && cols[10] !== '' ? Number(cols[10]) : packs * units,
+        plannedRevenueRub:
+          cols[11] !== undefined && cols[11] !== '' ? Number(cols[11]) : packs * price,
         actualPriceRub: cols[12] !== undefined && cols[12] !== '' ? Number(cols[12]) : null,
         actualBuyoutsPacks:
           cols[13] !== undefined && cols[13] !== '' ? Number(cols[13]) : null,
@@ -2671,23 +2819,84 @@ export function importStructuredScenarioPlan(
   const updatedModels = currentModels.map((raw) => {
     const m = ensureModelUnifiedV11(raw);
     const skuKey = m.code.trim().toUpperCase();
-    const basePlan = m.plansByScenario[targetScenarioId] || m.plansByScenario[1];
+    const basePlan =
+      m.plansByScenario[targetScenarioId] ||
+      m.plansByScenario[202706] ||
+      m.plansByScenario[202705] ||
+      m.plansByScenario[1];
     if (!basePlan) return m;
+
+    const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m));
+    const isAkusha = brandCode === 'AKUSHA';
+    const effBuyoutPct = getEffectiveModelBuyoutRatePct(m, targetScenarioId);
 
     let changed = false;
     const nextPacks = [...basePlan.monthlyPacks];
     const nextPrices = [...basePlan.monthlyPricesRub];
     const nextActuals = [...m.sharedSupplyAndFact!.actualSalesByMonth];
+    const hasRevOverride =
+      Array.isArray(basePlan.monthlyRevenuesRubOverride) &&
+      basePlan.monthlyRevenuesRubOverride.length === 12;
+    const nextRevOverride = hasRevOverride
+      ? [...basePlan.monthlyRevenuesRubOverride!]
+      : undefined;
+    const hasOrdersArrays =
+      Array.isArray(basePlan.monthlyOrdersPacks) &&
+      basePlan.monthlyOrdersPacks.length === 12;
+    const nextOrdersPacks = hasOrdersArrays
+      ? [...basePlan.monthlyOrdersPacks!]
+      : undefined;
+    const nextOrdersRub =
+      Array.isArray(basePlan.monthlyOrdersRub) &&
+      basePlan.monthlyOrdersRub.length === 12
+        ? [...basePlan.monthlyOrdersRub!]
+        : nextOrdersPacks
+        ? nextOrdersPacks.map(
+            (ord, idx) => ord * (basePlan.monthlyPricesRub[idx] ?? m.retailPriceRub)
+          )
+        : undefined;
 
     for (let month = 1; month <= 12; month++) {
+      const mIdx = month - 1;
       const rec = latestBySkuMonth.get(`${skuKey}__${month}`);
       if (!rec) continue;
       changed = true;
       touchedSkus.add(skuKey);
-      nextPacks[month - 1] = Math.max(0, Math.round(rec.plannedBuyoutsPacks));
-      nextPrices[month - 1] = Math.max(0, Math.round(rec.plannedPriceRub));
-      nextActuals[month - 1] = {
-        monthIdx: month - 1,
+
+      const prevPacks = Math.max(0, Math.round(basePlan.monthlyPacks[mIdx] || 0));
+      const prevPriceRounded = Math.max(
+        0,
+        Math.round(basePlan.monthlyPricesRub[mIdx] ?? m.retailPriceRub)
+      );
+      const newPacks = Math.max(0, Math.round(rec.plannedBuyoutsPacks));
+      const newPrice = Math.max(0, Math.round(rec.plannedPriceRub));
+      const planChangedForMonth =
+        newPacks !== prevPacks || newPrice !== prevPriceRounded;
+
+      nextPacks[mIdx] = newPacks;
+      if (planChangedForMonth) {
+        nextPrices[mIdx] = newPrice;
+        if (nextRevOverride) {
+          nextRevOverride[mIdx] = newPacks * newPrice;
+        }
+        if (nextOrdersPacks) {
+          const ordM =
+            effBuyoutPct <= 0
+              ? 0
+              : effBuyoutPct >= 100
+              ? newPacks
+              : isAkusha
+              ? Math.ceil((newPacks * 100) / effBuyoutPct)
+              : Math.round((newPacks * 100) / effBuyoutPct);
+          nextOrdersPacks[mIdx] = ordM;
+          if (nextOrdersRub) {
+            nextOrdersRub[mIdx] = ordM * newPrice;
+          }
+        }
+      }
+
+      nextActuals[mIdx] = {
+        monthIdx: mIdx,
         actualBuyoutsPacks:
           rec.actualBuyoutsPacks === null || rec.actualBuyoutsPacks === undefined
             ? null
@@ -2714,6 +2923,9 @@ export function importStructuredScenarioPlan(
           scenarioId: targetScenarioId,
           monthlyPacks: nextPacks,
           monthlyPricesRub: nextPrices,
+          ...(nextRevOverride ? { monthlyRevenuesRubOverride: nextRevOverride } : {}),
+          ...(nextOrdersPacks ? { monthlyOrdersPacks: nextOrdersPacks } : {}),
+          ...(nextOrdersRub ? { monthlyOrdersRub: nextOrdersRub } : {}),
         },
       },
     };
@@ -2813,6 +3025,7 @@ export interface ScenarioInvestmentOptions {
   wbPayoutScheduleSpecified?: boolean;
   allScenarios?: GrowthScenarioDef[];
   selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
+  includeGroupPortfolioInS1?: boolean;
 }
 
 /**
@@ -2875,11 +3088,12 @@ export function computeScenarioInvestmentSummary(
   const monthlyPrepayOutflowRub = Array(12).fill(0) as number[];
   const monthlyBalanceOutflowRub = Array(12).fill(0) as number[];
 
+  const scenarioYearForPos = scenario.year || 2027;
+
   for (const m of uniqueModels) {
     const proc = computeProcurementPlan(m, scenario);
     const pnl = computeFinancialPnL(m, scenario, proc);
     const shared = m.sharedSupplyAndFact!;
-    const prepayPct = shared.factoryParams.prepaymentPct ?? 30;
 
     annualRevenueRub += pnl.annualRevenueRub;
     decemberRevenueRub += pnl.targetMonthRevenueRub;
@@ -2887,7 +3101,9 @@ export function computeScenarioInvestmentSummary(
     annualDemandUnits += proc.annualDemandUnits;
 
     const confirmedPos = proc.approvedOrders.filter(
-      (po) => po.confirmedByFactory !== false
+      (po) =>
+        po.confirmedByFactory !== false &&
+        getPoArrivalYear(po) === scenarioYearForPos
     );
     const modelApprovedRub = confirmedPos.reduce((s, po) => s + po.totalOrderRub, 0);
     const modelPlannedRub = proc.totalRecommendedBudgetRub || 0;
@@ -2921,7 +3137,7 @@ export function computeScenarioInvestmentSummary(
       firstWavePacks += earliestPo.packsQty;
       firstWaveUnits += earliestPo.packsQty * earliestPo.unitsInPack;
       firstWaveStartBudgetRub += earliestPo.totalOrderRub;
-      firstWavePrepaymentRub += Math.round((earliestPo.totalOrderRub * prepayPct) / 100);
+      firstWavePrepaymentRub += earliestPo.prepaymentRub;
     } else if (firstDraft) {
       firstWavePacks += firstDraft.recommendedPacks;
       firstWaveUnits += firstDraft.physicalUnitsQty;
@@ -2982,20 +3198,20 @@ export function computeScenarioInvestmentSummary(
 
     // График оплат фабрикам: аванс (в месяц размещения заказа) + доплата (к приходу партии)
     for (const po of confirmedPos) {
-      const orderM = Math.max(
-        0,
-        po.arrivalMonthIdx - Math.ceil(po.leadTimeDaysAtApproval / 30)
-      );
       const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
+      const orderM = Math.min(
+        11,
+        Math.max(0, arrivalM - Math.ceil(po.leadTimeDaysAtApproval / 30))
+      );
       monthlyPrepayOutflowRub[orderM] += po.prepaymentRub;
       monthlyBalanceOutflowRub[arrivalM] += po.balancePaymentRub;
     }
     for (const rb of proc.recommendedBatches) {
-      const orderM = Math.max(
-        0,
-        rb.firstCoveredMonthIdx - Math.ceil(rb.totalLeadDays / 30)
-      );
       const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
+      const orderM = Math.min(
+        11,
+        Math.max(0, arrivalM - Math.ceil(rb.totalLeadDays / 30))
+      );
       monthlyPrepayOutflowRub[orderM] += rb.prepaymentRub;
       monthlyBalanceOutflowRub[arrivalM] += rb.balancePaymentRub;
     }
@@ -3206,6 +3422,7 @@ export interface BrandInvestmentSummaryRow {
   firstWaveStartBudgetRub: number;
   firstWavePrepaymentRub: number;
   peakWorkingCapitalRub: number;
+  peakMonthIdx?: number;
   peakMonthLabel?: string;
   peakPhaseLabelRu?: string;
   selfFundingMonthLabel?: string | null;
@@ -3297,6 +3514,10 @@ export function computeGroupBrandsInvestmentReport(
                 Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
                 Boolean(m.plansByScenario[100])
             )
+          : code === 'BORNERS' &&
+            brandScen.id === 1 &&
+            !options.includeGroupPortfolioInS1
+          ? rawBrandModels.filter((m) => !isUnverifiedActingSku(m.code))
           : rawBrandModels;
       const summary = computeScenarioInvestmentSummary(scopedModels, brandScen, {
         initialCashRub: 0,
@@ -3315,6 +3536,7 @@ export function computeGroupBrandsInvestmentReport(
         firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
         peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        peakMonthIdx: summary.peakMonthIdx,
         peakMonthLabel: summary.peakMonthLabel,
         peakPhaseLabelRu: summary.peakPhaseLabelRu,
         selfFundingMonthLabel: summary.selfFundingMonthLabel,
@@ -3446,6 +3668,7 @@ export function computeGroupBrandsInvestmentReport(
         firstWaveStartBudgetRub: summary.firstWaveStartBudgetRub,
         firstWavePrepaymentRub: summary.firstWavePrepaymentRub,
         peakWorkingCapitalRub: summary.peakWorkingCapitalRub,
+        peakMonthIdx: summary.peakMonthIdx,
         peakMonthLabel: summary.peakMonthLabel,
         peakPhaseLabelRu: summary.peakPhaseLabelRu,
         selfFundingMonthLabel: summary.selfFundingMonthLabel,
@@ -3479,6 +3702,85 @@ export function serializeScenarioFactoryOrdersToCsv(
   scenario: GrowthScenarioDef,
   mode: 'all' | 'first_wave' | 'approved_only' = 'all'
 ): string {
+  const scenYear = scenario.year || 2027;
+  const activeModels: ScenarioModelSpec[] = [];
+  const seenIds = new Set<string>();
+
+  for (const rm of rawModels) {
+    if (!rm || rm.launchStatus === 'В архиве') continue;
+    const key = rm.id || rm.code;
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+    activeModels.push(ensureModelUnifiedV11(rm));
+  }
+
+  const activeBrandSet = new Set(
+    activeModels.map((m) => getBrandUnitConfig(m).brandCode)
+  );
+  const singleNonBornersBrand: 'AKUSHA' | 'NA_TELE' | 'LISKANI' | null =
+    activeBrandSet.size === 1
+      ? (() => {
+          const b = Array.from(activeBrandSet)[0];
+          return b === 'AKUSHA' || b === 'NA_TELE' || b === 'LISKANI' ? b : null;
+        })()
+      : null;
+
+  let dynamicSizes: string[] = ['S', 'M', 'L', 'XL', 'XXL'];
+  let primaryUnitCol = 'компл.';
+  let perPackHeader = 'Изделий в компл.';
+  let physHeader = 'К заказу (физ. изд.)';
+  let unitCostHeader = 'Себестоимость компл. ₽';
+
+  if (singleNonBornersBrand) {
+    const unitCfg = BRAND_UNIT_CONFIGS[singleNonBornersBrand];
+    primaryUnitCol = unitCfg.primaryUnit;
+    perPackHeader =
+      singleNonBornersBrand === 'AKUSHA'
+        ? 'Пар в кор.'
+        : singleNonBornersBrand === 'LISKANI'
+        ? 'Полотен в компл.'
+        : 'Изделий в компл.';
+    physHeader = `К заказу (${unitCfg.secondaryUnit})`;
+    unitCostHeader =
+      singleNonBornersBrand === 'AKUSHA'
+        ? 'Себестоимость пары ₽'
+        : `Себестоимость (${unitCfg.primaryUnit}) ₽`;
+
+    const collectedSizes: string[] = [];
+    const seenSizes = new Set<string>();
+    for (const m of activeModels) {
+      if (
+        singleNonBornersBrand === 'LISKANI' &&
+        Array.isArray(m.liskaniSizeVariants) &&
+        m.liskaniSizeVariants.length > 0
+      ) {
+        for (const sv of m.liskaniSizeVariants) {
+          const sz = (sv.sizeCm || '').trim();
+          if (sz && !seenSizes.has(sz)) {
+            seenSizes.add(sz);
+            collectedSizes.push(sz);
+          }
+        }
+      } else {
+        const prof = getBrandProductionProfile(
+          singleNonBornersBrand,
+          `${m.title || ''} ${m.categoryLabel || ''}`
+        );
+        for (const sz of prof.sizes) {
+          if (!seenSizes.has(sz)) {
+            seenSizes.add(sz);
+            collectedSizes.push(sz);
+          }
+        }
+      }
+    }
+    if (collectedSizes.length > 0) {
+      dynamicSizes = collectedSizes;
+    } else {
+      dynamicSizes = getBrandProductionProfile(singleNonBornersBrand).sizes;
+    }
+  }
+
   const header = [
     'Тип партии',
     'Номер заказа / Партия',
@@ -3490,30 +3792,19 @@ export function serializeScenarioFactoryOrdersToCsv(
     'Период покрытия',
     'Заказать до (дата)',
     'Приход на склад (дата)',
-    'Изделий в компл.',
-    'К заказу (компл.)',
-    'К заказу (физ. изд.)',
-    'Размер S (компл.)',
-    'Размер M (компл.)',
-    'Размер L (компл.)',
-    'Размер XL (компл.)',
-    'Размер XXL (компл.)',
-    'Себестоимость компл. ₽',
+    perPackHeader,
+    `К заказу (${primaryUnitCol})`,
+    physHeader,
+    ...dynamicSizes.map((sz) => `Размер ${sz} (${primaryUnitCol})`),
+    unitCostHeader,
     'Сумма партии ₽',
     'Аванс ₽',
     'Доплата перед отгрузкой ₽',
   ].join(';');
 
   const rows: string[] = [];
-  const seenIds = new Set<string>();
 
-  for (const rm of rawModels) {
-    if (!rm || rm.launchStatus === 'В архиве') continue;
-    const key = rm.id || rm.code;
-    if (seenIds.has(key)) continue;
-    seenIds.add(key);
-
-    const model = ensureModelUnifiedV11(rm);
+  for (const model of activeModels) {
     const brandLabel = detectModelBrandPortfolioLabel(model);
     const proc = computeProcurementPlan(model, scenario);
     const defaultShares = model.sharedSupplyAndFact?.factoryParams.sizeSharesPct || {
@@ -3524,36 +3815,74 @@ export function serializeScenarioFactoryOrdersToCsv(
       XXL: 10,
     };
 
-    const sortedPos = [...proc.approvedOrders].sort(
-      (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
-    );
+    const resolveSizeValues = (
+      qty: number,
+      explicitBreakdown?: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>
+    ): number[] => {
+      if (!singleNonBornersBrand) {
+        const sizes =
+          explicitBreakdown ||
+          allocatePacksBySizeLargestRemainder(qty, defaultShares);
+        return [sizes.S, sizes.M, sizes.L, sizes.XL, sizes.XXL];
+      }
+      if (
+        singleNonBornersBrand === 'LISKANI' &&
+        Array.isArray(model.liskaniSizeVariants) &&
+        model.liskaniSizeVariants.length > 0
+      ) {
+        const liskShares: Record<string, number> = {};
+        for (const sv of model.liskaniSizeVariants) {
+          const sz = (sv.sizeCm || '').trim();
+          if (!sz) continue;
+          liskShares[sz] =
+            (liskShares[sz] || 0) + Math.max(1, sv.annualOrdersUnits || sv.annualBuyoutsUnits || 1);
+        }
+        const alloc = allocatePacksByDynamicSizes(
+          qty,
+          Object.keys(liskShares),
+          liskShares
+        );
+        return dynamicSizes.map((sz) => alloc[sz] ?? 0);
+      }
+      const prof = getBrandProductionProfile(
+        singleNonBornersBrand,
+        `${model.title || ''} ${model.categoryLabel || ''}`
+      );
+      const alloc = allocatePacksByDynamicSizes(qty, prof.sizes, prof.sizeSharesPct);
+      return dynamicSizes.map((sz) => alloc[sz] ?? 0);
+    };
+
+    const sortedPos = proc.approvedOrders
+      .filter(
+        (po) =>
+          po.confirmedByFactory !== false && getPoArrivalYear(po) === scenYear
+      )
+      .sort((a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx);
+    const hasFirstWaveApprovedPo = sortedPos.some((po) => po.arrivalMonthIdx <= 2);
 
     for (let idx = 0; idx < sortedPos.length; idx++) {
       const po = sortedPos[idx];
-      if (mode === 'first_wave' && idx > 0 && po.arrivalMonthIdx > 2) continue;
-      const sizes =
-        po.sizeBreakdownPacks ||
-        allocatePacksBySizeLargestRemainder(po.packsQty, defaultShares);
+      if (mode === 'first_wave' && po.arrivalMonthIdx > 2) continue;
+      const sizeCols = resolveSizeValues(po.packsQty, po.sizeBreakdownPacks);
       rows.push(
         [
           'Утверждённый заказ фабрике',
-          po.orderNumber,
-          PO_STATUS_LABELS_RU[po.status] || po.status,
-          `"${brandLabel.replace(/"/g, '""')}"`,
-          model.code,
-          `"${(model.title || '').replace(/"/g, '""')}"`,
-          `"${(po.factoryName || '').replace(/"/g, '""')}"`,
-          po.coverageMonthsLabel || MONTHS_SHORT[po.arrivalMonthIdx] || '',
+          csvEscapeCell(po.orderNumber, ';'),
+          csvEscapeCell(PO_STATUS_LABELS_RU[po.status] || po.status, ';'),
+          csvEscapeCell(brandLabel, ';'),
+          csvEscapeCell(model.code, ';'),
+          csvEscapeCell(model.title || '', ';'),
+          csvEscapeCell(po.factoryName || '', ';'),
+          csvEscapeCell(
+            po.coverageMonthsLabel || MONTHS_SHORT[po.arrivalMonthIdx] || '',
+            ';'
+          ),
           po.orderPlacementDateIso,
           po.requiredArrivalDateIso,
           po.unitsInPack,
           po.packsQty,
           po.physicalUnitsQty,
-          sizes.S,
-          sizes.M,
-          sizes.L,
-          sizes.XL,
-          sizes.XXL,
+          ...sizeCols,
           po.lockedUnitCostRub,
           po.totalOrderRub,
           po.prepaymentRub,
@@ -3565,27 +3894,32 @@ export function serializeScenarioFactoryOrdersToCsv(
     if (mode !== 'approved_only') {
       for (let idx = 0; idx < proc.recommendedBatches.length; idx++) {
         const rb = proc.recommendedBatches[idx];
-        if (mode === 'first_wave' && idx > 0 && rb.firstCoveredMonthIdx > 2) continue;
+        if (
+          mode === 'first_wave' &&
+          (rb.firstCoveredMonthIdx > 2 || hasFirstWaveApprovedPo)
+        ) {
+          continue;
+        }
+        const sizeCols = resolveSizeValues(
+          rb.recommendedPacks,
+          rb.sizeBreakdownPacks
+        );
         rows.push(
           [
             'Плановая партия к заказу',
-            `Партия №${rb.batchIndex}`,
+            csvEscapeCell(`Партия №${rb.batchIndex}`, ';'),
             rb.isTestBatch ? 'Тестовая партия' : 'Черновик плана',
-            `"${brandLabel.replace(/"/g, '""')}"`,
-            model.code,
-            `"${(model.title || '').replace(/"/g, '""')}"`,
-            `"${(rb.factoryName || '').replace(/"/g, '""')}"`,
-            rb.coverageMonthsLabel,
+            csvEscapeCell(brandLabel, ';'),
+            csvEscapeCell(model.code, ';'),
+            csvEscapeCell(model.title || '', ';'),
+            csvEscapeCell(rb.factoryName || '', ';'),
+            csvEscapeCell(rb.coverageMonthsLabel, ';'),
             rb.recommendedOrderDateIso,
             rb.requiredArrivalDateIso,
             model.unitsInPack,
             rb.recommendedPacks,
             rb.physicalUnitsQty,
-            rb.sizeBreakdownPacks.S,
-            rb.sizeBreakdownPacks.M,
-            rb.sizeBreakdownPacks.L,
-            rb.sizeBreakdownPacks.XL,
-            rb.sizeBreakdownPacks.XXL,
+            ...sizeCols,
             rb.unitCostRub,
             rb.estimatedTotalRub,
             rb.prepaymentRub,
@@ -3796,9 +4130,11 @@ export function computeCarryOverStock2027To2028(
     model.plansByScenario[1] ||
     Object.values(model.plansByScenario)[0];
 
+  const confirmed2027Orders = shared.approvedOrders.filter(
+    (po) => po.confirmedByFactory !== false && getPoArrivalYear(po) === 2027
+  );
   const approvedByMonth = Array(12).fill(0);
-  for (const po of shared.approvedOrders) {
-    if (po.confirmedByFactory === false) continue;
+  for (const po of confirmed2027Orders) {
     if (po.arrivalMonthIdx >= 0 && po.arrivalMonthIdx < 12) {
       approvedByMonth[po.arrivalMonthIdx] += po.packsQty;
     }
@@ -3811,9 +4147,20 @@ export function computeCarryOverStock2027To2028(
   );
   if (!plan2027) return running;
 
+  const receiptsEqualToPacks =
+    Array.isArray(plan2027.monthlyReceiptsPacks) &&
+    plan2027.monthlyReceiptsPacks.length === 12 &&
+    plan2027.monthlyReceiptsPacks.some((v) => (v || 0) > 0) &&
+    plan2027.monthlyReceiptsPacks.every(
+      (v, idx) => (v || 0) === (plan2027.monthlyPacks?.[idx] || 0)
+    );
+
   for (let m = 0; m < 12; m++) {
-    const receipts =
-      (approvedByMonth[m] || 0) + (plan2027.monthlyReceiptsPacks?.[m] || 0);
+    const extraManualReceipts =
+      confirmed2027Orders.length > 0 && receiptsEqualToPacks
+        ? 0
+        : plan2027.monthlyReceiptsPacks?.[m] || 0;
+    const receipts = (approvedByMonth[m] || 0) + extraManualReceipts;
     const demand = Math.max(0, plan2027.monthlyPacks?.[m] || 0);
     running = Math.max(0, running + receipts - demand);
   }
@@ -3948,11 +4295,13 @@ export function renameBrandScenario(
   });
 }
 
+const LOCKED_BASELINE_SCENARIO_IDS = new Set([1, 100, 202705, 202706]);
+
 export function archiveBrandScenario(
   scenarios: GrowthScenarioDef[],
   scenarioId: number
 ): GrowthScenarioDef[] {
-  if (scenarioId === 100) return scenarios;
+  if (LOCKED_BASELINE_SCENARIO_IDS.has(scenarioId)) return scenarios;
   return scenarios.map((s) =>
     s.id === scenarioId ? { ...s, isArchived: true } : s
   );
@@ -3968,7 +4317,10 @@ export function deleteBrandScenario(
   scenarios: GrowthScenarioDef[];
   models: ScenarioModelSpec[];
 } {
-  if (scenarioId === 100 || scenarios.filter((s) => !s.isArchived).length <= 1) {
+  if (
+    LOCKED_BASELINE_SCENARIO_IDS.has(scenarioId) ||
+    scenarios.filter((s) => !s.isArchived).length <= 1
+  ) {
     return {
       deleted: false,
       reason: 'Базовый сценарий нельзя удалить',
@@ -4056,7 +4408,10 @@ export function createBrandProductModel(
     input.unitsInPack ?? unitCfg.secondaryPerPrimaryDefault
   );
   const cleanPrice = Math.max(0, Math.round(input.retailPriceRub || 1990));
-  const cleanCost = Math.max(0, Math.round(input.unitCostRub || 650));
+  const cleanCost =
+    typeof input.unitCostRub === 'number' && Number.isFinite(input.unitCostRub)
+      ? Math.max(0, Math.round(input.unitCostRub))
+      : 650;
   const category = input.categoryLabel?.trim() || unitCfg.categoryDefault;
   const cleanTitle = input.title.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
 
@@ -4361,7 +4716,7 @@ const MULTI_BRAND_TABLE_ORDER: CanonicalBrandCode[] = [
 export function computeMultiBrandPortfolioSummary(
   rawModels: ScenarioModelSpec[],
   scenarios: GrowthScenarioDef[],
-  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>,
+  selectedScenarioByBrand: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>> = {},
   options: ScenarioInvestmentOptions = {}
 ): MultiBrandPortfolioSummaryResult {
   const initialCashOnHandRub = Math.max(0, Math.round(options.initialCashRub || 0));
@@ -4380,6 +4735,12 @@ export function computeMultiBrandPortfolioSummary(
   const catalogModels: ScenarioModelSpec[] = [];
   for (const rm of rawModels) {
     if (!rm || rm.launchStatus === 'В архиве') continue;
+    if (
+      ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(rm.id) ||
+      ['№001', '№002', '№003', '№004'].includes(rm.code)
+    ) {
+      continue;
+    }
     const key = rm.id || rm.code;
     if (seenModelKeys.has(key)) continue;
     seenModelKeys.add(key);
@@ -4415,22 +4776,27 @@ export function computeMultiBrandPortfolioSummary(
 
       const rawSelectedId =
         brandCode === 'LISKANI'
-          ? (selectedScenarioByBrand.LISKANI ??
-            selectedScenarioByBrand.LISCANI)
-          : selectedScenarioByBrand[brandCode];
+          ? (selectedScenarioByBrand?.LISKANI ??
+            selectedScenarioByBrand?.LISCANI)
+          : selectedScenarioByBrand?.[brandCode];
 
       // Если передан null — у бренда явно «Нет сценария» (Тест 8)
       const defaultScenarioId =
-        brandCode === 'BORNERS' || brandCode === 'FUKAI'
+        brandCode === 'BORNERS'
           ? availableScenarios.find((s) => s.id === 1)?.id ??
             availableScenarios[0]?.id ??
             null
-          : availableScenarios.find(
-              (s) =>
-                s.ownerBrandCode &&
-                normalizePortfolioBrandCode(s.ownerBrandCode) === brandCode
-            )?.id ??
-            (brandModels.length > 0 ? availableScenarios[0]?.id ?? null : null);
+          : brandCode === 'FUKAI'
+            ? availableScenarios.find((s) => s.id === 100)?.id ??
+              availableScenarios.find((s) => s.id === 1)?.id ??
+              availableScenarios[0]?.id ??
+              null
+            : availableScenarios.find(
+                (s) =>
+                  s.ownerBrandCode &&
+                  normalizePortfolioBrandCode(s.ownerBrandCode) === brandCode
+              )?.id ??
+              (brandModels.length > 0 ? availableScenarios[0]?.id ?? null : null);
 
       const resolvedScenarioId =
         rawSelectedId === null
@@ -4520,6 +4886,10 @@ export function computeMultiBrandPortfolioSummary(
                 Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
                 Boolean(m.plansByScenario[100])
             )
+          : brandCode === 'BORNERS' &&
+            selectedScenario.id === 1 &&
+            !options.includeGroupPortfolioInS1
+          ? brandModels.filter((m) => !isUnverifiedActingSku(m.code))
           : brandModels;
 
       const summary = computeScenarioInvestmentSummary(
@@ -4780,8 +5150,11 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
 ): string {
   const model = ensureModelUnifiedV11(rawModel);
   const unitCfg = getBrandUnitConfig(model);
-  const mainPhoto =
+  const rawPhoto =
     model.gallery.find((g) => g.isMain)?.url || model.gallery[0]?.url || 'Фото в карточке';
+  const mainPhoto = rawPhoto.trimStart().startsWith('data:image/')
+    ? 'Фото в паспорте SKU'
+    : rawPhoto;
   const colorsLabel =
     model.palettes[0]?.colors?.map((c) => c.nameRu).join(', ') || 'Базовая палитра';
 
@@ -4792,7 +5165,8 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   const statusLabel = isApprovedPo
     ? PO_STATUS_LABELS_RU[batchOrPo.status] || 'Утверждённый заказ фабрике'
     : 'Плановая партия к заказу';
-  const factoryName = batchOrPo.factoryName || model.sharedSupplyAndFact?.factoryParams.factoryName || 'Фабрика';
+  const factoryName =
+    batchOrPo.factoryName || model.sharedSupplyAndFact?.factoryParams.factoryName || 'Фабрика';
   const orderDate = isApprovedPo
     ? batchOrPo.orderPlacementDateIso
     : batchOrPo.recommendedOrderDateIso;
@@ -4803,15 +5177,56 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   const totalRub = isApprovedPo ? batchOrPo.totalOrderRub : batchOrPo.estimatedTotalRub;
   const prepayRub = batchOrPo.prepaymentRub;
   const balanceRub = batchOrPo.balancePaymentRub;
-  const sizes =
-    batchOrPo.sizeBreakdownPacks ||
-    allocatePacksBySizeLargestRemainder(qty, {
-      S: 12,
-      M: 26,
-      L: 30,
-      XL: 20,
-      XXL: 12,
-    });
+
+  const isCustomSizeBrand =
+    unitCfg.brandCode === 'AKUSHA' ||
+    unitCfg.brandCode === 'NA_TELE' ||
+    unitCfg.brandCode === 'LISKANI';
+
+  let sizeHeaders: string[];
+  let sizeValues: number[];
+
+  if (isCustomSizeBrand) {
+    if (
+      unitCfg.brandCode === 'LISKANI' &&
+      Array.isArray(model.liskaniSizeVariants) &&
+      model.liskaniSizeVariants.length > 0
+    ) {
+      const liskShares: Record<string, number> = {};
+      for (const sv of model.liskaniSizeVariants) {
+        const sz = (sv.sizeCm || '').trim();
+        if (!sz) continue;
+        liskShares[sz] =
+          (liskShares[sz] || 0) +
+          Math.max(1, sv.annualOrdersUnits || sv.annualBuyoutsUnits || 1);
+      }
+      const liskSizes = Object.keys(liskShares);
+      const alloc = allocatePacksByDynamicSizes(qty, liskSizes, liskShares);
+      sizeHeaders = liskSizes.map((sz) => `Размер ${sz}`);
+      sizeValues = liskSizes.map((sz) => alloc[sz] ?? 0);
+    } else {
+      const prof = getBrandProductionProfile(
+        unitCfg.brandCode,
+        `${model.title || ''} ${model.categoryLabel || ''}`
+      );
+      const alloc = allocatePacksByDynamicSizes(qty, prof.sizes, prof.sizeSharesPct);
+      sizeHeaders = prof.sizes.map((sz) => `Размер ${sz}`);
+      sizeValues = prof.sizes.map((sz) => alloc[sz] ?? 0);
+    }
+  } else {
+    const sizes =
+      batchOrPo.sizeBreakdownPacks ||
+      allocatePacksBySizeLargestRemainder(qty, {
+        S: 12,
+        M: 26,
+        L: 30,
+        XL: 20,
+        XXL: 12,
+      });
+    sizeHeaders = ['Размер S', 'Размер M', 'Размер L', 'Размер XL', 'Размер XXL'];
+    sizeValues = [sizes.S, sizes.M, sizes.L, sizes.XL, sizes.XXL];
+  }
+
   const comment =
     commentOverride ??
     (isApprovedPo ? batchOrPo.note || '' : `Период покрытия: ${batchOrPo.coverageMonthsLabel}`);
@@ -4829,11 +5244,7 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
     'Плановая дата поступления',
     `Общий объём (${unitCfg.primaryUnit})`,
     `Физический объём (${unitCfg.secondaryUnit})`,
-    'Размер S',
-    'Размер M',
-    'Размер L',
-    'Размер XL',
-    'Размер XXL',
+    ...sizeHeaders,
     'Закупочная цена ₽',
     'Стоимость заказа ₽',
     'Сумма предоплаты ₽',
@@ -4842,28 +5253,24 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   ].join(';');
 
   const row = [
-    `"${orderTitle}"`,
-    `"${statusLabel}"`,
-    `"${unitCfg.displayCode}"`,
-    `"${model.code}"`,
-    `"${(model.title || '').replace(/"/g, '""')}"`,
-    `"${mainPhoto}"`,
-    `"${colorsLabel.replace(/"/g, '""')}"`,
-    `"${factoryName.replace(/"/g, '""')}"`,
+    `"${String(orderTitle || '').replace(/"/g, '""')}"`,
+    `"${String(statusLabel || '').replace(/"/g, '""')}"`,
+    `"${String(unitCfg.displayCode || '').replace(/"/g, '""')}"`,
+    `"${String(model.code || '').replace(/"/g, '""')}"`,
+    `"${String(model.title || '').replace(/"/g, '""')}"`,
+    `"${String(mainPhoto || '').replace(/"/g, '""')}"`,
+    `"${String(colorsLabel || '').replace(/"/g, '""')}"`,
+    `"${String(factoryName || '').replace(/"/g, '""')}"`,
     orderDate,
     arrivalDate,
     qty,
     physicalQty,
-    sizes.S,
-    sizes.M,
-    sizes.L,
-    sizes.XL,
-    sizes.XXL,
+    ...sizeValues,
     unitCost,
     totalRub,
     prepayRub,
     balanceRub,
-    `"${comment.replace(/"/g, '""')}"`,
+    `"${String(comment || '').replace(/"/g, '""')}"`,
   ].join(';');
 
   return `\uFEFF${header}\n${row}`;
@@ -5695,17 +6102,20 @@ export function updateModelBuyoutRatePct(
 ): ScenarioModelSpec {
   const model = ensureModelUnifiedV11(rawModel);
   const prevPct = getEffectiveModelBuyoutRatePct(model, options?.scenarioId);
-  const cleanPct = Math.min(
-    100,
-    Math.max(5, Math.round(Number(nextBuyoutRatePct) || prevPct || 33))
-  );
+  const parsedInputPct = Number(nextBuyoutRatePct);
+  const cleanPct =
+    Number.isFinite(parsedInputPct) && parsedInputPct >= 0
+      ? parsedInputPct === 0
+        ? 0
+        : Math.min(100, Math.max(5, Math.round(parsedInputPct)))
+      : Math.min(100, Math.max(5, Math.round(prevPct || 33)));
   const nextProcureByOrders =
     options?.syncProcurementToOrders !== undefined
       ? options.syncProcurementToOrders
       : isModelProcurementByOrdersActive(model);
   const isAkushaModel =
     normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model)) === 'AKUSHA';
-  const isOfficialAkushaPlan = Boolean(model.plansByScenario?.[202706]);
+  const isOfficialAkushaPlan = /^scen-akusha-0\d{2}$/.test(model.id || '');
   const isPrimaryScenarioTarget =
     options?.scenarioId === undefined ||
     options.scenarioId === 1 ||
@@ -5727,18 +6137,24 @@ export function updateModelBuyoutRatePct(
       nextPlans[scId] = pl;
       continue;
     }
-    const monthlyOrdersPacks = (pl.monthlyPacks || []).map((packs) => {
-      const cleanPacks = Math.max(0, Math.round(packs || 0));
-      return cleanPct >= 100
-        ? cleanPacks
-        : isOfficialAkushaPlan
-        ? Math.ceil((cleanPacks * 100) / cleanPct)
-        : Math.round((cleanPacks * 100) / cleanPct);
-    });
-    const monthlyOrdersRub = monthlyOrdersPacks.map((ordPacks, idx) => {
-      const price = pl.monthlyPricesRub?.[idx] ?? model.retailPriceRub;
-      return ordPacks * price;
-    });
+    const monthlyOrdersPacks =
+      cleanPct <= 0
+        ? Array(12).fill(0)
+        : (pl.monthlyPacks || []).map((packs) => {
+            const cleanPacks = Math.max(0, Math.round(packs || 0));
+            return cleanPct >= 100
+              ? cleanPacks
+              : isOfficialAkushaPlan
+              ? Math.ceil((cleanPacks * 100) / cleanPct)
+              : Math.round((cleanPacks * 100) / cleanPct);
+          });
+    const monthlyOrdersRub =
+      cleanPct <= 0
+        ? Array(12).fill(0)
+        : monthlyOrdersPacks.map((ordPacks, idx) => {
+            const price = pl.monthlyPricesRub?.[idx] ?? model.retailPriceRub;
+            return ordPacks * price;
+          });
     nextPlans[scId] = {
       ...pl,
       buyoutRatePct: cleanPct,
@@ -5754,21 +6170,34 @@ export function updateModelBuyoutRatePct(
     model.liskaniSizeVariants.length > 0
   ) {
     nextVariants = model.liskaniSizeVariants.map((sv) => {
-      const nextMonthlyOrders = (sv.monthlyBuyoutsUnits || []).map((b) =>
-        cleanPct >= 100 ? b : Math.round((b * 100) / cleanPct)
-      );
+      const svPrice = sv.retailPriceRub || model.retailPriceRub;
+      const nextMonthlyOrders =
+        cleanPct <= 0
+          ? Array(12).fill(0)
+          : (sv.monthlyBuyoutsUnits || []).map((b) =>
+              cleanPct >= 100 ? b : Math.round((b * 100) / cleanPct)
+            );
+      const nextMonthlyOrdersRub = nextMonthlyOrders.map((u) => u * svPrice);
+      const nextMonthlyBuyoutsRub =
+        Array.isArray(sv.monthlyBuyoutsRub) && sv.monthlyBuyoutsRub.length === 12
+          ? sv.monthlyBuyoutsRub
+          : (sv.monthlyBuyoutsUnits || []).map((u) => u * svPrice);
       const nextAnnualOrdersUnits = nextMonthlyOrders.reduce((s, v) => s + v, 0);
+      const nextAnnualOrdersRub = nextMonthlyOrdersRub.reduce((s, v) => s + v, 0);
       return {
         ...sv,
         monthlyOrdersUnits: nextMonthlyOrders,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
         annualOrdersUnits: nextAnnualOrdersUnits,
-        annualOrdersRub: nextAnnualOrdersUnits * (sv.retailPriceRub || model.retailPriceRub),
+        annualOrdersRub: nextAnnualOrdersRub,
       };
     });
   }
 
   const shared = model.sharedSupplyAndFact!;
-  const multStr = (100 / cleanPct).toFixed(2).replace('.', ',');
+  const multStr =
+    cleanPct > 0 ? (100 / cleanPct).toFixed(2).replace('.', ',') : '0,00';
 
   return {
     ...model,
@@ -5785,7 +6214,10 @@ export function updateModelBuyoutRatePct(
           timestamp: new Date().toISOString(),
           author: options?.author || 'Владелец',
           category: 'sales',
-          summary: `Процент выкупа установлен ${cleanPct}% (коэффициент заказов ×${multStr})`,
+          summary:
+            cleanPct > 0
+              ? `Процент выкупа установлен ${cleanPct}% (коэффициент заказов ×${multStr})`
+              : `Процент выкупа сброшен в 0% (не указан)`,
           beforeValue: `${prevPct}%`,
           afterValue: `${cleanPct}%`,
           passportVersion: (shared.passportVersion || 1) + 1,
@@ -5916,11 +6348,19 @@ export function updateModelScenarioPrice(
           : prevPrice > 0 && sv.retailPriceRub > 0
           ? Math.max(0, Math.round((sv.retailPriceRub * clean) / prevPrice))
           : clean;
+      const nextMonthlyBuyoutsRub = (sv.monthlyBuyoutsUnits || []).map(
+        (u) => u * nextSvPrice
+      );
+      const nextMonthlyOrdersRub = (sv.monthlyOrdersUnits || []).map(
+        (u) => u * nextSvPrice
+      );
       return {
         ...sv,
         retailPriceRub: nextSvPrice,
-        annualBuyoutsRub: sv.annualBuyoutsUnits * nextSvPrice,
-        annualOrdersRub: sv.annualOrdersUnits * nextSvPrice,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((s, v) => s + v, 0),
+        annualOrdersRub: nextMonthlyOrdersRub.reduce((s, v) => s + v, 0),
       };
     });
   }
@@ -5928,7 +6368,7 @@ export function updateModelScenarioPrice(
   return {
     ...model,
     retailPriceRub:
-      isPrimaryScenarioEdit || !isAkusha && !isLiskani ? clean : model.retailPriceRub,
+      isPrimaryScenarioEdit || (!isAkusha && !isLiskani) ? clean : model.retailPriceRub,
     liskaniSizeVariants: nextLiskaniVariants,
     plansByScenario: nextPlans,
   };
@@ -5972,6 +6412,10 @@ export function updateModelScenarioSingleMonthPrice(
       warehouseArrivalDateLabel: '10 января',
     };
 
+  const prevMonthPrice = Math.max(
+    0,
+    basePlan.monthlyPricesRub?.[monthIdx] ?? model.retailPriceRub ?? 0
+  );
   const nextMonthlyPrices = (basePlan.monthlyPricesRub || Array(12).fill(model.retailPriceRub)).map(
     (pr, idx) => (idx === monthIdx ? clean : pr)
   );
@@ -5993,10 +6437,54 @@ export function updateModelScenarioSingleMonthPrice(
       ? Array(12).fill(0)
       : monthlyOrdersPacks.map((ord, idx) => ord * (nextMonthlyPrices[idx] ?? model.retailPriceRub));
 
+  const nextRevenuesOverride =
+    Array.isArray(basePlan.monthlyRevenuesRubOverride) &&
+    basePlan.monthlyRevenuesRubOverride.length === 12
+      ? basePlan.monthlyRevenuesRubOverride.map((rev, idx) =>
+          idx === monthIdx
+            ? Math.max(0, Math.round(basePlan.monthlyPacks[monthIdx] || 0)) * clean
+            : rev
+        )
+      : undefined;
+
+  let nextLiskaniVariants = model.liskaniSizeVariants;
+  if (
+    isPrimaryScenarioEdit &&
+    Array.isArray(model.liskaniSizeVariants) &&
+    model.liskaniSizeVariants.length > 0
+  ) {
+    nextLiskaniVariants = model.liskaniSizeVariants.map((sv) => {
+      const baseSvPrice = sv.retailPriceRub || model.retailPriceRub;
+      const monthSvPrice =
+        clean === 0
+          ? 0
+          : prevMonthPrice > 0 && baseSvPrice > 0
+          ? Math.max(0, Math.round((baseSvPrice * clean) / prevMonthPrice))
+          : clean;
+      const nextMonthlyBuyoutsRub = (sv.monthlyBuyoutsUnits || []).map((u, idx) =>
+        idx === monthIdx
+          ? u * monthSvPrice
+          : sv.monthlyBuyoutsRub?.[idx] ?? u * baseSvPrice
+      );
+      const nextMonthlyOrdersRub = (sv.monthlyOrdersUnits || []).map((u, idx) =>
+        idx === monthIdx
+          ? u * monthSvPrice
+          : sv.monthlyOrdersRub?.[idx] ?? u * baseSvPrice
+      );
+      return {
+        ...sv,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+        monthlyOrdersRub: nextMonthlyOrdersRub,
+        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((s, v) => s + v, 0),
+        annualOrdersRub: nextMonthlyOrdersRub.reduce((s, v) => s + v, 0),
+      };
+    });
+  }
+
   const updatedPlanBase = {
     ...basePlan,
     monthlyPricesRub: nextMonthlyPrices,
-    monthlyRevenuesRubOverride: undefined,
+    monthlyRevenuesRubOverride: nextRevenuesOverride,
     monthlyOrdersPacks,
     monthlyOrdersRub,
   };
@@ -6036,6 +6524,7 @@ export function updateModelScenarioSingleMonthPrice(
 
   return {
     ...model,
+    liskaniSizeVariants: nextLiskaniVariants,
     plansByScenario: nextPlans,
   };
 }
@@ -6084,6 +6573,7 @@ export function updateModelScenarioMonthBuyouts(
   const nextMonthlyPacks = basePlan.monthlyPacks.map((v, idx) =>
     idx === monthIdx ? clean : v
   );
+  const monthPrice = basePlan.monthlyPricesRub[monthIdx] ?? model.retailPriceRub;
 
   const effBuyoutPct = getEffectiveModelBuyoutRatePct(model, scenarioId);
   const nextMonthlyOrdersPacks =
@@ -6115,6 +6605,14 @@ export function updateModelScenarioMonthBuyouts(
           (ord, idx) => ord * (basePlan.monthlyPricesRub[idx] ?? model.retailPriceRub)
         );
 
+  const nextRevenuesOverride =
+    Array.isArray(basePlan.monthlyRevenuesRubOverride) &&
+    basePlan.monthlyRevenuesRubOverride.length === 12
+      ? basePlan.monthlyRevenuesRubOverride.map((rev, idx) =>
+          idx === monthIdx ? clean * monthPrice : rev
+        )
+      : undefined;
+
   let nextLiskaniVariants = model.liskaniSizeVariants;
   if (
     isPrimaryScenarioEdit &&
@@ -6141,17 +6639,25 @@ export function updateModelScenarioMonthBuyouts(
             : Math.round((b * 100) / effBuyoutPct)
           : sv.monthlyOrdersUnits[idx] || 0
       );
+      const price = sv.retailPriceRub || model.retailPriceRub;
+      const nextMonthlyBuyoutsRub = nextBuyoutsUnits.map((u, idx) =>
+        idx === monthIdx ? u * price : sv.monthlyBuyoutsRub?.[idx] ?? u * price
+      );
+      const nextMonthlyOrdersRubSv = nextOrdersUnits.map((u, idx) =>
+        idx === monthIdx ? u * price : sv.monthlyOrdersRub?.[idx] ?? u * price
+      );
       const annualBuyoutsUnits = nextBuyoutsUnits.reduce((s, v) => s + v, 0);
       const annualOrdersUnits = nextOrdersUnits.reduce((s, v) => s + v, 0);
-      const price = sv.retailPriceRub || model.retailPriceRub;
       return {
         ...sv,
         monthlyBuyoutsUnits: nextBuyoutsUnits,
         monthlyOrdersUnits: nextOrdersUnits,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+        monthlyOrdersRub: nextMonthlyOrdersRubSv,
         annualBuyoutsUnits,
         annualOrdersUnits,
-        annualBuyoutsRub: annualBuyoutsUnits * price,
-        annualOrdersRub: annualOrdersUnits * price,
+        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((s, v) => s + v, 0),
+        annualOrdersRub: nextMonthlyOrdersRubSv.reduce((s, v) => s + v, 0),
       };
     });
   }
@@ -6161,7 +6667,7 @@ export function updateModelScenarioMonthBuyouts(
     monthlyPacks: nextMonthlyPacks,
     monthlyOrdersPacks: nextMonthlyOrdersPacks,
     monthlyOrdersRub: nextMonthlyOrdersRub,
-    monthlyRevenuesRubOverride: undefined,
+    monthlyRevenuesRubOverride: nextRevenuesOverride,
   };
 
   const nextPlans: ScenarioModelSpec['plansByScenario'] = {
@@ -6251,6 +6757,12 @@ export function updateModelScenarioMonthOrders(
       ? cleanOrders
       : Math.round((cleanOrders * effBuyoutPct) / 100);
 
+  const prevMonthOrders = Math.max(
+    0,
+    Math.round(basePlan.monthlyOrdersPacks?.[monthIdx] || 0)
+  );
+  const monthPrice = basePlan.monthlyPricesRub[monthIdx] ?? model.retailPriceRub;
+
   const nextMonthlyPacks = basePlan.monthlyPacks.map((v, idx) =>
     idx === monthIdx ? nextBuyoutsForMonth : v
   );
@@ -6278,12 +6790,66 @@ export function updateModelScenarioMonthOrders(
     (ord, idx) => ord * (basePlan.monthlyPricesRub[idx] ?? model.retailPriceRub)
   );
 
+  const nextRevenuesOverride =
+    Array.isArray(basePlan.monthlyRevenuesRubOverride) &&
+    basePlan.monthlyRevenuesRubOverride.length === 12
+      ? basePlan.monthlyRevenuesRubOverride.map((rev, idx) =>
+          idx === monthIdx ? nextBuyoutsForMonth * monthPrice : rev
+        )
+      : undefined;
+
+  let nextLiskaniVariants = model.liskaniSizeVariants;
+  if (
+    isPrimaryScenarioEdit &&
+    Array.isArray(model.liskaniSizeVariants) &&
+    model.liskaniSizeVariants.length > 0
+  ) {
+    const varCount = model.liskaniSizeVariants.length;
+    nextLiskaniVariants = model.liskaniSizeVariants.map((sv, svIdx) => {
+      const nextOrdersUnits = sv.monthlyOrdersUnits.map((val, idx) => {
+        if (idx !== monthIdx) return val;
+        if (prevMonthOrders > 0) {
+          return Math.max(0, Math.round((val * cleanOrders) / prevMonthOrders));
+        }
+        const baseShare = Math.floor(cleanOrders / varCount);
+        const rem = cleanOrders - baseShare * varCount;
+        return baseShare + (svIdx < rem ? 1 : 0);
+      });
+      const nextBuyoutsUnits = sv.monthlyBuyoutsUnits.map((b, idx) => {
+        if (idx !== monthIdx) return b;
+        if (effBuyoutPct <= 0) return b;
+        if (effBuyoutPct >= 100) return nextOrdersUnits[monthIdx];
+        return Math.round((nextOrdersUnits[monthIdx] * effBuyoutPct) / 100);
+      });
+      const price = sv.retailPriceRub || model.retailPriceRub;
+      const nextMonthlyBuyoutsRub = nextBuyoutsUnits.map((u, idx) =>
+        idx === monthIdx ? u * price : sv.monthlyBuyoutsRub?.[idx] ?? u * price
+      );
+      const nextMonthlyOrdersRubSv = nextOrdersUnits.map((u, idx) =>
+        idx === monthIdx ? u * price : sv.monthlyOrdersRub?.[idx] ?? u * price
+      );
+      const annualBuyoutsUnits = nextBuyoutsUnits.reduce((s, v) => s + v, 0);
+      const annualOrdersUnits = nextOrdersUnits.reduce((s, v) => s + v, 0);
+      return {
+        ...sv,
+        monthlyBuyoutsUnits: nextBuyoutsUnits,
+        monthlyOrdersUnits: nextOrdersUnits,
+        monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+        monthlyOrdersRub: nextMonthlyOrdersRubSv,
+        annualBuyoutsUnits,
+        annualOrdersUnits,
+        annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((s, v) => s + v, 0),
+        annualOrdersRub: nextMonthlyOrdersRubSv.reduce((s, v) => s + v, 0),
+      };
+    });
+  }
+
   const updatedPlanBase = {
     ...basePlan,
     monthlyPacks: nextMonthlyPacks,
     monthlyOrdersPacks: nextMonthlyOrdersPacks,
     monthlyOrdersRub: nextMonthlyOrdersRub,
-    monthlyRevenuesRubOverride: undefined,
+    monthlyRevenuesRubOverride: nextRevenuesOverride,
   };
 
   const nextPlans: ScenarioModelSpec['plansByScenario'] = {
@@ -6321,6 +6887,7 @@ export function updateModelScenarioMonthOrders(
 
   return {
     ...model,
+    liskaniSizeVariants: nextLiskaniVariants,
     plansByScenario: nextPlans,
   };
 }
@@ -6463,15 +7030,20 @@ export function computePortfolioProcurementWavesSummary(
     leadDaysWeightedSum += proc.totalLeadDays ?? 45;
     modelsWeightCount += 1;
 
+    const entryYear = entry.scenario.year || year || 2027;
     const confirmedPos = proc.approvedOrders.filter(
-      (po) => po.confirmedByFactory !== false
+      (po) =>
+        po.confirmedByFactory !== false && getPoArrivalYear(po) === entryYear
     );
 
     for (const po of confirmedPos) {
       const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
-      const orderM = Math.max(
-        0,
-        arrivalM - Math.ceil((po.leadTimeDaysAtApproval ?? proc.totalLeadDays ?? 45) / 30)
+      const orderM = Math.min(
+        11,
+        Math.max(
+          0,
+          arrivalM - Math.ceil((po.leadTimeDaysAtApproval ?? proc.totalLeadDays ?? 45) / 30)
+        )
       );
       const qIdx = Math.min(3, Math.max(0, Math.floor(arrivalM / 3)));
       const w = waveAcc[qIdx];

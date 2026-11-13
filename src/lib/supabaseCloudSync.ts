@@ -11,6 +11,7 @@ export interface CloudPortfolioCorePayload {
   selectedScenarioByBrand?: Record<string, number | null>;
   includeGroupPortfolioInS1?: boolean;
   deletedModelIds?: string[];
+  deletedScenarioIds?: number[];
   customBrands?: string[];
   updatedAtIso: string;
 }
@@ -28,7 +29,10 @@ function computeGalleryFingerprint(gallery: ScenarioModelSpec['gallery'] | undef
     .join('|');
 }
 
-function stripBase64FromModelForCoreRow(model: ScenarioModelSpec): ScenarioModelSpec {
+function stripBase64FromModelForCoreRow(
+  model: ScenarioModelSpec,
+  failedUploadModelIds?: Set<string>
+): ScenarioModelSpec {
   if (!Array.isArray(model.gallery) || model.gallery.length === 0) {
     return model;
   }
@@ -38,6 +42,32 @@ function stripBase64FromModelForCoreRow(model: ScenarioModelSpec): ScenarioModel
       (typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
   );
   if (!hasBase64) return model;
+
+  const uploadFailed = Boolean(failedUploadModelIds?.has(model.id));
+  const hasPriorCloudGallery =
+    lastSyncedGalleryFingerprintByModelId.has(model.id) &&
+    lastSyncedGalleryFingerprintByModelId.get(model.id) !== 'EMPTY';
+
+  if (uploadFailed && !hasPriorCloudGallery) {
+    return {
+      ...model,
+      gallery: model.gallery
+        .map((g) => ({
+          ...g,
+          url:
+            typeof g.url === 'string' &&
+            g.url.startsWith('data:image/') &&
+            g.url.length > 64_000
+              ? ''
+              : g.url,
+          originalUrl:
+            typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/')
+              ? ''
+              : g.originalUrl,
+        }))
+        .filter((g) => Boolean(g.url)),
+    };
+  }
 
   return {
     ...model,
@@ -88,7 +118,30 @@ export async function pushModelGalleryToSupabase(
       (typeof g.url === 'string' && g.url.startsWith('data:image/')) ||
       (typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
   );
-  if (!hasDataImage) return false;
+  if (!hasDataImage) {
+    if (
+      lastSyncedGalleryFingerprintByModelId.has(modelId) &&
+      lastSyncedGalleryFingerprintByModelId.get(modelId) !== 'EMPTY'
+    ) {
+      try {
+        const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
+          {
+            key: `${SUPABASE_GALLERY_KEY_PREFIX}${modelId}`,
+            payload: { modelId, gallery: [], items: [] },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
+        if (!error) {
+          lastSyncedGalleryFingerprintByModelId.set(modelId, 'EMPTY');
+        }
+        return !error;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
 
   if (lastSyncedGalleryFingerprintByModelId.get(modelId) === nextFp) {
     return true;
@@ -132,7 +185,8 @@ export async function pushPortfolioCoreToSupabase(
 
   try {
     // Синхронизируем только те base64-фотогалереи, чей слепок реально изменился (O(1) для неизменённых SKU)
-    const galleryPromises: Promise<boolean>[] = [];
+    const galleryTasks: { modelId: string; promise: Promise<boolean> }[] = [];
+    const failedUploadModelIds = new Set<string>();
     for (const m of input.models) {
       if (
         Array.isArray(m.gallery) &&
@@ -142,12 +196,30 @@ export async function pushPortfolioCoreToSupabase(
       ) {
         const fp = computeGalleryFingerprint(m.gallery);
         if (lastSyncedGalleryFingerprintByModelId.get(m.id) !== fp) {
-          galleryPromises.push(pushModelGalleryToSupabase(m.id, m.gallery));
+          galleryTasks.push({
+            modelId: m.id,
+            promise: pushModelGalleryToSupabase(m.id, m.gallery),
+          });
         }
+      } else if (
+        Array.isArray(m.gallery) &&
+        lastSyncedGalleryFingerprintByModelId.has(m.id) &&
+        lastSyncedGalleryFingerprintByModelId.get(m.id) !== 'EMPTY'
+      ) {
+        galleryTasks.push({
+          modelId: m.id,
+          promise: pushModelGalleryToSupabase(m.id, m.gallery),
+        });
       }
     }
-    if (galleryPromises.length > 0) {
-      await Promise.allSettled(galleryPromises);
+    if (galleryTasks.length > 0) {
+      const results = await Promise.allSettled(galleryTasks.map((t) => t.promise));
+      results.forEach((res, idx) => {
+        const ok = res.status === 'fulfilled' && res.value === true;
+        if (!ok) {
+          failedUploadModelIds.add(galleryTasks[idx].modelId);
+        }
+      });
     }
 
     // Защита от гонки: если пока шли сетевые запросы пользователь ввёл более свежее значение — не затираем новым старое
@@ -155,7 +227,9 @@ export async function pushPortfolioCoreToSupabase(
       return true;
     }
 
-    const compactModels = input.models.map(stripBase64FromModelForCoreRow);
+    const compactModels = input.models.map((m) =>
+      stripBase64FromModelForCoreRow(m, failedUploadModelIds)
+    );
     const payload: CloudPortfolioCorePayload = {
       ...input,
       models: compactModels,

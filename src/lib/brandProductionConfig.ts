@@ -14,6 +14,8 @@ export interface BrandProductionProfile {
   itemsUnitLabelRu: string;
   packUnitLabelRu: string;
   defaultPackUnits: number;
+  defaultCategoryZh: string;
+  defaultFactoryNameZh: string;
   defaultMaterialRu: string;
   defaultMaterialEn: string;
   defaultMaterialZh: string;
@@ -63,6 +65,8 @@ export function getBrandProductionProfile(
       itemsUnitLabelRu: 'Штук изделий',
       packUnitLabelRu: 'Упаковок / компл.',
       defaultPackUnits: 1,
+      defaultCategoryZh: '女士无痕贴身内衣 (Женское бесшовное бельё)',
+      defaultFactoryNameZh: '汕头/义乌精品无缝内衣制造厂',
       defaultMaterialRu:
         '78% микрополиамид Sensil + 22% эластан Lycra · Бесшовное полотно 145 г/м²',
       defaultMaterialEn:
@@ -82,12 +86,54 @@ export function getBrandProductionProfile(
   }
 
   if (brandCode === 'AKUSHA') {
+    const isKidsExplicit = ['детск', 'ясли', 'дошкол', '22-30', '22–30'].some((k) =>
+      hint.includes(k)
+    );
+    const hasAdultMenHint = ['39–45', '39-45', 'мужск'].some((k) => hint.includes(k));
     const isAdultWomen =
-      hint.includes('36') ||
-      hint.includes('женск') ||
-      hint.includes('лофер') ||
-      hint.includes('топсайдер') ||
-      hint.includes('мокасин');
+      !isKidsExplicit &&
+      (hint.includes('женск') ||
+        hint.includes('36-41') ||
+        hint.includes('36–41') ||
+        ((hint.includes('лофер') ||
+          hint.includes('балетк') ||
+          hint.includes('туфл') ||
+          hint.includes('топсайдер') ||
+          hint.includes('мокасин')) &&
+          !hasAdultMenHint));
+    const isAdultMen = !isKidsExplicit && !isAdultWomen && hasAdultMenHint;
+
+    if (isAdultMen) {
+      return {
+        brandCode: 'AKUSHA',
+        brandLabel: 'AKUSHA',
+        sizes: ['39', '40', '41', '42', '43', '44', '45'],
+        sizeGridLabelRu: 'Мужская / взрослая обувная сетка 39–45',
+        sizeGridLabelEn: 'Adult Footwear Sizes EU 39–45',
+        sizeGridLabelZh: '成人鞋履尺码表 EU 39–45',
+        sizeSharesPct: { '39': 8, '40': 13, '41': 18, '42': 22, '43': 19, '44': 13, '45': 7 },
+        itemsUnitLabelRu: 'Пар обуви',
+        packUnitLabelRu: 'Пар',
+        defaultPackUnits: 1,
+        defaultCategoryZh: '成人鞋履 (Мужская / взрослая обувь)',
+        defaultFactoryNameZh: '广州/温州精品鞋履制造厂',
+        defaultMaterialRu:
+          '100% натуральная кожа / замша премиум-выделки · Дышащая подкладка · Износостойкая резиновая подошва',
+        defaultMaterialEn:
+          '100% Full-Grain Leather / Suede Upper · Breathable Lining · Durable Rubber Outsole',
+        defaultMaterialZh: '头层牛皮 / 反绒皮，透气内里，耐磨橡胶底',
+        defaultConstructionRu:
+          'Эргономичная колодка, нескользящая износостойкая подошва и усиленная прошивка',
+        defaultConstructionEn:
+          'Ergonomic footwear last, non-slip wear-resistant outsole, reinforced stitching',
+        defaultConstructionZh: '人体工学鞋楦，防滑耐磨大底，加固车缝工艺',
+        defaultWaistbandOrTrimRu: 'Вощёная шнуровка / металлическая фурнитура, индивидуальный короб',
+        defaultWaistbandOrTrimZh: '打蜡鞋带/金属配件 · 独立防潮品牌鞋盒',
+        defaultDetailCaptionRu: 'Крупный план: кожа верха, строчка и протектор подошвы',
+        defaultDetailCaptionZh: '鞋面皮料纹理、车缝线与防滑大底细节',
+      };
+    }
+
     const sizes = isAdultWomen
       ? ['36', '37', '38', '39', '40', '41']
       : ['22', '23', '24', '25', '26', '27', '28', '29', '30'];
@@ -108,6 +154,10 @@ export function getBrandProductionProfile(
       itemsUnitLabelRu: 'Пар обуви',
       packUnitLabelRu: 'Пар обуви',
       defaultPackUnits: 1,
+      defaultCategoryZh: isAdultWomen
+        ? '女士精品鞋履 (Женская обувь 36–41)'
+        : '儿童健康皮鞋 (Детская обувь 22–30)',
+      defaultFactoryNameZh: isAdultWomen ? '广州/温州精品女鞋制造厂' : '温州/广州精品童鞋制造厂',
       defaultMaterialRu:
         '100% натуральная кожа / нубук премиум-выделки · Дышащая подкладка · Подошва ТЭП',
       defaultMaterialEn:
@@ -145,6 +195,8 @@ export function getBrandProductionProfile(
       itemsUnitLabelRu: 'Полотен в заказе',
       packUnitLabelRu: 'Комплектов штор',
       defaultPackUnits: 1,
+      defaultCategoryZh: '高精密遮光窗帘套装 (Интерьерные шторы)',
+      defaultFactoryNameZh: '绍兴柯桥精品家纺窗帘制造厂',
       defaultMaterialRu:
         '100% интерьерный полиэстер премиум-плетения блэкаут / димаут · Плотность 280 г/м²',
       defaultMaterialEn:
@@ -174,6 +226,8 @@ export function getBrandProductionProfile(
     itemsUnitLabelRu: 'Штук белья',
     packUnitLabelRu: 'Упаковок / мультипаков',
     defaultPackUnits: 3,
+    defaultCategoryZh: '男士精品贴身内裤套装 (Мужское бельё / мультипак)',
+    defaultFactoryNameZh: '中山小榄/汕头针织内衣制造厂',
     defaultMaterialRu: '95% гребенной хлопок пенье / микромодал + 5% эластан · Плотность 180 г/м²',
     defaultMaterialEn: '95% Combed Compact Cotton / MicroModal + 5% Elastane · 180 GSM',
     defaultMaterialZh: '95% 精梳紧密纺棉/兰精莫代尔 + 5% 氨纶 · 克重 180g/m²',

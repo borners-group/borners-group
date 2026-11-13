@@ -27,6 +27,9 @@ import {
   ROLE_LABELS_RU,
   TASK_PRIORITY_LABELS_RU,
   TASK_STATUS_LABELS_RU,
+  canUserEditBrand,
+  canUserViewBrandConcept,
+  canUserViewCostPrice,
   canUserViewFinance,
 } from '@/lib/finance';
 import {
@@ -659,10 +662,11 @@ export function RoadmapTasksView() {
         (brandFilter === 'ALL' ||
           t.brandId === 'ALL' ||
           normalizeLabBrandCode(t.brandId) === normalizeLabBrandCode(brandFilter)) &&
+        (assigneeFilter === 'ALL' || t.assigneeId === assigneeFilter) &&
         t.deadline < todayStr &&
         t.status !== 'Done'
     ).length;
-  }, [tasks, brandFilter]);
+  }, [tasks, brandFilter, assigneeFilter]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
@@ -683,6 +687,14 @@ export function RoadmapTasksView() {
       return true;
     });
   }, [tasks, brandFilter, assigneeFilter, overdueOnly]);
+
+  const overdueOrBlockedCount = useMemo(
+    () =>
+      filteredTasks.filter(
+        (t) => t.status === 'Blocked' || (t.deadline < todayStr && t.status !== 'Done')
+      ).length,
+    [filteredTasks]
+  );
 
   const selectedTask: TaskItem | null = useMemo(
     () => tasks.find((t) => t.id === selectedTaskId) || null,
@@ -856,7 +868,7 @@ export function RoadmapTasksView() {
               Требуют внимания / Просрочено
             </span>
             <span className="font-serif-editorial text-[34px] font-semibold text-[#B83E3E] mt-1 leading-none">
-              {overdueCount + filteredTasks.filter((t) => t.status === 'Blocked').length} задач
+              {overdueOrBlockedCount} задач
             </span>
           </div>
         </div>
@@ -1604,6 +1616,20 @@ export function DocumentsView() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const hasFinanceAccess = canUserViewFinance(currentUser);
+  const canEditDocs =
+    !isStrategyMode &&
+    currentUser.role !== 'Viewer' &&
+    currentUser.role !== 'Partner';
+
+  const visibleConcepts = useMemo(
+    () =>
+      concepts.filter(
+        (c) =>
+          !c.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))
+      ),
+    [concepts, currentUser]
+  );
 
   const [form, setForm] = useState({
     title: '',
@@ -1752,7 +1778,7 @@ export function DocumentsView() {
           </h1>
         </div>
 
-        {!isStrategyMode && (
+        {canEditDocs && (
           <div className="flex flex-wrap items-center gap-2">
             <label className="h-9 px-3.5 rounded-[9px] border-[1.5px] border-[#CECDC4] bg-white hover:border-[#141413] text-[#141413] text-[12px] font-semibold transition cursor-pointer inline-flex items-center">
               <span>Загрузить пакет файлов</span>
@@ -1834,7 +1860,19 @@ export function DocumentsView() {
                 doc.fileName.toLowerCase().endsWith('.xls') ||
                 doc.category === 'финансы';
               const linkedConcept = concepts.find((c) => c.id === doc.conceptId);
-              const linkedProduct = products.find((p) => p.id === doc.productId);
+              const canViewLinkedConcept = linkedConcept
+                ? canUserViewBrandConcept(
+                    currentUser,
+                    normalizeLabBrandCode(linkedConcept.brandId)
+                  )
+                : false;
+              const linkedProduct =
+                mergedCatalogProducts.find((p) => p.id === doc.productId) ||
+                products.find((p) => p.id === doc.productId);
+              const canEditThisDoc =
+                canEditDocs &&
+                (doc.brandId === 'ALL' ||
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(doc.brandId)));
 
               return (
                 <tr key={doc.id} className="hover:bg-[#FAF8F5] transition">
@@ -1848,7 +1886,7 @@ export function DocumentsView() {
                   </td>
                   <td className="py-4 px-4">
                     <div className="space-y-1.5">
-                      {linkedConcept && (
+                      {linkedConcept && canViewLinkedConcept && (
                         <button
                           type="button"
                           onClick={() => navigateTo('product-lab', { conceptId: linkedConcept.id })}
@@ -1862,7 +1900,22 @@ export function DocumentsView() {
                       {linkedProduct && (
                         <button
                           type="button"
-                          onClick={() => navigateTo('product-catalog', { productId: linkedProduct.id })}
+                          onClick={() => {
+                            if (
+                              typeof window !== 'undefined' &&
+                              livePortfolio.models.some((m) => m.id === linkedProduct.id)
+                            ) {
+                              try {
+                                sessionStorage.setItem(
+                                  'borners_open_scenario_model_id',
+                                  linkedProduct.id
+                                );
+                              } catch {
+                                // ignore storage errors
+                              }
+                            }
+                            navigateTo('product-catalog', { productId: linkedProduct.id });
+                          }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-[#FAF8F5] border border-[#CFC8BC] hover:border-[#181715] text-[12px] font-semibold text-[#181715] cursor-pointer"
                         >
                           <span className="text-[#1F6E50] font-mono">SKU:</span>
@@ -1870,7 +1923,7 @@ export function DocumentsView() {
                           <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                         </button>
                       )}
-                      {!isStrategyMode && (
+                      {canEditThisDoc && (
                         <div>
                           <select
                             value={
@@ -1900,16 +1953,14 @@ export function DocumentsView() {
                           >
                             <option value="">Привязать к карточке R&amp;D или SKU...</option>
                             <optgroup label="Карточки разработки R&D">
-                              {concepts
-                                .filter((c) => !c.isArchived)
-                                .map((c) => (
-                                  <option key={c.id} value={`concept:${c.id}`}>
-                                    R&amp;D: {c.code} — {c.name}
-                                  </option>
-                                ))}
+                              {visibleConcepts.map((c) => (
+                                <option key={c.id} value={`concept:${c.id}`}>
+                                  R&amp;D: {c.code} — {c.name}
+                                </option>
+                              ))}
                             </optgroup>
                             <optgroup label="Модели каталога SKU">
-                              {products
+                              {mergedCatalogProducts
                                 .filter((p) => !p.isArchived)
                                 .map((p) => (
                                   <option key={p.id} value={`product:${p.id}`}>
@@ -1973,7 +2024,7 @@ export function DocumentsView() {
                           </button>
                         </>
                       )}
-                      {!isStrategyMode && (
+                      {canEditThisDoc && (
                         <button
                           type="button"
                           onClick={() => archiveEntity('document', doc.id)}
@@ -2059,13 +2110,11 @@ export function DocumentsView() {
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 text-[13.5px] bg-white"
                   >
                     <option value="">Без привязки к R&amp;D</option>
-                    {concepts
-                      .filter((c) => !c.isArchived)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.code} — {c.name}
-                        </option>
-                      ))}
+                    {visibleConcepts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.code} — {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -2078,7 +2127,7 @@ export function DocumentsView() {
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 text-[13.5px] bg-white"
                   >
                     <option value="">Без привязки к SKU</option>
-                    {products
+                    {mergedCatalogProducts
                       .filter((p) => !p.isArchived)
                       .map((p) => (
                         <option key={p.id} value={p.id}>
@@ -2411,6 +2460,7 @@ export function TeamView() {
 // =============================================================================
 export function SettingsView() {
   const {
+    currentUser,
     users,
     brands,
     strategies,
@@ -2431,6 +2481,11 @@ export function SettingsView() {
     setPlatformMode,
     notify,
   } = usePlatform();
+
+  const isOwnerOrAdmin =
+    currentUser.role === 'Owner' || currentUser.role === 'Admin';
+  const canExportFullFinancialExcel =
+    canUserViewFinance(currentUser) && canUserViewCostPrice(currentUser);
 
   const livePortfolio = useLiveScenarioPortfolio();
 
@@ -2472,110 +2527,112 @@ export function SettingsView() {
       </div>
 
       {/* АДМИНКА: ЧЕРНОВИК РАЗДЕЛОВ И ИНСТРУМЕНТОВ */}
-      <div className="bg-white rounded-[16px] border-[1.5px] border-[#CFC8BC] p-6 md:p-7 space-y-5 shadow-xs">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#EAE6DF] pb-4">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[#B85D35] font-bold">
-              <span>АДМИНКА · ЧЕРНОВИК ИНСТРУМЕНТОВ ({enabledCount} из {totalCount} включено)</span>
+      {isOwnerOrAdmin && (
+        <div className="bg-white rounded-[16px] border-[1.5px] border-[#CFC8BC] p-6 md:p-7 space-y-5 shadow-xs">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#EAE6DF] pb-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[#B85D35] font-bold">
+                <span>АДМИНКА · ЧЕРНОВИК ИНСТРУМЕНТОВ ({enabledCount} из {totalCount} включено)</span>
+              </div>
+              <h2 className="text-[22px] font-bold text-[#181715]">
+                Скрытые разделы в черновике (управление видимостью меню)
+              </h2>
+              <p className="text-[13.5px] text-[#5C5852] max-w-3xl">
+                В основном рабочем меню оставлены только 7 ключевых разделов («Главная», «Сценарии роста», «Модели (SKU)», «План продаж», «Производство», «Закупки», «Документы»). Любой дополнительный инструмент из черновика можно вернуть в меню или открыть в 1 клик.
+              </p>
             </div>
-            <h2 className="text-[22px] font-bold text-[#181715]">
-              Скрытые разделы в черновике (управление видимостью меню)
-            </h2>
-            <p className="text-[13.5px] text-[#5C5852] max-w-3xl">
-              В основном рабочем меню оставлены только 7 ключевых разделов («Главная», «Сценарии роста», «Модели (SKU)», «План продаж», «Производство», «Закупки», «Документы»). Любой дополнительный инструмент из черновика можно вернуть в меню или открыть в 1 клик.
-            </p>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setAllDraftModules(true);
-                notify('success', 'Все разделы из черновика возвращены в меню');
-              }}
-              className="h-9 px-3.5 rounded-[9px] bg-[#181715] text-white text-[12.5px] font-semibold hover:bg-[#2C2B29] transition cursor-pointer"
-            >
-              Вернуть все ({totalCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAllDraftModules(false);
-                notify('success', 'Дополнительные разделы скрыты в черновик (оставлены 7 базовых)');
-              }}
-              className="h-9 px-3.5 rounded-[9px] border border-[#D4CDC2] bg-[#FAF8F5] text-[#181715] text-[12.5px] font-semibold hover:border-[#181715] transition cursor-pointer"
-            >
-              Оставить только 7 базовых
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {DRAFT_MODULES_META.map((item) => {
-            const isEnabled = draftModules[item.key];
-            return (
-              <div
-                key={item.key}
-                className={`rounded-[12px] border p-4 flex items-start justify-between gap-4 transition ${
-                  isEnabled
-                    ? 'bg-[#F4F9F6] border-[#1F6E50]/40'
-                    : 'bg-[#FAF8F5] border-[#E5E0D8]'
-                }`}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAllDraftModules(true);
+                  notify('success', 'Все разделы из черновика возвращены в меню');
+                }}
+                className="h-9 px-3.5 rounded-[9px] bg-[#181715] text-white text-[12.5px] font-semibold hover:bg-[#2C2B29] transition cursor-pointer"
               >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[14.5px] font-bold text-[#181715]">
-                      {item.title}
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${
-                        isEnabled
-                          ? 'bg-[#1F6E50] text-white'
-                          : 'bg-[#EAE4D8] text-[#6E6A63]'
-                      }`}
-                    >
-                      {isEnabled ? 'В меню' : 'В черновике'}
-                    </span>
-                  </div>
-                  <p className="text-[12.5px] text-[#5C5852] leading-snug">
-                    {item.subtitle}
-                  </p>
-                  {item.sectionId && (
-                    <button
-                      type="button"
-                      onClick={() => navigateTo(item.sectionId!)}
-                      className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
-                    >
-                      <span>Открыть раздел без включения в меню →</span>
-                    </button>
-                  )}
-                  {item.key === 'strategyPresentationCard' && (
-                    <button
-                      type="button"
-                      onClick={() => setPlatformMode('strategy')}
-                      className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
-                    >
-                      <span>Открыть презентацию 16 слайдов →</span>
-                    </button>
-                  )}
-                </div>
+                Вернуть все ({totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAllDraftModules(false);
+                  notify('success', 'Дополнительные разделы скрыты в черновик (оставлены 7 базовых)');
+                }}
+                className="h-9 px-3.5 rounded-[9px] border border-[#D4CDC2] bg-[#FAF8F5] text-[#181715] text-[12.5px] font-semibold hover:border-[#181715] transition cursor-pointer"
+              >
+                Оставить только 7 базовых
+              </button>
+            </div>
+          </div>
 
-                <button
-                  type="button"
-                  onClick={() => toggleDraftModule(item.key)}
-                  className={`shrink-0 h-8 px-3 rounded-[8px] text-[12px] font-semibold transition cursor-pointer ${
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {DRAFT_MODULES_META.map((item) => {
+              const isEnabled = draftModules[item.key];
+              return (
+                <div
+                  key={item.key}
+                  className={`rounded-[12px] border p-4 flex items-start justify-between gap-4 transition ${
                     isEnabled
-                      ? 'bg-[#1F6E50] text-white hover:bg-[#17563E]'
-                      : 'bg-white border border-[#CFC8BC] text-[#181715] hover:border-[#181715]'
+                      ? 'bg-[#F4F9F6] border-[#1F6E50]/40'
+                      : 'bg-[#FAF8F5] border-[#E5E0D8]'
                   }`}
                 >
-                  {isEnabled ? 'Скрыть' : 'Вернуть'}
-                </button>
-              </div>
-            );
-          })}
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[14.5px] font-bold text-[#181715]">
+                        {item.title}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${
+                          isEnabled
+                            ? 'bg-[#1F6E50] text-white'
+                            : 'bg-[#EAE4D8] text-[#6E6A63]'
+                        }`}
+                      >
+                        {isEnabled ? 'В меню' : 'В черновике'}
+                      </span>
+                    </div>
+                    <p className="text-[12.5px] text-[#5C5852] leading-snug">
+                      {item.subtitle}
+                    </p>
+                    {item.sectionId && (
+                      <button
+                        type="button"
+                        onClick={() => navigateTo(item.sectionId!)}
+                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
+                      >
+                        <span>Открыть раздел без включения в меню →</span>
+                      </button>
+                    )}
+                    {item.key === 'strategyPresentationCard' && (
+                      <button
+                        type="button"
+                        onClick={() => setPlatformMode('strategy')}
+                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
+                      >
+                        <span>Открыть презентацию 8 слайдов →</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleDraftModule(item.key)}
+                    className={`shrink-0 h-8 px-3 rounded-[8px] text-[12px] font-semibold transition cursor-pointer ${
+                      isEnabled
+                        ? 'bg-[#1F6E50] text-white hover:bg-[#17563E]'
+                        : 'bg-white border border-[#CFC8BC] text-[#181715] hover:border-[#181715]'
+                    }`}
+                  >
+                    {isEnabled ? 'Скрыть' : 'Вернуть'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Корпоративный домен BORNERS GROUP */}
       <div className="bg-white rounded-[12px] border-[1.5px] border-[#CFC8BC] border-t-[3px] border-t-[#181715] p-6 flex flex-wrap items-center justify-between gap-4">
@@ -2617,11 +2674,13 @@ export function SettingsView() {
                 </div>
                 <input
                   type="color"
+                  disabled={!isOwnerOrAdmin}
                   value={brand.accentColor}
-                  onChange={(e) =>
-                    updateBrandPalette(brand.id, e.target.value, brand.secondaryColor)
-                  }
-                  className="h-9 w-14 rounded-[6px] border border-[#EAE6DF] cursor-pointer"
+                  onChange={(e) => {
+                    if (!isOwnerOrAdmin) return;
+                    updateBrandPalette(brand.id, e.target.value, brand.secondaryColor);
+                  }}
+                  className="h-9 w-14 rounded-[6px] border border-[#EAE6DF] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             ))}
@@ -2646,195 +2705,207 @@ export function SettingsView() {
             </p>
 
             <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const finDoc = documents.find((d) => d.id === 'doc-3') || {
-                    id: 'doc-3',
-                    title: 'Финансовая модель и каталог SKU BORNERS GROUP 2027',
-                    category: 'финансы' as const,
-                    fileName: `BORNERS_GROUP_Сводная_База_${new Date().toISOString().slice(0, 10)}.xlsx`,
-                    fileType: 'XLSX',
-                    fileSizeBytes: 1850000,
-                    brandId: 'ALL',
-                    tags: [],
-                    isFinancialRestricted: true,
-                    minRole: 'Manager' as const,
-                    uploadedBy: 'Система',
-                    uploadedAt: new Date().toISOString().slice(0, 10),
-                    isDemo: false,
-                    isArchived: false,
-                  };
-                  exportDocumentAsExcel(finDoc, {
-                    products: mergedCatalogProducts,
-                    concepts,
-                    financialPlans,
-                  });
-                  notify(
-                    'success',
-                    'Сводная таблица Excel (.xlsx) выгружена',
-                    `В выгрузку включено ${mergedCatalogProducts.length} позиций каталога всех 5 брендов.`
-                  );
-                }}
-                className="inline-flex items-center gap-2 h-10 rounded-[8px] bg-[#181715] text-white px-4 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span>Скачать сводную базу Excel (.xlsx)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    const payload = buildFullPlatformBackupBundle({
-                      scenarios: livePortfolio.scenarios,
-                      models: livePortfolio.models,
-                      selectedScenarioByBrand: livePortfolio.selectedScenarioByBrand,
-                      includeGroupPortfolioInS1: livePortfolio.includeGroupPortfolioInS1,
-                      productGroups: safeGetStorageJson('borners_product_groups_v1'),
-                      platformState: {
-                        users,
-                        brands,
-                        strategies,
-                        concepts,
-                        products,
-                        launches,
-                        financialPlans,
-                        projects,
-                        tasks,
-                        documents,
-                        competitors,
-                        miroItems,
-                        presentationOverrides,
-                      },
+              {canExportFullFinancialExcel && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finDoc = documents.find((d) => d.id === 'doc-3') || {
+                      id: 'doc-3',
+                      title: 'Финансовая модель и каталог SKU BORNERS GROUP 2027',
+                      category: 'финансы' as const,
+                      fileName: `BORNERS_GROUP_Сводная_База_${new Date().toISOString().slice(0, 10)}.xlsx`,
+                      fileType: 'XLSX',
+                      fileSizeBytes: 1850000,
+                      brandId: 'ALL',
+                      tags: [],
+                      isFinancialRestricted: true,
+                      minRole: 'Manager' as const,
+                      uploadedBy: 'Система',
+                      uploadedAt: new Date().toISOString().slice(0, 10),
+                      isDemo: false,
+                      isArchived: false,
+                    };
+                    exportDocumentAsExcel(finDoc, {
+                      products: mergedCatalogProducts,
+                      concepts,
+                      financialPlans,
                     });
-                    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-                      type: 'application/json;charset=utf-8',
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
                     notify(
                       'success',
-                      '✓ Полная резервная копия JSON скачана',
-                      `Сохранены ${livePortfolio.models.length} SKU, сценарии 2027, товарные группы и Лаборатория R&D (${concepts.length}).`
+                      'Сводная таблица Excel (.xlsx) выгружена',
+                      `В выгрузку включено ${mergedCatalogProducts.length} позиций каталога всех 5 брендов.`
                     );
-                  } catch {
-                    notify('error', 'Ошибка сохранения резервной копии JSON');
-                  }
-                }}
-                className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer"
-              >
-                <Download className="h-4 w-4" />
-                <span>Экспорт базы JSON</span>
-              </button>
-
-              <label className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer">
-                <Upload className="h-4 w-4" />
-                <span>Импорт базы JSON</span>
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = '';
-                    if (!file) return;
-                    try {
-                      const text = await file.text();
-                      const parsed = parseFullPlatformBackupBundle(text);
-                      if (!parsed.valid || !parsed.bundle) {
-                        notify(
-                          'error',
-                          'Ошибка восстановления из файла',
-                          parsed.error || 'Некорректный формат резервной копии JSON'
-                        );
-                        return;
-                      }
-                      const b = parsed.bundle;
-                      for (const m of b.models) {
-                        unmarkModelAsDeletedInStorage(m);
-                        if (Array.isArray(m.gallery) && m.gallery.length > 0) {
-                          await saveModelGalleryToIdb(m.id, m.gallery);
-                        } else {
-                          await deleteModelGalleryFromIdb(m.id);
-                        }
-                      }
-                      const restoredIso = touchPortfolioUpdatedAt();
-                      safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
-                      syncUserPlansBackup(b.models);
-                      await savePortfolioSnapshotToIdb(b.models, restoredIso);
-                      safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
-                      safeSetStorageJson(
-                        STORAGE_KEY_SCENARIO_BY_BRAND,
-                        b.selectedScenarioByBrand
-                      );
-                      if (typeof b.includeGroupPortfolioInS1 === 'boolean') {
-                        safeSetStorageJson(
-                          STORAGE_KEY_S1_GROUP_PORTFOLIO,
-                          b.includeGroupPortfolioInS1
-                        );
-                      }
-                      if (b.productGroups !== undefined) {
-                        safeSetStorageJson('borners_product_groups_v1', b.productGroups);
-                        if (typeof window !== 'undefined') {
-                          window.dispatchEvent(new Event('borners-product-groups-changed'));
-                        }
-                      }
-                      livePortfolio.updateModelsBatch(() => b.models);
-                      livePortfolio.updateScenariosBatch(() => b.scenarios);
-                      if (b.platformState) {
-                        restorePlatformBackupState(b.platformState);
-                      }
-                      if (typeof window !== 'undefined') {
-                        window.dispatchEvent(new Event('borners-scenario-models-changed'));
-                        window.dispatchEvent(new Event('borners-scenarios-changed'));
-                        window.dispatchEvent(new Event('borners-active-scenario-changed'));
-                      }
-                      const byBrandRecord: Record<string, number | null> = {};
-                      for (const [k, v] of Object.entries(b.selectedScenarioByBrand || {})) {
-                        if (v === null || typeof v === 'number') {
-                          byBrandRecord[k] = v;
-                        }
-                      }
-                      void pushPortfolioCoreToSupabase({
-                        models: b.models,
-                        scenarios: b.scenarios,
-                        selectedScenarioByBrand: byBrandRecord,
-                        includeGroupPortfolioInS1: b.includeGroupPortfolioInS1,
-                        deletedModelIds: getDeletedModelsRegistry(),
-                      });
-                      notify(
-                        'success',
-                        '✓ Резервная копия JSON восстановлена',
-                        `Загружено ${b.models.length} карточек SKU, сценарии 2027 и данные Лаборатории R&D.`
-                      );
-                    } catch {
-                      notify('error', 'Не удалось импортировать резервную копию JSON');
-                    }
                   }}
-                />
-              </label>
+                  className="inline-flex items-center gap-2 h-10 rounded-[8px] bg-[#181715] text-white px-4 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Скачать сводную базу Excel (.xlsx)</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Сбросить внесённые изменения к начальным демонстрационным данным?'
-                    )
-                  ) {
-                    resetToDemoDefaults();
-                  }
-                }}
-                className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#C94B4B]/40 text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white px-4 text-[13px] font-medium transition cursor-pointer"
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span>Сбросить демо-данные</span>
-              </button>
+              {isOwnerOrAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const payload = buildFullPlatformBackupBundle({
+                          scenarios: livePortfolio.scenarios,
+                          models: livePortfolio.models,
+                          selectedScenarioByBrand: livePortfolio.selectedScenarioByBrand,
+                          includeGroupPortfolioInS1: livePortfolio.includeGroupPortfolioInS1,
+                          productGroups: safeGetStorageJson('borners_product_groups_v1'),
+                          platformState: {
+                            users,
+                            brands,
+                            strategies,
+                            concepts,
+                            products,
+                            launches,
+                            financialPlans,
+                            projects,
+                            tasks,
+                            documents,
+                            competitors,
+                            miroItems,
+                            presentationOverrides,
+                          },
+                        });
+                        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                          type: 'application/json;charset=utf-8',
+                        });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        notify(
+                          'success',
+                          '✓ Полная резервная копия JSON скачана',
+                          `Сохранены ${livePortfolio.models.length} SKU, сценарии 2027, товарные группы и Лаборатория R&D (${concepts.length}).`
+                        );
+                      } catch {
+                        notify('error', 'Ошибка сохранения резервной копии JSON');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Экспорт базы JSON</span>
+                  </button>
+
+                  <label className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer">
+                    <Upload className="h-4 w-4" />
+                    <span>Импорт базы JSON</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        try {
+                          const text = await file.text();
+                          const parsed = parseFullPlatformBackupBundle(text);
+                          if (!parsed.valid || !parsed.bundle) {
+                            notify(
+                              'error',
+                              'Ошибка восстановления из файла',
+                              parsed.error || 'Некорректный формат резервной копии JSON'
+                            );
+                            return;
+                          }
+                          const b = parsed.bundle;
+                          for (const m of b.models) {
+                            unmarkModelAsDeletedInStorage(m);
+                            if (Array.isArray(m.gallery) && m.gallery.length > 0) {
+                              await saveModelGalleryToIdb(m.id, m.gallery);
+                            } else {
+                              await deleteModelGalleryFromIdb(m.id);
+                            }
+                          }
+                          const restoredIso = touchPortfolioUpdatedAt();
+                          safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
+                          syncUserPlansBackup(b.models);
+                          await savePortfolioSnapshotToIdb(b.models, restoredIso);
+                          safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
+                          safeSetStorageJson(
+                            STORAGE_KEY_SCENARIO_BY_BRAND,
+                            b.selectedScenarioByBrand
+                          );
+                          if (typeof b.includeGroupPortfolioInS1 === 'boolean') {
+                            safeSetStorageJson(
+                              STORAGE_KEY_S1_GROUP_PORTFOLIO,
+                              b.includeGroupPortfolioInS1
+                            );
+                          }
+                          if (b.productGroups !== undefined) {
+                            safeSetStorageJson('borners_product_groups_v1', b.productGroups);
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new Event('borners-product-groups-changed'));
+                            }
+                          }
+                          livePortfolio.updateModelsBatch(() => b.models);
+                          livePortfolio.updateScenariosBatch(() => b.scenarios);
+                          if (b.platformState) {
+                            restorePlatformBackupState(b.platformState);
+                          }
+                          if (typeof window !== 'undefined') {
+                            window.dispatchEvent(new Event('borners-scenario-models-changed'));
+                            window.dispatchEvent(new Event('borners-scenarios-changed'));
+                            window.dispatchEvent(new Event('borners-active-scenario-changed'));
+                          }
+                          const byBrandRecord: Record<string, number | null> = {};
+                          for (const [k, v] of Object.entries(b.selectedScenarioByBrand || {})) {
+                            if (v === null || typeof v === 'number') {
+                              byBrandRecord[k] = v;
+                            }
+                          }
+                          void pushPortfolioCoreToSupabase({
+                            models: b.models,
+                            scenarios: b.scenarios,
+                            selectedScenarioByBrand: byBrandRecord,
+                            includeGroupPortfolioInS1: b.includeGroupPortfolioInS1,
+                            deletedModelIds: getDeletedModelsRegistry(),
+                          });
+                          notify(
+                            'success',
+                            '✓ Резервная копия JSON восстановлена',
+                            `Загружено ${b.models.length} карточек SKU, сценарии 2027 и данные Лаборатории R&D.`
+                          );
+                        } catch {
+                          notify('error', 'Не удалось импортировать резервную копию JSON');
+                        }
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Сбросить внесённые изменения к начальным демонстрационным данным?'
+                        )
+                      ) {
+                        resetToDemoDefaults();
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#C94B4B]/40 text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white px-4 text-[13px] font-medium transition cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    <span>Сбросить демо-данные</span>
+                  </button>
+                </>
+              )}
+
+              {!canExportFullFinancialExcel && !isOwnerOrAdmin && (
+                <div className="rounded-[10px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 py-3 text-[13px] text-[#5C5852]">
+                  Выгрузка полных финансовых таблиц, резервное копирование JSON и сброс демо-базы доступны ролям Owner и Admin.
+                </div>
+              )}
             </div>
           </div>
         </div>

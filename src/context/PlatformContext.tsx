@@ -59,6 +59,7 @@ import {
   CONCEPT_STAGE_LABELS_RU,
   ROLE_LABELS_RU,
   TASK_STATUS_LABELS_RU,
+  canUserAccessSection,
   shiftDateString,
 } from '@/lib/finance';
 import {
@@ -776,19 +777,46 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     [currentUser]
   );
 
+  useEffect(() => {
+    if (!canUserAccessSection(currentUser, activeSection)) {
+      setActiveSection('dashboard');
+    }
+    if (platformMode === 'strategy' && !canUserAccessSection(currentUser, 'brand-strategy')) {
+      setPlatformMode('management');
+    }
+  }, [currentUser, activeSection, platformMode]);
+
   const loginAs = useCallback(
     (userId: string) => {
       const targetUser = state.users.find((u) => u.id === userId);
       if (!targetUser) return;
       setCurrentUserId(targetUser.id);
       setIsAuthenticated(true);
+      if (
+        targetUser.role !== 'Owner' &&
+        targetUser.role !== 'Admin' &&
+        targetUser.assignedBrandIds.length > 0
+      ) {
+        if (
+          (brandFilter !== 'ALL' && !targetUser.assignedBrandIds.includes(brandFilter)) ||
+          targetUser.assignedBrandIds.length === 1
+        ) {
+          setBrandFilter(targetUser.assignedBrandIds[0] as BrandFilter);
+        }
+      }
+      if (!canUserAccessSection(targetUser, activeSection)) {
+        setActiveSection('dashboard');
+      }
+      if (platformMode === 'strategy' && !canUserAccessSection(targetUser, 'brand-strategy')) {
+        setPlatformMode('management');
+      }
       notify(
         'success',
         `Вы вошли как ${targetUser.fullName}`,
         `Роль: ${ROLE_LABELS_RU[targetUser.role]}`
       );
     },
-    [state.users, notify]
+    [state.users, brandFilter, activeSection, platformMode, notify]
   );
 
   const logout = useCallback(() => {
@@ -1090,9 +1118,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         (normBrand === 'NA_TELE' || normBrand === 'НА ТЕЛЕ'
           ? 'images/products/natele-skin-tone.svg'
           : normBrand === 'AKUSHA'
-          ? 'images/akusha/akusha-001.jpg'
+          ? 'models/akusha/AKU-001_main.jpg'
           : normBrand === 'LISKANI' || normBrand === 'LISCANI'
-          ? 'images/liskani/lsk-1.jpg'
+          ? 'images/liskani/LSC-001.webp'
           : 'images/products/borners-core-modal.svg');
 
       const newConcept: ProductConcept = {
@@ -1473,7 +1501,13 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         status: input.status || 'active',
         description: input.description || '',
         ownerId: input.ownerId || currentUser.id,
-        imageUrl: input.imageUrl || '',
+        imageUrl:
+          input.imageUrl ||
+          (isAkusha
+            ? 'models/akusha/AKU-001_main.jpg'
+            : isLiskani
+            ? 'images/liskani/LSC-001.webp'
+            : 'images/products/borners-core-modal.svg'),
         galleryUrls: input.imageUrl ? [input.imageUrl] : [],
         colorCombinations: input.colorCombinations || (isLiskani ? ['Базовый оттенок'] : ['чёрный + тёмно-синий']),
         materials: input.materials || (isLiskani ? '100% полиэстер (интерьерный текстиль)' : isAkusha ? 'Натуральная кожа / текстиль' : 'Микромодал + Эластан'),
@@ -1923,11 +1957,28 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString().slice(0, 10);
       setState((prev) => ({
         ...prev,
-        financialPlans: prev.financialPlans.map((r) =>
-          r.id === id
-            ? { ...r, ...patch, updatedAt: now, updatedBy: currentUser.fullName }
-            : r
-        ),
+        financialPlans: prev.financialPlans.map((r) => {
+          if (r.id !== id) return r;
+          const nextPatch: Partial<FinancialPlanRow> = { ...patch };
+          if (
+            'actualRevenueRub' in patch &&
+            patch.actualRevenueRub !== undefined &&
+            patch.actualOperatingProfitRub === undefined
+          ) {
+            if (patch.actualRevenueRub === null) {
+              nextPatch.actualOperatingProfitRub = null;
+            } else {
+              const plannedMarginRatio =
+                r.plannedRevenueRub > 0
+                  ? r.plannedOperatingProfitRub / r.plannedRevenueRub
+                  : 0;
+              nextPatch.actualOperatingProfitRub = Math.round(
+                patch.actualRevenueRub * plannedMarginRatio
+              );
+            }
+          }
+          return { ...r, ...nextPatch, updatedAt: now, updatedBy: currentUser.fullName };
+        }),
         auditLog: [
           appendAudit('finance', id, 'updated', `Обновлена строка финансового плана (${id})`),
           ...prev.auditLog,

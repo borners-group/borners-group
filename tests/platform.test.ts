@@ -7567,6 +7567,633 @@ test('100. Обратимый цикл «✓ Утвердить в PO → ↺ В
   );
 });
 
+test('101. Мужской обувной профиль AKUSHA 39–45 (getBrandProductionProfile): эталонные карточки AKU-001..AKU-031 получают размерный ряд 39–45 без ломки детских (22–30) и женских (36–41) сеток', async () => {
+  const { getBrandProductionProfile } = await import('../src/lib/brandProductionConfig.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+
+  const aku001 = AKUSHA_2027_MODELS[0];
+  const aku001Desc = `${aku001.title} ${aku001.categoryLabel || ''} ${aku001.construction?.fit || ''}`;
+  const akuMensProf = getBrandProductionProfile('AKUSHA', aku001Desc);
+  assert.deepEqual(
+    akuMensProf.sizes,
+    ['39', '40', '41', '42', '43', '44', '45'],
+    'Эталонная карточка AKU-001 (размеры 39–45) должна получать мужскую размерную сетку 39–45, а не ясельную 22–30'
+  );
+  const shareSum = Object.values(akuMensProf.sizeSharesPct).reduce((s, v) => s + v, 0);
+  assert.equal(shareSum, 100);
+});
+
+test('102. Неприкосновенность инварианта 500 000 000 ₽ LISKANI при редактировании метаданных или себестоимости размерного варианта (updateLiskaniModelSizeVariant) и сохранение копеек', async () => {
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_DEF,
+    updateLiskaniModelSizeVariant,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+
+  const lscLast = structuredClone(LISKANI_2027_MODELS[LISKANI_2027_MODELS.length - 1]);
+  const beforeMetrics = computeModelScenarioMetrics(lscLast, LISKANI_2027_SCENARIO_DEF);
+
+  const firstVar = lscLast.liskaniSizeVariants![0];
+  const afterMetaAndCost = updateLiskaniModelSizeVariant(lscLast, firstVar.skuIndex, {
+    wbNmId: '999888777',
+    barcode: '4600000000123',
+    unitCostRub: 490.33,
+  });
+
+  const updatedVar = afterMetaAndCost.liskaniSizeVariants!.find(
+    (v) => v.skuIndex === firstVar.skuIndex
+  )!;
+  assert.equal(updatedVar.wbNmId, '999888777');
+  assert.equal(updatedVar.barcode, '4600000000123');
+  assert.equal(updatedVar.unitCostRub, 490.33, 'Копейки в себестоимости варианта штор не должны отбрасываться');
+
+  const afterMetrics = computeModelScenarioMetrics(afterMetaAndCost, LISKANI_2027_SCENARIO_DEF);
+  assert.equal(
+    afterMetrics.annualRevenueRub,
+    beforeMetrics.annualRevenueRub,
+    'Редактирование артикула WB, штрихкода или себестоимости варианта НЕ должно сбивать плановую выручку LISKANI'
+  );
+  assert.equal(afterMetrics.annualOrdersRub, beforeMetrics.annualOrdersRub);
+});
+
+test('103. Помесячные мутаторы цен/выкупов сохраняют точный monthlyRevenuesRubOverride в 11 нетронутых месяцах, а autoDistributeScenarioByPriority пересчитывает выручку', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const {
+    updateModelScenarioSingleMonthPrice,
+    updateModelScenarioMonthBuyouts,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const lsc001 = structuredClone(LISKANI_2027_MODELS[0]);
+  const origMet = computeModelScenarioMetrics(lsc001, LISKANI_2027_SCENARIO_DEF);
+
+  // Меняем цену только в январе (mIdx = 0) — месяцы Фев..Дек (1..11) обязаны сохранить рубль-в-рубль свои исходные суммы!
+  const editedJanPrice = updateModelScenarioSingleMonthPrice(
+    lsc001,
+    LISKANI_2027_SCENARIO_DEF.id,
+    0,
+    3500
+  );
+  const afterJanPriceMet = computeModelScenarioMetrics(editedJanPrice, LISKANI_2027_SCENARIO_DEF);
+  for (let m = 1; m < 12; m++) {
+    assert.equal(
+      afterJanPriceMet.monthlyRevenuesRub[m],
+      origMet.monthlyRevenuesRub[m],
+      `Месяц ${m + 1} не должен терять точный override выручки при правке цены января`
+    );
+  }
+
+  // Аналогично при правке выкупов в июне (mIdx = 5)
+  const editedJunPacks = updateModelScenarioMonthBuyouts(
+    lsc001,
+    LISKANI_2027_SCENARIO_DEF.id,
+    5,
+    1500
+  );
+  const afterJunPacksMet = computeModelScenarioMetrics(editedJunPacks, LISKANI_2027_SCENARIO_DEF);
+  for (let m = 0; m < 12; m++) {
+    if (m === 5) continue;
+    assert.equal(
+      afterJunPacksMet.monthlyRevenuesRub[m],
+      origMet.monthlyRevenuesRub[m],
+      `Месяц ${m + 1} сохраняет точный override выручки при правке выкупов июня`
+    );
+  }
+
+  // При autoDistributeScenarioByPriority выручка должна масштабироваться, а не застревать на старом override
+  const scaled = autoDistributeScenarioByPriority([lsc001], LISKANI_2027_SCENARIO_DEF, {
+    keepActingWbFixed: false,
+    targetMonthlyMlnOverride: 25,
+  });
+  const scaledMet = computeModelScenarioMetrics(scaled[0], LISKANI_2027_SCENARIO_DEF);
+  assert.notEqual(
+    scaledMet.annualRevenueRub,
+    origMet.annualRevenueRub,
+    'autoDistributeScenarioByPriority должен сбрасывать старый override и обновлять выручку'
+  );
+});
+
+test('104. Защита базовых сценариев [1, 100, 202705, 202706] от удаления и архивации + реестр удалённых пользовательских сценариев', async () => {
+  const { LISKANI_2027_SCENARIO_DEF } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+
+  const allScens = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+
+  for (const lockedId of [1, 100, 202705, 202706]) {
+    const afterDel = deleteBrandScenario(allScens, [], lockedId);
+    assert.ok(
+      afterDel.scenarios.some((s) => s.id === lockedId),
+      `Эталонный сценарий ${lockedId} нельзя удалить`
+    );
+    const afterArch = archiveBrandScenario(allScens, lockedId);
+    assert.equal(
+      Boolean(afterArch.find((s) => s.id === lockedId)?.isArchived),
+      false,
+      `Эталонный сценарий ${lockedId} нельзя отправить в архив`
+    );
+  }
+});
+
+test('105. Изоляция PO по годам (2027 заказы не дублируются в 2028) и защита computeFinancialPnL от двойного списания неподтверждённых PO и NaN месяца', async () => {
+  const scen2027 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const sorbet = ensureModelUnifiedV11(
+    structuredClone(S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-001-SC')!)
+  );
+
+  // Создаём PO в 2027 году и помечаем confirmedByFactory = false + проверяем защиту от arrivalMonthIdx = 14
+  const withPo = createCustomPurchaseOrder(sorbet, {
+    packsQty: 2000,
+    unitCostRub: 600,
+    arrivalMonthIdx: 1,
+    year: 2027,
+  });
+  const unconfirmedModel = structuredClone(withPo);
+  unconfirmedModel.sharedSupplyAndFact!.approvedOrders[0].confirmedByFactory = false;
+
+  const pnlBase = computeFinancialPnL(sorbet, scen2027);
+  const pnlUnconfirmed = computeFinancialPnL(unconfirmedModel, scen2027);
+  assert.equal(
+    pnlUnconfirmed.totalProcurementOutflowRub,
+    pnlBase.totalProcurementOutflowRub,
+    'Неподтверждённый фабрикой PO (confirmedByFactory = false) не должен списываться повторно поверх замещающей плановой партии'
+  );
+
+  // Защита от NaN при некорректном arrivalMonthIdx >= 12
+  const outOfBoundsModel = structuredClone(withPo);
+  outOfBoundsModel.sharedSupplyAndFact!.approvedOrders[0].arrivalMonthIdx = 15;
+  const pnlOob = computeFinancialPnL(outOfBoundsModel, scen2027);
+  assert.equal(
+    Number.isFinite(pnlOob.totalProcurementOutflowRub),
+    true,
+    'Отток по закупкам должен оставаться конечным числом даже при arrivalMonthIdx >= 12'
+  );
+
+  // В сценарии 2028 года заказ PO с датой прихода 2027-02-01 НЕ должен повторно зачисляться как поставка 2028 года
+  const created2028 = createIndependentBrandScenario(INITIAL_SCENARIOS, [withPo], {
+    title: 'BORNERS 2028 Тест',
+    brandCode: 'BORNERS',
+    year: 2028,
+    monthlyTargetMln: 120,
+    copyFromScenarioId: 1,
+  });
+  const proc2028 = computeProcurementPlan(created2028.models[0], created2028.scenario);
+  assert.equal(
+    proc2028.totalApprovedReceiptsPacks,
+    0,
+    'Заказ фабрике 2027 года не должен повторно учитываться как приход партий 2028 года'
+  );
+});
+
+test('106. computeMultiBrandPortfolioSummary выбирает сценарий 100 для FUKAI по умолчанию (90 553 401 ₽), отсекает демо-карточки scen-model-001..004 и фиксирует аванс утверждённого PO', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { INITIAL_SCENARIO_MODELS } = await import('../src/lib/scenarioData.ts');
+
+  const allModelsWithLegacyDemo = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+    ...INITIAL_SCENARIO_MODELS.slice(0, 2), // scen-model-001, scen-model-002
+  ];
+  const allScens = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+
+  // Вызываем БЕЗ передачи selectedScenarioByBrand — FUKAI обязан взять сценарий 100 (90 553 401 ₽), а не 0 ₽!
+  const summaryDefault = computeMultiBrandPortfolioSummary(allModelsWithLegacyDemo, allScens);
+  const fukaiRow = summaryDefault.brands.find((b) => b.brandCode === 'FUKAI')!;
+  const bornersRow = summaryDefault.brands.find((b) => b.brandCode === 'BORNERS')!;
+  assert.equal(fukaiRow.annualRevenueRub, 90_553_401);
+  assert.equal(bornersRow.modelsCount, 21, 'Демо-карточки scen-model-001..004 не должны загрязнять портфель BORNERS');
+
+  // Фиксация аванса утверждённого PO при последующей смене factoryParams.prepaymentPct с 30% на 50%
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  let m = ensureModelUnifiedV11(structuredClone(S1_100M_SCENARIO_MODELS[0]));
+  m = createCustomPurchaseOrder(m, {
+    packsQty: 1000,
+    unitCostRub: 600,
+    arrivalMonthIdx: 0,
+    year: 2027,
+  });
+  const lockedPrepay = m.sharedSupplyAndFact!.approvedOrders[0].prepaymentRub; // 180 000 ₽ (30%)
+  m.sharedSupplyAndFact!.factoryParams.prepaymentPct = 50;
+  m.sharedSupplyAndFact!.factoryParams.balancePaymentPct = 50;
+  const invAfter = computeScenarioInvestmentSummary([m], s1Def);
+  assert.equal(
+    invAfter.firstWavePrepaymentRub,
+    lockedPrepay,
+    'Аванс первой волны по уже утверждённому PO должен соответствовать зафиксированному po.prepaymentRub'
+  );
+});
+
+test('107. Полнота хранилища и R&D-синка: touchPortfolioUpdatedAt, сохранение productionSteps/responsiblePerson, пустой attachedPdfs, небитые фото Liskani и выбор образца v1', async () => {
+  const {
+    STORAGE_KEY_MODELS,
+    getPortfolioUpdatedAt,
+    persistPortfolioModels,
+    hydratePortfolioModelsFromStorage,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { syncConceptToScenarioPortfolio } = await import('../src/lib/rndCatalogSync.ts');
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+
+  const store = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+  };
+
+  try {
+    const models = hydratePortfolioModelsFromStorage();
+    const sorbetIdx = models.findIndex((m) => m.code === 'BRN-001-SC');
+    models[sorbetIdx] = {
+      ...models[sorbetIdx],
+      responsiblePerson: 'Анна Соколова (Продакт)',
+      hasActualSalesOrPurchases: true,
+      attachedPdfs: [],
+      productionSteps: [
+        {
+          id: 'step-custom-1',
+          stepNum: 1,
+          title: 'Финальный образец утверждён',
+          datesLabel: '15 ноя 2026',
+          monthIndex: 0,
+          status: 'done',
+          confirmation: 'factory_confirmed',
+        },
+      ],
+    };
+
+    persistPortfolioModels(models);
+    assert.ok(
+      Boolean(getPortfolioUpdatedAt()),
+      'persistPortfolioModels обязан обновлять метку времени STORAGE_KEY_PORTFOLIO_UPDATED_AT'
+    );
+
+    // Имитируем потерю основного ключа STORAGE_KEY_MODELS (восстановление из резервного ключа backup)
+    store.delete(STORAGE_KEY_MODELS);
+    const recovered = hydratePortfolioModelsFromStorage();
+    const recSorbet = recovered.find((m) => m.code === 'BRN-001-SC')!;
+    assert.equal(recSorbet.responsiblePerson, 'Анна Соколова (Продакт)');
+    assert.equal(recSorbet.hasActualSalesOrPurchases, true);
+    assert.equal(recSorbet.productionSteps[0]?.id, 'step-custom-1');
+
+    // Проверяем синк AKUSHA из Лаборатории R&D с выбранным образцом v1 (не последним v2!) и заполненным планом 202706
+    const baseConcept = structuredClone(INITIAL_CONCEPTS[0]);
+    baseConcept.id = 'concept-aku-sync-test';
+    baseConcept.brandId = 'AKUSHA';
+    baseConcept.name = 'Ботинки AKUSHA Lab 39–45';
+    baseConcept.packUnitsCount = 1;
+    baseConcept.samples = [
+      {
+        id: 'smp-1',
+        versionNumber: 1,
+        orderDate: '2026-10-01',
+        receivedDate: '2026-10-15',
+        sampleCostRub: 3000,
+        deliveryCostRub: 0,
+        estimatedUnitProductionPrice: 2450,
+        fitScore: 9,
+        materialScore: 9,
+        sewingScore: 9,
+        overallScore: 9,
+        defects: '',
+        decisionNotes: 'Эталон v1',
+        photos: [],
+        status: 'testing',
+        isSelectedForProduction: true,
+      } as any,
+      {
+        id: 'smp-2',
+        versionNumber: 2,
+        orderDate: '2026-10-20',
+        receivedDate: '2026-11-01',
+        sampleCostRub: 3200,
+        deliveryCostRub: 0,
+        estimatedUnitProductionPrice: 2990,
+        fitScore: 7,
+        materialScore: 7,
+        sewingScore: 7,
+        overallScore: 7,
+        defects: '',
+        decisionNotes: 'Дорогой v2',
+        photos: [],
+        status: 'testing',
+        isSelectedForProduction: false,
+      } as any,
+    ];
+    delete (baseConcept as any).productionOrders;
+    baseConcept.plannedUnitCost = 0;
+
+    const syncRes = syncConceptToScenarioPortfolio(baseConcept, []);
+    assert.ok(
+      Boolean(syncRes.model.plansByScenario[202706]),
+      'Синк концепта AKUSHA обязан создавать план сценария 202706, чтобы модель не удалялась миграцией как черновик'
+    );
+    assert.equal(
+      syncRes.model.unitCostRub,
+      2450,
+      'Синк концепта обязан брать себестоимость выбранного пользователем образца v1 (isSelectedForProduction: true), а не последнего v2'
+    );
+
+    const rndSyncCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/lib/rndCatalogSync.ts'),
+      'utf8'
+    );
+    assert.equal(
+      rndSyncCode.includes('liskani-2027-01.jpg'),
+      false,
+      'В rndCatalogSync не должно оставаться битого пути liskani-2027-01.jpg (404)'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+});
+
+test('108. RFC-4180 парсинг CSV с кавычками, RBAC-защита системных настроек, фильтр first_wave без утечки Q2 и UTF-8 BOM в экспорте плана', async () => {
+  const { parseCsvContent, canUserAccessSection } = await import('../src/lib/finance.ts');
+
+  // 1. RFC-4180 CSV с запятыми и экранированными кавычками внутри полей
+  const quotedCsv = [
+    'skuCode,name,brandCode,retailPrice,costPrice',
+    'BRN-Q1,"Боксеры, комплект ""Премиум"" 3 шт.",BORNERS,"2 490",0',
+  ].join('\n');
+  const parsed = parseCsvContent(quotedCsv);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].name, 'Боксеры, комплект "Премиум" 3 шт.');
+  assert.equal(parsed.rows[0].brandCode, 'BORNERS');
+  assert.equal(parsed.rows[0].costPrice, '0');
+
+  // 2. Viewer не имеет доступа к системным настройкам и управлению командой
+  const viewerUser = {
+    id: 'u-viewer',
+    fullName: 'Гость Аудит',
+    email: 'guest@borners.ru',
+    jobTitle: 'Аудитор',
+    role: 'Viewer' as const,
+    canViewFinance: false,
+    canViewCostPrice: false,
+    assignedBrandIds: ['BORNERS'],
+    avatarInitials: 'ГА',
+    isActive: true,
+  };
+  assert.equal(canUserAccessSection(viewerUser, 'settings'), false);
+  assert.equal(canUserAccessSection(viewerUser, 'team'), false);
+
+  // 3. В режиме first_wave модель с запуском только во Q3 (июль, mIdx = 6) не попадает в выгрузку 1-й волны Q1
+  const s1Def = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const q3OnlyModel = ensureModelUnifiedV11(structuredClone(S1_100M_SCENARIO_MODELS[0]));
+  q3OnlyModel.plansByScenario[1] = {
+    ...q3OnlyModel.plansByScenario[1],
+    monthlyPacks: [0, 0, 0, 0, 0, 0, 1500, 1500, 1500, 0, 0, 0],
+  };
+  const firstWaveCsv = serializeScenarioFactoryOrdersToCsv([q3OnlyModel], s1Def, 'first_wave');
+  const firstWaveLines = firstWaveCsv.trim().split('\n');
+  assert.equal(
+    firstWaveLines.length,
+    1,
+    'Модель со спросом только в Q3 не должна выгружаться в CSV первой волны (Q1)'
+  );
+
+  // 4. Защита от выгрузки гигантских base64-строк фото в ячейку CSV и наличие UTF-8 BOM в serializeStructuredPlanToCsv
+  const base64PhotoModel = structuredClone(q3OnlyModel);
+  base64PhotoModel.gallery = [
+    {
+      id: 'g-b64',
+      url: 'data:image/jpeg;base64,' + 'A'.repeat(40000),
+      label: 'Фото',
+      category: 'pack',
+      isMain: true,
+    },
+  ];
+  const procQ3 = computeProcurementPlan(base64PhotoModel, s1Def);
+  const singleDocCsv = serializeSingleBatchFactoryOrderDocumentCsv(
+    base64PhotoModel,
+    procQ3.recommendedBatches[0]
+  );
+  assert.equal(
+    singleDocCsv.includes('data:image/'),
+    false,
+    'Base64-строка фото не должна попадать в ячейку CSV (лимит Excel 32 767 символов)'
+  );
+
+  const planRows = exportStructuredScenarioPlan([S1_100M_SCENARIO_MODELS[0]], s1Def);
+  const planCsv = serializeStructuredPlanToCsv(planRows);
+  assert.equal(
+    planCsv.startsWith('\uFEFF'),
+    true,
+    'CSV выгрузки плана сценария обязан начинаться с UTF-8 BOM для корректной кириллицы в Excel'
+  );
+});
+
+test('109. Строгая RBAC-защита в PlatformContext и AppShell + небитые пути обложек AKU-001 / LSC-001', () => {
+  const ctxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/context/PlatformContext.tsx'),
+    'utf8'
+  );
+  const shellCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    ctxCode.includes('!canUserAccessSection(currentUser, activeSection)'),
+    true,
+    'PlatformContext обязан проверять canUserAccessSection(currentUser, activeSection) и перенаправлять пользователя при смене роли'
+  );
+  assert.equal(
+    ctxCode.includes('!canUserAccessSection(targetUser, activeSection)'),
+    true,
+    'loginAs в PlatformContext обязан сбрасывать закрытый раздел при переключении на роль без доступа'
+  );
+  assert.equal(
+    ctxCode.includes("'models/akusha/AKU-001_main.jpg'") &&
+      ctxCode.includes("'images/liskani/LSC-001.webp'"),
+    true,
+    'PlatformContext должен использовать реальные пути обложек AKU-001_main.jpg и LSC-001.webp без HTTP 404'
+  );
+  assert.equal(
+    ctxCode.includes('akusha-2027-01.jpg') || ctxCode.includes('liskani-2027-01.jpg'),
+    false,
+    'В PlatformContext не должно быть несуществующих путей akusha-2027-01.jpg / liskani-2027-01.jpg'
+  );
+  assert.equal(
+    shellCode.includes('!canUserAccessSection(currentUser, activeSection)'),
+    true,
+    'AppShell обязан иметь защитный рендер-гард canUserAccessSection на случай закрытого раздела'
+  );
+});
+
+test('110. PDF-конструктор (безопасная валюта RUB + stopImmediatePropagation), сохранение ТЗ из GrowthScenariosShowcase и удаление кастомных карточек AKUSHA/LISKANI в Лаборатории', () => {
+  const pdfModalCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PdfConstructorModal.tsx'),
+    'utf8'
+  );
+  const showcaseCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf8'
+  );
+  const labViewCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+  const labTabsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabTabs.tsx'),
+    'utf8'
+  );
+  const docExportCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/document-export.ts'),
+    'utf8'
+  );
+
+  assert.equal(
+    pdfModalCode.includes("currency: 'RUB'") && pdfModalCode.includes('e.stopImmediatePropagation()'),
+    true,
+    'PdfConstructorModal обязан использовать валидный код валюты RUB для Intl.NumberFormat и останавливать всплытие Escape через stopImmediatePropagation'
+  );
+  assert.equal(
+    showcaseCode.includes('onSaveToConcept={(updates) =>') &&
+      labViewCode.includes('onSaveToConcept={(patch) =>'),
+    true,
+    'GrowthScenariosShowcase и ProductLabView обязаны пробрасывать onSaveToConcept из PdfConstructorModal, чтобы правки сохранялись в концепте'
+  );
+  assert.equal(
+    labViewCode.includes('/^scen-akusha-0\\d{2}$/.test(linked.id)') &&
+      labViewCode.includes('/^scen-liskani-0\\d{2}$/.test(linked.id)'),
+    true,
+    'handleDeleteConceptEverywhere должен защищать только эталонные пресеты scen-akusha-0xx / scen-liskani-0xx, позволяя удалять пользовательские карточки'
+  );
+  assert.equal(
+    docExportCode.includes('pdfBlocksConfig?: PdfBlocksConfig') &&
+      docExportCode.includes('canViewCostPrice?: boolean') &&
+      labTabsCode.includes('canViewCostPrice: hasCostAccess'),
+    true,
+    'exportConceptProductionPdf и ProductLabTabs обязаны учитывать pdfBlocksConfig и маскировать себестоимость при отсутствии canViewCostPrice'
+  );
+});
+
+test('111. Тёмная тема для пастельных карточек Miro (.miro-pastel-card) и зум колесом мыши в FullscreenPhotoLightbox ({ passive: false })', () => {
+  const miroCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/MiroBoardView.tsx'),
+    'utf8'
+  );
+  const cssCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/globals.css'),
+    'utf8'
+  );
+  const lightboxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/FullscreenPhotoLightbox.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    miroCode.includes('miro-pastel-card') &&
+      cssCode.includes('html.dark .miro-pastel-card'),
+    true,
+    'Пастельные карточки Miro должны сохранять читаемый тёмный текст в html.dark через класс miro-pastel-card'
+  );
+  assert.equal(
+    lightboxCode.includes("{ passive: false }"),
+    true,
+    'FullscreenPhotoLightbox обязан подписываться на wheel с { passive: false }, чтобы preventDefault зума работал без ошибок в консоли Chrome'
+  );
+});
+
+test('112. Единая синхронизация borners_finance_contour_params_v1 между Главной, 03 · Закупки и 04 · Финансы + честный статус «Лаг WB не задан» и профили размеров по брендам', () => {
+  const contoursCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  const dashCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/DashboardView.tsx'),
+    'utf8'
+  );
+  const workbenchCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/SkuProcurementMvpWorkbench.tsx'),
+    'utf8'
+  );
+  const cardScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ScenarioModelCardScreen.tsx'),
+    'utf8'
+  );
+  const salesScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ScenarioSalesPlanScreen.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    contoursCode.includes("'borners_finance_contour_params_v1'") &&
+      contoursCode.includes("'borners-finance-params-changed'") &&
+      dashCode.includes("'borners_finance_contour_params_v1'") &&
+      dashCode.includes("'borners-finance-params-changed'"),
+    true,
+    'Главная, 03 · Закупки и 04 · Финансы обязаны синхронизировать кассовые параметры через borners_finance_contour_params_v1 и событие borners-finance-params-changed'
+  );
+  assert.equal(
+    contoursCode.includes('Лаг WB не задан'),
+    true,
+    'При отключённом графике выплат WB (wbLagMonths < 0) таблицы 03 · Закупки и 04 · Финансы обязаны честно показывать «Лаг WB не задан»'
+  );
+  assert.equal(
+    contoursCode.includes('getBrandProductionProfile') &&
+      workbenchCode.includes('getBrandProductionProfile') &&
+      cardScreenCode.includes('getBrandProductionProfile') &&
+      salesScreenCode.includes('getBrandProductionProfile'),
+    true,
+    'Все продуктовые и закупочные экраны обязаны использовать динамический профиль размеров бренда (39–45 / 36–41 / 22–30 / XS–XL / S–4XL)'
+  );
+});
+
+test('113. Полная RBAC-изоляция себестоимости, финансов и прав редактирования в Каталоге (01 · Продукт) и группах моделей', () => {
+  const catalogCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+  const groupsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    catalogCode.includes('canUserViewCostPrice(currentUser)') &&
+      catalogCode.includes('canUserViewFinance(currentUser)') &&
+      catalogCode.includes('canUserEditBrand(currentUser'),
+    true,
+    'ProductCatalogView обязан проверять canUserViewCostPrice, canUserViewFinance и canUserEditBrand'
+  );
+  assert.equal(
+    groupsCode.includes('canUserViewCostPrice(currentUser)') &&
+      groupsCode.includes('canUserViewFinance(currentUser)') &&
+      groupsCode.includes('canUserEditBrand(currentUser') &&
+      groupsCode.includes('getBrandProductionProfile'),
+    true,
+    'PeaklyBrandCatalogAndGroups обязан маскировать себестоимость/финансы по ролям и учитывать размерный профиль бренда'
+  );
+});
+
+
+
+
+
 
 
 

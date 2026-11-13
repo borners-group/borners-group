@@ -124,19 +124,48 @@ export function PeaklySpotlightTour({
       onNavigateSection(currentStep.section);
     }
 
+    if (typeof window !== 'undefined') {
+      if (currentStep.icon === 'scenarios' || currentStep.icon === 'passport') {
+        window.dispatchEvent(new Event('borners-reset-to-home-summary'));
+        window.dispatchEvent(
+          new CustomEvent('borners-set-home-subview', {
+            detail: { subView: 'summary' },
+          })
+        );
+      } else if (currentStep.icon === 'studio') {
+        window.dispatchEvent(
+          new CustomEvent('borners-set-home-subview', {
+            detail: { subView: 'summary' },
+          })
+        );
+      }
+    }
+
+    const timer0 = window.setTimeout(() => {
+      if (currentStep.icon === 'studio') {
+        const triggerBtn = document.querySelector(
+          'button[data-tour="studio-canvas"]'
+        ) as HTMLButtonElement | null;
+        if (triggerBtn) {
+          triggerBtn.click();
+        }
+      }
+    }, 40);
+
     const timer1 = window.setTimeout(() => {
       const el = document.querySelector(currentStep.targetSelector) as HTMLElement | null;
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       }
       measureTarget();
-    }, 80);
+    }, 120);
 
     const timer2 = window.setTimeout(() => {
       measureTarget();
     }, 420);
 
     return () => {
+      window.clearTimeout(timer0);
       window.clearTimeout(timer1);
       window.clearTimeout(timer2);
     };

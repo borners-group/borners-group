@@ -245,6 +245,13 @@ html.dark .bg-\[\#FDF5EF\] {
   background-color: #181D2A !important;
 }
 
+html.dark .bg-\[\#EFECE6\],
+html.dark .bg-\[\#F6F3ED\],
+html.dark .bg-\[\#E5E0D8\],
+html.dark .bg-\[\#EAE6DF\] {
+  background-color: #1E2433 !important;
+}
+
 /* Hover & Focus состояния в тёмной теме (.dark) — убираем белые/серые засветы и сохраняем 100% читаемость текста */
 html.dark .hover\:bg-white:hover,
 html.dark .hover\:bg-white\/60:hover,
@@ -498,6 +505,59 @@ html.dark .divide-\[\#D5CEC2\] > :not([hidden]) ~ :not([hidden]) {
 html.dark select option {
   background-color: #121620;
   color: #EDF0F7;
+}
+
+/* Чёрные чернила на пастельных стикерах Студии идей (Miro) и печатном листе A4 в тёмной теме */
+html.dark .miro-pastel-card input,
+html.dark .miro-pastel-card textarea,
+html.dark .miro-pastel-card .text-\[\#181715\]:not(.text-white) {
+  color: #181715 !important;
+}
+
+html.dark .miro-pastel-card .text-\[\#3D3A36\],
+html.dark .miro-pastel-card .text-\[\#4A4742\],
+html.dark .miro-pastel-card .text-\[\#6E6A63\] {
+  color: #3D3A36 !important;
+}
+
+html.dark .miro-pastel-card .bg-white,
+html.dark .miro-pastel-card .bg-white\/80,
+html.dark .miro-pastel-card .bg-white\/85,
+html.dark .miro-pastel-card .bg-\[\#FAF8F5\] {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+}
+
+html.dark .pdf-paper-preview,
+html.dark .pdf-paper-preview .bg-white {
+  background-color: #FFFFFF !important;
+  color: #181715 !important;
+}
+
+html.dark .pdf-paper-preview .bg-\[\#FAF8F5\],
+html.dark .pdf-paper-preview .bg-\[\#F8F6F2\],
+html.dark .pdf-paper-preview .bg-\[\#F3EFE8\],
+html.dark .pdf-paper-preview .bg-\[\#EFECE6\] {
+  background-color: #FAF8F5 !important;
+}
+
+html.dark .pdf-paper-preview .text-\[\#181715\]:not(.text-white),
+html.dark .pdf-paper-preview .text-\[\#161615\]:not(.text-white),
+html.dark .pdf-paper-preview .text-\[\#141413\]:not(.text-white) {
+  color: #181715 !important;
+}
+
+html.dark .pdf-paper-preview .text-\[\#3D3A36\],
+html.dark .pdf-paper-preview .text-\[\#4A4742\],
+html.dark .pdf-paper-preview .text-\[\#5C5852\],
+html.dark .pdf-paper-preview .text-\[\#6E6A63\],
+html.dark .pdf-paper-preview .text-\[\#7A756D\] {
+  color: #4A4742 !important;
+}
+
+html.dark .pdf-paper-preview .border-\[\#CFC8BC\],
+html.dark .pdf-paper-preview .border-\[\#DFD8CC\],
+html.dark .pdf-paper-preview .border-\[\#E5E0D8\] {
+  border-color: #D5CEC2 !important;
 }
 
 /* Чистый и мягкий фокус без агрессивных чёрных рамок при клике */

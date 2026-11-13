@@ -43533,6 +43533,7 @@ export const LISKANI_2027_MODELS: ScenarioModelSpec[] = RAW_LISKANI_COLORWAY_CAR
 export interface LiskaniSizeVariantPatch {
   wbNmId?: string;
   barcode?: string;
+  sellerSku?: string;
   unitCostRub?: number;
   retailPriceRub?: number;
   monthOrderUnitsChange?: {
@@ -43560,13 +43561,62 @@ export function updateLiskaniModelSizeVariant(
     model.plansByScenario[activeScenarioId] ||
     model.plansByScenario[LISKANI_2027_SCENARIO_ID] ||
     model.plansByScenario[1];
-  const buyoutRatio = ((basePlan?.buyoutRatePct ?? 57) || 57) / 100;
+  const effectiveBuyoutPct = model.buyoutRatePct ?? basePlan?.buyoutRatePct ?? 57;
+  const buyoutRatio = Math.max(0, effectiveBuyoutPct) / 100;
+  const isMetadataOrCostOnly =
+    patch.retailPriceRub === undefined && patch.monthOrderUnitsChange === undefined;
+
+  if (isMetadataOrCostOnly) {
+    const nextVariants = model.liskaniSizeVariants.map((sv) => {
+      if (sv.skuIndex !== skuIndex) return sv;
+      const nextCost =
+        patch.unitCostRub !== undefined
+          ? Math.round(Math.max(0, patch.unitCostRub) * 100) / 100
+          : sv.unitCostRub;
+      return {
+        ...sv,
+        wbNmId: patch.wbNmId !== undefined ? patch.wbNmId : sv.wbNmId,
+        barcode: patch.barcode !== undefined ? patch.barcode : sv.barcode,
+        sellerSku: patch.sellerSku !== undefined ? patch.sellerSku : sv.sellerSku,
+        unitCostRub: nextCost,
+      };
+    });
+
+    if (patch.unitCostRub === undefined) {
+      return {
+        ...model,
+        liskaniSizeVariants: nextVariants,
+      };
+    }
+
+    const totalBuyoutUnits = nextVariants.reduce(
+      (s, v) => s + (v.annualBuyoutsUnits || 0),
+      0
+    );
+    const totalCogs = nextVariants.reduce(
+      (s, v) => s + (v.annualBuyoutsUnits || 0) * v.unitCostRub,
+      0
+    );
+    const weightedCost =
+      totalBuyoutUnits > 0
+        ? Math.round(totalCogs / totalBuyoutUnits)
+        : Math.round(
+            nextVariants.reduce((s, v) => s + v.unitCostRub, 0) /
+              Math.max(1, nextVariants.length)
+          );
+
+    return {
+      ...model,
+      unitCostRub: weightedCost,
+      liskaniSizeVariants: nextVariants,
+    };
+  }
 
   const nextVariants = model.liskaniSizeVariants.map((sv) => {
     if (sv.skuIndex !== skuIndex) return sv;
     const nextCost =
       patch.unitCostRub !== undefined
-        ? Math.max(0, Math.round(patch.unitCostRub))
+        ? Math.round(Math.max(0, patch.unitCostRub) * 100) / 100
         : sv.unitCostRub;
     const nextPrice =
       patch.retailPriceRub !== undefined
@@ -43590,6 +43640,7 @@ export function updateLiskaniModelSizeVariant(
       ...sv,
       wbNmId: patch.wbNmId !== undefined ? patch.wbNmId : sv.wbNmId,
       barcode: patch.barcode !== undefined ? patch.barcode : sv.barcode,
+      sellerSku: patch.sellerSku !== undefined ? patch.sellerSku : sv.sellerSku,
       unitCostRub: nextCost,
       retailPriceRub: nextPrice,
       monthlyOrdersUnits: nextMonthlyOrdersUnits,

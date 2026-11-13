@@ -9,6 +9,14 @@ import type {
 } from './scenarioData.ts';
 import { INITIAL_SCENARIOS } from './scenarioData.ts';
 import {
+  LISKANI_2027_SCENARIO_DEF,
+  LISKANI_2027_SCENARIO_ID,
+} from './liskaniAssortment2027.ts';
+import {
+  AKUSHA_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_ID,
+} from './akushaAssortment2027.ts';
+import {
   cleanTechPackText,
   getBrandProductionProfile,
 } from './brandProductionConfig.ts';
@@ -140,18 +148,44 @@ function buildGalleryFromConcept(
 function resolveConceptPrimaryUnitCostRub(
   concept: Pick<
     ProductConcept,
-    'plannedRetailPrice' | 'plannedUnitCost' | 'packUnitsCount' | 'productionOrders'
+    'plannedRetailPrice' | 'plannedUnitCost' | 'packUnitsCount' | 'productionOrders' | 'samples'
   >
 ): number {
   const packUnits = Math.max(1, Math.round(concept.packUnitsCount || 1));
   const retail = Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
   const po = concept.productionOrders?.[0];
+  const poFx =
+    !po?.currency || po.currency === 'RUB'
+      ? 1
+      : po.currency === 'CNY'
+      ? 13.4
+      : po.currency === 'USD'
+      ? 92.5
+      : 1;
   const poRubUnitCost =
-    po && po.unitPrice > 0 && (!po.currency || po.currency === 'RUB')
-      ? Math.round(po.unitPrice)
-      : 0;
+    po && po.unitPrice > 0 ? Math.round(po.unitPrice * poFx) : 0;
+  const selectedSample =
+    concept.samples?.find((s) => s.isSelectedForProduction) ||
+    concept.samples?.find((s) => (s as any).status === 'approved') ||
+    concept.samples?.[concept.samples.length - 1];
+  const sampleFx =
+    !selectedSample?.currency || selectedSample.currency === 'RUB'
+      ? 1
+      : selectedSample.currency === 'CNY'
+      ? 13.4
+      : selectedSample.currency === 'USD'
+      ? 92.5
+      : 1;
+  const sampleRawPrice =
+    selectedSample?.estimatedUnitProductionPrice ?? (selectedSample as any)?.sampleUnitCost ?? 0;
+  const sampleRubUnitCost =
+    sampleRawPrice > 0 ? Math.round(sampleRawPrice * sampleFx) : 0;
   const rawUnitCost =
-    poRubUnitCost > 0 ? poRubUnitCost : Math.max(0, Math.round(concept.plannedUnitCost || 0));
+    poRubUnitCost > 0
+      ? poRubUnitCost
+      : sampleRubUnitCost > 0
+      ? sampleRubUnitCost
+      : Math.max(0, Math.round(concept.plannedUnitCost || 0));
   if (rawUnitCost <= 0) {
     return Math.max(50, Math.round(retail * 0.25));
   }
@@ -370,22 +404,42 @@ export interface SyncConceptToPortfolioResult {
   createdNew: boolean;
 }
 
+const DEFAULT_RND_SYNC_SCENARIOS: GrowthScenarioDef[] = [
+  ...INITIAL_SCENARIOS,
+  LISKANI_2027_SCENARIO_DEF,
+  AKUSHA_2027_SCENARIO_DEF,
+];
+
 export function syncConceptToScenarioPortfolio(
   concept: ProductConcept,
   existingModels: ScenarioModelSpec[],
-  scenarios: GrowthScenarioDef[] = INITIAL_SCENARIOS,
+  scenarios: GrowthScenarioDef[] = DEFAULT_RND_SYNC_SCENARIOS,
   options?: {
     initialMonthlyBuyouts?: number[];
     targetScenarioIds?: number[];
   }
 ): SyncConceptToPortfolioResult {
   const brandCode = normalizeLabBrandCode(concept.brandId);
+  const effectiveScenarios: GrowthScenarioDef[] = [...scenarios];
+  if (
+    brandCode === 'AKUSHA' &&
+    !effectiveScenarios.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)
+  ) {
+    effectiveScenarios.push(AKUSHA_2027_SCENARIO_DEF);
+  }
+  if (
+    brandCode === 'LISKANI' &&
+    !effectiveScenarios.some((s) => s.id === LISKANI_2027_SCENARIO_ID)
+  ) {
+    effectiveScenarios.push(LISKANI_2027_SCENARIO_DEF);
+  }
   const packUnits = Math.max(1, Math.round(concept.packUnitsCount || 1));
   const retailPriceRub = Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
   const unitCostRub = resolveConceptPrimaryUnitCostRub(concept);
   const launchStatus = mapConceptStageToLaunchStatus(concept.stage);
 
   const selectedSample =
+    concept.samples?.find((s) => s.isSelectedForProduction) ||
     concept.samples?.find((s) => s.status === 'approved') ||
     concept.samples?.[concept.samples.length - 1];
   const rawComp =
@@ -420,7 +474,7 @@ export function syncConceptToScenarioPortfolio(
     const nextPlans: Record<number, ScenarioCommercialPlan> = { ...baseUpdated.plansByScenario };
 
     // Гарантируем наличие слота плана для каждого совместимого сценария бренда (включая новые независимые сценарии 4, 5...)
-    for (const sc of scenarios) {
+    for (const sc of effectiveScenarios) {
       if (sc.isArchived || sc.id === 100) continue;
       if (!nextPlans[sc.id]) {
         const templatePlan =
@@ -461,7 +515,7 @@ export function syncConceptToScenarioPortfolio(
       let updatedMonthlyPacks = pl.monthlyPacks || Array<number>(12).fill(0);
       let updatedReceipts = pl.monthlyReceiptsPacks || Array<number>(12).fill(0);
 
-      const scDef = scenarios.find((s) => s.id === scId);
+      const scDef = effectiveScenarios.find((s) => s.id === scId);
       const isCompatibleForAutoSeed =
         scDef &&
         !scDef.isArchived &&
@@ -577,7 +631,7 @@ export function syncConceptToScenarioPortfolio(
 
   const safeSku = buildSafeCatalogSkuCode(concept, brandCode, existingModels);
   const gallery = buildGalleryFromConcept(concept, []);
-  const created = createBrandProductModel(existingModels, scenarios, {
+  const created = createBrandProductModel(existingModels, effectiveScenarios, {
     brandCode,
     title: concept.name.trim() || 'Новая R&D модель',
     code: safeSku,
@@ -685,7 +739,7 @@ export function syncAllBrandConceptsToScenarioPortfolio(
   concepts: ProductConcept[],
   brandCode: CanonicalBrandCode,
   existingModels: ScenarioModelSpec[],
-  scenarios: GrowthScenarioDef[] = INITIAL_SCENARIOS
+  scenarios: GrowthScenarioDef[] = DEFAULT_RND_SYNC_SCENARIOS
 ): {
   models: ScenarioModelSpec[];
   syncedItems: { conceptId: string; model: ScenarioModelSpec; createdNew: boolean }[];
@@ -810,7 +864,7 @@ export function buildPdfConceptFromScenarioModel(
       : brandCode === 'AKUSHA'
       ? 'models/akusha/AKU-001_main.jpg'
       : brandCode === 'LISKANI'
-      ? 'images/liskani/liskani-2027-01.jpg'
+      ? 'images/liskani/LSC-001.webp'
       : 'images/products/borners-editorial-hero.jpg';
 
   const mainPhoto =

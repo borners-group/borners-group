@@ -17,6 +17,7 @@ import {
 } from '@/types/platform';
 import {
   EXPERIMENT_STATUS_LABELS_RU,
+  canUserEditBrand,
   canUserViewFinance,
   detectLaunchDateConflicts,
   formatCompactRub,
@@ -24,6 +25,17 @@ import {
 } from '@/lib/finance';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import { normalizePortfolioBrandCode } from '@/lib/unifiedBusinessEngine';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
+
+interface SelectableCatalogSku {
+  id: string;
+  sku: string;
+  name: string;
+  brandId: string;
+  imageUrl: string;
+  isScenarioModel: boolean;
+}
 
 const LAUNCH_STATUS_COLUMNS: Launch['status'][] = [
   'Подготовка',
@@ -76,6 +88,92 @@ export function LaunchCalendarView() {
   });
 
   const hasFinance = canUserViewFinance(currentUser);
+  const livePortfolio = useLiveScenarioPortfolio();
+
+  const canCreateLaunch =
+    !isStrategyMode &&
+    (brandFilter === 'ALL'
+      ? currentUser.role !== 'Viewer' && currentUser.role !== 'Partner'
+      : canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter)));
+
+  const selectableCatalogSkus = useMemo<SelectableCatalogSku[]>(() => {
+    const seenIds = new Set<string>();
+    const seenSkus = new Set<string>();
+    const merged: SelectableCatalogSku[] = [];
+
+    for (const m of livePortfolio.models) {
+      const skuNorm = (m.code || '').trim().toUpperCase();
+      seenIds.add(m.id);
+      if (skuNorm) seenSkus.add(skuNorm);
+      merged.push({
+        id: m.id,
+        sku: m.code,
+        name: m.title,
+        brandId: normalizePortfolioBrandCode(
+          m.customBrandLabel || m.brandId || 'BORNERS'
+        ),
+        imageUrl: m.gallery?.[0]?.url || '',
+        isScenarioModel: true,
+      });
+    }
+
+    for (const p of products) {
+      if (p.isArchived) continue;
+      const skuNorm = (p.sku || '').trim().toUpperCase();
+      if (seenIds.has(p.id) || (skuNorm && seenSkus.has(skuNorm))) continue;
+      seenIds.add(p.id);
+      if (skuNorm) seenSkus.add(skuNorm);
+      merged.push({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        brandId: normalizeLabBrandCode(p.brandId),
+        imageUrl: p.imageUrl,
+        isScenarioModel: false,
+      });
+    }
+
+    return merged;
+  }, [livePortfolio.models, products]);
+
+  const resolveLinkedSkus = useMemo(() => {
+    return (productIds: string[]): SelectableCatalogSku[] => {
+      const resolved: SelectableCatalogSku[] = [];
+      for (const pid of productIds) {
+        const fromMerged = selectableCatalogSkus.find((s) => s.id === pid);
+        if (fromMerged) {
+          resolved.push(fromMerged);
+          continue;
+        }
+        const fromLegacy = products.find((p) => p.id === pid);
+        if (fromLegacy) {
+          resolved.push({
+            id: fromLegacy.id,
+            sku: fromLegacy.sku,
+            name: fromLegacy.name,
+            brandId: normalizeLabBrandCode(fromLegacy.brandId),
+            imageUrl: fromLegacy.imageUrl,
+            isScenarioModel: false,
+          });
+          continue;
+        }
+        const fromScenario = livePortfolio.models.find((m) => m.id === pid);
+        if (fromScenario) {
+          resolved.push({
+            id: fromScenario.id,
+            sku: fromScenario.code,
+            name: fromScenario.title,
+            brandId: normalizePortfolioBrandCode(
+              fromScenario.customBrandLabel || fromScenario.brandId || 'BORNERS'
+            ),
+            imageUrl: fromScenario.gallery?.[0]?.url || '',
+            isScenarioModel: true,
+          });
+        }
+      }
+      return resolved;
+    };
+  }, [selectableCatalogSkus, products, livePortfolio.models]);
 
   const filteredLaunches = useMemo(
     () =>
@@ -108,6 +206,15 @@ export function LaunchCalendarView() {
   }, [rescheduleModalLaunch, newStartDate, tasks]);
 
   const handleLaunchDragStart = (e: React.DragEvent, launchId: string) => {
+    const l = launches.find((item) => item.id === launchId);
+    if (
+      !l ||
+      isStrategyMode ||
+      !canUserEditBrand(currentUser, normalizeLabBrandCode(l.brandId))
+    ) {
+      e.preventDefault();
+      return;
+    }
     setDraggedLaunchId(launchId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', launchId);
@@ -115,10 +222,19 @@ export function LaunchCalendarView() {
 
   const handleLaunchDrop = (e: React.DragEvent, targetStatus: Launch['status']) => {
     e.preventDefault();
+    if (isStrategyMode) {
+      setDraggedLaunchId(null);
+      setDragOverStatus(null);
+      return;
+    }
     const lId = e.dataTransfer.getData('text/plain') || draggedLaunchId;
     if (lId) {
       const l = launches.find((item) => item.id === lId);
-      if (l && l.status !== targetStatus) {
+      if (
+        l &&
+        canUserEditBrand(currentUser, normalizeLabBrandCode(l.brandId)) &&
+        l.status !== targetStatus
+      ) {
         updateLaunch(lId, { status: targetStatus });
       }
     }
@@ -183,7 +299,7 @@ export function LaunchCalendarView() {
             </button>
           </div>
 
-          {!isStrategyMode && (
+          {canCreateLaunch && (
             <button
               onClick={() => setCreateModalOpen(true)}
               className="inline-flex items-center gap-2 h-11 rounded-xl bg-[#111111] text-white px-5 text-[15px] font-semibold hover:bg-neutral-800 transition cursor-pointer"
@@ -200,9 +316,10 @@ export function LaunchCalendarView() {
         <div className="space-y-6">
           {filteredLaunches.map((launch) => {
             const isBorners = launch.brandId === 'BORNERS';
-            const linkedProducts = products.filter((p) =>
-              launch.productIds.includes(p.id)
-            );
+            const linkedProducts = resolveLinkedSkus(launch.productIds);
+            const canEditThisLaunch =
+              !isStrategyMode &&
+              canUserEditBrand(currentUser, normalizeLabBrandCode(launch.brandId));
 
             return (
               <div
@@ -255,7 +372,7 @@ export function LaunchCalendarView() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2.5">
-                      {!isStrategyMode && (
+                      {canEditThisLaunch && (
                         <button
                           onClick={() => openRescheduleModal(launch)}
                           className="h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-4 text-[14px] font-semibold hover:border-[#171717] cursor-pointer"
@@ -365,7 +482,16 @@ export function LaunchCalendarView() {
                     {linkedProducts.map((p) => (
                       <button
                         key={p.id}
-                        onClick={() => navigateTo('product-catalog', { productId: p.id })}
+                        onClick={() => {
+                          if (p.isScenarioModel && typeof window !== 'undefined') {
+                            try {
+                              sessionStorage.setItem('borners_open_scenario_model_id', p.id);
+                            } catch {
+                              // ignore storage errors
+                            }
+                          }
+                          navigateTo('product-catalog', { productId: p.id });
+                        }}
                         className="rounded-lg bg-[#F7F7F5] border border-[#E8E8E5] px-3 py-1 text-[13px] font-semibold hover:border-[#171717] transition cursor-pointer"
                       >
                         {p.sku} · {p.name}
@@ -516,29 +642,41 @@ export function LaunchCalendarView() {
                 </div>
 
                 <div className="space-y-3.5">
-                  {items.map((l) => (
-                    <div
-                      key={l.id}
-                      draggable
-                      onDragStart={(e) => handleLaunchDragStart(e, l.id)}
-                      onDragEnd={() => {
-                        setDraggedLaunchId(null);
-                        setDragOverStatus(null);
-                      }}
-                      onClick={() => setSelectedLaunchId(l.id)}
-                      className="bg-white rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 cursor-grab active:cursor-grabbing space-y-2.5 transition"
-                    >
-                      <div className="flex items-center justify-between text-[13px] font-semibold">
-                        <span className="inline-flex items-center gap-1.5">
-                          <GripVertical className="h-4 w-4 text-[#737373]" />
-                          {formatLabBrandLabel(l.brandId)}
-                        </span>
-                        <span className="text-[#737373]">{l.startDate}</span>
+                  {items.map((l) => {
+                    const canEdit = canUserEditBrand(
+                      currentUser,
+                      normalizeLabBrandCode(l.brandId)
+                    );
+                    return (
+                      <div
+                        key={l.id}
+                        draggable={canEdit && !isStrategyMode}
+                        onDragStart={(e) => handleLaunchDragStart(e, l.id)}
+                        onDragEnd={() => {
+                          setDraggedLaunchId(null);
+                          setDragOverStatus(null);
+                        }}
+                        onClick={() => setSelectedLaunchId(l.id)}
+                        className={`bg-white rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-2.5 transition ${
+                          canEdit && !isStrategyMode
+                            ? 'cursor-grab active:cursor-grabbing'
+                            : 'cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[13px] font-semibold">
+                          <span className="inline-flex items-center gap-1.5">
+                            {canEdit && !isStrategyMode && (
+                              <GripVertical className="h-4 w-4 text-[#737373]" />
+                            )}
+                            {formatLabBrandLabel(l.brandId)}
+                          </span>
+                          <span className="text-[#737373]">{l.startDate}</span>
+                        </div>
+                        <div className="text-[16px] font-bold text-[#171717]">{l.name}</div>
+                        <div className="text-[14px] text-[#737373]">{l.collectionName}</div>
                       </div>
-                      <div className="text-[16px] font-bold text-[#171717]">{l.name}</div>
-                      <div className="text-[14px] text-[#737373]">{l.collectionName}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -628,92 +766,105 @@ export function LaunchCalendarView() {
       )}
 
       {/* Боковая панель этапов релиза (расширенное управление 10 этапами и привязкой SKU) */}
-      {activeLaunch && (
-        <div
-          onClick={() => setSelectedLaunchId(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/40"
-        >
+      {activeLaunch && (() => {
+        const canEditActiveLaunch =
+          !isStrategyMode &&
+          canUserEditBrand(currentUser, normalizeLabBrandCode(activeLaunch.brandId));
+        const activeLinkedSkus = resolveLinkedSkus(activeLaunch.productIds);
+        const activeLinkedSkuCodes = new Set(
+          activeLinkedSkus.map((s) => (s.sku || '').trim().toUpperCase()).filter(Boolean)
+        );
+
+        return (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-3xl bg-white h-full overflow-y-auto p-8 md:p-10 space-y-8 shadow-2xl border-l border-[#E8E8E5]"
+            onClick={() => setSelectedLaunchId(null)}
+            className="fixed inset-0 z-50 flex justify-end bg-black/40"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-6">
-              <div>
-                <div className="text-[13px] font-semibold uppercase text-[#737373]">
-                  {formatLabBrandLabel(activeLaunch.brandId)} · Старт:{' '}
-                  {activeLaunch.startDate}
-                </div>
-                <h2 className="text-[28px] font-bold text-[#171717] mt-1">
-                  {activeLaunch.name}
-                </h2>
-              </div>
-              <button
-                onClick={() => setSelectedLaunchId(null)}
-                className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Привязанные модели SKU — аккуратные карточки моделей + выпадающий список добавления */}
-            <div className="rounded-2xl bg-[#FAF8F5] border-[1.5px] border-[#CFC8BC] p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-3xl bg-white h-full overflow-y-auto p-8 md:p-10 space-y-8 shadow-2xl border-l border-[#E8E8E5]"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-6">
                 <div>
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-[#7A756D]">
-                    СОСТАВ РЕЛИЗА · ПРИВЯЗАННЫЕ МОДЕЛИ
+                  <div className="text-[13px] font-semibold uppercase text-[#737373]">
+                    {formatLabBrandLabel(activeLaunch.brandId)} · Старт:{' '}
+                    {activeLaunch.startDate}
                   </div>
-                  <div className="text-[16px] font-bold text-[#181715]">
-                    Модели, входящие в этот запуск ({activeLaunch.productIds.length})
-                  </div>
+                  <h2 className="text-[28px] font-bold text-[#171717] mt-1">
+                    {activeLaunch.name}
+                  </h2>
                 </div>
-
-                {!isStrategyMode && (
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const pid = e.target.value;
-                      if (!pid) return;
-                      if (!activeLaunch.productIds.includes(pid)) {
-                        updateLaunch(activeLaunch.id, {
-                          productIds: [...activeLaunch.productIds, pid],
-                        });
-                      }
-                    }}
-                    className="h-9 rounded-[8px] border-[1.5px] border-[#181715] bg-white px-3 text-[12.5px] font-semibold text-[#181715] cursor-pointer"
-                  >
-                    <option value="">+ Привязать модель из каталога...</option>
-                    {products
-                      .filter(
-                        (p) =>
-                          !p.isArchived &&
-                          !activeLaunch.productIds.includes(p.id)
-                      )
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} · {p.name} ({formatLabBrandLabel(p.brandId)})
-                        </option>
-                      ))}
-                  </select>
-                )}
+                <button
+                  onClick={() => setSelectedLaunchId(null)}
+                  className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
-              {activeLaunch.productIds.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {products
-                    .filter((p) => activeLaunch.productIds.includes(p.id))
-                    .map((p) => (
+              {/* Привязанные модели SKU — аккуратные карточки моделей + выпадающий список добавления */}
+              <div className="rounded-2xl bg-[#FAF8F5] border-[1.5px] border-[#CFC8BC] p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-mono uppercase tracking-wider text-[#7A756D]">
+                      СОСТАВ РЕЛИЗА · ПРИВЯЗАННЫЕ МОДЕЛИ
+                    </div>
+                    <div className="text-[16px] font-bold text-[#181715]">
+                      Модели, входящие в этот запуск ({activeLinkedSkus.length})
+                    </div>
+                  </div>
+
+                  {canEditActiveLaunch && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        if (!pid) return;
+                        if (!activeLaunch.productIds.includes(pid)) {
+                          updateLaunch(activeLaunch.id, {
+                            productIds: [...activeLaunch.productIds, pid],
+                          });
+                        }
+                      }}
+                      className="h-9 rounded-[8px] border-[1.5px] border-[#181715] bg-white px-3 text-[12.5px] font-semibold text-[#181715] cursor-pointer"
+                    >
+                      <option value="">+ Привязать модель из каталога...</option>
+                      {selectableCatalogSkus
+                        .filter(
+                          (p) =>
+                            !activeLaunch.productIds.includes(p.id) &&
+                            !activeLinkedSkuCodes.has((p.sku || '').trim().toUpperCase())
+                        )
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.sku} · {p.name} ({formatLabBrandLabel(p.brandId)})
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+
+                {activeLinkedSkus.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {activeLinkedSkus.map((p) => (
                       <div
                         key={p.id}
                         className="rounded-xl bg-white border-[1.5px] border-[#D4CDC2] p-3 flex items-center justify-between gap-3"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <img
-                            src={resolvePublicAssetUrl(p.imageUrl)}
-                            alt={p.name}
-                            loading="lazy"
-                            decoding="async"
-                            className="h-12 w-12 rounded-lg object-contain bg-[#F3EFE8] border border-[#E5E0D8] p-1 shrink-0"
-                          />
+                          {p.imageUrl ? (
+                            <img
+                              src={resolvePublicAssetUrl(p.imageUrl)}
+                              alt={p.name}
+                              loading="lazy"
+                              decoding="async"
+                              className="h-12 w-12 rounded-lg object-contain bg-[#F3EFE8] border border-[#E5E0D8] p-1 shrink-0"
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-lg bg-[#F3EFE8] border border-[#E5E0D8] flex items-center justify-center font-mono text-[10px] font-bold text-[#7A756D] shrink-0">
+                              SKU
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <div className="font-mono text-[11px] font-semibold text-[#B85D35]">
                               {p.sku}
@@ -724,7 +875,7 @@ export function LaunchCalendarView() {
                           </div>
                         </div>
 
-                        {!isStrategyMode && (
+                        {canEditActiveLaunch && (
                           <button
                             type="button"
                             onClick={() =>
@@ -739,154 +890,155 @@ export function LaunchCalendarView() {
                         )}
                       </div>
                     ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-[#D4CDC2] bg-white p-4 text-center text-[13px] text-[#7A756D]">
-                  К этому релизу пока не привязаны модели. Выберите артикул в списке «+ Привязать модель из каталога...» выше.
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
-                <h3 className="text-[20px] font-bold">
-                  10 этапов подготовки релиза (готовность: {activeLaunch.readinessPct}%)
-                </h3>
-                {!isStrategyMode && (
-                  <button
-                    onClick={() => {
-                      createTask({
-                        title: `Подготовка к запуску ${activeLaunch.name}`,
-                        description: `Операционная задача по релизу ${activeLaunch.collectionName}`,
-                        brandId: activeLaunch.brandId,
-                        projectId: 'proj-1',
-                        priority: 'High',
-                        assigneeId: users[0]?.id || 'user-owner',
-                        deadline: activeLaunch.startDate,
-                        launchId: activeLaunch.id,
-                      });
-                    }}
-                    className="rounded-xl border border-[#E8E8E5] px-3.5 py-1.5 text-[13px] font-semibold hover:bg-[#111111] hover:text-white cursor-pointer"
-                  >
-                    + Создать задачу по запуску
-                  </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-[#D4CDC2] bg-white p-4 text-center text-[13px] text-[#7A756D]">
+                    К этому релизу пока не привязаны модели. Выберите артикул в списке «+ Привязать модель из каталога...» выше.
+                  </div>
                 )}
               </div>
 
-              <div className="divide-y divide-[#E8E8E5] rounded-2xl border border-[#E8E8E5] overflow-hidden">
-                {activeLaunch.stages.map((st) => (
-                  <div
-                    key={st.code}
-                    className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-[#F7F7F5]/60"
-                  >
-                    <label className="flex items-center gap-3 text-[15px] cursor-pointer min-w-[210px]">
-                      <input
-                        type="checkbox"
-                        disabled={isStrategyMode}
-                        checked={st.status === 'Done'}
-                        onChange={(e) => {
-                          const updatedStages = activeLaunch.stages.map((s) =>
-                            s.code === st.code
-                              ? {
-                                  ...s,
-                                  status: (e.target.checked ? 'Done' : 'Pending') as
-                                    | 'Done'
-                                    | 'In Progress'
-                                    | 'Pending'
-                                    | 'Delayed',
-                                }
-                              : s
-                          );
-                          const doneCount = updatedStages.filter(
-                            (s) => s.status === 'Done'
-                          ).length;
-                          const pct = Math.round(
-                            (doneCount / updatedStages.length) * 100
-                          );
-                          updateLaunch(activeLaunch.id, {
-                            stages: updatedStages,
-                            readinessPct: pct,
-                          });
-                        }}
-                        className="h-5 w-5 accent-[#16805D]"
-                      />
-                      <span
-                        className={
-                          st.status === 'Done'
-                            ? 'line-through text-[#737373]'
-                            : 'font-semibold text-[#171717]'
-                        }
-                      >
-                        {st.label}
-                      </span>
-                    </label>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
+                  <h3 className="text-[20px] font-bold">
+                    10 этапов подготовки релиза (готовность: {activeLaunch.readinessPct}%)
+                  </h3>
+                  {canEditActiveLaunch && (
+                    <button
+                      onClick={() => {
+                        createTask({
+                          title: `Подготовка к запуску ${activeLaunch.name}`,
+                          description: `Операционная задача по релизу ${activeLaunch.collectionName}`,
+                          brandId: activeLaunch.brandId,
+                          projectId: 'proj-1',
+                          priority: 'High',
+                          assigneeId: users[0]?.id || 'user-owner',
+                          deadline: activeLaunch.startDate,
+                          launchId: activeLaunch.id,
+                        });
+                      }}
+                      className="rounded-xl border border-[#E8E8E5] px-3.5 py-1.5 text-[13px] font-semibold hover:bg-[#111111] hover:text-white cursor-pointer"
+                    >
+                      + Создать задачу по запуску
+                    </button>
+                  )}
+                </div>
 
-                    <div className="flex flex-wrap items-center gap-2 text-[13px]">
-                      <select
-                        disabled={isStrategyMode}
-                        value={st.status}
-                        onChange={(e) => {
-                          const nextStatus = e.target.value as typeof st.status;
-                          const updatedStages = activeLaunch.stages.map((s) =>
-                            s.code === st.code ? { ...s, status: nextStatus } : s
-                          );
-                          const doneCount = updatedStages.filter(
-                            (s) => s.status === 'Done'
-                          ).length;
-                          const pct = Math.round(
-                            (doneCount / updatedStages.length) * 100
-                          );
-                          updateLaunch(activeLaunch.id, {
-                            stages: updatedStages,
-                            readinessPct: pct,
-                          });
-                        }}
-                        className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-semibold"
-                      >
-                        <option value="Done">Готово</option>
-                        <option value="In Progress">В работе</option>
-                        <option value="Pending">Ожидает</option>
-                        <option value="Delayed">Задержка</option>
-                      </select>
+                <div className="divide-y divide-[#E8E8E5] rounded-2xl border border-[#E8E8E5] overflow-hidden">
+                  {activeLaunch.stages.map((st) => (
+                    <div
+                      key={st.code}
+                      className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-[#F7F7F5]/60"
+                    >
+                      <label className="flex items-center gap-3 text-[15px] cursor-pointer min-w-[210px]">
+                        <input
+                          type="checkbox"
+                          disabled={!canEditActiveLaunch}
+                          checked={st.status === 'Done'}
+                          onChange={(e) => {
+                            const updatedStages = activeLaunch.stages.map((s) =>
+                              s.code === st.code
+                                ? {
+                                    ...s,
+                                    status: (e.target.checked ? 'Done' : 'Pending') as
+                                      | 'Done'
+                                      | 'In Progress'
+                                      | 'Pending'
+                                      | 'Delayed',
+                                  }
+                                : s
+                            );
+                            const doneCount = updatedStages.filter(
+                              (s) => s.status === 'Done'
+                            ).length;
+                            const pct = Math.round(
+                              (doneCount / updatedStages.length) * 100
+                            );
+                            updateLaunch(activeLaunch.id, {
+                              stages: updatedStages,
+                              readinessPct: pct,
+                            });
+                          }}
+                          className="h-5 w-5 accent-[#16805D]"
+                        />
+                        <span
+                          className={
+                            st.status === 'Done'
+                              ? 'line-through text-[#737373]'
+                              : 'font-semibold text-[#171717]'
+                          }
+                        >
+                          {st.label}
+                        </span>
+                      </label>
 
-                      <select
-                        disabled={isStrategyMode}
-                        value={st.ownerId}
-                        onChange={(e) => {
-                          const updatedStages = activeLaunch.stages.map((s) =>
-                            s.code === st.code ? { ...s, ownerId: e.target.value } : s
-                          );
-                          updateLaunch(activeLaunch.id, { stages: updatedStages });
-                        }}
-                        className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 text-[#737373]"
-                      >
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.fullName.split(' ')[0]}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                        <select
+                          disabled={!canEditActiveLaunch}
+                          value={st.status}
+                          onChange={(e) => {
+                            const nextStatus = e.target.value as typeof st.status;
+                            const updatedStages = activeLaunch.stages.map((s) =>
+                              s.code === st.code ? { ...s, status: nextStatus } : s
+                            );
+                            const doneCount = updatedStages.filter(
+                              (s) => s.status === 'Done'
+                            ).length;
+                            const pct = Math.round(
+                              (doneCount / updatedStages.length) * 100
+                            );
+                            updateLaunch(activeLaunch.id, {
+                              stages: updatedStages,
+                              readinessPct: pct,
+                            });
+                          }}
+                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-semibold"
+                        >
+                          <option value="Done">Готово</option>
+                          <option value="In Progress">В работе</option>
+                          <option value="Pending">Ожидает</option>
+                          <option value="Delayed">Задержка</option>
+                        </select>
 
-                      <input
-                        type="date"
-                        disabled={isStrategyMode}
-                        value={st.deadline}
-                        onChange={(e) => {
-                          const updatedStages = activeLaunch.stages.map((s) =>
-                            s.code === st.code ? { ...s, deadline: e.target.value } : s
-                          );
-                          updateLaunch(activeLaunch.id, { stages: updatedStages });
-                        }}
-                        className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-medium"
-                      />
+                        <select
+                          disabled={!canEditActiveLaunch}
+                          value={st.ownerId}
+                          onChange={(e) => {
+                            const updatedStages = activeLaunch.stages.map((s) =>
+                              s.code === st.code ? { ...s, ownerId: e.target.value } : s
+                            );
+                            updateLaunch(activeLaunch.id, { stages: updatedStages });
+                          }}
+                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 text-[#737373]"
+                        >
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.fullName.split(' ')[0]}
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="date"
+                          disabled={!canEditActiveLaunch}
+                          value={st.deadline}
+                          onChange={(e) => {
+                            const updatedStages = activeLaunch.stages.map((s) =>
+                              s.code === st.code ? { ...s, deadline: e.target.value } : s
+                            );
+                            updateLaunch(activeLaunch.id, { stages: updatedStages });
+                          }}
+                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-medium"
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Модальное окно создания запуска */}
       {createModalOpen && (
@@ -1033,6 +1185,23 @@ export function MarketingGrowthView() {
   });
 
   const hasFinance = canUserViewFinance(currentUser);
+  const canCreateMarketing =
+    !isStrategyMode &&
+    (brandFilter === 'ALL'
+      ? currentUser.role !== 'Viewer' && currentUser.role !== 'Partner'
+      : canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter)));
+  const canEditSelectedCampaign = selectedCampaign
+    ? !isStrategyMode &&
+      (selectedCampaign.brandId === 'ALL'
+        ? currentUser.role === 'Owner' || currentUser.role === 'Admin'
+        : canUserEditBrand(currentUser, normalizeLabBrandCode(selectedCampaign.brandId)))
+    : false;
+  const canEditSelectedExperiment = selectedExperiment
+    ? !isStrategyMode &&
+      (selectedExperiment.brandId === 'ALL'
+        ? currentUser.role === 'Owner' || currentUser.role === 'Admin'
+        : canUserEditBrand(currentUser, normalizeLabBrandCode(selectedExperiment.brandId)))
+    : false;
 
   const filteredCampaigns = useMemo(
     () =>
@@ -1093,7 +1262,7 @@ export function MarketingGrowthView() {
             </button>
           </div>
 
-          {!isStrategyMode && (
+          {canCreateMarketing && (
             <button
               onClick={() =>
                 tab === 'campaigns' ? setCampModalOpen(true) : setExpModalOpen(true)
@@ -1143,14 +1312,18 @@ export function MarketingGrowthView() {
                     {hasFinance ? formatCurrencyRub(c.plannedRevenueRub) : 'Скрыто'}
                   </td>
                   <td className="py-4 px-4 text-right font-semibold">
-                    {c.actualRevenueRub !== null ? (
+                    {!hasFinance ? (
+                      'Скрыто'
+                    ) : c.actualRevenueRub !== null ? (
                       formatCurrencyRub(c.actualRevenueRub)
                     ) : (
                       <span className="text-[#737373]">Нет данных</span>
                     )}
                   </td>
                   <td className="py-4 px-6 text-right font-bold">
-                    {c.metrics.roas !== null && c.metrics.roas !== undefined ? (
+                    {!hasFinance ? (
+                      <span className="text-[#737373] font-semibold">Скрыто</span>
+                    ) : c.metrics.roas !== null && c.metrics.roas !== undefined ? (
                       <span className="text-[#16805D]">
                         {c.metrics.roas}x ({c.metrics.drrPct}% ДРР)
                       </span>
@@ -1236,7 +1409,7 @@ export function MarketingGrowthView() {
                   Статус кампании
                 </label>
                 <select
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedCampaign}
                   value={selectedCampaign.status}
                   onChange={(e) =>
                     updateCampaign(selectedCampaign.id, {
@@ -1254,7 +1427,7 @@ export function MarketingGrowthView() {
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">Период</label>
                 <input
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedCampaign}
                   value={selectedCampaign.periodLabel}
                   onChange={(e) =>
                     updateCampaign(selectedCampaign.id, {
@@ -1268,67 +1441,79 @@ export function MarketingGrowthView() {
                 <label className="block font-semibold text-[#737373] mb-1">
                   Фактический расход (₽)
                 </label>
-                <input
-                  type="number"
-                  disabled={isStrategyMode}
-                  placeholder="Нет данных"
-                  value={selectedCampaign.actualBudgetRub ?? ''}
-                  onChange={(e) => {
-                    const spend = e.target.value === '' ? null : Number(e.target.value);
-                    const rev = selectedCampaign.actualRevenueRub;
-                    const roas =
-                      spend && rev && spend > 0
-                        ? Number((rev / spend).toFixed(1))
-                        : selectedCampaign.metrics.roas;
-                    const drrPct =
-                      spend && rev && rev > 0
-                        ? Number(((spend / rev) * 100).toFixed(1))
-                        : selectedCampaign.metrics.drrPct;
-                    updateCampaign(selectedCampaign.id, {
-                      actualBudgetRub: spend,
-                      metrics: {
-                        ...selectedCampaign.metrics,
-                        spendRub: spend,
-                        roas,
-                        drrPct,
-                      },
-                    });
-                  }}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
-                />
+                {hasFinance ? (
+                  <input
+                    type="number"
+                    disabled={!canEditSelectedCampaign}
+                    placeholder="Нет данных"
+                    value={selectedCampaign.actualBudgetRub ?? ''}
+                    onChange={(e) => {
+                      const spend = e.target.value === '' ? null : Number(e.target.value);
+                      const rev = selectedCampaign.actualRevenueRub;
+                      const roas =
+                        spend && rev && spend > 0
+                          ? Number((rev / spend).toFixed(1))
+                          : selectedCampaign.metrics.roas;
+                      const drrPct =
+                        spend && rev && rev > 0
+                          ? Number(((spend / rev) * 100).toFixed(1))
+                          : selectedCampaign.metrics.drrPct;
+                      updateCampaign(selectedCampaign.id, {
+                        actualBudgetRub: spend,
+                        metrics: {
+                          ...selectedCampaign.metrics,
+                          spendRub: spend,
+                          roas,
+                          drrPct,
+                        },
+                      });
+                    }}
+                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                  />
+                ) : (
+                  <div className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-semibold text-[#737373]">
+                    Скрыто
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">
                   Фактическая выручка (₽)
                 </label>
-                <input
-                  type="number"
-                  disabled={isStrategyMode}
-                  placeholder="Нет данных"
-                  value={selectedCampaign.actualRevenueRub ?? ''}
-                  onChange={(e) => {
-                    const rev = e.target.value === '' ? null : Number(e.target.value);
-                    const spend = selectedCampaign.actualBudgetRub;
-                    const roas =
-                      spend && rev && spend > 0
-                        ? Number((rev / spend).toFixed(1))
-                        : selectedCampaign.metrics.roas;
-                    const drrPct =
-                      spend && rev && rev > 0
-                        ? Number(((spend / rev) * 100).toFixed(1))
-                        : selectedCampaign.metrics.drrPct;
-                    updateCampaign(selectedCampaign.id, {
-                      actualRevenueRub: rev,
-                      metrics: {
-                        ...selectedCampaign.metrics,
-                        revenueRub: rev,
-                        roas,
-                        drrPct,
-                      },
-                    });
-                  }}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
-                />
+                {hasFinance ? (
+                  <input
+                    type="number"
+                    disabled={!canEditSelectedCampaign}
+                    placeholder="Нет данных"
+                    value={selectedCampaign.actualRevenueRub ?? ''}
+                    onChange={(e) => {
+                      const rev = e.target.value === '' ? null : Number(e.target.value);
+                      const spend = selectedCampaign.actualBudgetRub;
+                      const roas =
+                        spend && rev && spend > 0
+                          ? Number((rev / spend).toFixed(1))
+                          : selectedCampaign.metrics.roas;
+                      const drrPct =
+                        spend && rev && rev > 0
+                          ? Number(((spend / rev) * 100).toFixed(1))
+                          : selectedCampaign.metrics.drrPct;
+                      updateCampaign(selectedCampaign.id, {
+                        actualRevenueRub: rev,
+                        metrics: {
+                          ...selectedCampaign.metrics,
+                          revenueRub: rev,
+                          roas,
+                          drrPct,
+                        },
+                      });
+                    }}
+                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                  />
+                ) : (
+                  <div className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-semibold text-[#737373]">
+                    Скрыто
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">
@@ -1336,7 +1521,7 @@ export function MarketingGrowthView() {
                 </label>
                 <input
                   type="number"
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedCampaign}
                   value={selectedCampaign.metrics.clicks ?? ''}
                   onChange={(e) =>
                     updateCampaign(selectedCampaign.id, {
@@ -1355,7 +1540,7 @@ export function MarketingGrowthView() {
                 </label>
                 <input
                   type="number"
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedCampaign}
                   value={selectedCampaign.metrics.buyouts ?? ''}
                   onChange={(e) =>
                     updateCampaign(selectedCampaign.id, {
@@ -1374,8 +1559,10 @@ export function MarketingGrowthView() {
               <div>
                 <div className="text-[12px] text-[#737373]">Расчётный ROAS</div>
                 <div className="text-[22px] font-bold text-[#16805D] mt-1">
-                  {selectedCampaign.metrics.roas !== null &&
-                  selectedCampaign.metrics.roas !== undefined
+                  {!hasFinance
+                    ? 'Скрыто'
+                    : selectedCampaign.metrics.roas !== null &&
+                      selectedCampaign.metrics.roas !== undefined
                     ? `${selectedCampaign.metrics.roas}x`
                     : 'Нет данных'}
                 </div>
@@ -1383,8 +1570,10 @@ export function MarketingGrowthView() {
               <div>
                 <div className="text-[12px] text-[#737373]">Доля рекламных расходов (ДРР)</div>
                 <div className="text-[22px] font-bold text-[#171717] mt-1">
-                  {selectedCampaign.metrics.drrPct !== null &&
-                  selectedCampaign.metrics.drrPct !== undefined
+                  {!hasFinance
+                    ? 'Скрыто'
+                    : selectedCampaign.metrics.drrPct !== null &&
+                      selectedCampaign.metrics.drrPct !== undefined
                     ? `${selectedCampaign.metrics.drrPct}%`
                     : 'Нет данных'}
                 </div>
@@ -1427,7 +1616,7 @@ export function MarketingGrowthView() {
                   Статус эксперимента
                 </label>
                 <select
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedExperiment}
                   value={selectedExperiment.status}
                   onChange={(e) =>
                     updateExperiment(selectedExperiment.id, {
@@ -1458,7 +1647,7 @@ export function MarketingGrowthView() {
                 </label>
                 <textarea
                   rows={3}
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedExperiment}
                   value={selectedExperiment.resultSummary}
                   onChange={(e) =>
                     updateExperiment(selectedExperiment.id, {
@@ -1474,7 +1663,7 @@ export function MarketingGrowthView() {
                   Управленческое решение
                 </label>
                 <input
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedExperiment}
                   value={selectedExperiment.decision}
                   onChange={(e) =>
                     updateExperiment(selectedExperiment.id, {

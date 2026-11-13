@@ -64,6 +64,7 @@ import {
 import {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
+  STORAGE_KEY_DELETED_SCENARIOS,
   STORAGE_KEY_MODELS,
   STORAGE_KEY_PORTFOLIO_UPDATED_AT,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
@@ -74,11 +75,13 @@ import {
   deleteModelFromPortfolio,
   filterModelsForScenario,
   getDeletedModelsRegistry,
+  getDeletedScenariosRegistry,
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
+  markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
   resolveEffectiveScenarioForModel,
@@ -92,6 +95,7 @@ import {
 export {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
   STORAGE_KEY_DELETED_MODELS,
+  STORAGE_KEY_DELETED_SCENARIOS,
   STORAGE_KEY_MODELS,
   STORAGE_KEY_PORTFOLIO_UPDATED_AT,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
@@ -102,11 +106,13 @@ export {
   deleteModelFromPortfolio,
   filterModelsForScenario,
   getDeletedModelsRegistry,
+  getDeletedScenariosRegistry,
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
   markModelAsDeletedInStorage,
+  markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
   resolveEffectiveScenarioForModel,
@@ -157,6 +163,7 @@ export function useLiveScenarioPortfolio() {
   selectedScenarioByBrandRef.current = selectedScenarioByBrand;
   const includeGroupRef = useRef(includeGroupPortfolioInS1);
   includeGroupRef.current = includeGroupPortfolioInS1;
+  const localMutationSeqRef = useRef(0);
 
   const cloudDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleCompleteCloudPush = useCallback(
@@ -191,6 +198,7 @@ export function useLiveScenarioPortfolio() {
           selectedScenarioByBrand: byBrandRecord,
           includeGroupPortfolioInS1: includeGroupRef.current,
           deletedModelIds: getDeletedModelsRegistry(),
+          deletedScenarioIds: getDeletedScenariosRegistry(),
         });
       };
 
@@ -217,6 +225,7 @@ export function useLiveScenarioPortfolio() {
       ignoreSelfEventsRef.current = Math.max(0, ignoreSelfEventsRef.current - 1);
     }
   }, []);
+  const emitWindowSync = dispatchCrossHookEvent;
 
   const syncFromStorage = useCallback(() => {
     if (ignoreSelfEventsRef.current > 0) return;
@@ -243,9 +252,10 @@ export function useLiveScenarioPortfolio() {
     });
 
     const parsedScen = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
+    const deletedScenSet = new Set(getDeletedScenariosRegistry());
     let effectiveScenList = DEFAULT_SCENARIOS_LIST;
     if (Array.isArray(parsedScen) && parsedScen.length > 0) {
-      let nextScen = [...parsedScen];
+      let nextScen = parsedScen.filter((s) => s && !deletedScenSet.has(s.id));
       if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
         nextScen = [ACTING_2027_SCENARIO_DEF, ...nextScen];
       }
@@ -256,6 +266,7 @@ export function useLiveScenarioPortfolio() {
         nextScen = [...nextScen, AKUSHA_2027_SCENARIO_DEF];
       }
       effectiveScenList = nextScen;
+      scenariosRef.current = nextScen;
       setScenarios(nextScen);
     }
 
@@ -337,22 +348,34 @@ export function useLiveScenarioPortfolio() {
     // 1. Сначала дожидаемся восстановления слепка моделей и фотогалерей из IndexedDB,
     // и только затем сверяемся с облаком Supabase (исключает затирание облака облегчённым localStorage)
     void (async () => {
+      const seqBeforeIdb = localMutationSeqRef.current;
       const [idbSnapMeta, idbGalleries] = await Promise.all([
         loadPortfolioSnapshotWithMetaFromIdb<ScenarioModelSpec>(),
         loadAllModelGalleriesFromIdb(),
       ]);
       if (cancelled) return;
 
-      let workingModels = hydratePortfolioModelsFromStorage();
+      const mutatedDuringIdb = localMutationSeqRef.current !== seqBeforeIdb;
+      let workingModels =
+        localMutationSeqRef.current > 0
+          ? [...modelsRef.current]
+          : hydratePortfolioModelsFromStorage();
       let localChangedFromIdb = false;
 
       const localIsoBeforeIdb = getPortfolioUpdatedAt();
       const localTsBeforeIdb = localIsoBeforeIdb ? Date.parse(localIsoBeforeIdb) : NaN;
       const idbTs = idbSnapMeta?.updatedAtIso ? Date.parse(idbSnapMeta.updatedAtIso) : NaN;
       const isIdbNewerThanLocalStorage =
-        Number.isFinite(idbTs) && (!Number.isFinite(localTsBeforeIdb) || idbTs > localTsBeforeIdb);
+        !mutatedDuringIdb &&
+        Number.isFinite(idbTs) &&
+        (!Number.isFinite(localTsBeforeIdb) || idbTs > localTsBeforeIdb);
 
-      if (idbSnapMeta && Array.isArray(idbSnapMeta.models) && idbSnapMeta.models.length > 0) {
+      if (
+        !mutatedDuringIdb &&
+        idbSnapMeta &&
+        Array.isArray(idbSnapMeta.models) &&
+        idbSnapMeta.models.length > 0
+      ) {
         for (const snapMod of idbSnapMeta.models) {
           if (!snapMod || !snapMod.id || !snapMod.code) continue;
           if (isModelMarkedDeleted(snapMod)) continue;
@@ -381,7 +404,7 @@ export function useLiveScenarioPortfolio() {
       }
 
       const galleryKeys = Object.keys(idbGalleries || {});
-      if (galleryKeys.length > 0) {
+      if (!mutatedDuringIdb && galleryKeys.length > 0) {
         workingModels = workingModels.map((m) => {
           const idbGal = (idbGalleries[m.id] || idbGalleries[m.code]) as
             | GalleryMediaItem[]
@@ -412,30 +435,53 @@ export function useLiveScenarioPortfolio() {
         void savePortfolioSnapshotToIdb(workingModels, effectiveIso);
         modelsRef.current = workingModels;
         setModels(workingModels);
+        emitWindowSync('borners-scenario-models-changed');
+        emitWindowSync('borners-scenarios-changed');
+        emitWindowSync('borners-active-scenario-changed');
       }
 
+      const seqBeforeCloud = localMutationSeqRef.current;
       const cloud = await pullPortfolioFromSupabase();
       if (cancelled || !cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) {
         return;
       }
 
-      const localUpdatedAtIso = getPortfolioUpdatedAt();
-      const localTs = localUpdatedAtIso ? Date.parse(localUpdatedAtIso) : NaN;
-      const cloudTs = cloud.updatedAtIso ? Date.parse(cloud.updatedAtIso) : NaN;
-      const isCloudNewer =
-        Number.isFinite(cloudTs) && (!Number.isFinite(localTs) || cloudTs > localTs);
-
-      if (isCloudNewer && Array.isArray(cloud.deletedModelIds) && cloud.deletedModelIds.length > 0) {
+      if (Array.isArray(cloud.deletedModelIds) && cloud.deletedModelIds.length > 0) {
         const unionDeleted = Array.from(
           new Set([...getDeletedModelsRegistry(), ...cloud.deletedModelIds])
         );
         safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, unionDeleted);
       }
 
+      if (Array.isArray(cloud.deletedScenarioIds) && cloud.deletedScenarioIds.length > 0) {
+        for (const delScenId of cloud.deletedScenarioIds) {
+          markScenarioAsDeletedInStorage(delScenId);
+        }
+      }
+
+      const mutatedDuringCloud = localMutationSeqRef.current !== seqBeforeCloud;
+      const latestLocalModels =
+        localMutationSeqRef.current > 0
+          ? [...modelsRef.current]
+          : hydratePortfolioModelsFromStorage();
+      const rawLocalUpdatedAtIso = getPortfolioUpdatedAt();
+      const localUpdatedAtIso =
+        mutatedDuringCloud && !rawLocalUpdatedAtIso
+          ? new Date().toISOString()
+          : rawLocalUpdatedAtIso;
+      const localTs = localUpdatedAtIso ? Date.parse(localUpdatedAtIso) : NaN;
+      const cloudTs = cloud.updatedAtIso ? Date.parse(cloud.updatedAtIso) : NaN;
+      const isCloudNewer =
+        !mutatedDuringCloud &&
+        Number.isFinite(cloudTs) &&
+        (!Number.isFinite(localTs) || cloudTs > localTs);
+
       const mergeRes = mergeCloudPortfolioSnapshot({
-        localModels: workingModels,
+        localModels: latestLocalModels,
         cloudModels: cloud.models,
-        localUpdatedAtIso,
+        localUpdatedAtIso: mutatedDuringCloud
+          ? new Date(Math.max(Date.now(), Number.isFinite(cloudTs) ? cloudTs + 1 : 0)).toISOString()
+          : localUpdatedAtIso,
         cloudUpdatedAtIso: cloud.updatedAtIso,
       });
 
@@ -457,21 +503,35 @@ export function useLiveScenarioPortfolio() {
       modelsRef.current = mergeRes.models;
       setModels(mergeRes.models);
 
-      let nextScen =
-        safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || DEFAULT_SCENARIOS_LIST;
+      const deletedScenSet = new Set(getDeletedScenariosRegistry());
+      let nextScen = (
+        safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || DEFAULT_SCENARIOS_LIST
+      ).filter((s) => s && !deletedScenSet.has(s.id));
       if (Array.isArray(cloud.scenarios) && cloud.scenarios.length > 0) {
         const localScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || [];
+        const filteredLocalScenarios = localScenarios.filter((s) => s && !deletedScenSet.has(s.id));
+        const cleanCloudScenarios = cloud.scenarios.filter(
+          (s) => s && !deletedScenSet.has(s.id)
+        );
         const preferLocalScenarios =
-          Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
+          mutatedDuringCloud ||
+          (Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs));
 
         nextScen =
-          preferLocalScenarios && localScenarios.length > 0
-            ? [...localScenarios]
-            : [...cloud.scenarios];
+          preferLocalScenarios && filteredLocalScenarios.length > 0
+            ? [...filteredLocalScenarios]
+            : [...cleanCloudScenarios];
 
-        const secondaryScenarios = preferLocalScenarios ? cloud.scenarios : localScenarios;
+        const secondaryScenarios = preferLocalScenarios
+          ? cleanCloudScenarios
+          : filteredLocalScenarios;
         for (const extra of secondaryScenarios) {
-          if (extra && typeof extra.id === 'number' && !nextScen.some((s) => s.id === extra.id)) {
+          if (
+            extra &&
+            typeof extra.id === 'number' &&
+            !deletedScenSet.has(extra.id) &&
+            !nextScen.some((s) => s.id === extra.id)
+          ) {
             nextScen.push(extra);
           }
         }
@@ -510,6 +570,10 @@ export function useLiveScenarioPortfolio() {
       } else if (cloud.updatedAtIso) {
         touchPortfolioUpdatedAt(cloud.updatedAtIso);
       }
+
+      emitWindowSync('borners-scenario-models-changed');
+      emitWindowSync('borners-scenarios-changed');
+      emitWindowSync('borners-active-scenario-changed');
     })();
 
     window.addEventListener('borners-scenario-models-changed', syncFromStorage);
@@ -523,10 +587,11 @@ export function useLiveScenarioPortfolio() {
       window.removeEventListener('borners-active-scenario-changed', syncFromStorage);
       window.removeEventListener('storage', syncFromStorage);
     };
-  }, [syncFromStorage, scheduleCompleteCloudPush]);
+  }, [syncFromStorage, scheduleCompleteCloudPush, emitWindowSync]);
 
   const setSelectedScenarioId = useCallback(
     (nextId: number, explicitBrandOverride?: string) => {
+      localMutationSeqRef.current += 1;
       setSelectedScenarioIdState(nextId);
       safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
       const targetScenario = scenarios.find((s) => s.id === nextId);
@@ -559,6 +624,34 @@ export function useLiveScenarioPortfolio() {
             });
           }
         }
+      } else {
+        const targetOwner =
+          targetScenario?.ownerBrandCode && targetScenario.ownerBrandCode !== 'ALL'
+            ? normalizePortfolioBrandCode(targetScenario.ownerBrandCode)
+            : null;
+        setSelectedScenarioByBrandState((prev) => {
+          const patch: Partial<Record<CanonicalBrandCode, number | null>> = { ...prev };
+          if (targetOwner && targetOwner !== 'ALL') {
+            patch[targetOwner] = nextId;
+          } else {
+            patch.BORNERS = nextId;
+            if (
+              nextId !== ACTING_2027_SCENARIO_ID &&
+              nextId !== 1 &&
+              (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, 'NA_TELE'))
+            ) {
+              patch.NA_TELE = nextId;
+            }
+            if (nextId === ACTING_2027_SCENARIO_ID) {
+              patch.FUKAI = ACTING_2027_SCENARIO_ID;
+            }
+          }
+          const next = sanitizeSelectedScenarioByBrand(patch, scenarios);
+          safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+          touchPortfolioUpdatedAt();
+          scheduleCompleteCloudPush({ selectedScenarioByBrand: next });
+          return next;
+        });
       }
       dispatchCrossHookEvent('borners-active-scenario-changed');
     },
@@ -567,6 +660,7 @@ export function useLiveScenarioPortfolio() {
 
   const setIncludeGroupPortfolioInS1 = useCallback(
     (nextVal: boolean) => {
+      localMutationSeqRef.current += 1;
       setIncludeGroupState(nextVal);
       safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, nextVal);
       touchPortfolioUpdatedAt();
@@ -578,6 +672,7 @@ export function useLiveScenarioPortfolio() {
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenarioId: number | null) => {
+      localMutationSeqRef.current += 1;
       const code = normalizePortfolioBrandCode(brandInput);
       if (code === 'ALL') return;
       if (scenarioId !== null) {
@@ -616,8 +711,15 @@ export function useLiveScenarioPortfolio() {
 
   const updateScenariosBatch = useCallback(
     (updater: (prev: GrowthScenarioDef[]) => GrowthScenarioDef[]) => {
+      localMutationSeqRef.current += 1;
       setScenarios((prev) => {
         const next = updater(prev);
+        const nextIds = new Set(next.map((s) => s.id));
+        for (const s of prev) {
+          if (!nextIds.has(s.id)) {
+            markScenarioAsDeletedInStorage(s.id);
+          }
+        }
         safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
         touchPortfolioUpdatedAt();
         scenariosRef.current = next;
@@ -633,8 +735,53 @@ export function useLiveScenarioPortfolio() {
     [dispatchCrossHookEvent, scheduleCompleteCloudPush]
   );
 
+  const deleteScenarioById = useCallback(
+    (scenarioId: number) => {
+      if ([1, ACTING_2027_SCENARIO_ID, LISKANI_2027_SCENARIO_ID, AKUSHA_2027_SCENARIO_ID].includes(scenarioId)) {
+        return;
+      }
+      localMutationSeqRef.current += 1;
+      markScenarioAsDeletedInStorage(scenarioId);
+      setScenarios((prev) => {
+        const next = prev.filter((s) => s.id !== scenarioId);
+        safeSetStorageJson(STORAGE_KEY_SCENARIOS, next);
+        touchPortfolioUpdatedAt();
+        scenariosRef.current = next;
+        scheduleCompleteCloudPush({ scenarios: next });
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            dispatchCrossHookEvent('borners-scenarios-changed');
+          }, 0);
+        }
+        return next;
+      });
+    },
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
+  );
+
+  const deleteModelSpec = useCallback(
+    (modelToDelete: Pick<ScenarioModelSpec, 'id' | 'code'>) => {
+      localMutationSeqRef.current += 1;
+      setModels((prev) => {
+        const next = deleteModelFromPortfolio(prev, modelToDelete);
+        const iso = getPortfolioUpdatedAt() || touchPortfolioUpdatedAt();
+        void savePortfolioSnapshotToIdb(next, iso);
+        modelsRef.current = next;
+        scheduleCompleteCloudPush({ models: next });
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            dispatchCrossHookEvent('borners-scenario-models-changed');
+          }, 0);
+        }
+        return next;
+      });
+    },
+    [dispatchCrossHookEvent, scheduleCompleteCloudPush]
+  );
+
   const updateModelSpec = useCallback(
     (updated: ScenarioModelSpec) => {
+      localMutationSeqRef.current += 1;
       if (Array.isArray(updated.gallery)) {
         void saveModelGalleryToIdb(updated.id, updated.gallery);
         void pushModelGalleryToSupabase(updated.id, updated.gallery);
@@ -660,6 +807,7 @@ export function useLiveScenarioPortfolio() {
 
   const updateModelsBatch = useCallback(
     (updater: (prev: ScenarioModelSpec[]) => ScenarioModelSpec[]) => {
+      localMutationSeqRef.current += 1;
       setModels((prev) => {
         const next = updater(prev);
         for (const m of next) {
@@ -861,6 +1009,7 @@ export function useLiveScenarioPortfolio() {
 
   const applyIndustryNormsToAllModels = useCallback(
     (fillMissingCost: boolean = true) => {
+      localMutationSeqRef.current += 1;
       setModels((prev) => {
         const next = applyCategoryWbUnitEconomicsToPortfolio(prev, {
           fillMissingCost,
@@ -887,6 +1036,7 @@ export function useLiveScenarioPortfolio() {
     (targetModelIds: string[], patch: BatchFactoryTermsPatch, author = 'Владелец') => {
       const idSet = new Set(targetModelIds);
       if (idSet.size === 0) return;
+      localMutationSeqRef.current += 1;
       setModels((prev) => {
         const next = applyBatchFactoryPaymentTermsToModels(prev, idSet, patch, author);
         const iso = touchPortfolioUpdatedAt();
@@ -908,8 +1058,11 @@ export function useLiveScenarioPortfolio() {
 
   const launchStarterCabinet = useCallback(
     (bCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
+      localMutationSeqRef.current += 1;
       const res = launchBrandStarterMatrix(models, scenarios, bCode);
       const nextByBrand = { ...selectedScenarioByBrandRef.current, [bCode]: res.scenarioId };
+      modelsRef.current = res.models;
+      scenariosRef.current = res.scenarios;
       setModels(res.models);
       setScenarios(res.scenarios);
       setSelectedScenarioByBrandState(nextByBrand);
@@ -942,11 +1095,14 @@ export function useLiveScenarioPortfolio() {
   );
 
   const launchAllCabinets = useCallback(() => {
+    localMutationSeqRef.current += 1;
     const res = launchAllEmptyCabinetsInHolding(
       models,
       scenarios,
       selectedScenarioByBrand
     );
+    modelsRef.current = res.models;
+    scenariosRef.current = res.scenarios;
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(res.selectedScenarioByBrand);
@@ -975,6 +1131,7 @@ export function useLiveScenarioPortfolio() {
   }, [models, scenarios, selectedScenarioByBrand, scheduleCompleteCloudPush]);
 
   const resetStarterCabinets = useCallback(() => {
+    localMutationSeqRef.current += 1;
     const res = resetStarterCabinetsFromHolding(
       models,
       scenarios,
@@ -991,6 +1148,8 @@ export function useLiveScenarioPortfolio() {
       ...(hasOfficialLiskani ? { LISKANI: LISKANI_2027_SCENARIO_ID } : {}),
       ...(hasOfficialAkusha ? { AKUSHA: AKUSHA_2027_SCENARIO_ID } : {}),
     };
+    modelsRef.current = res.models;
+    scenariosRef.current = res.scenarios;
     setModels(res.models);
     setScenarios(res.scenarios);
     setSelectedScenarioByBrandState(nextByBrand);
@@ -1035,7 +1194,9 @@ export function useLiveScenarioPortfolio() {
     totals,
     updateModelSpec,
     updateModelsBatch,
+    deleteModelSpec,
     updateScenariosBatch,
+    deleteScenarioById,
     applyIndustryNormsToAllModels,
     updateBatchFactoryTerms,
     launchStarterCabinet,

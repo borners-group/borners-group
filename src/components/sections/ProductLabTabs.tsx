@@ -152,7 +152,10 @@ export function ProductLabCardBody({
   notify,
 }: ProductLabCardBodyProps) {
   const hasCostAccess = canUserViewCostPrice(currentUser);
-  const canApproveProd = canUserApproveProduction(currentUser, concept.brandId);
+  const canApproveProd = canUserApproveProduction(
+    currentUser,
+    normalizeLabBrandCode(concept.brandId)
+  );
   const prodProfile = getBrandProductionProfile(concept.brandId, concept.name);
 
   const defaultBrandFactoryName =
@@ -190,7 +193,7 @@ export function ProductLabCardBody({
     customFactory: '',
     receivedAt: new Date().toISOString().slice(0, 10),
     sampleCostRub: '3500',
-    deliveryCostRub: '1200',
+    deliveryCostRub: '0',
     estimatedUnitProductionPrice: concept.plannedUnitCost ? String(concept.plannedUnitCost) : '340',
     comments: '',
     photos: [] as string[],
@@ -410,13 +413,15 @@ export function ProductLabCardBody({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onChangeStageWithGate(concept, 'ANALYSIS')}
-            className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer shrink-0"
-          >
-            На анализ (02 Анализ) →
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => onChangeStageWithGate(concept, 'ANALYSIS')}
+              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer shrink-0"
+            >
+              На анализ (02 Анализ) →
+            </button>
+          )}
         </div>
       </div>
     );
@@ -770,6 +775,7 @@ export function ProductLabCardBody({
                     Плюсы и жалобы покупателей в отзывах конкурентов
                   </label>
                   <input
+                    disabled={!canEdit}
                     value={currentAnalysis.competitorProsAndComplaints}
                     onChange={(e) =>
                       updateAnalysisField('competitorProsAndComplaints', e.target.value)
@@ -783,6 +789,7 @@ export function ProductLabCardBody({
                     Потенциальные фабрики и минимальная партия (MOQ)
                   </label>
                   <input
+                    disabled={!canEdit}
                     value={currentAnalysis.potentialFactories}
                     onChange={(e) =>
                       updateAnalysisField('potentialFactories', e.target.value)
@@ -804,6 +811,7 @@ export function ProductLabCardBody({
                 Выход анализа: короткий вывод и решение по заказу образца
               </label>
               <input
+                disabled={!canEdit}
                 value={currentAnalysis.summaryAndPros}
                 onChange={(e) => updateAnalysisField('summaryAndPros', e.target.value)}
                 placeholder="Спрос подтверждён, целевая цена 650 ₽/пара проходит по марже — заказываем образец"
@@ -811,46 +819,48 @@ export function ProductLabCardBody({
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  const nextReport: RnDAnalysisReport = {
-                    ...currentAnalysis,
-                    recommendation: 'continue',
-                  };
-                  const updatedConcept: ProductConcept = {
-                    ...concept,
-                    analysisReport: nextReport,
-                  };
-                  onUpdateConcept(concept.id, { analysisReport: nextReport });
-                  onChangeStageWithGate(updatedConcept, 'SAMPLE');
-                }}
-                className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#126b4d] text-white text-[13px] font-bold cursor-pointer transition"
-              >
-                Заказывать образец (03 Образец) →
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  updateAnalysisField('recommendation', 'supplement');
-                  notify('warning', 'Анализ отмечен на доработку');
-                }}
-                className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[#171717] text-[13px] font-bold cursor-pointer transition"
-              >
-                Доработать
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  updateAnalysisField('recommendation', 'postpone');
-                  notify('warning', 'Карточка отложена по итогам анализа');
-                }}
-                className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] text-[13px] font-bold cursor-pointer transition"
-              >
-                Отложить
-              </button>
-            </div>
+            {canEdit && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextReport: RnDAnalysisReport = {
+                      ...currentAnalysis,
+                      recommendation: 'continue',
+                    };
+                    const updatedConcept: ProductConcept = {
+                      ...concept,
+                      analysisReport: nextReport,
+                    };
+                    onUpdateConcept(concept.id, { analysisReport: nextReport });
+                    onChangeStageWithGate(updatedConcept, 'SAMPLE');
+                  }}
+                  className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#126b4d] text-white text-[13px] font-bold cursor-pointer transition"
+                >
+                  Заказывать образец (03 Образец) →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateAnalysisField('recommendation', 'supplement');
+                    notify('warning', 'Анализ отмечен на доработку');
+                  }}
+                  className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[#171717] text-[13px] font-bold cursor-pointer transition"
+                >
+                  Доработать
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateAnalysisField('recommendation', 'postpone');
+                    notify('warning', 'Карточка отложена по итогам анализа');
+                  }}
+                  className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] text-[13px] font-bold cursor-pointer transition"
+                >
+                  Отложить
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -913,11 +923,29 @@ export function ProductLabCardBody({
                     {canEdit && (
                       <button
                         type="button"
-                        onClick={() =>
-                          onUpdateConcept(concept.id, {
-                            samples: samples.filter((x) => x.id !== s.id),
-                          })
-                        }
+                        onClick={() => {
+                          const nextSamples = samples.filter((x) => x.id !== s.id);
+                          const nextSelected =
+                            nextSamples.find((x) => x.isSelectedForProduction) ||
+                            nextSamples[0];
+                          const deletePatch: Partial<ProductConcept> = {
+                            samples: nextSamples,
+                            ...(nextSelected
+                              ? {
+                                  supplierName: nextSelected.factoryName,
+                                  plannedUnitCost:
+                                    nextSelected.estimatedUnitProductionPrice ||
+                                    concept.plannedUnitCost,
+                                }
+                              : {}),
+                          };
+                          const updatedConcept: ProductConcept = {
+                            ...concept,
+                            ...deletePatch,
+                          };
+                          onUpdateConcept(concept.id, deletePatch);
+                          onSyncConcept?.(updatedConcept);
+                        }}
                         className="text-[#737373] hover:text-[#DC2626] cursor-pointer p-1"
                         title="Удалить версию образца"
                       >
@@ -969,12 +997,18 @@ export function ProductLabCardBody({
                     </span>
                     <span>
                       Образец + доставка:{' '}
-                      <b>{formatCurrencyRub((s.sampleCostRub || 0) + (s.deliveryCostRub || 0))}</b>
+                      <b>
+                        {hasCostAccess
+                          ? formatCurrencyRub((s.sampleCostRub || 0) + (s.deliveryCostRub || 0))
+                          : 'Скрыто'}
+                      </b>
                     </span>
                     <span>
                       Серийная цена:{' '}
                       <b>
-                        {hasCostAccess && s.estimatedUnitProductionPrice
+                        {!hasCostAccess
+                          ? 'Скрыто'
+                          : s.estimatedUnitProductionPrice
                           ? `${s.estimatedUnitProductionPrice} ₽/шт.`
                           : '—'}
                       </b>
@@ -985,8 +1019,8 @@ export function ProductLabCardBody({
                     <div className="pt-1">
                       <button
                         type="button"
-                        onClick={() =>
-                          onUpdateConcept(concept.id, {
+                        onClick={() => {
+                          const selectPatch: Partial<ProductConcept> = {
                             supplierName: s.factoryName,
                             plannedUnitCost:
                               s.estimatedUnitProductionPrice || concept.plannedUnitCost,
@@ -994,8 +1028,14 @@ export function ProductLabCardBody({
                               ...item,
                               isSelectedForProduction: item.id === s.id,
                             })),
-                          })
-                        }
+                          };
+                          const updatedConcept: ProductConcept = {
+                            ...concept,
+                            ...selectPatch,
+                          };
+                          onUpdateConcept(concept.id, selectPatch);
+                          onSyncConcept?.(updatedConcept);
+                        }}
                         className={`px-3.5 py-1.5 rounded-xl text-[12px] font-bold cursor-pointer transition ${
                           s.isSelectedForProduction
                             ? 'bg-[#16805D] text-white'
@@ -1173,38 +1213,50 @@ export function ProductLabCardBody({
                   <label className="block text-[12px] font-semibold text-[#737373] mb-1">
                     Цена образца + доставка (₽)
                   </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={sampleForm.sampleCostRub}
-                    onChange={(e) =>
-                      setSampleForm({
-                        ...sampleForm,
-                        sampleCostRub: e.target.value.replace(/[^\d]/g, ''),
-                      })
-                    }
-                    placeholder="3500"
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-semibold"
-                  />
+                  {hasCostAccess ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={sampleForm.sampleCostRub}
+                      onChange={(e) =>
+                        setSampleForm({
+                          ...sampleForm,
+                          sampleCostRub: e.target.value.replace(/[^\d]/g, ''),
+                        })
+                      }
+                      placeholder="3500"
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-semibold"
+                    />
+                  ) : (
+                    <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 flex items-center font-semibold text-[#737373]">
+                      Скрыто
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-[12px] font-semibold text-[#737373] mb-1">
                     Предложение на серию (₽/шт.)
                   </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={sampleForm.estimatedUnitProductionPrice}
-                    onChange={(e) =>
-                      setSampleForm({
-                        ...sampleForm,
-                        estimatedUnitProductionPrice: e.target.value.replace(/[^\d]/g, ''),
-                      })
-                    }
-                    placeholder="340"
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-bold"
-                  />
+                  {hasCostAccess ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={sampleForm.estimatedUnitProductionPrice}
+                      onChange={(e) =>
+                        setSampleForm({
+                          ...sampleForm,
+                          estimatedUnitProductionPrice: e.target.value.replace(/[^\d]/g, ''),
+                        })
+                      }
+                      placeholder="340"
+                      className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-bold"
+                    />
+                  ) : (
+                    <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 flex items-center font-semibold text-[#737373]">
+                      Скрыто
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1345,13 +1397,15 @@ export function ProductLabCardBody({
           <div className="text-[14px] font-bold text-[#171717]">
             Итог этапа 03: Фабрика, фото, состав (= 100%) и цена образца зафиксированы.
           </div>
-          <button
-            type="button"
-            onClick={() => onChangeStageWithGate(concept, 'TEST')}
-            className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
-          >
-            На тест (04 Тест) →
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => onChangeStageWithGate(concept, 'TEST')}
+              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
+            >
+              На тест (04 Тест) →
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1545,28 +1599,30 @@ export function ProductLabCardBody({
           <div className="text-[14px] font-bold text-[#171717]">
             Итог этапа 04: Результаты 4 проверок сохранены и готовы для принятия решения.
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              const summaryNote =
-                defectsList.length > 0
-                  ? `Замечания: ${defectsList.map((d) => d.label).join(', ')}`
-                  : 'Все 4 проверки пройдены успешно';
-              const testPatch: Partial<ProductConcept> = {
-                fourChecksTest: fourChecks,
-                testResults: summaryNote,
-              };
-              const updatedConcept: ProductConcept = {
-                ...concept,
-                ...testPatch,
-              };
-              onUpdateConcept(concept.id, testPatch);
-              onChangeStageWithGate(updatedConcept, 'DECISION');
-            }}
-            className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
-          >
-            Перейти к решению (05 Решение) →
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                const summaryNote =
+                  defectsList.length > 0
+                    ? `Замечания: ${defectsList.map((d) => d.label).join(', ')}`
+                    : 'Все 4 проверки пройдены успешно';
+                const testPatch: Partial<ProductConcept> = {
+                  fourChecksTest: fourChecks,
+                  testResults: summaryNote,
+                };
+                const updatedConcept: ProductConcept = {
+                  ...concept,
+                  ...testPatch,
+                };
+                onUpdateConcept(concept.id, testPatch);
+                onChangeStageWithGate(updatedConcept, 'DECISION');
+              }}
+              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
+            >
+              Перейти к решению (05 Решение) →
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1588,6 +1644,10 @@ export function ProductLabCardBody({
     };
 
     const executeDecision = (outcome: RnDDecisionOutcome) => {
+      if (!canEdit) {
+        notify('error', 'Недостаточно прав для принятия решения по этой модели');
+        return;
+      }
       if (outcome === 'approve' && !canApproveProd) {
         notify('error', 'Утвердить в производство может только руководитель');
         return;
@@ -1746,61 +1806,65 @@ export function ProductLabCardBody({
           </div>
 
           {/* Поле причины решения и выбор этапа при доработке */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-            <div className="md:col-span-2">
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                Причина решения / комментарий (сохраняется в историю с именем и временем)
-              </label>
-              <input
-                value={decisionReason}
-                onChange={(e) => setDecisionReason(e.target.value)}
-                placeholder="Укажите причину утверждения, доработки или отказа..."
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[14px]"
-              />
-            </div>
+          {canEdit && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <div className="md:col-span-2">
+                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    Причина решения / комментарий (сохраняется в историю с именем и временем)
+                  </label>
+                  <input
+                    value={decisionReason}
+                    onChange={(e) => setDecisionReason(e.target.value)}
+                    placeholder="Укажите причину утверждения, доработки или отказа..."
+                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[14px]"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                При «Доработать» вернуть в этап:
-              </label>
-              <select
-                value={reworkTargetStage}
-                onChange={(e) => setReworkTargetStage(e.target.value as ConceptStage)}
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-semibold text-[13px]"
-              >
-                <option value="SAMPLE">03 Образец (перешить образец)</option>
-                <option value="TEST">04 Тест (повторить проверку)</option>
-                <option value="ANALYSIS">02 Анализ (пересчитать экономику)</option>
-              </select>
-            </div>
-          </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    При «Доработать» вернуть в этап:
+                  </label>
+                  <select
+                    value={reworkTargetStage}
+                    onChange={(e) => setReworkTargetStage(e.target.value as ConceptStage)}
+                    className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-semibold text-[13px]"
+                  >
+                    <option value="SAMPLE">03 Образец (перешить образец)</option>
+                    <option value="TEST">04 Тест (повторить проверку)</option>
+                    <option value="ANALYSIS">02 Анализ (пересчитать экономику)</option>
+                  </select>
+                </div>
+              </div>
 
-          {/* ТРИ КРУПНЫЕ КНОПКИ СО СТР. 6 PDF: УТВЕРДИТЬ | ДОРАБОТАТЬ | ОТКЛОНИТЬ */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-            <button
-              type="button"
-              onClick={() => executeDecision('approve')}
-              className="h-14 rounded-2xl bg-[#E8F5E9] hover:bg-[#16805D] text-[#16805D] hover:text-white border border-[#16805D]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
-            >
-              УТВЕРДИТЬ
-            </button>
+              {/* ТРИ КРУПНЫЕ КНОПКИ СО СТР. 6 PDF: УТВЕРДИТЬ | ДОРАБОТАТЬ | ОТКЛОНИТЬ */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <button
+                  type="button"
+                  onClick={() => executeDecision('approve')}
+                  className="h-14 rounded-2xl bg-[#E8F5E9] hover:bg-[#16805D] text-[#16805D] hover:text-white border border-[#16805D]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                >
+                  УТВЕРДИТЬ
+                </button>
 
-            <button
-              type="button"
-              onClick={() => executeDecision('rework')}
-              className="h-14 rounded-2xl bg-[#FDF3EB] hover:bg-[#D97745] text-[#D97745] hover:text-white border border-[#D97745]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
-            >
-              ДОРАБОТАТЬ
-            </button>
+                <button
+                  type="button"
+                  onClick={() => executeDecision('rework')}
+                  className="h-14 rounded-2xl bg-[#FDF3EB] hover:bg-[#D97745] text-[#D97745] hover:text-white border border-[#D97745]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                >
+                  ДОРАБОТАТЬ
+                </button>
 
-            <button
-              type="button"
-              onClick={() => executeDecision('reject')}
-              className="h-14 rounded-2xl bg-[#F5F5F4] hover:bg-[#DC2626] text-[#171717] hover:text-white border border-[#E8E8E5] font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
-            >
-              ОТКЛОНИТЬ
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => executeDecision('reject')}
+                  className="h-14 rounded-2xl bg-[#F5F5F4] hover:bg-[#DC2626] text-[#171717] hover:text-white border border-[#E8E8E5] font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                >
+                  ОТКЛОНИТЬ
+                </button>
+              </div>
+            </>
+          )}
 
           {/* История принятых решений */}
           {(concept.approvalDecisions || []).length > 0 && (
@@ -1987,26 +2051,38 @@ export function ProductLabCardBody({
     };
 
     const handleExportFactoryPdf = () => {
-      const nextVer = (currentOrder.orderVersion || 1) + (orders.length > 0 ? 1 : 0);
-      const today = new Date().toISOString().slice(0, 10);
-      saveOrderPatch({
-        orderVersion: nextVer,
-        approvedAt: today,
-        internalStatus: 'order_placed',
-      });
-      exportConceptProductionPdf(concept, {
-        factoryName: currentOrder.factoryName,
-        approvedSampleVersion: currentOrder.approvedSampleVersion,
-        materialAndColors: currentOrder.materialAndColors,
-        packColorComposition: currentOrder.packColorComposition || defaultColorComp,
-        unitsPerPack: unitsInOnePack,
-        packsBySize: packsMap,
-        unitPrice: currentOrder.unitPrice || 320,
-        currency: currentOrder.currency || 'RUB',
-        plannedReadyDate: currentOrder.plannedReadyDate || '2027-02-15',
-        paymentTerms: currentOrder.paymentTerms || '30% депозит / 70% перед отгрузкой',
-        orderVersion: nextVer,
-      });
+      const nextVer = canEdit
+        ? (currentOrder.orderVersion || 1) + (orders.length > 0 ? 1 : 0)
+        : currentOrder.orderVersion || 1;
+      if (canEdit) {
+        const today = new Date().toISOString().slice(0, 10);
+        saveOrderPatch({
+          orderVersion: nextVer,
+          approvedAt: today,
+          internalStatus: 'order_placed',
+        });
+      }
+      (exportConceptProductionPdf as any)(
+        concept,
+        {
+          factoryName: currentOrder.factoryName,
+          approvedSampleVersion: currentOrder.approvedSampleVersion,
+          materialAndColors: currentOrder.materialAndColors,
+          packColorComposition: currentOrder.packColorComposition || defaultColorComp,
+          unitsPerPack: unitsInOnePack,
+          packsBySize: packsMap,
+          unitPrice: hasCostAccess ? currentOrder.unitPrice || 320 : 0,
+          currency: currentOrder.currency || 'RUB',
+          plannedReadyDate: currentOrder.plannedReadyDate || '2027-02-15',
+          paymentTerms: currentOrder.paymentTerms || '30% депозит / 70% перед отгрузкой',
+          orderVersion: nextVer,
+        },
+        {
+          ...pdfBlocksConfig,
+          multiCurrency: pdfBlocksConfig.multiCurrency && hasCostAccess,
+          canViewCostPrice: hasCostAccess,
+        }
+      );
       notify(
         'success',
         `Выгружен PDF заказа v${nextVer} (RU / EN / ZH)`,
@@ -2015,6 +2091,10 @@ export function ProductLabCardBody({
     };
 
     const handleExportFactoryExcel = () => {
+      if (!hasCostAccess) {
+        notify('warning', 'Экспорт сметы Excel ограничен правами доступа к себестоимости');
+        return;
+      }
       const ver = currentOrder.orderVersion || 1;
       exportConceptProductionExcel(concept, {
         factoryName: currentOrder.factoryName,
@@ -2122,34 +2202,40 @@ export function ProductLabCardBody({
               <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
                 Цена фабрики за 1 ед. и валюта
               </label>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  disabled={!canEdit}
-                  value={currentOrder.unitPrice ? String(currentOrder.unitPrice) : ''}
-                  onChange={(e) =>
-                    saveOrderPatch({
-                      unitPrice: parseCleanNumber(e.target.value) ?? 0,
-                    })
-                  }
-                  className="flex-1 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
-                />
-                <select
-                  disabled={!canEdit}
-                  value={currentOrder.currency}
-                  onChange={(e) =>
-                    saveOrderPatch({
-                      currency: e.target.value as 'RUB' | 'USD' | 'CNY',
-                    })
-                  }
-                  className="w-20 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-2 font-bold"
-                >
-                  <option value="RUB">RUB</option>
-                  <option value="USD">USD</option>
-                  <option value="CNY">CNY</option>
-                </select>
-              </div>
+              {hasCostAccess ? (
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    disabled={!canEdit}
+                    value={currentOrder.unitPrice ? String(currentOrder.unitPrice) : ''}
+                    onChange={(e) =>
+                      saveOrderPatch({
+                        unitPrice: parseCleanNumber(e.target.value) ?? 0,
+                      })
+                    }
+                    className="flex-1 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
+                  />
+                  <select
+                    disabled={!canEdit}
+                    value={currentOrder.currency}
+                    onChange={(e) =>
+                      saveOrderPatch({
+                        currency: e.target.value as 'RUB' | 'USD' | 'CNY',
+                      })
+                    }
+                    className="w-20 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-2 font-bold"
+                  >
+                    <option value="RUB">RUB</option>
+                    <option value="USD">USD</option>
+                    <option value="CNY">CNY</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-bold text-[#737373]">
+                  Скрыто
+                </div>
+              )}
             </div>
 
             <div>
@@ -2255,7 +2341,9 @@ export function ProductLabCardBody({
                   </td>
                   <td className="py-3.5 px-4 text-[#D97745]">
                     {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()}) · Сумма:{' '}
-                    {totalOrderSum.toLocaleString('ru-RU')} {currentOrder.currency}
+                    {hasCostAccess
+                      ? `${totalOrderSum.toLocaleString('ru-RU')} ${currentOrder.currency}`
+                      : 'Скрыто'}
                   </td>
                 </tr>
               </tfoot>
@@ -2293,14 +2381,16 @@ export function ProductLabCardBody({
                 <FileDown className="h-4 w-4 text-[#B85D35]" />
                 <span>Быстрый PDF</span>
               </button>
-              <button
-                type="button"
-                onClick={handleExportFactoryExcel}
-                className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-[#EAE6DF] bg-[#FAF8F5] hover:border-[#181715] text-[#181715] text-[13px] font-semibold transition cursor-pointer"
-              >
-                <FileDown className="h-4 w-4 text-[#7A756D]" />
-                <span>Скачать Excel (.xlsx)</span>
-              </button>
+              {hasCostAccess && (
+                <button
+                  type="button"
+                  onClick={handleExportFactoryExcel}
+                  className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-[#EAE6DF] bg-[#FAF8F5] hover:border-[#181715] text-[#181715] text-[13px] font-semibold transition cursor-pointer"
+                >
+                  <FileDown className="h-4 w-4 text-[#7A756D]" />
+                  <span>Скачать Excel (.xlsx)</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2324,7 +2414,9 @@ export function ProductLabCardBody({
                 { key: 'enSection' as const, label: 'Секция EN (English)' },
                 { key: 'zhSection' as const, label: 'Секция ZH (Крупный 中文)' },
                 { key: 'photosFrontBack' as const, label: 'Фото (Спереди + Сзади)' },
-                { key: 'multiCurrency' as const, label: 'Валюты (CNY / USD / RUB)' },
+                ...(hasCostAccess
+                  ? [{ key: 'multiCurrency' as const, label: 'Валюты (CNY / USD / RUB)' }]
+                  : []),
                 {
                   key: 'sizeMatrix' as const,
                   label: `Размеры (${prodProfile.sizes[0]}–${prodProfile.sizes[prodProfile.sizes.length - 1]})`,
@@ -2430,6 +2522,7 @@ export function ProductLabCardBody({
             <label className="inline-flex items-center gap-2 font-semibold text-[#171717] cursor-pointer">
               <input
                 type="checkbox"
+                disabled={!canEdit}
                 checked={currentOrder.chineseVerified ?? true}
                 onChange={(e) => saveOrderPatch({ chineseVerified: e.target.checked })}
                 className="h-4 w-4 accent-[#D97745]"
@@ -2439,28 +2532,30 @@ export function ProductLabCardBody({
               </span>
             </label>
 
-            <button
-              type="button"
-              onClick={() => {
-                let updatedConcept = concept;
-                if (orders.length === 0) {
-                  const orderPatch: Partial<ProductConcept> = {
-                    supplierName: currentOrder.factoryName,
-                    productionOrders: [currentOrder],
-                  };
-                  updatedConcept = {
-                    ...concept,
-                    ...orderPatch,
-                  };
-                  onUpdateConcept(concept.id, orderPatch);
-                }
-                onSyncConcept?.(updatedConcept);
-                onChangeStageWithGate(updatedConcept, 'LAUNCH');
-              }}
-              className="h-10 px-5 rounded-xl bg-[#111111] text-white font-bold cursor-pointer"
-            >
-              Перейти к Запуску (07 Запуск) →
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  let updatedConcept = concept;
+                  if (orders.length === 0) {
+                    const orderPatch: Partial<ProductConcept> = {
+                      supplierName: currentOrder.factoryName,
+                      productionOrders: [currentOrder],
+                    };
+                    updatedConcept = {
+                      ...concept,
+                      ...orderPatch,
+                    };
+                    onUpdateConcept(concept.id, orderPatch);
+                  }
+                  onSyncConcept?.(updatedConcept);
+                  onChangeStageWithGate(updatedConcept, 'LAUNCH');
+                }}
+                className="h-10 px-5 rounded-xl bg-[#111111] text-white font-bold cursor-pointer"
+              >
+                Перейти к Запуску (07 Запуск) →
+              </button>
+            )}
           </div>
         </div>
 
@@ -2468,14 +2563,20 @@ export function ProductLabCardBody({
         {inlinePdfConstructorOpen && (
           <PdfConstructorModal
             concept={concept}
+            initialBlocksConfig={{
+              ...pdfBlocksConfig,
+              multiCurrency: pdfBlocksConfig.multiCurrency && hasCostAccess,
+            }}
             onClose={() => setInlinePdfConstructorOpen(false)}
             onSaveToConcept={(patch) => {
               const nextConceptSnapshot: ProductConcept = {
                 ...concept,
                 ...patch,
               };
-              onUpdateConcept(concept.id, patch);
-              onSyncConcept?.(nextConceptSnapshot);
+              if (canEdit) {
+                onUpdateConcept(concept.id, patch);
+                onSyncConcept?.(nextConceptSnapshot);
+              }
               notify('success', 'PDF-спецификация настроена и скачана');
             }}
           />
@@ -2619,19 +2720,21 @@ export function ProductLabCardBody({
             <div className="flex flex-wrap items-center gap-2.5">
               {linkedScenarioModelCode || linkedProduct ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSyncToScenarioCatalog?.({
-                        ...concept,
-                        launchSalesStatus: 'in_sale',
-                        stage: 'LAUNCH',
-                      });
-                    }}
-                    className="h-11 px-4 rounded-xl bg-[#F3EFE8] hover:bg-[#E7E1D6] border border-[#D4CDC2] text-[#171717] text-[12.5px] font-bold cursor-pointer transition"
-                  >
-                    Обновить в Каталоге ({linkedScenarioModelCode || linkedProduct?.sku})
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSyncToScenarioCatalog?.({
+                          ...concept,
+                          launchSalesStatus: 'in_sale',
+                          stage: 'LAUNCH',
+                        });
+                      }}
+                      className="h-11 px-4 rounded-xl bg-[#F3EFE8] hover:bg-[#E7E1D6] border border-[#D4CDC2] text-[#171717] text-[12.5px] font-bold cursor-pointer transition"
+                    >
+                      Обновить в Каталоге ({linkedScenarioModelCode || linkedProduct?.sku})
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>
@@ -2661,25 +2764,27 @@ export function ProductLabCardBody({
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const launchedConcept: ProductConcept = {
-                      ...concept,
-                      launchSalesStatus: 'in_sale',
-                      stage: 'LAUNCH',
-                    };
-                    onUpdateConcept(concept.id, {
-                      launchSalesStatus: 'in_sale',
-                      stage: 'LAUNCH',
-                    });
-                    onSyncToScenarioCatalog?.(launchedConcept);
-                    onCreateProductFromConcept(concept.id);
-                  }}
-                  className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#16805D] text-white text-[13px] font-bold transition cursor-pointer"
-                >
-                  Зафиксировать старт продаж и связать с Каталогом →
-                </button>
+                canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const launchedConcept: ProductConcept = {
+                        ...concept,
+                        launchSalesStatus: 'in_sale',
+                        stage: 'LAUNCH',
+                      };
+                      onUpdateConcept(concept.id, {
+                        launchSalesStatus: 'in_sale',
+                        stage: 'LAUNCH',
+                      });
+                      onSyncToScenarioCatalog?.(launchedConcept);
+                      onCreateProductFromConcept(concept.id);
+                    }}
+                    className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#16805D] text-white text-[13px] font-bold transition cursor-pointer"
+                  >
+                    Зафиксировать старт продаж и связать с Каталогом →
+                  </button>
+                )
               )}
             </div>
           </div>

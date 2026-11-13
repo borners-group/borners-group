@@ -30,6 +30,8 @@ import {
   SevenKanbanStage,
   canUserApproveProduction,
   canUserEditBrand,
+  canUserViewBrandConcept,
+  canUserViewCostPrice,
   validateRnDStageTransition,
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
@@ -85,6 +87,18 @@ export function ProductLabView() {
   } = usePlatform();
 
   const isStrategyMode = false;
+  const hasCostAccess = canUserViewCostPrice(currentUser);
+  const editableBrands = useMemo(
+    () =>
+      (['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'] as const).filter((b) =>
+        canUserEditBrand(currentUser, b)
+      ),
+    [currentUser]
+  );
+  const canEditToolbarBrand =
+    brandFilter !== 'ALL'
+      ? canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter))
+      : editableBrands.length > 0;
 
   const [viewMode, setViewMode] = useState<'kanban' | 'gallery' | 'miro'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
@@ -136,6 +150,7 @@ export function ProductLabView() {
     for (const sm of liveScenarioModels) {
       if (sm.launchStatus === 'В архиве') continue;
       const detectedBrand = normalizeLabBrandCode(detectModelBrandPortfolioLabel(sm));
+      if (!canUserViewBrandConcept(currentUser, detectedBrand)) continue;
       if (
         brandFilter !== 'ALL' &&
         detectedBrand !== normalizeLabBrandCode(brandFilter)
@@ -165,6 +180,7 @@ export function ProductLabView() {
     for (const pr of products) {
       if (pr.isArchived) continue;
       const prBrand = normalizeLabBrandCode(pr.brandId);
+      if (!canUserViewBrandConcept(currentUser, prBrand)) continue;
       if (
         brandFilter !== 'ALL' &&
         prBrand !== normalizeLabBrandCode(brandFilter)
@@ -188,7 +204,7 @@ export function ProductLabView() {
     }
 
     return items;
-  }, [liveScenarioModels, products, brandFilter]);
+  }, [liveScenarioModels, products, brandFilter, currentUser]);
 
   const handleImportModelToBoard = (
     item: (typeof unifiedCatalogItems)[number],
@@ -197,15 +213,28 @@ export function ProductLabView() {
     const patchFromModel = item.scenarioModel
       ? buildConceptPatchFromScenarioModel(item.scenarioModel)
       : null;
+    const resolvedImportBrand = normalizeLabBrandCode(
+      patchFromModel?.brandId || item.brandId
+    );
+    if (!canUserEditBrand(currentUser, resolvedImportBrand)) {
+      notify('error', 'Недостаточно прав для добавления карточки этого бренда');
+      return;
+    }
+    const rawIdeaDescription =
+      patchFromModel?.ideaDescription ||
+      (hasCostAccess
+        ? `${item.subtitle} (${item.code}) — розница ${item.retailPriceRub} ₽, себестоимость ${item.unitCostRub} ₽`
+        : `${item.subtitle} (${item.code}) — розница ${item.retailPriceRub} ₽`);
+    const sanitizedIdeaDescription = hasCostAccess
+      ? rawIdeaDescription
+      : rawIdeaDescription.replace(/,?\s*себестоимость\s+[\d\s.,]+\s*₽/gi, '');
     const created = createConcept({
       name: patchFromModel?.name || item.name,
       brandId: patchFromModel?.brandId || item.brandId,
       stage,
       developmentType: 'new_construction',
       whatAttracted: `${item.subtitle} · ${item.materials}`,
-      ideaDescription:
-        patchFromModel?.ideaDescription ||
-        `${item.subtitle} (${item.code}) — розница ${item.retailPriceRub} ₽, себестоимость ${item.unitCostRub} ₽`,
+      ideaDescription: sanitizedIdeaDescription,
       ownerId: currentUser.id,
       targetLaunchDate: '2027-03-15',
       imageUrl: patchFromModel?.imageUrl || item.imageUrl,
@@ -290,18 +319,23 @@ export function ProductLabView() {
   } | null>(null);
 
   useEffect(() => {
+    setActivePhotoIndex(0);
+  }, [selectedConceptId]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (zoomPhotoUrl) setZoomPhotoUrl(null);
         else if (pdfConstructorOpen) setPdfConstructorOpen(false);
         else if (stageGateModal) setStageGateModal(null);
+        else if (addFromCatalogOpen) setAddFromCatalogOpen(false);
         else if (quickIdeaOpen) setQuickIdeaOpen(false);
         else if (selectedConceptId) setSelectedConceptId(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [zoomPhotoUrl, pdfConstructorOpen, stageGateModal, quickIdeaOpen, selectedConceptId, setSelectedConceptId]);
+  }, [zoomPhotoUrl, pdfConstructorOpen, stageGateModal, addFromCatalogOpen, quickIdeaOpen, selectedConceptId, setSelectedConceptId]);
 
   const [gateFillForm, setGateFillForm] = useState({
     ownerId: currentUser.id,
@@ -320,15 +354,19 @@ export function ProductLabView() {
   const accessibleConcepts = useMemo(() => {
     return concepts.filter((c) => {
       if (c.isArchived) return false;
+      const normBrand = normalizeLabBrandCode(c.brandId);
+      if (!canUserViewBrandConcept(currentUser, normBrand)) {
+        return false;
+      }
       if (
         brandFilter !== 'ALL' &&
-        normalizeLabBrandCode(c.brandId) !== normalizeLabBrandCode(brandFilter)
+        normBrand !== normalizeLabBrandCode(brandFilter)
       ) {
         return false;
       }
       return true;
     });
-  }, [concepts, brandFilter]);
+  }, [concepts, brandFilter, currentUser]);
 
   const filteredConcepts = useMemo(() => {
     return accessibleConcepts.filter((c) => {
@@ -383,6 +421,10 @@ export function ProductLabView() {
 
   // Короткая проверка перед сменой этапа (Стр. 3 и Сценарий №3 PDF)
   const attemptStageTransition = (concept: ProductConcept, targetStage: ConceptStage) => {
+    if (!canUserEditBrand(currentUser, normalizeLabBrandCode(concept.brandId))) {
+      notify('error', 'Недостаточно прав для изменения этапа этой модели');
+      return;
+    }
     const normTarget = normalizeConceptStageToSeven(targetStage);
     const normCurrent = normalizeConceptStageToSeven(concept.stage);
 
@@ -436,17 +478,29 @@ export function ProductLabView() {
       targetStage,
       `Переход на этап «${CONCEPT_STAGE_LABELS_RU[targetStage]}»`
     );
-    if (normTarget === 'PRODUCTION' || normTarget === 'LAUNCH') {
+    if (
+      normTarget === 'PRODUCTION' ||
+      normTarget === 'LAUNCH' ||
+      (targetStage === 'REJECTED' &&
+        Boolean(
+          concept.linkedScenarioModelId ||
+            findLinkedScenarioModelForConcept(concept, liveScenarioModels)
+        ))
+    ) {
       handleSyncConceptToCatalog(
         {
           ...concept,
           stage: targetStage,
-          ...(normTarget === 'LAUNCH' ? { launchSalesStatus: 'in_sale' } : {}),
+          ...(normTarget === 'LAUNCH' && targetStage !== 'REJECTED'
+            ? { launchSalesStatus: 'in_sale' }
+            : {}),
         },
         true
       );
     }
-    setActiveCardTab(stageToTabId(normTarget));
+    if (targetStage !== 'REJECTED') {
+      setActiveCardTab(stageToTabId(normTarget));
+    }
   };
 
   const handleConfirmStageGateModal = () => {
@@ -688,11 +742,21 @@ export function ProductLabView() {
       ...patch,
     };
     updateConcept(concept.id, patch);
-    if (normalizedTarget === 'PRODUCTION' || normalizedTarget === 'LAUNCH') {
+    if (
+      normalizedTarget === 'PRODUCTION' ||
+      normalizedTarget === 'LAUNCH' ||
+      (targetStage === 'REJECTED' &&
+        Boolean(
+          mergedConcept.linkedScenarioModelId ||
+            findLinkedScenarioModelForConcept(mergedConcept, liveScenarioModels)
+        ))
+    ) {
       handleSyncConceptToCatalog(mergedConcept, true);
     }
     setStageGateModal(null);
-    setActiveCardTab(stageToTabId(normalizedTarget));
+    if (targetStage !== 'REJECTED') {
+      setActiveCardTab(stageToTabId(normalizedTarget));
+    }
     notify('success', `Статус изменён: «${CONCEPT_STAGE_LABELS_RU[targetStage]}»`);
   };
 
@@ -734,19 +798,30 @@ export function ProductLabView() {
     );
 
   const handleDeleteConceptEverywhere = (concept: ProductConcept) => {
+    if (!canUserEditBrand(currentUser, normalizeLabBrandCode(concept.brandId))) {
+      notify('error', 'Недостаточно прав для удаления карточки этого бренда');
+      return;
+    }
+
     const linked =
       findLinkedScenarioModelForConcept(concept, liveScenarioModels) ||
       (concept.linkedScenarioModelId
         ? liveScenarioModels.find((m) => m.id === concept.linkedScenarioModelId) || null
         : null);
 
-    if (
-      linked &&
-      !linked.id.startsWith('s1-') &&
-      !linked.id.startsWith('liskani-2027-') &&
-      !linked.id.startsWith('akusha-2027-') &&
-      !linked.id.startsWith('fukai-')
-    ) {
+    const isSystemPortfolioModel =
+      linked !== null &&
+      (linked.id.startsWith('scen-brn-') ||
+        /^scen-liskani-0\d{2}$/.test(linked.id) ||
+        /^scen-akusha-0\d{2}$/.test(linked.id) ||
+        linked.id.startsWith('scen-wb-') ||
+        linked.id.startsWith('scen-acting-') ||
+        linked.id.startsWith('s1-') ||
+        linked.id.startsWith('liskani-2027-') ||
+        linked.id.startsWith('akusha-2027-') ||
+        linked.id.startsWith('fukai-'));
+
+    if (linked && !isSystemPortfolioModel) {
       markModelAsDeletedInStorage(linked);
       updateModelsBatch((prev) => deleteModelFromPortfolio(prev, linked));
     }
@@ -759,6 +834,11 @@ export function ProductLabView() {
 
   // Быстрое создание новой идеи (Сценарий №1 и №2 со Стр. 10 PDF)
   const handleQuickCreateIdea = (openAfterSave = true) => {
+    const cleanBrand = normalizeLabBrandCode(quickIdeaForm.brandId);
+    if (!canUserEditBrand(currentUser, cleanBrand)) {
+      notify('error', 'Недостаточно прав для создания идеи этого бренда');
+      return;
+    }
     if (!quickIdeaForm.name.trim() && !quickIdeaForm.comment.trim()) {
       notify('warning', 'Укажите название или короткую суть идеи');
       return;
@@ -767,8 +847,6 @@ export function ProductLabView() {
       quickIdeaForm.name.trim() ||
       quickIdeaForm.comment.trim().slice(0, 60) ||
       'Новая продуктовая идея';
-
-    const cleanBrand = normalizeLabBrandCode(quickIdeaForm.brandId);
     const galleryPhotos = quickIdeaForm.images.map((url, idx) => ({
       id: `ph-${Date.now()}-${idx}`,
       url,
@@ -881,7 +959,7 @@ export function ProductLabView() {
 
   const canEditActiveConcept =
     activeConcept !== null &&
-    canUserEditBrand(currentUser, activeConcept.brandId);
+    canUserEditBrand(currentUser, normalizeLabBrandCode(activeConcept.brandId));
 
   // Все фотографии открытой карточки (главное фото + лента миниатюр, Стр. 4 и 9 PDF)
   const activeGalleryPhotos = useMemo(() => {
@@ -900,6 +978,11 @@ export function ProductLabView() {
     }
     return [];
   }, [activeConcept]);
+
+  const safePhotoIndex = Math.min(
+    activePhotoIndex,
+    Math.max(0, activeGalleryPhotos.length - 1)
+  );
 
   const appendPhotosToActiveConcept = (dataUrls: string[]) => {
     if (!activeConcept || dataUrls.length === 0) return;
@@ -1052,13 +1135,15 @@ export function ProductLabView() {
               Каталог SKU →
             </button>
 
-            {brandFilter !== 'ALL' && accessibleConcepts.length > 0 && (
+            {brandFilter !== 'ALL' &&
+              canEditToolbarBrand &&
+              accessibleConcepts.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   const targetCode = normalizeLabBrandCode(brandFilter);
                   const res = syncAllBrandConceptsToScenarioPortfolio(
-                    concepts,
+                    accessibleConcepts,
                     targetCode,
                     liveScenarioModels,
                     liveScenarios
@@ -1084,21 +1169,39 @@ export function ProductLabView() {
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setAddFromCatalogOpen(true)}
-              className="h-9 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] px-3.5 text-[12px] font-semibold transition cursor-pointer"
-            >
-              Из каталога ({unifiedCatalogItems.length})
-            </button>
+            {canEditToolbarBrand && (
+              <button
+                type="button"
+                onClick={() => setAddFromCatalogOpen(true)}
+                className="h-9 rounded-[9px] bg-white hover:border-[#141413] border-[1.5px] border-[#CECDC4] text-[#141413] px-3.5 text-[12px] font-semibold transition cursor-pointer"
+              >
+                Из каталога ({unifiedCatalogItems.length})
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setQuickIdeaOpen(true)}
-              className="h-9 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white px-4 text-[12px] font-semibold transition cursor-pointer"
-            >
-              + Новая идея
-            </button>
+            {canEditToolbarBrand && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    !canUserEditBrand(
+                      currentUser,
+                      normalizeLabBrandCode(quickIdeaForm.brandId)
+                    ) &&
+                    editableBrands.length > 0
+                  ) {
+                    setQuickIdeaForm((prev) => ({
+                      ...prev,
+                      brandId: editableBrands[0],
+                    }));
+                  }
+                  setQuickIdeaOpen(true);
+                }}
+                className="h-9 rounded-[9px] bg-[#141413] hover:bg-[#2A2A28] text-white px-4 text-[12px] font-semibold transition cursor-pointer"
+              >
+                + Новая идея
+              </button>
+            )}
           </div>
         </div>
 
@@ -1236,12 +1339,20 @@ export function ProductLabView() {
                       {stageItems.map((concept) => {
                         const statusLine = getBoardCardStatusLine(concept, stage);
                         const hasPhoto = Boolean(concept.imageUrl && concept.imageUrl.trim());
+                        const canEditCard = canUserEditBrand(
+                          currentUser,
+                          normalizeLabBrandCode(concept.brandId)
+                        );
 
                         return (
                           <div
                             key={concept.id}
-                            draggable
+                            draggable={canEditCard}
                             onDragStart={(e) => {
+                              if (!canEditCard) {
+                                e.preventDefault();
+                                return;
+                              }
                               setDraggedConceptId(concept.id);
                               e.dataTransfer.effectAllowed = 'move';
                               e.dataTransfer.setData('text/plain', concept.id);
@@ -1249,17 +1360,19 @@ export function ProductLabView() {
                             onClick={() => openConceptCard(concept)}
                             className="group relative bg-white rounded-[8px] border border-[#EAE6DF] hover:border-[#CBC5B9] hover:shadow-xs overflow-hidden cursor-pointer transition flex flex-col"
                           >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteConceptEverywhere(concept);
-                              }}
-                              title="Удалить карточку"
-                              className="opacity-85 group-hover:opacity-100 absolute top-2.5 right-2.5 z-10 h-7 w-7 rounded-[7px] bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#7A756D] hover:text-[#B83E3E] hover:border-[#B83E3E] shadow-2xs transition cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            {canEditCard && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteConceptEverywhere(concept);
+                                }}
+                                title="Удалить карточку"
+                                className="opacity-85 group-hover:opacity-100 absolute top-2.5 right-2.5 z-10 h-7 w-7 rounded-[7px] bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#7A756D] hover:text-[#B83E3E] hover:border-[#B83E3E] shadow-2xs transition cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
 
                             {/* Крупное изображение (~60% высоты карточки) */}
                             <div className="h-[196px] w-full bg-[#F3EFE8] border-b border-[#EAE6DF] overflow-hidden flex items-center justify-center">
@@ -1331,25 +1444,27 @@ export function ProductLabView() {
                                   {statusLine.text}
                                 </span>
 
-                                <select
-                                  value={stage}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    attemptStageTransition(
-                                      concept,
-                                      e.target.value as ConceptStage
-                                    );
-                                  }}
-                                  title="Переместить в этап..."
-                                  className="hidden group-hover:block focus:block text-[11px] text-[#181715] bg-[#FAF8F5] border border-[#DCD6CC] rounded-[5px] px-1.5 py-0.5 cursor-pointer transition max-w-[118px] truncate"
-                                >
-                                  {SEVEN_KANBAN_STAGES.map((st) => (
-                                    <option key={st} value={st}>
-                                      → {CONCEPT_STAGE_LABELS_RU[st].replace(/^\d+\s*[·-]\s*/, '')}
-                                    </option>
-                                  ))}
-                                </select>
+                                {canEditCard && (
+                                  <select
+                                    value={stage}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      attemptStageTransition(
+                                        concept,
+                                        e.target.value as ConceptStage
+                                      );
+                                    }}
+                                    title="Переместить в этап..."
+                                    className="hidden group-hover:block focus:block text-[11px] text-[#181715] bg-[#FAF8F5] border border-[#DCD6CC] rounded-[5px] px-1.5 py-0.5 cursor-pointer transition max-w-[118px] truncate"
+                                  >
+                                    {SEVEN_KANBAN_STAGES.map((st) => (
+                                      <option key={st} value={st}>
+                                        → {CONCEPT_STAGE_LABELS_RU[st].replace(/^\d+\s*[·-]\s*/, '')}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1371,23 +1486,29 @@ export function ProductLabView() {
             {filteredConcepts.map((concept) => {
               const stage = normalizeConceptStageToSeven(concept.stage);
               const statusLine = getBoardCardStatusLine(concept, stage);
+              const canEditCard = canUserEditBrand(
+                currentUser,
+                normalizeLabBrandCode(concept.brandId)
+              );
               return (
                 <div
                   key={concept.id}
                   onClick={() => openConceptCard(concept)}
                   className="group relative bg-white rounded-2xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-3 cursor-pointer transition shadow-2xs"
                 >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteConceptEverywhere(concept);
-                    }}
-                    title="Удалить карточку"
-                    className=" absolute top-6 right-6 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] shadow-2xs transition cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {canEditCard && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteConceptEverywhere(concept);
+                      }}
+                      title="Удалить карточку"
+                      className=" absolute top-6 right-6 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#DCD6CC] flex items-center justify-center text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] shadow-2xs transition cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <div className="h-56 w-full rounded-xl bg-[#EFECE8] border border-[#E8E8E5] flex items-center justify-center p-3">
                     {concept.imageUrl ? (
                       <img
@@ -1441,6 +1562,7 @@ export function ProductLabView() {
         <div
           onClick={() => setSelectedConceptId(null)}
           onPaste={(e) => {
+            if (!canEditActiveConcept) return;
             const items = Array.from(e.clipboardData?.items || []);
             items.forEach((item) => {
               if (item.type.startsWith('image/')) {
@@ -1470,6 +1592,79 @@ export function ProductLabView() {
                         normalizeConceptStageToSeven(activeConcept.stage)
                       ].toUpperCase()}
                     </span>
+                    {canEditActiveConcept && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const savePatch: Partial<ProductConcept> = {
+                            name: activeConcept.name,
+                            whatAttracted: activeConcept.whatAttracted,
+                            ideaDescription: activeConcept.ideaDescription,
+                          };
+                          const updatedSnapshot: ProductConcept = {
+                            ...activeConcept,
+                            ...savePatch,
+                          };
+                          updateConcept(activeConcept.id, savePatch);
+                          if (shouldAutoSyncConcept(updatedSnapshot)) {
+                            handleSyncConceptToCatalog(updatedSnapshot, true);
+                          }
+                          notify(
+                            'success',
+                            '✓ Карточка сохранена',
+                            `${activeConcept.code} · ${activeConcept.name}`
+                          );
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F5E9] hover:bg-[#D1EBD5] text-[#16805D] text-[11px] font-bold normal-case transition cursor-pointer"
+                      >
+                        <Check className="h-3 w-3" />
+                        Сохранено
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Крупный редактируемый заголовок модели */}
+                  <input
+                    disabled={!canEditActiveConcept}
+                    value={activeConcept.name}
+                    onChange={(e) =>
+                      updateConcept(activeConcept.id, { name: e.target.value })
+                    }
+                    className="w-full text-[26px] md:text-[32px] font-bold tracking-tight text-[#171717] bg-transparent border-b border-transparent hover:border-[#E8E8E5] focus:border-[#171717] outline-none pb-1"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {canEditActiveConcept && (
+                    <button
+                      type="button"
+                      onClick={() => handleSyncConceptToCatalog(activeConcept)}
+                      className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
+                    >
+                      <span>
+                        {activeLinkedScenarioModel
+                          ? `✓ Обновить в Каталоге (${activeLinkedScenarioModel.code})`
+                          : '+ В Каталог SKU и План 2027'}
+                      </span>
+                    </button>
+                  )}
+
+                  {activeLinkedScenarioModel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedConceptId(null);
+                        navigateTo('launch-calendar', {
+                          brandId: normalizeLabBrandCode(activeConcept.brandId),
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#FAF8F5] hover:bg-[#EFECE6] border border-[#CFC8BC] text-[#171717] text-[12.5px] font-bold transition cursor-pointer"
+                    >
+                      <span>02 · Продажи →</span>
+                    </button>
+                  )}
+
+                  {canEditActiveConcept && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1492,79 +1687,12 @@ export function ProductLabView() {
                           `${activeConcept.code} · ${activeConcept.name}`
                         );
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F5E9] hover:bg-[#D1EBD5] text-[#16805D] text-[11px] font-bold normal-case transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
                     >
-                      <Check className="h-3 w-3" />
-                      Сохранено
-                    </button>
-                  </div>
-
-                  {/* Крупный редактируемый заголовок модели */}
-                  <input
-                    disabled={!canEditActiveConcept}
-                    value={activeConcept.name}
-                    onChange={(e) =>
-                      updateConcept(activeConcept.id, { name: e.target.value })
-                    }
-                    className="w-full text-[26px] md:text-[32px] font-bold tracking-tight text-[#171717] bg-transparent border-b border-transparent hover:border-[#E8E8E5] focus:border-[#171717] outline-none pb-1"
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleSyncConceptToCatalog(activeConcept)}
-                    className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
-                  >
-                    <span>
-                      {activeLinkedScenarioModel
-                        ? `✓ Обновить в Каталоге (${activeLinkedScenarioModel.code})`
-                        : '+ В Каталог SKU и План 2027'}
-                    </span>
-                  </button>
-
-                  {activeLinkedScenarioModel && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedConceptId(null);
-                        navigateTo('launch-calendar', {
-                          brandId: normalizeLabBrandCode(activeConcept.brandId),
-                        });
-                      }}
-                      className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#FAF8F5] hover:bg-[#EFECE6] border border-[#CFC8BC] text-[#171717] text-[12.5px] font-bold transition cursor-pointer"
-                    >
-                      <span>02 · Продажи →</span>
+                      <Check className="h-4 w-4" />
+                      <span>Сохранить карточку</span>
                     </button>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const savePatch: Partial<ProductConcept> = {
-                        name: activeConcept.name,
-                        whatAttracted: activeConcept.whatAttracted,
-                        ideaDescription: activeConcept.ideaDescription,
-                      };
-                      const updatedSnapshot: ProductConcept = {
-                        ...activeConcept,
-                        ...savePatch,
-                      };
-                      updateConcept(activeConcept.id, savePatch);
-                      if (shouldAutoSyncConcept(updatedSnapshot)) {
-                        handleSyncConceptToCatalog(updatedSnapshot, true);
-                      }
-                      notify(
-                        'success',
-                        '✓ Карточка сохранена',
-                        `${activeConcept.code} · ${activeConcept.name}`
-                      );
-                    }}
-                    className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>Сохранить карточку</span>
-                  </button>
 
                   <button
                     type="button"
@@ -1575,16 +1703,18 @@ export function ProductLabView() {
                     <span>Выгрузить в PDF (Конструктор · 中文 + ₽/$/¥)</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleDeleteConceptEverywhere(activeConcept);
-                    }}
-                    className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>Удалить</span>
-                  </button>
+                  {canEditActiveConcept && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteConceptEverywhere(activeConcept);
+                      }}
+                      className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Удалить</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -1606,6 +1736,7 @@ export function ProductLabView() {
                 {/* ЛЕВАЯ КОЛОНКА (7/12): Большое главное фото + лента миниатюр + Drag&Drop/Paste/Upload */}
                 <div
                   onDragOver={(e) => {
+                    if (!canEditActiveConcept) return;
                     e.preventDefault();
                     setIsDraggingPhotoOverCard(true);
                   }}
@@ -1613,6 +1744,7 @@ export function ProductLabView() {
                   onDrop={(e) => {
                     e.preventDefault();
                     setIsDraggingPhotoOverCard(false);
+                    if (!canEditActiveConcept) return;
                     const files = Array.from(e.dataTransfer.files || []).filter((f) =>
                       f.type.startsWith('image/')
                     );
@@ -1630,14 +1762,14 @@ export function ProductLabView() {
                 >
                   {/* Крупное главное фото */}
                   <div className="relative h-[340px] w-full rounded-2xl bg-[#EFECE8] border border-[#E8E8E5] overflow-hidden flex items-center justify-center group">
-                    {activeGalleryPhotos[activePhotoIndex]?.url ? (
+                    {activeGalleryPhotos[safePhotoIndex]?.url ? (
                       <>
                         <img
-                          src={resolvePublicAssetUrl(activeGalleryPhotos[activePhotoIndex].url)}
+                          src={resolvePublicAssetUrl(activeGalleryPhotos[safePhotoIndex].url)}
                           alt={activeConcept.name}
                           onClick={() =>
                             setZoomPhotoUrl(
-                              activeGalleryPhotos[activePhotoIndex]?.url || null
+                              activeGalleryPhotos[safePhotoIndex]?.url || null
                             )
                           }
                           className="h-full w-full object-contain p-3 cursor-zoom-in"
@@ -1646,7 +1778,7 @@ export function ProductLabView() {
                           type="button"
                           onClick={() =>
                             setZoomPhotoUrl(
-                              activeGalleryPhotos[activePhotoIndex]?.url || null
+                              activeGalleryPhotos[safePhotoIndex]?.url || null
                             )
                           }
                           className="opacity-0 group-hover:opacity-100 absolute bottom-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/75 text-white text-[12px] font-semibold cursor-pointer transition"
@@ -1670,7 +1802,7 @@ export function ProductLabView() {
                   {/* Лента миниатюр + управление порядком / обложкой + кнопка «Добавить фото» */}
                   <div className="flex flex-wrap items-center gap-2.5">
                     {activeGalleryPhotos.map((ph, idx) => {
-                      const isCurrent = idx === activePhotoIndex;
+                      const isCurrent = idx === safePhotoIndex;
                       const isCover = idx === 0;
                       return (
                         <div
@@ -2043,72 +2175,90 @@ export function ProductLabView() {
 
             {/* НИЖНЯЯ ПАНЕЛЬ СОХРАНЕНИЯ И УДАЛЕНИЯ КАРТОЧКИ */}
             <div className="rounded-2xl bg-white border-[1.5px] border-[#CFC8BC] p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  handleDeleteConceptEverywhere(activeConcept);
-                }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Удалить карточку</span>
-              </button>
+              {canEditActiveConcept ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteConceptEverywhere(activeConcept);
+                  }}
+                  className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-semibold transition cursor-pointer"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Удалить карточку</span>
+                </button>
+              ) : (
+                <span className="text-[12.5px] text-[#737373]">
+                  Режим просмотра карточки
+                </span>
+              )}
 
               <div className="flex flex-wrap items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const savePatch: Partial<ProductConcept> = {
-                      name: activeConcept.name,
-                      whatAttracted: activeConcept.whatAttracted,
-                      ideaDescription: activeConcept.ideaDescription,
-                    };
-                    const updatedSnapshot: ProductConcept = {
-                      ...activeConcept,
-                      ...savePatch,
-                    };
-                    updateConcept(activeConcept.id, savePatch);
-                    if (shouldAutoSyncConcept(updatedSnapshot)) {
-                      handleSyncConceptToCatalog(updatedSnapshot, true);
-                    }
-                    notify(
-                      'success',
-                      '✓ Карточка сохранена',
-                      `${activeConcept.code} · ${activeConcept.name}`
-                    );
-                  }}
-                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13.5px] font-bold transition cursor-pointer shadow-xs"
-                >
-                  <Check className="h-4 w-4" />
-                  <span>Сохранить карточку</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const savePatch: Partial<ProductConcept> = {
-                      name: activeConcept.name,
-                      whatAttracted: activeConcept.whatAttracted,
-                      ideaDescription: activeConcept.ideaDescription,
-                    };
-                    const updatedSnapshot: ProductConcept = {
-                      ...activeConcept,
-                      ...savePatch,
-                    };
-                    updateConcept(activeConcept.id, savePatch);
-                    if (shouldAutoSyncConcept(updatedSnapshot)) {
-                      handleSyncConceptToCatalog(updatedSnapshot, true);
-                    }
-                    notify(
-                      'success',
-                      '✓ Карточка сохранена',
-                      `${activeConcept.code} · ${activeConcept.name}`
-                    );
-                    setSelectedConceptId(null);
-                  }}
-                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13.5px] font-bold transition cursor-pointer"
-                >
-                  <span>Сохранить и закрыть</span>
-                </button>
+                {canEditActiveConcept ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const savePatch: Partial<ProductConcept> = {
+                          name: activeConcept.name,
+                          whatAttracted: activeConcept.whatAttracted,
+                          ideaDescription: activeConcept.ideaDescription,
+                        };
+                        const updatedSnapshot: ProductConcept = {
+                          ...activeConcept,
+                          ...savePatch,
+                        };
+                        updateConcept(activeConcept.id, savePatch);
+                        if (shouldAutoSyncConcept(updatedSnapshot)) {
+                          handleSyncConceptToCatalog(updatedSnapshot, true);
+                        }
+                        notify(
+                          'success',
+                          '✓ Карточка сохранена',
+                          `${activeConcept.code} · ${activeConcept.name}`
+                        );
+                      }}
+                      className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13.5px] font-bold transition cursor-pointer shadow-xs"
+                    >
+                      <Check className="h-4 w-4" />
+                      <span>Сохранить карточку</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const savePatch: Partial<ProductConcept> = {
+                          name: activeConcept.name,
+                          whatAttracted: activeConcept.whatAttracted,
+                          ideaDescription: activeConcept.ideaDescription,
+                        };
+                        const updatedSnapshot: ProductConcept = {
+                          ...activeConcept,
+                          ...savePatch,
+                        };
+                        updateConcept(activeConcept.id, savePatch);
+                        if (shouldAutoSyncConcept(updatedSnapshot)) {
+                          handleSyncConceptToCatalog(updatedSnapshot, true);
+                        }
+                        notify(
+                          'success',
+                          '✓ Карточка сохранена',
+                          `${activeConcept.code} · ${activeConcept.name}`
+                        );
+                        setSelectedConceptId(null);
+                      }}
+                      className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13.5px] font-bold transition cursor-pointer"
+                    >
+                      <span>Сохранить и закрыть</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConceptId(null)}
+                    className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13.5px] font-bold transition cursor-pointer"
+                  >
+                    <span>Закрыть</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2221,11 +2371,21 @@ export function ProductLabView() {
                     }
                     className="w-full h-11 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] px-3 font-bold"
                   >
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="FUKAI">FUKAI</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
+                    {editableBrands.includes('BORNERS') && (
+                      <option value="BORNERS">BORNERS</option>
+                    )}
+                    {editableBrands.includes('NA_TELE') && (
+                      <option value="NA_TELE">НА ТЕЛЕ</option>
+                    )}
+                    {editableBrands.includes('FUKAI') && (
+                      <option value="FUKAI">FUKAI</option>
+                    )}
+                    {editableBrands.includes('AKUSHA') && (
+                      <option value="AKUSHA">AKUSHA</option>
+                    )}
+                    {editableBrands.includes('LISKANI') && (
+                      <option value="LISKANI">LISKANI</option>
+                    )}
                   </select>
                 </div>
 
@@ -2701,18 +2861,24 @@ export function ProductLabView() {
                       <label className="block text-[12px] font-semibold text-[#737373] mb-1">
                         Предложение на серию (₽/шт.)
                       </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={gateFillForm.sampleUnitCost}
-                        onChange={(e) =>
-                          setGateFillForm({
-                            ...gateFillForm,
-                            sampleUnitCost: e.target.value.replace(/[^\d]/g, ''),
-                          })
-                        }
-                        className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
-                      />
+                      {hasCostAccess ? (
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={gateFillForm.sampleUnitCost}
+                          onChange={(e) =>
+                            setGateFillForm({
+                              ...gateFillForm,
+                              sampleUnitCost: e.target.value.replace(/[^\d]/g, ''),
+                            })
+                          }
+                          className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                        />
+                      ) : (
+                        <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center text-[13px] font-semibold text-[#737373]">
+                          Скрыто
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

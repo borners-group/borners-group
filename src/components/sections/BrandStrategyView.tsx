@@ -10,8 +10,10 @@ import {
 import { usePlatform } from '@/context/PlatformContext';
 import { ApprovalStatus, BrandFilter, StrategyBlock } from '@/types/platform';
 import {
+  canUserAccessSection,
   canUserEditApprovedStrategy,
   canUserEditBrand,
+  canUserViewCostPrice,
   canUserViewFinance,
   formatCompactRub,
 } from '@/lib/finance';
@@ -125,6 +127,7 @@ export function BrandPortfolioView() {
   });
 
   const hasFinance = canUserViewFinance(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
   const canCreateBrand =
     platformMode === 'management' &&
     (currentUser.role === 'Owner' || currentUser.role === 'Admin');
@@ -287,7 +290,7 @@ export function BrandPortfolioView() {
                       </h2>
                     </div>
                     <span className="px-2.5 py-1 rounded-[4px] bg-black/55 backdrop-blur-xs text-[11px] font-mono uppercase tracking-[0.14em]">
-                      Маржа {brand.targetMarginPct}%
+                      Маржа {hasFinance && hasCost ? `${brand.targetMarginPct}%` : 'Скрыто'}
                     </span>
                   </div>
                 </div>
@@ -326,7 +329,7 @@ export function BrandPortfolioView() {
                         Целевая маржа
                       </div>
                       <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
-                        {hasFinance ? `${brand.targetMarginPct}%` : 'Скрыто'}
+                        {hasFinance && hasCost ? `${brand.targetMarginPct}%` : 'Скрыто'}
                       </div>
                     </div>
                     <div className="px-3">
@@ -412,8 +415,12 @@ export function BrandPortfolioView() {
             </tr>
             <tr>
               <td className="py-4 px-6 font-semibold text-[#171717]">Ценовой коридор и маржа</td>
-              <td className="py-4 px-6 font-semibold text-[#171717]">1 690 – 4 990 ₽ · 72%</td>
-              <td className="py-4 px-6 font-semibold text-[#171717]">1 490 – 4 490 ₽ · 75%</td>
+              <td className="py-4 px-6 font-semibold text-[#171717]">
+                1 690 – 4 990 ₽{hasCost ? ' · 72%' : ''}
+              </td>
+              <td className="py-4 px-6 font-semibold text-[#171717]">
+                1 490 – 4 490 ₽{hasCost ? ' · 75%' : ''}
+              </td>
             </tr>
             <tr>
               <td className="py-4 px-6 font-semibold text-[#171717]">Визуальный код</td>
@@ -598,6 +605,8 @@ export function BrandStrategyView() {
   const canEditThisBrand =
     platformMode === 'management' && canUserEditBrand(currentUser, activeBrand.code);
   const canEditApproved = canUserEditApprovedStrategy(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
+  const canAccessStrategyDeck = canUserAccessSection(currentUser, 'brand-strategy');
 
   const openEditor = (block: StrategyBlock) => {
     setEditingBlock(block);
@@ -676,12 +685,12 @@ export function BrandStrategyView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {draftModules.strategyPresentationCard && (
+            {draftModules.strategyPresentationCard && canAccessStrategyDeck && (
               <button
                 onClick={() => setPlatformMode('strategy')}
                 className="h-9 px-4 rounded-[10px] bg-[#1E3A5F] text-white text-[12.5px] font-semibold hover:bg-[#162C49] transition cursor-pointer"
               >
-                Презентация стратегии (16 слайдов)
+                Презентация стратегии (8 слайдов)
               </button>
             )}
 
@@ -705,7 +714,8 @@ export function BrandStrategyView() {
                 Стратегия бренда: {activeBrand.name} (14 блоков ДНК)
               </h1>
               <p className="text-[13.5px] text-[#6E6E73] mt-1">
-                {activeBrand.tagline} · целевая валовая маржа {activeBrand.targetMarginPct}%
+                {activeBrand.tagline}
+                {hasCost ? ` · целевая валовая маржа ${activeBrand.targetMarginPct}%` : ''}
               </p>
             </div>
 

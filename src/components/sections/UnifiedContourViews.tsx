@@ -48,12 +48,114 @@ import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import { safeGetStorageJson, safeSetStorageJson } from '@/lib/safeStorage';
 import { formatLabBrandLabel } from '@/lib/rndCatalogSync';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
-import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurementMvpWorkbench';
 import { PeakOwnMoneyChartPanel } from '@/components/sections/PeakOwnMoneyChartPanel';
 import { RoadmapTasksView } from '@/components/sections/ManagementAndSystemViews';
 import { FinanceView } from '@/components/sections/FinanceAndImportViews';
+
+interface StoredFinanceContourParams {
+  initialCashMln?: number;
+  wbLagMonths?: number;
+  whatIfPriceDelta?: number;
+  whatIfCostDelta?: number;
+  whatIfMpAdsDelta?: number;
+}
+
+function readStoredFinanceContourParams(): StoredFinanceContourParams {
+  return (
+    safeGetStorageJson<StoredFinanceContourParams>('borners_finance_contour_params_v1') || {}
+  );
+}
+
+function writeStoredFinanceContourParams(patch: Partial<StoredFinanceContourParams>): void {
+  const prev = readStoredFinanceContourParams();
+  const next: StoredFinanceContourParams = {
+    initialCashMln:
+      typeof patch.initialCashMln === 'number'
+        ? patch.initialCashMln
+        : typeof prev.initialCashMln === 'number'
+        ? prev.initialCashMln
+        : 0,
+    wbLagMonths:
+      typeof patch.wbLagMonths === 'number'
+        ? patch.wbLagMonths
+        : typeof prev.wbLagMonths === 'number'
+        ? prev.wbLagMonths
+        : 0,
+    whatIfPriceDelta:
+      typeof patch.whatIfPriceDelta === 'number'
+        ? patch.whatIfPriceDelta
+        : typeof prev.whatIfPriceDelta === 'number'
+        ? prev.whatIfPriceDelta
+        : 0,
+    whatIfCostDelta:
+      typeof patch.whatIfCostDelta === 'number'
+        ? patch.whatIfCostDelta
+        : typeof prev.whatIfCostDelta === 'number'
+        ? prev.whatIfCostDelta
+        : 0,
+    whatIfMpAdsDelta:
+      typeof patch.whatIfMpAdsDelta === 'number'
+        ? patch.whatIfMpAdsDelta
+        : typeof prev.whatIfMpAdsDelta === 'number'
+        ? prev.whatIfMpAdsDelta
+        : 0,
+  };
+  const unchanged =
+    prev.initialCashMln === next.initialCashMln &&
+    prev.wbLagMonths === next.wbLagMonths &&
+    prev.whatIfPriceDelta === next.whatIfPriceDelta &&
+    prev.whatIfCostDelta === next.whatIfCostDelta &&
+    prev.whatIfMpAdsDelta === next.whatIfMpAdsDelta;
+  if (unchanged) return;
+  safeSetStorageJson('borners_finance_contour_params_v1', next);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('borners-finance-params-changed', { detail: next }));
+  }
+}
+
+function resolveModelBrandForRbac(model: ScenarioModelSpec): string {
+  const norm = normalizePortfolioBrandCode(
+    detectModelBrandPortfolioLabel(model) || model.brandId
+  );
+  return norm === 'ALL' ? 'BORNERS' : norm;
+}
+
+function getModelProductionProfileFull(model: ScenarioModelSpec) {
+  return getBrandProductionProfile(
+    detectModelBrandPortfolioLabel(model) || model.brandId,
+    `${model.title || ''} ${model.categoryLabel || ''} ${model.construction?.fit || ''} ${model.waistband?.width || ''}`
+  );
+}
+
+function groupQuantitiesByPrimaryUnit(
+  items: { unit: string; qty: number }[]
+): { unit: string; qty: number }[] {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    if (!Number.isFinite(item.qty)) continue;
+    const u = item.unit || 'ед.';
+    map.set(u, (map.get(u) || 0) + Math.round(item.qty));
+  }
+  return Array.from(map.entries())
+    .filter(([, q]) => q > 0)
+    .map(([unit, qty]) => ({ unit, qty }));
+}
+
+function formatGroupedUnitInline(
+  items: { unit: string; qty: number }[],
+  fallbackUnit = 'ед.'
+): string {
+  const groups = groupQuantitiesByPrimaryUnit(items);
+  if (groups.length === 0) return `0 ${fallbackUnit}`;
+  return groups.map((g) => `${g.qty.toLocaleString('ru-RU')} ${g.unit}`).join(' · ');
+}
 
 function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
@@ -274,9 +376,12 @@ function ScenarioContourHeader({
                   } else if (sc.id === 202706 || ownerNorm === 'AKUSHA') {
                     setBrandFilter('AKUSHA');
                     onSelectScenario(sc.id, 'AKUSHA');
-                  } else if (ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS') {
+                  } else if (ownerNorm && ownerNorm !== 'ALL') {
                     setBrandFilter(ownerNorm);
                     onSelectScenario(sc.id, ownerNorm);
+                  } else if (brandFilter === 'LISKANI' || brandFilter === 'AKUSHA') {
+                    setBrandFilter('BORNERS');
+                    onSelectScenario(sc.id, 'BORNERS');
                   } else if (brandFilter !== 'ALL') {
                     onSelectScenario(sc.id, brandFilter);
                   } else {
@@ -326,9 +431,7 @@ function ScenarioContourHeader({
           )}
 
           {selectedScenarioId === 1 &&
-            (brandFilter === 'ALL' ||
-              brandFilter === 'BORNERS' ||
-              brandFilter === 'FUKAI') && (
+            (brandFilter === 'BORNERS' || brandFilter === 'FUKAI') && (
               <div className="inline-flex items-center rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[11.5px]">
                 <button
                   type="button"
@@ -390,7 +493,7 @@ function ScenarioContourHeader({
 // 02 · ПРОДАЖИ: СВОДНАЯ МАТРИЦА ПРОДАЖ ВСЕХ SKU НА 12 МЕСЯЦЕВ (2027)
 // =============================================================================
 export function SalesMatrixContourView() {
-  const { navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
+  const { currentUser, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
     models,
     scenarios,
@@ -681,6 +784,7 @@ export function SalesMatrixContourView() {
         </div>
 
         <ScenarioSalesPlanScreen
+          key={editingModel.id}
           model={editingModel}
           scenario={editingEntry.scenario}
           allScenarios={orderedScenarios}
@@ -769,7 +873,18 @@ export function SalesMatrixContourView() {
                     : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
                 }`}
               >
-                Комплекты (шт.)
+                {(() => {
+                  const units = Array.from(
+                    new Set(scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
+                  );
+                  if (units.length > 1) return 'Натуральные ед.';
+                  const singleUnit =
+                    units[0] ||
+                    (brandFilter !== 'ALL' ? getBrandUnitConfig(brandFilter).primaryUnit : 'компл.');
+                  if (singleUnit === 'пар') return 'Пары (шт.)';
+                  if (singleUnit === 'компл. штор') return 'Шторы (компл.)';
+                  return 'Комплекты (шт.)';
+                })()}
               </button>
             </div>
             <button
@@ -894,16 +1009,41 @@ export function SalesMatrixContourView() {
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
             Выкупы и заказы за 2027 год
           </div>
-          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {effectiveTotals.annualPacks.toLocaleString('ru-RU')} вык.
-          </div>
-          <div className="text-[11.5px] text-[#64748B]">
-            Заказы (до выкупа):{' '}
-            <strong className="font-mono text-emerald-700 dark:text-emerald-400">
-              {effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')}
-            </strong>{' '}
-            · {formatMln(effectiveTotals.annualOrdersRub)}
-          </div>
+          {(() => {
+            const distinctUnits = Array.from(
+              new Set(scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
+            );
+            const singleUnit =
+              distinctUnits.length === 1
+                ? distinctUnits[0]
+                : brandFilter !== 'ALL' && distinctUnits.length === 0
+                ? getBrandUnitConfig(brandFilter).primaryUnit
+                : null;
+            const buyoutsLabel = singleUnit
+              ? `${effectiveTotals.annualPacks.toLocaleString('ru-RU')} ${singleUnit}`
+              : formatGroupedUnitInline(
+                  scopedEntries.map((e) => ({
+                    unit: getBrandUnitConfig(e.model).primaryUnit,
+                    qty: computeModelScenarioMetrics(e.model, e.scenario).annualPacks,
+                  }))
+                );
+            return (
+              <>
+                <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7] leading-tight">
+                  {buyoutsLabel}
+                </div>
+                <div className="text-[11.5px] text-[#64748B]">
+                  Заказы (до выкупа):{' '}
+                  <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                    {singleUnit
+                      ? `${effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')} ${singleUnit}`
+                      : formatMln(effectiveTotals.annualOrdersRub)}
+                  </strong>
+                  {singleUnit ? ` · ${formatMln(effectiveTotals.annualOrdersRub)}` : ''}
+                </div>
+              </>
+            );
+          })()}
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
         </div>
 
@@ -915,10 +1055,19 @@ export function SalesMatrixContourView() {
             {scopedEntries.length} SKU
           </div>
           <div className="text-[11.5px] text-[#64748B]">
-            Средний чек:{' '}
-            {effectiveTotals.annualPacks > 0
-              ? `${Math.round(effectiveTotals.annualRevenueRub / effectiveTotals.annualPacks).toLocaleString('ru-RU')} ₽`
-              : '—'}
+            {(() => {
+              const distinctUnits = new Set(
+                scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit)
+              );
+              if (distinctUnits.size > 1) {
+                return 'Средний чек: по ед. каждого бренда';
+              }
+              return `Средний чек: ${
+                effectiveTotals.annualPacks > 0
+                  ? `${Math.round(effectiveTotals.annualRevenueRub / effectiveTotals.annualPacks).toLocaleString('ru-RU')} ₽`
+                  : '—'
+              }`;
+            })()}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
         </div>
@@ -928,7 +1077,17 @@ export function SalesMatrixContourView() {
       <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            Помесячная матрица ({unitMode === 'rub' ? 'млн ₽' : 'комплектов'} · {visibleEntries.length} SKU)
+            Помесячная матрица (
+            {unitMode === 'rub'
+              ? 'млн ₽'
+              : (() => {
+                  const units = Array.from(
+                    new Set(scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
+                  );
+                  if (units.length > 1) return 'натуральные ед.';
+                  return units[0] || (brandFilter !== 'ALL' ? getBrandUnitConfig(brandFilter).primaryUnit : 'компл.');
+                })()}{' '}
+            · {visibleEntries.length} SKU)
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -1008,22 +1167,28 @@ export function SalesMatrixContourView() {
                       onClick={(e) => e.stopPropagation()}
                       className="py-2 px-2 text-right font-mono whitespace-nowrap"
                     >
-                      <div className="inline-flex items-center justify-end gap-0.5 rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#1E2536] px-1.5 py-0.5">
-                        <BufferedInlineNumberInput
-                          min={5}
-                          max={100}
-                          ariaLabel={`Процент выкупа ${mod.code}`}
-                          value={met.buyoutRatePct}
-                          onCommit={(nextVal) => {
-                            const updated = updateModelBuyoutRatePct(mod, nextVal, {
-                              scenarioId: rowScenario.id,
-                            });
-                            updateModelSpec(updated);
-                          }}
-                          className="w-10 text-right font-mono text-[11.5px] font-bold text-[#0F172A] dark:text-[#F8FAFC] bg-transparent focus:outline-none"
-                        />
-                        <span className="text-[10px] font-bold text-[#64748B]">%</span>
-                      </div>
+                      {canUserEditBrand(currentUser, resolveModelBrandForRbac(mod)) ? (
+                        <div className="inline-flex items-center justify-end gap-0.5 rounded-md border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#1E2536] px-1.5 py-0.5">
+                          <BufferedInlineNumberInput
+                            min={5}
+                            max={100}
+                            ariaLabel={`Процент выкупа ${mod.code}`}
+                            value={met.buyoutRatePct}
+                            onCommit={(nextVal) => {
+                              const updated = updateModelBuyoutRatePct(mod, nextVal, {
+                                scenarioId: rowScenario.id,
+                              });
+                              updateModelSpec(updated);
+                            }}
+                            className="w-10 text-right font-mono text-[11.5px] font-bold text-[#0F172A] dark:text-[#F8FAFC] bg-transparent focus:outline-none"
+                          />
+                          <span className="text-[10px] font-bold text-[#64748B]">%</span>
+                        </div>
+                      ) : (
+                        <div className="font-mono text-[11.5px] font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                          {met.buyoutRatePct}%
+                        </div>
+                      )}
                       <div className="text-[9.5px] text-emerald-700 dark:text-emerald-400">
                         ×{met.orderMultiplier.toFixed(2).replace('.', ',')}
                       </div>
@@ -1070,36 +1235,68 @@ export function SalesMatrixContourView() {
               })}
             </tbody>
             <tfoot>
-              <tr className="bg-[#F8FAFC] dark:bg-[#181D2A] font-bold text-[#0F172A] dark:text-[#EDF0F7] border-t border-[#E2E6EE] dark:border-[#222938]">
-                <td className="py-3 px-3 sticky left-0 z-10 bg-[#F8FAFC] dark:bg-[#181D2A] border-r border-[#E2E6EE] dark:border-[#222938]">
-                  ИТОГО ({scopedEntries.length} SKU)
-                </td>
-                <td className="py-3 px-2 text-right">—</td>
-                <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
-                  {effectiveTotals.annualOrdersPacks > 0
-                    ? `${Math.round((effectiveTotals.annualPacks / effectiveTotals.annualOrdersPacks) * 100)}%`
-                    : '—'}
-                </td>
-                {MONTHS_SHORT_RU.map((_, mIdx) => (
-                  <td
-                    key={mIdx}
-                    className={`py-3 px-2 text-right font-mono ${
-                      mIdx === 11
-                        ? 'bg-emerald-500/12 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                        : ''
-                    }`}
-                  >
-                    {unitMode === 'rub'
-                      ? (effectiveTotals.monthlyRevRub[mIdx] / 1_000_000).toFixed(1).replace('.', ',')
-                      : effectiveTotals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
-                  </td>
-                ))}
-                <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
-                  {unitMode === 'rub'
-                    ? (effectiveTotals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
-                    : effectiveTotals.annualPacks.toLocaleString('ru-RU')}
-                </td>
-              </tr>
+              {(() => {
+                const distinctUnits = Array.from(
+                  new Set(scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
+                );
+                const isMixedPackUnits = distinctUnits.length > 1;
+                const singleUnit =
+                  distinctUnits[0] ||
+                  (brandFilter !== 'ALL' ? getBrandUnitConfig(brandFilter).primaryUnit : 'компл.');
+                return (
+                  <tr className="bg-[#F8FAFC] dark:bg-[#181D2A] font-bold text-[#0F172A] dark:text-[#EDF0F7] border-t border-[#E2E6EE] dark:border-[#222938]">
+                    <td className="py-3 px-3 sticky left-0 z-10 bg-[#F8FAFC] dark:bg-[#181D2A] border-r border-[#E2E6EE] dark:border-[#222938]">
+                      ИТОГО ({scopedEntries.length} SKU)
+                    </td>
+                    <td className="py-3 px-2 text-right">—</td>
+                    <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
+                      {!isMixedPackUnits && effectiveTotals.annualOrdersPacks > 0
+                        ? `${Math.round((effectiveTotals.annualPacks / effectiveTotals.annualOrdersPacks) * 100)}%`
+                        : effectiveTotals.annualOrdersRub > 0
+                        ? `${Math.round((effectiveTotals.annualRevenueRub / effectiveTotals.annualOrdersRub) * 100)}%`
+                        : '—'}
+                    </td>
+                    {MONTHS_SHORT_RU.map((_, mIdx) => (
+                      <td
+                        key={mIdx}
+                        className={`py-3 px-2 text-right font-mono ${
+                          mIdx === 11
+                            ? 'bg-emerald-500/12 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                            : ''
+                        }`}
+                      >
+                        {unitMode === 'rub'
+                          ? (effectiveTotals.monthlyRevRub[mIdx] / 1_000_000)
+                              .toFixed(1)
+                              .replace('.', ',')
+                          : isMixedPackUnits
+                          ? '—'
+                          : effectiveTotals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
+                      </td>
+                    ))}
+                    <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
+                      {unitMode === 'rub' ? (
+                        (effectiveTotals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
+                      ) : isMixedPackUnits ? (
+                        <div className="space-y-0.5 text-[10.5px] leading-tight">
+                          {groupQuantitiesByPrimaryUnit(
+                            scopedEntries.map((e) => ({
+                              unit: getBrandUnitConfig(e.model).primaryUnit,
+                              qty: computeModelScenarioMetrics(e.model, e.scenario).annualPacks,
+                            }))
+                          ).map((g) => (
+                            <div key={g.unit}>
+                              {g.qty.toLocaleString('ru-RU')} {g.unit}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        `${effectiveTotals.annualPacks.toLocaleString('ru-RU')} ${singleUnit}`
+                      )}
+                    </td>
+                  </tr>
+                );
+              })()}
             </tfoot>
           </table>
         </div>
@@ -1112,7 +1309,7 @@ export function SalesMatrixContourView() {
 // 03 · ЗАКУПКИ: УПРОЩЁННЫЙ 3-ЗОННЫЙ КОНТУР ПО ТЗ MVP (ЗОНА А / ЗОНА Б / ЗОНА В)
 // =============================================================================
 export function ProcurementContourView() {
-  const { tasks, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
+  const { currentUser, tasks, navigateTo, notify, brandFilter, setBrandFilter } = usePlatform();
   const {
     models,
     scenarios,
@@ -1169,8 +1366,44 @@ export function ProcurementContourView() {
   const [scenarioDrawerTab, setScenarioDrawerTab] = useState<
     'none' | 'investment' | 'brands' | 'skus'
   >('skus');
-  const [initialCashMln, setInitialCashMln] = useState<number>(0);
-  const [wbLagMonths, setWbLagMonths] = useState<number>(0);
+  const [initialCashMln, setInitialCashMln] = useState<number>(() => {
+    const saved = readStoredFinanceContourParams();
+    return typeof saved.initialCashMln === 'number' ? saved.initialCashMln : 0;
+  });
+  const [wbLagMonths, setWbLagMonths] = useState<number>(() => {
+    const saved = readStoredFinanceContourParams();
+    return typeof saved.wbLagMonths === 'number' ? saved.wbLagMonths : 0;
+  });
+
+  useEffect(() => {
+    writeStoredFinanceContourParams({ initialCashMln, wbLagMonths });
+  }, [initialCashMln, wbLagMonths]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncParams = () => {
+      const saved = readStoredFinanceContourParams();
+      if (typeof saved.initialCashMln === 'number') {
+        setInitialCashMln((prev) => (prev === saved.initialCashMln ? prev : saved.initialCashMln!));
+      }
+      if (typeof saved.wbLagMonths === 'number') {
+        setWbLagMonths((prev) => (prev === saved.wbLagMonths ? prev : saved.wbLagMonths!));
+      }
+    };
+    window.addEventListener('borners-finance-params-changed', syncParams);
+    window.addEventListener('storage', syncParams);
+    return () => {
+      window.removeEventListener('borners-finance-params-changed', syncParams);
+      window.removeEventListener('storage', syncParams);
+    };
+  }, []);
+
+  const hasCost = canUserViewCostPrice(currentUser);
+  const hasFinance = canUserViewFinance(currentUser);
+  const auditAuthor = currentUser?.fullName || 'Владелец';
+  const formatCostMln = (rub: number) => (hasCost ? formatMln(rub) : 'Скрыто');
+  const formatProfitMln = (rub: number) =>
+    hasCost && hasFinance ? `+${formatMln(rub)}` : 'Скрыто';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1404,15 +1637,48 @@ export function ProcurementContourView() {
   );
 
   const brandsReport = useMemo(() => {
-    const baseReport = computeGroupBrandsInvestmentReport(
-      scenarioAllEligibleModels,
-      currentScenario,
-      {
-        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-        settlementLagMonths: wbLagMonths < 0 ? 0 : wbLagMonths,
+    const sourceModels = models.length > 0 ? models : scenarioAllEligibleModels;
+    const effectiveSelectedByBrand = isHoldingAllBrandsActive
+      ? selectedScenarioByBrand
+      : { ...selectedScenarioByBrand, [brandFilter]: currentScenario.id };
+    const baseReport = computeGroupBrandsInvestmentReport(sourceModels, currentScenario, {
+      initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+      settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+      wbPayoutScheduleSpecified: wbLagMonths >= 0,
+      allScenarios: scenarios,
+      selectedScenarioByBrand: effectiveSelectedByBrand,
+    });
+    if (!isHoldingAllBrandsActive) {
+      if (brandFilter !== 'ALL') {
+        const scopedRows = baseReport.brands.filter((b) => b.brandCode === brandFilter);
+        const row = scopedRows[0];
+        return {
+          brands: scopedRows,
+          groupTotal: row
+            ? {
+                ...baseReport.groupTotal,
+                modelsCount: row.modelsCount,
+                annualRevenueRub: row.annualRevenueRub,
+                decemberRevenueRub: row.decemberRevenueRub,
+                annualDemandPacks: row.annualDemandPacks,
+                totalProcurementPacks: row.totalProcurementPacks,
+                totalProcurementUnits: row.totalProcurementUnits,
+                totalProcurementBudgetRub: row.totalProcurementBudgetRub,
+                annualSoldGoodsCostRub: row.annualSoldGoodsCostRub,
+                annualEstimatedOperatingProfitRub: row.annualEstimatedOperatingProfitRub,
+                firstWaveStartBudgetRub: row.firstWaveStartBudgetRub,
+                firstWavePrepaymentRub: row.firstWavePrepaymentRub,
+                peakWorkingCapitalRub: row.peakWorkingCapitalRub,
+                netOwnMoneyRequiredRub: row.peakWorkingCapitalRub,
+                peakMonthIdx: row.peakMonthIdx,
+                peakMonthLabel: row.peakMonthLabel,
+                selfFundingMonthLabel: row.selfFundingMonthLabel,
+              }
+            : baseReport.groupTotal,
+        };
       }
-    );
-    if (!isHoldingAllBrandsActive) return baseReport;
+      return baseReport;
+    }
     return {
       brands: multiBrandSummary.brands.map((mb) => ({
         brandCode: mb.brandCode,
@@ -1464,6 +1730,10 @@ export function ProcurementContourView() {
     };
   }, [
     isHoldingAllBrandsActive,
+    brandFilter,
+    models,
+    scenarios,
+    selectedScenarioByBrand,
     multiBrandSummary,
     procData,
     scenarioAllEligibleModels,
@@ -1518,6 +1788,7 @@ export function ProcurementContourView() {
         firstWavePacks: number;
         firstWaveBudgetRub: number;
         firstWavePrepayRub: number;
+        unitSet: Set<string>;
       }
     >();
 
@@ -1535,11 +1806,14 @@ export function ProcurementContourView() {
         firstWavePacks: 0,
         firstWaveBudgetRub: 0,
         firstWavePrepayRub: 0,
+        unitSet: new Set<string>(),
       };
+      const prodProf = getModelProductionProfileFull(m);
       const sizeCount =
         m.liskaniSizeVariants && m.liskaniSizeVariants.length > 0
           ? m.liskaniSizeVariants.length
-          : 5;
+          : prodProf.sizes.length || 5;
+      cur.unitSet.add(getBrandUnitConfig(m).primaryUnit);
       const confirmedPos = plan.approvedOrders.filter((o) => o.confirmedByFactory !== false);
       const poPacks = plan.totalApprovedReceiptsPacks;
       const poUnits = plan.totalApprovedReceiptsUnits;
@@ -1596,6 +1870,35 @@ export function ProcurementContourView() {
       return cat === selectedCategoryFilter;
     });
   }, [filteredSkus, selectedCategoryFilter]);
+
+  const scopeUnitInfo = useMemo(() => {
+    const distinct = Array.from(
+      new Set(procData.perSku.map((item) => getBrandUnitConfig(item.model).primaryUnit))
+    );
+    const isMixed = distinct.length > 1;
+    const primaryUnit =
+      !isMixed && distinct.length === 1
+        ? distinct[0]
+        : brandFilter !== 'ALL'
+        ? getBrandUnitConfig(brandFilter).primaryUnit
+        : 'ед.';
+    const secondaryUnit =
+      !isMixed && procData.perSku.length > 0
+        ? getBrandUnitConfig(procData.perSku[0].model).secondaryUnit
+        : brandFilter !== 'ALL'
+        ? getBrandUnitConfig(brandFilter).secondaryUnit
+        : 'ед.';
+    return { isMixed, primaryUnit, secondaryUnit };
+  }, [procData.perSku, brandFilter]);
+
+  const editableScopedModelIds = useMemo(
+    () =>
+      scopedModelEntries
+        .filter((e) => canUserEditBrand(currentUser, resolveModelBrandForRbac(e.model)))
+        .map((e) => e.model.id),
+    [scopedModelEntries, currentUser]
+  );
+  const canEditAnyScopedModel = editableScopedModelIds.length > 0;
 
   const handleExportFactoryOrderCsv = (mode: 'all' | 'first_wave' = 'all') => {
     const modelsToExport = scopedModelEntries.map((e) => e.model);
@@ -1670,7 +1973,7 @@ export function ProcurementContourView() {
                   : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
               }`}
             >
-              4 волны и сводка ({formatMln(investmentSummary.totalProcurementBudgetRub)})
+              4 волны и сводка ({formatCostMln(investmentSummary.totalProcurementBudgetRub)})
             </button>
 
             <button
@@ -1766,9 +2069,12 @@ export function ProcurementContourView() {
                       } else if (sc.id === 202706 || ownerNorm === 'AKUSHA') {
                         setBrandFilter('AKUSHA');
                         setSelectedScenarioId(sc.id, 'AKUSHA');
-                      } else if (ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS') {
+                      } else if (ownerNorm && ownerNorm !== 'ALL') {
                         setBrandFilter(ownerNorm);
                         setSelectedScenarioId(sc.id, ownerNorm);
+                      } else if (brandFilter === 'LISKANI' || brandFilter === 'AKUSHA') {
+                        setBrandFilter('BORNERS');
+                        setSelectedScenarioId(sc.id, 'BORNERS');
                       } else if (brandFilter !== 'ALL') {
                         setSelectedScenarioId(sc.id, brandFilter);
                       } else {
@@ -1894,15 +2200,19 @@ export function ProcurementContourView() {
                   <p className="text-[11.5px] text-[#64748B]">
                     Годовой бюджет закупок:{' '}
                     <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
-                      {formatMln(wavesSummary.totalBudgetRub)}
+                      {formatCostMln(wavesSummary.totalBudgetRub)}
                     </strong>{' '}
-                    ({wavesSummary.totalPacks.toLocaleString('ru-RU')} компл. · утв. PO: {wavesSummary.totalApprovedPosCount}, план: {wavesSummary.totalDraftBatchesCount}) · Пик своих денег:{' '}
+                    ({wavesSummary.totalPacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit} · утв. PO: {wavesSummary.totalApprovedPosCount}, план: {wavesSummary.totalDraftBatchesCount}) · Пик своих денег:{' '}
                     <strong className="font-mono text-amber-700 dark:text-amber-400">
-                      {investmentSummary.verifiedOwnMoneyRequiredRub != null
+                      {!hasCost
+                        ? 'Скрыто'
+                        : wbLagMonths < 0
+                        ? 'Лаг WB не задан'
+                        : investmentSummary.verifiedOwnMoneyRequiredRub != null
                         ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} (${investmentSummary.peakMonthLabel})`
                         : '—'}
                     </strong>
-                    {investmentSummary.selfFundingMonthLabel
+                    {hasCost && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
                       ? ` · С ${investmentSummary.selfFundingMonthLabel} — выход в плюс из выручки WB`
                       : ''}
                   </p>
@@ -1956,23 +2266,23 @@ export function ProcurementContourView() {
                     </div>
                     <div className="flex items-baseline justify-between gap-2">
                       <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                        {formatMln(w.budgetRub)}
+                        {formatCostMln(w.budgetRub)}
                       </div>
                       <span className="font-mono text-[11px] font-semibold text-[#64748B]">
-                        {w.packsQty.toLocaleString('ru-RU')} компл. ({w.sharePct}%)
+                        {w.packsQty.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit} ({w.sharePct}%)
                       </span>
                     </div>
                     <div className="space-y-1 text-[11px] text-[#64748B]">
                       <div className="flex justify-between">
                         <span>Аванс {wavesSummary.avgPrepaymentPct}% ({w.orderWindow}):</span>
                         <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
-                          {formatMln(w.prepayRub)}
+                          {formatCostMln(w.prepayRub)}
                         </strong>
                       </div>
                       <div className="flex justify-between">
                         <span>Доплата {100 - wavesSummary.avgPrepaymentPct}% ({w.arrivalMonth}):</span>
                         <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
-                          {formatMln(w.balanceRub)}
+                          {formatCostMln(w.balanceRub)}
                         </strong>
                       </div>
                     </div>
@@ -2087,7 +2397,15 @@ export function ProcurementContourView() {
                         {formatMln(investmentSummary.annualRevenueRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Дек: <strong className="text-[#141413]">{formatMln(investmentSummary.decemberRevenueRub)}</strong> · {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                        Дек: <strong className="text-[#141413]">{formatMln(investmentSummary.decemberRevenueRub)}</strong> ·{' '}
+                        {scopeUnitInfo.isMixed
+                          ? formatGroupedUnitInline(
+                              procData.perSku.map((x) => ({
+                                unit: getBrandUnitConfig(x.model).primaryUnit,
+                                qty: x.plan.annualDemandPacks,
+                              }))
+                            )
+                          : `${procData.annualDemandPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                       </div>
                     </div>
 
@@ -2101,10 +2419,10 @@ export function ProcurementContourView() {
                         </span>
                       </div>
                       <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#157347]">
-                        {formatMln(investmentSummary.firstWaveStartBudgetRub)}
+                        {formatCostMln(investmentSummary.firstWaveStartBudgetRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Аванс 30% сейчас: <strong className="text-[#141413]">{formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> · {investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.
+                        Аванс 30% сейчас: <strong className="text-[#141413]">{formatCostMln(investmentSummary.firstWavePrepaymentRub)}</strong> · {investmentSummary.firstWavePacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit}
                       </div>
                     </div>
 
@@ -2114,14 +2432,24 @@ export function ProcurementContourView() {
                           Пик своих денег (с WB)
                         </span>
                         <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#52514C]">
-                          {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
-                          investmentSummary.verifiedOwnMoneyRequiredRub !== undefined
+                          {wbLagMonths < 0
+                            ? 'Лаг WB не задан'
+                            : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+                              investmentSummary.verifiedOwnMoneyRequiredRub !== undefined
                             ? `${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`
                             : 'График WB не указан'}
                         </span>
                       </div>
-                      {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
-                      investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
+                      {!hasCost ? (
+                        <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                          Скрыто
+                        </div>
+                      ) : wbLagMonths < 0 ? (
+                        <div className="mt-1.5 text-[13px] font-bold text-amber-800 leading-snug">
+                          Лаг WB не задан
+                        </div>
+                      ) : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+                        investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
                         <>
                           <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
                             {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
@@ -2145,14 +2473,16 @@ export function ProcurementContourView() {
                           Закупки за весь год
                         </span>
                         <span className="font-mono text-[10.5px] font-semibold text-[#686762]">
-                          {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                          {scopeUnitInfo.isMixed
+                            ? `${procData.perSku.length} SKU`
+                            : `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
                       <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
-                        {formatMln(investmentSummary.totalProcurementBudgetRub)}
+                        {formatCostMln(investmentSummary.totalProcurementBudgetRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Себест. продаж: {formatMln(investmentSummary.annualSoldGoodsCostRub)} · Прибыль: <strong className="text-[#157347]">+{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}</strong>
+                        Себест. продаж: {formatCostMln(investmentSummary.annualSoldGoodsCostRub)} · Прибыль: <strong className="text-[#157347]">{formatProfitMln(investmentSummary.annualEstimatedOperatingProfitRub)}</strong>
                       </div>
                     </div>
                   </div>
@@ -2218,17 +2548,17 @@ export function ProcurementContourView() {
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
                               {b.modelsCount > 0
-                                ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
+                                ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} ${getBrandUnitConfig(b.brandCode).primaryUnit}`
                                 : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#146C43]">
                               {b.modelsCount > 0 ? (
                                 <div>
                                   <div className="font-bold">
-                                    {formatMln(b.firstWaveStartBudgetRub)}
+                                    {formatCostMln(b.firstWaveStartBudgetRub)}
                                   </div>
                                   <div className="text-[10.5px] text-[#686762]">
-                                    аванс: {formatMln(b.firstWavePrepaymentRub)}
+                                    аванс: {formatCostMln(b.firstWavePrepaymentRub)}
                                   </div>
                                 </div>
                               ) : (
@@ -2237,26 +2567,34 @@ export function ProcurementContourView() {
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
                               {b.modelsCount > 0 ? (
-                                <div>
-                                  <div>{formatMln(b.peakWorkingCapitalRub)}</div>
-                                  <div className="text-[10px] font-normal text-amber-800">
-                                    пик: {b.peakMonthLabel || 'Янв'}
-                                    {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ''}
+                                !hasCost ? (
+                                  'Скрыто'
+                                ) : wbLagMonths < 0 ? (
+                                  <span className="text-[11px] font-semibold text-amber-800">
+                                    Лаг WB не задан
+                                  </span>
+                                ) : (
+                                  <div>
+                                    <div>{formatMln(b.peakWorkingCapitalRub)}</div>
+                                    <div className="text-[10px] font-normal text-amber-800">
+                                      пик: {b.peakMonthLabel || 'Янв'}
+                                      {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ''}
+                                    </div>
                                   </div>
-                                </div>
+                                )
                               ) : (
                                 '—'
                               )}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
-                              {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
+                              {b.modelsCount > 0 ? formatCostMln(b.totalProcurementBudgetRub) : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#52514C]">
-                              {b.modelsCount > 0 ? formatMln(b.annualSoldGoodsCostRub) : '—'}
+                              {b.modelsCount > 0 ? formatCostMln(b.annualSoldGoodsCostRub) : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-[#157347]">
                               {b.modelsCount > 0
-                                ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
+                                ? formatProfitMln(b.annualEstimatedOperatingProfitRub)
                                 : '—'}
                             </td>
                           </tr>
@@ -2267,7 +2605,11 @@ export function ProcurementContourView() {
                           onClick={() => setBrandFilter('ALL')}
                           className="border-t border-[#CECDC4] bg-[#F8F8F5] font-extrabold text-[#141413] cursor-pointer"
                         >
-                          <td className="py-3 px-3">ИТОГО ПО ГРУППЕ (без дублей)</td>
+                          <td className="py-3 px-3">
+                            {!isHoldingAllBrandsActive && brandFilter !== 'ALL'
+                              ? `ИТОГО (${formatLabBrandLabel(brandFilter)})`
+                              : 'ИТОГО ПО ГРУППЕ (без дублей)'}
+                          </td>
                           <td className="py-3 px-2.5 text-right font-mono">
                             {brandsReport.groupTotal.modelsCount}
                           </td>
@@ -2275,25 +2617,35 @@ export function ProcurementContourView() {
                             {formatMln(brandsReport.groupTotal.annualRevenueRub)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {brandsReport.groupTotal.totalProcurementPacks.toLocaleString('ru-RU')} компл.
+                            {formatGroupedUnitInline(
+                              brandsReport.brands.map((b) => ({
+                                unit: getBrandUnitConfig(b.brandCode).primaryUnit,
+                                qty: b.totalProcurementPacks,
+                              })),
+                              scopeUnitInfo.primaryUnit
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-[#146C43]">
-                            <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                            <div>{formatCostMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
                             <div className="text-[10.5px] font-semibold text-[#686762]">
-                              аванс: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
+                              аванс: {formatCostMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
                             </div>
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
+                            {!hasCost
+                              ? 'Скрыто'
+                              : wbLagMonths < 0
+                              ? 'Лаг WB не задан'
+                              : formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {formatMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
+                            {formatCostMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
+                            {formatCostMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-[#157347]">
-                            +{formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
+                            {formatProfitMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
                           </td>
                         </tr>
                       </tfoot>
@@ -2325,7 +2677,7 @@ export function ProcurementContourView() {
                         }`}
                       >
                         Все бренды холдинга ({multiBrandSummary.groupTotal.modelsCount} мод. ·{' '}
-                        {formatMln(multiBrandSummary.groupTotal.totalProcurementBudgetRub)})
+                        {formatCostMln(multiBrandSummary.groupTotal.totalProcurementBudgetRub)})
                       </button>
                       {multiBrandSummary.brands
                         .filter((b) => b.hasScenario && b.hasModels && b.modelsCount > 0)
@@ -2351,7 +2703,7 @@ export function ProcurementContourView() {
                             >
                               {b.displayCode} ({b.modelsCount} мод.
                               {b.brandCode === 'LISKANI' ? ' · 269 разм.' : ''} ·{' '}
-                              {formatMln(b.totalProcurementBudgetRub)})
+                              {formatCostMln(b.totalProcurementBudgetRub)})
                             </button>
                           );
                         })}
@@ -2373,21 +2725,29 @@ export function ProcurementContourView() {
                           1. Себестоимость выкупов (Сводка)
                         </span>
                         <span className="rounded-md bg-[#EEF2F6] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#334155]">
-                          {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                          {scopeUnitInfo.isMixed
+                            ? `${procData.perSku.length} SKU`
+                            : `${procData.annualDemandPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
                       <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
-                        {formatMln(investmentSummary.annualSoldGoodsCostRub)}
+                        {formatCostMln(investmentSummary.annualSoldGoodsCostRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
                         Средняя себест.:{' '}
                         <strong className="font-mono text-[#0F172A]">
-                          {procData.annualDemandPacks > 0
-                            ? Math.round(
-                                investmentSummary.annualSoldGoodsCostRub / procData.annualDemandPacks
-                              ).toLocaleString('ru-RU')
-                            : 0}{' '}
-                          ₽/компл.
+                          {!hasCost
+                            ? 'Скрыто'
+                            : scopeUnitInfo.isMixed
+                            ? 'по брендам'
+                            : `${
+                                procData.annualDemandPacks > 0
+                                  ? Math.round(
+                                      investmentSummary.annualSoldGoodsCostRub /
+                                        procData.annualDemandPacks
+                                    ).toLocaleString('ru-RU')
+                                  : 0
+                              } ₽/${scopeUnitInfo.primaryUnit}`}
                         </strong>{' '}
                         · нажмите для правки в таблице ↓
                       </div>
@@ -2406,14 +2766,26 @@ export function ProcurementContourView() {
                           2. Бюджет закупок у фабрик (Год)
                         </span>
                         <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[10.5px] font-bold text-emerald-700">
-                          {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                          {scopeUnitInfo.isMixed
+                            ? `${procData.perSku.length} SKU`
+                            : `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
                       <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
-                        {formatMln(procData.totalScenarioBudgetRub)}
+                        {formatCostMln(procData.totalScenarioBudgetRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
-                        {procData.totalScenarioUnits.toLocaleString('ru-RU')} изд. · включает 4 квартальные волны и переходящий запас
+                        {scopeUnitInfo.isMixed
+                          ? formatGroupedUnitInline(
+                              procData.perSku.map((x) => ({
+                                unit: getBrandUnitConfig(x.model).primaryUnit,
+                                qty:
+                                  x.plan.totalApprovedReceiptsPacks + x.plan.totalRecommendedPacks,
+                              }))
+                            )
+                          : scopeUnitInfo.primaryUnit === scopeUnitInfo.secondaryUnit
+                          ? `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit} · 4 квартальные волны`
+                          : `${procData.totalScenarioUnits.toLocaleString('ru-RU')} ${scopeUnitInfo.secondaryUnit} · включает 4 квартальные волны и переходящий запас`}
                       </div>
                     </button>
 
@@ -2431,14 +2803,14 @@ export function ProcurementContourView() {
                         </span>
                       </div>
                       <div className="font-mono text-[22px] font-extrabold text-[#157347]">
-                        {formatMln(procData.firstWaveBudgetRub)}
+                        {formatCostMln(procData.firstWaveBudgetRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
                         Аванс сейчас:{' '}
                         <strong className="font-mono text-[#0F172A]">
-                          {formatMln(procData.firstWavePrepaymentRub)}
+                          {formatCostMln(procData.firstWavePrepaymentRub)}
                         </strong>{' '}
-                        · {procData.firstWavePacks.toLocaleString('ru-RU')} компл.
+                        · {procData.firstWavePacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit}
                       </div>
                     </button>
 
@@ -2456,7 +2828,7 @@ export function ProcurementContourView() {
                         </span>
                       </div>
                       <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
-                        {formatMln(
+                        {formatCostMln(
                           Math.max(0, procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub)
                         )}
                       </div>
@@ -2464,7 +2836,7 @@ export function ProcurementContourView() {
                         {Math.max(0, procData.totalScenarioPacks - procData.firstWavePacks).toLocaleString(
                           'ru-RU'
                         )}{' '}
-                        компл. · оплата из поступлений с WB
+                        {scopeUnitInfo.primaryUnit} · оплата из поступлений с WB
                       </div>
                     </button>
                   </div>
@@ -2479,16 +2851,20 @@ export function ProcurementContourView() {
                           </span>
                           <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                             📍 Пик своих денег:{' '}
-                            {investmentSummary.verifiedOwnMoneyRequiredRub != null
+                            {!hasCost
+                              ? 'Скрыто'
+                              : wbLagMonths < 0
+                              ? 'Лаг WB не задан'
+                              : investmentSummary.verifiedOwnMoneyRequiredRub != null
                               ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} в ${investmentSummary.peakMonthLabel}`
                               : '—'}
-                            {investmentSummary.selfFundingMonthLabel
+                            {hasCost && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
                               ? ` · с ${investmentSummary.selfFundingMonthLabel} — в плюс с WB`
                               : ''}
                           </span>
                         </div>
                         <p className="text-[11px] text-[#64748B] mt-0.5">
-                          Реальные квартальные партии: Q1 {formatMln(wavesSummary.waves[0]?.budgetRub || 0)} · Q2 {formatMln(wavesSummary.waves[1]?.budgetRub || 0)} · Q3 {formatMln(wavesSummary.waves[2]?.budgetRub || 0)} · Q4 {formatMln(wavesSummary.waves[3]?.budgetRub || 0)}
+                          Реальные квартальные партии: Q1 {formatCostMln(wavesSummary.waves[0]?.budgetRub || 0)} · Q2 {formatCostMln(wavesSummary.waves[1]?.budgetRub || 0)} · Q3 {formatCostMln(wavesSummary.waves[2]?.budgetRub || 0)} · Q4 {formatCostMln(wavesSummary.waves[3]?.budgetRub || 0)}
                         </p>
                       </div>
 
@@ -2571,11 +2947,11 @@ export function ProcurementContourView() {
                     })()}
 
                     {/* Групповая настройка условий закупки (мгновенно пересчитывает волны и Пик своих денег) */}
-                    {factoryTermsPanelOpen && (
+                    {factoryTermsPanelOpen && canEditAnyScopedModel && (
                       <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/80 dark:bg-[#181D2A] p-3.5 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11.5px]">
                         <div className="space-y-1.5">
                           <div className="font-bold text-slate-800 dark:text-[#EDF0F7]">
-                            1. Аванс / Доплата фабрикам ({scopedModelEntries.length} SKU)
+                            1. Аванс / Доплата фабрикам ({editableScopedModelIds.length} SKU)
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {[20, 30, 50, 100].map((pct) => {
@@ -2586,12 +2962,12 @@ export function ProcurementContourView() {
                                   type="button"
                                   onClick={() => {
                                     updateBatchFactoryTerms(
-                                      scopedModelEntries.map((e) => e.model.id),
+                                      editableScopedModelIds,
                                       { prepaymentPct: pct }
                                     );
                                     notify(
                                       'success',
-                                      `Установлена схема оплаты ${pct}% / ${100 - pct}% для ${scopedModelEntries.length} SKU`
+                                      `Установлена схема оплаты ${pct}% / ${100 - pct}% для ${editableScopedModelIds.length} SKU`
                                     );
                                   }}
                                   className={`px-2.5 py-1 rounded-lg font-mono font-bold border cursor-pointer transition ${
@@ -2618,12 +2994,12 @@ export function ProcurementContourView() {
                                 type="button"
                                 onClick={() => {
                                   updateBatchFactoryTerms(
-                                    scopedModelEntries.map((e) => e.model.id),
+                                    editableScopedModelIds,
                                     { productionLeadDays: days }
                                   );
                                   notify(
                                     'success',
-                                    `Срок пошива/производства установлен: ${days} дн. (${scopedModelEntries.length} SKU)`
+                                    `Срок пошива/производства установлен: ${days} дн. (${editableScopedModelIds.length} SKU)`
                                   );
                                 }}
                                 className="px-2.5 py-1 rounded-lg font-mono font-bold border bg-white dark:bg-[#121620] text-slate-700 dark:text-slate-200 border-slate-300 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536] cursor-pointer transition"
@@ -2643,12 +3019,12 @@ export function ProcurementContourView() {
                               type="button"
                               onClick={() => {
                                 updateBatchFactoryTerms(
-                                  scopedModelEntries.map((e) => e.model.id),
+                                  editableScopedModelIds,
                                   { procureByOrdersVolume: false }
                                 );
                                 notify(
                                   'success',
-                                  `Режим закупки: под чистые выкупы ×1,00 (${scopedModelEntries.length} SKU)`
+                                  `Режим закупки: под чистые выкупы ×1,00 (${editableScopedModelIds.length} SKU)`
                                 );
                               }}
                               className="px-2.5 py-1 rounded-lg font-semibold border bg-white dark:bg-[#121620] text-slate-700 dark:text-slate-200 border-slate-300 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536] cursor-pointer transition"
@@ -2659,12 +3035,12 @@ export function ProcurementContourView() {
                               type="button"
                               onClick={() => {
                                 updateBatchFactoryTerms(
-                                  scopedModelEntries.map((e) => e.model.id),
+                                  editableScopedModelIds,
                                   { procureByOrdersVolume: true }
                                 );
                                 notify(
                                   'success',
-                                  `Режим закупки: под полный объём заказов ПВЗ (${scopedModelEntries.length} SKU)`
+                                  `Режим закупки: под полный объём заказов ПВЗ (${editableScopedModelIds.length} SKU)`
                                 );
                               }}
                               className="px-2.5 py-1 rounded-lg font-semibold border bg-indigo-50 dark:bg-indigo-500/15 text-indigo-900 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/35 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 cursor-pointer transition"
@@ -2726,22 +3102,27 @@ export function ProcurementContourView() {
                                 <div>
                                   <div className="text-[10.5px] text-[#64748B]">Бюджет закупок (год)</div>
                                   <div className="font-mono text-[17px] font-extrabold text-[#0F172A]">
-                                    {formatMln(cg.totalBudgetRub)}
+                                    {formatCostMln(cg.totalBudgetRub)}
                                   </div>
                                 </div>
                                 <div className="text-right">
                                   <div className="text-[10.5px] text-[#64748B]">Себест. выкупов</div>
                                   <div className="font-mono text-[13.5px] font-bold text-[#334155]">
-                                    {formatMln(cg.soldCogsRub)}
+                                    {formatCostMln(cg.soldCogsRub)}
                                   </div>
                                 </div>
                               </div>
                               <div className="mt-2 pt-2 border-t border-[#EEF2F6] flex items-center justify-between text-[11px] text-[#475569]">
                                 <span>
-                                  К заказу: <strong className="font-mono text-[#0F172A]">{cg.totalOrderPacks.toLocaleString('ru-RU')}</strong> компл. (~{avgCost} ₽)
+                                  К заказу:{' '}
+                                  <strong className="font-mono text-[#0F172A]">
+                                    {cg.totalOrderPacks.toLocaleString('ru-RU')}
+                                  </strong>{' '}
+                                  {cg.unitSet.size === 1 ? Array.from(cg.unitSet)[0] : 'ед.'}
+                                  {hasCost && cg.unitSet.size === 1 ? ` (~${avgCost} ₽)` : ''}
                                 </span>
                                 <span className="font-mono font-semibold text-emerald-700">
-                                  Q1: {formatMln(cg.firstWaveBudgetRub)}
+                                  Q1: {formatCostMln(cg.firstWaveBudgetRub)}
                                 </span>
                               </div>
                             </button>
@@ -2759,7 +3140,7 @@ export function ProcurementContourView() {
                           Поартикульная и поразмерная детализация закупок ({filteredSummarySkus.length} карточек)
                         </div>
                         <p className="text-[11.5px] text-[#64748B]">
-                          Нажмите прямо на число в колонке «Себест. 1 компл.» для мгновенной правки себестоимости, или на «Размеры ▾» для раскрытия сетки и партий Q1–Q4
+                          Нажмите прямо на число в колонке «Себест. ед.» для мгновенной правки себестоимости, или на «Размеры ▾» для раскрытия сетки и партий Q1–Q4
                         </p>
                       </div>
 
@@ -2797,7 +3178,11 @@ export function ProcurementContourView() {
                         <thead>
                           <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10.5px] font-bold text-[#475569] uppercase tracking-wide">
                             <th className="py-2.5 pr-3 pl-3.5">Модель / SKU и категория</th>
-                            <th className="px-2.5 py-2.5 text-right">Себест. 1 компл.</th>
+                            <th className="px-2.5 py-2.5 text-right">
+                              {scopeUnitInfo.isMixed
+                                ? 'Себест. ед.'
+                                : `Себест. 1 ${scopeUnitInfo.primaryUnit}`}
+                            </th>
                             <th className="px-2.5 py-2.5 text-right">План продаж</th>
                             <th className="px-2.5 py-2.5 text-right">Себест. выкупов</th>
                             <th className="px-2.5 py-2.5 text-right">К заказу (год)</th>
@@ -2822,9 +3207,14 @@ export function ProcurementContourView() {
                             const hasLiskaniSizes =
                               Array.isArray(m.liskaniSizeVariants) &&
                               m.liskaniSizeVariants.length > 0;
+                            const prodProfile = getModelProductionProfileFull(m);
+                            const canEditRow = canUserEditBrand(
+                              currentUser,
+                              resolveModelBrandForRbac(m)
+                            );
                             const sizesCount = hasLiskaniSizes
                               ? m.liskaniSizeVariants!.length
-                              : 5;
+                              : prodProfile.sizes.length || 5;
                             const minSizeCost = hasLiskaniSizes
                               ? Math.min(...m.liskaniSizeVariants!.map((v) => v.unitCostRub))
                               : m.unitCostRub;
@@ -2886,10 +3276,6 @@ export function ProcurementContourView() {
                                 ? totalModelPacks / baselineVariantBuyoutsSum
                                 : 1;
 
-                            const prodProfile = getBrandProductionProfile(
-                              detectModelBrandPortfolioLabel(m),
-                              `${m.title} ${m.categoryLabel || ''}`
-                            );
                             const rowUnitCfg = getBrandUnitConfig(m);
                             const sizeRangeShortLabel = hasLiskaniSizes
                               ? `${sizesCount} разм.`
@@ -2928,19 +3314,29 @@ export function ProcurementContourView() {
                                     onClick={(e) => e.stopPropagation()}
                                     className="px-2.5 py-2.5 text-right font-mono"
                                   >
-                                    <div className="inline-flex items-center justify-end gap-1 rounded-lg border border-[#CBD5E1] bg-white px-2 py-1 hover:border-emerald-500 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
-                                      <BufferedInlineNumberInput
-                                        min={0}
-                                        ariaLabel={`Себестоимость 1 компл. ${m.code}`}
-                                        value={Math.round(m.unitCostRub || 0)}
-                                        onCommit={(nextVal) => {
-                                          updateModelSpec(updateModelUnitCostWithVariants(m, nextVal));
-                                        }}
-                                        className="w-16 text-right font-mono text-[12px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
-                                      />
-                                      <span className="text-[11px] font-semibold text-[#64748B]">₽</span>
-                                    </div>
-                                    {hasLiskaniSizes && minSizeCost !== maxSizeCost && (
+                                    {!hasCost ? (
+                                      <span className="text-[11px] font-semibold text-[#64748B]">
+                                        Скрыто
+                                      </span>
+                                    ) : canEditRow ? (
+                                      <div className="inline-flex items-center justify-end gap-1 rounded-lg border border-[#CBD5E1] bg-white px-2 py-1 hover:border-emerald-500 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
+                                        <BufferedInlineNumberInput
+                                          min={0}
+                                          ariaLabel={`Себестоимость 1 ${rowUnitCfg.primaryUnit} ${m.code}`}
+                                          value={Math.round(m.unitCostRub || 0)}
+                                          onCommit={(nextVal) => {
+                                            updateModelSpec(updateModelUnitCostWithVariants(m, nextVal));
+                                          }}
+                                          className="w-16 text-right font-mono text-[12px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
+                                        />
+                                        <span className="text-[11px] font-semibold text-[#64748B]">₽</span>
+                                      </div>
+                                    ) : (
+                                      <span className="font-mono text-[12px] font-bold text-[#0F172A]">
+                                        {Math.round(m.unitCostRub || 0).toLocaleString('ru-RU')} ₽
+                                      </span>
+                                    )}
+                                    {hasCost && hasLiskaniSizes && minSizeCost !== maxSizeCost && (
                                       <div className="mt-0.5 text-[10px] text-[#64748B]">
                                         {Math.round(minSizeCost)}–{Math.round(maxSizeCost)} ₽
                                       </div>
@@ -2951,34 +3347,44 @@ export function ProcurementContourView() {
                                     onClick={(e) => e.stopPropagation()}
                                     className="px-2.5 py-2.5 text-right font-mono text-[#334155]"
                                   >
-                                    <div>{plan.annualBuyoutsPacks.toLocaleString('ru-RU')} выкуп</div>
+                                    <div>
+                                      {plan.annualBuyoutsPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
+                                    </div>
                                     <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 font-semibold">
                                       <span>Зак: {plan.annualOrdersPacks.toLocaleString('ru-RU')}</span>
-                                      <span className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50/70 px-1 py-0.5">
-                                        <BufferedInlineNumberInput
-                                          min={5}
-                                          max={100}
-                                          ariaLabel={`Процент выкупа ${m.code}`}
-                                          value={plan.buyoutRatePct}
-                                          onCommit={(nextPct) => {
-                                            updateModelSpec(
-                                              updateModelBuyoutRatePct(m, nextPct, {
-                                                scenarioId: rowScenario.id,
-                                              })
-                                            );
-                                          }}
-                                          className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 focus:outline-none"
-                                        />
-                                        <span>%</span>
-                                      </span>
+                                      {canEditRow ? (
+                                        <span className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50/70 px-1 py-0.5">
+                                          <BufferedInlineNumberInput
+                                            min={5}
+                                            max={100}
+                                            ariaLabel={`Процент выкупа ${m.code}`}
+                                            value={plan.buyoutRatePct}
+                                            onCommit={(nextPct) => {
+                                              updateModelSpec(
+                                                updateModelBuyoutRatePct(m, nextPct, {
+                                                  scenarioId: rowScenario.id,
+                                                })
+                                              );
+                                            }}
+                                            className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 focus:outline-none"
+                                          />
+                                          <span>%</span>
+                                        </span>
+                                      ) : (
+                                        <span className="font-mono text-[10px] font-bold text-indigo-900">
+                                          ({plan.buyoutRatePct}%)
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
 
                                   <td className="px-2.5 py-2.5 text-right font-mono font-semibold text-[#334155]">
-                                    <div>{formatMln(soldCogsRub)}</div>
-                                    <div className="text-[10px] text-[#64748B]">
-                                      {soldCogsRub.toLocaleString('ru-RU')} ₽
-                                    </div>
+                                    <div>{formatCostMln(soldCogsRub)}</div>
+                                    {hasCost && (
+                                      <div className="text-[10px] text-[#64748B]">
+                                        {soldCogsRub.toLocaleString('ru-RU')} ₽
+                                      </div>
+                                    )}
                                   </td>
 
                                   <td className="px-2.5 py-2.5 text-right font-mono font-bold text-[#0F172A]">
@@ -2988,7 +3394,9 @@ export function ProcurementContourView() {
                                     <div className="text-[10px] font-normal text-[#64748B]">
                                       {plan.procureByOrdersVolume
                                         ? `×${plan.orderMultiplier.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} под заказы (${plan.buyoutRatePct}%)`
-                                        : rowUnitCfg.primaryUnit === 'пар'
+                                        : rowUnitCfg.primaryUnit === 'пар' ||
+                                          ((m.unitsInPack || 1) === 1 &&
+                                            rowUnitCfg.primaryUnit === rowUnitCfg.secondaryUnit)
                                         ? 'под чистые выкупы'
                                         : `${totalModelUnits.toLocaleString('ru-RU')} ${rowUnitCfg.secondaryUnit}`}
                                     </div>
@@ -2996,26 +3404,28 @@ export function ProcurementContourView() {
 
                                   <td className="px-2.5 py-2.5 text-right font-mono bg-emerald-500/4">
                                     <div className="font-bold text-emerald-700">
-                                      {formatMln(w1Rub)}
+                                      {formatCostMln(w1Rub)}
                                     </div>
                                     <div className="text-[10px] text-[#475569]">
                                       {w1Packs.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} · ав.{' '}
-                                      {formatMln(w1Prepay)}
+                                      {formatCostMln(w1Prepay)}
                                     </div>
                                   </td>
 
                                   <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
-                                    <div className="font-semibold">{formatMln(restRub)}</div>
+                                    <div className="font-semibold">{formatCostMln(restRub)}</div>
                                     <div className="text-[10px] text-[#64748B]">
                                       {restPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} (с WB)
                                     </div>
                                   </td>
 
                                   <td className="px-2.5 py-2.5 text-right font-mono font-extrabold text-[#0F172A]">
-                                    <div>{formatMln(totalModelBudgetRub)}</div>
-                                    <div className="text-[10px] font-normal text-[#64748B]">
-                                      {totalModelBudgetRub.toLocaleString('ru-RU')} ₽
-                                    </div>
+                                    <div>{formatCostMln(totalModelBudgetRub)}</div>
+                                    {hasCost && (
+                                      <div className="text-[10px] font-normal text-[#64748B]">
+                                        {totalModelBudgetRub.toLocaleString('ru-RU')} ₽
+                                      </div>
+                                    )}
                                   </td>
 
                                   <td
@@ -3141,56 +3551,66 @@ export function ProcurementContourView() {
                                                         </span>
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
-                                                        <div className="inline-flex items-center justify-end gap-1 rounded-md border border-[#CBD5E1] bg-white px-2 py-0.5 hover:border-emerald-500 focus-within:border-emerald-600">
-                                                          <input
-                                                            type="number"
-                                                            min={0}
-                                                            step={10}
-                                                            aria-label={`Себестоимость размера ${sv.sizeCm} (${sv.sellerSku})`}
-                                                            value={Math.round(sv.unitCostRub || 0)}
-                                                            onChange={(e) => {
-                                                              const nextVal = Math.max(
-                                                                0,
-                                                                Math.round(Number(e.target.value) || 0)
-                                                              );
-                                                              updateModelSpec(
-                                                                updateModelSizeVariantUnitCost(
-                                                                  m,
-                                                                  sv.skuIndex,
-                                                                  nextVal
-                                                                )
-                                                              );
-                                                            }}
-                                                            className="w-15 text-right font-mono text-[11.5px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
-                                                          />
-                                                          <span className="text-[10px] font-semibold text-[#64748B]">
-                                                            ₽
+                                                        {!hasCost ? (
+                                                          <span className="text-[11px] font-semibold text-[#64748B]">
+                                                            Скрыто
                                                           </span>
-                                                        </div>
+                                                        ) : canEditRow ? (
+                                                          <div className="inline-flex items-center justify-end gap-1 rounded-md border border-[#CBD5E1] bg-white px-2 py-0.5 hover:border-emerald-500 focus-within:border-emerald-600">
+                                                            <input
+                                                              type="number"
+                                                              min={0}
+                                                              step={10}
+                                                              aria-label={`Себестоимость размера ${sv.sizeCm} (${sv.sellerSku})`}
+                                                              value={Math.round(sv.unitCostRub || 0)}
+                                                              onChange={(e) => {
+                                                                const nextVal = Math.max(
+                                                                  0,
+                                                                  Math.round(Number(e.target.value) || 0)
+                                                                );
+                                                                updateModelSpec(
+                                                                  updateModelSizeVariantUnitCost(
+                                                                    m,
+                                                                    sv.skuIndex,
+                                                                    nextVal
+                                                                  )
+                                                                );
+                                                              }}
+                                                              className="w-15 text-right font-mono text-[11.5px] font-bold text-[#0F172A] bg-transparent focus:outline-none"
+                                                            />
+                                                            <span className="text-[10px] font-semibold text-[#64748B]">
+                                                              ₽
+                                                            </span>
+                                                          </div>
+                                                        ) : (
+                                                          <span>
+                                                            {Math.round(sv.unitCostRub || 0).toLocaleString('ru-RU')} ₽
+                                                          </span>
+                                                        )}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
-                                                        {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} компл.
+                                                        {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
-                                                        {szSoldCogsRub.toLocaleString('ru-RU')} ₽
+                                                        {hasCost ? `${szSoldCogsRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono font-semibold text-emerald-700 bg-emerald-500/4">
-                                                        {q1Order.toLocaleString('ru-RU')} компл.
+                                                        {q1Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
-                                                        {q2Order.toLocaleString('ru-RU')} компл.
+                                                        {q2Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
-                                                        {q3Order.toLocaleString('ru-RU')} компл.
+                                                        {q3Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
-                                                        {q4Order.toLocaleString('ru-RU')} компл.
+                                                        {q4Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
-                                                        {totalSzOrder.toLocaleString('ru-RU')} компл.
+                                                        {totalSzOrder.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
                                                       <td className="py-2 px-3 text-right font-mono font-bold text-[#0F172A]">
-                                                        {szBudgetRub.toLocaleString('ru-RU')} ₽
+                                                        {hasCost ? `${szBudgetRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                                                       </td>
                                                     </tr>
                                                   );
@@ -3225,14 +3645,14 @@ export function ProcurementContourView() {
                                                             ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
                                                           </span>
                                                           <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                                                            {formatMln(po.totalOrderRub)}
+                                                            {formatCostMln(po.totalOrderRub)}
                                                           </span>
                                                         </div>
                                                         <div className="font-mono text-[12px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                                                           {formatModelQty(po.packsQty, po.physicalUnitsQty)}
                                                         </div>
                                                         <div className="text-[10.5px] text-emerald-900/80 dark:text-emerald-200/80 flex items-center justify-between">
-                                                          <span>Аванс: {formatMln(po.prepaymentRub)}</span>
+                                                          <span>Аванс: {formatCostMln(po.prepaymentRub)}</span>
                                                           <span>Приход: {po.requiredArrivalDateIso}</span>
                                                         </div>
                                                       </div>
@@ -3240,24 +3660,26 @@ export function ProcurementContourView() {
                                                         <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-medium">
                                                           Подтверждён PO
                                                         </span>
-                                                        <button
-                                                          type="button"
-                                                          onClick={() => {
-                                                            const nextM = removeApprovedPurchaseOrder(
-                                                              m,
-                                                              po.id,
-                                                              'Владелец'
-                                                            );
-                                                            updateModelSpec(nextM);
-                                                            notify(
-                                                              'success',
-                                                              `Заказ ${po.orderNumber} (${m.code}) возвращён в плановые партии`
-                                                            );
-                                                          }}
-                                                          className="rounded-md bg-white dark:bg-[#121620] hover:bg-rose-50 dark:hover:bg-rose-500/20 text-slate-700 dark:text-slate-200 hover:text-rose-700 dark:hover:text-rose-300 border border-emerald-300/80 dark:border-emerald-500/35 px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer"
-                                                        >
-                                                          ↺ В черновик
-                                                        </button>
+                                                        {canEditRow && (
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              const nextM = removeApprovedPurchaseOrder(
+                                                                m,
+                                                                po.id,
+                                                                auditAuthor
+                                                              );
+                                                              updateModelSpec(nextM);
+                                                              notify(
+                                                                'success',
+                                                                `Заказ ${po.orderNumber} (${m.code}) возвращён в плановые партии`
+                                                              );
+                                                            }}
+                                                            className="rounded-md bg-white dark:bg-[#121620] hover:bg-rose-50 dark:hover:bg-rose-500/20 text-slate-700 dark:text-slate-200 hover:text-rose-700 dark:hover:text-rose-300 border border-emerald-300/80 dark:border-emerald-500/35 px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer"
+                                                          >
+                                                            ↺ В черновик
+                                                          </button>
+                                                        )}
                                                       </div>
                                                     </div>
                                                   ))}
@@ -3295,14 +3717,14 @@ export function ProcurementContourView() {
                                                               Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
                                                             </span>
                                                             <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
-                                                              {formatMln(rb.estimatedTotalRub)}
+                                                              {formatCostMln(rb.estimatedTotalRub)}
                                                             </span>
                                                           </div>
                                                           <div className="font-mono text-[12px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                                                             {formatModelQty(rb.recommendedPacks, rb.physicalUnitsQty)}
                                                           </div>
                                                           <div className="text-[10.5px] text-[#64748B] dark:text-slate-400">
-                                                            Аванс: {formatMln(rb.prepaymentRub)} · Доплата: {formatMln(rb.balancePaymentRub)}
+                                                            Аванс: {formatCostMln(rb.prepaymentRub)} · Доплата: {formatCostMln(rb.balancePaymentRub)}
                                                           </div>
                                                           <div className="font-mono text-[10px] text-[#475569] dark:text-slate-300 bg-slate-50 dark:bg-[#181D2A] rounded px-1.5 py-0.5">
                                                             {mappedSizesText}
@@ -3312,24 +3734,26 @@ export function ProcurementContourView() {
                                                           <span className="text-[10px] text-slate-500 dark:text-slate-400">
                                                             Заказ до {rb.recommendedOrderDateIso}
                                                           </span>
-                                                          <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                              const nextM = approveRecommendedBatch(
-                                                                m,
-                                                                rb,
-                                                                'Владелец'
-                                                              );
-                                                              updateModelSpec(nextM);
-                                                              notify(
-                                                                'success',
-                                                                `Партия ${rb.coverageMonthsLabel} (${m.code}) утверждена в PO`
-                                                              );
-                                                            }}
-                                                            className="rounded-md bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-600 dark:hover:bg-emerald-500 text-emerald-800 dark:text-emerald-300 hover:text-white dark:hover:text-slate-950 border border-emerald-300 dark:border-emerald-500/35 px-2 py-0.5 text-[10.5px] font-bold transition cursor-pointer"
-                                                          >
-                                                            ✓ Утвердить в PO
-                                                          </button>
+                                                          {canEditRow && (
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => {
+                                                                const nextM = approveRecommendedBatch(
+                                                                  m,
+                                                                  rb,
+                                                                  auditAuthor
+                                                                );
+                                                                updateModelSpec(nextM);
+                                                                notify(
+                                                                  'success',
+                                                                  `Партия ${rb.coverageMonthsLabel} (${m.code}) утверждена в PO`
+                                                                );
+                                                              }}
+                                                              className="rounded-md bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-600 dark:hover:bg-emerald-500 text-emerald-800 dark:text-emerald-300 hover:text-white dark:hover:text-slate-950 border border-emerald-300 dark:border-emerald-500/35 px-2 py-0.5 text-[10.5px] font-bold transition cursor-pointer"
+                                                            >
+                                                              ✓ Утвердить в PO
+                                                            </button>
+                                                          )}
                                                         </div>
                                                       </div>
                                                     );
@@ -3353,32 +3777,68 @@ export function ProcurementContourView() {
                               ИТОГО ПО СЦЕНАРИЮ ({procData.perSku.length} мод.)
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono">
-                              ~
-                              {procData.annualDemandPacks > 0
-                                ? Math.round(
-                                    investmentSummary.annualSoldGoodsCostRub /
-                                      procData.annualDemandPacks
-                                  ).toLocaleString('ru-RU')
-                                : 0}{' '}
-                              ₽
+                              {!hasCost
+                                ? 'Скрыто'
+                                : scopeUnitInfo.isMixed
+                                ? 'по брендам'
+                                : `~${
+                                    procData.annualDemandPacks > 0
+                                      ? Math.round(
+                                          investmentSummary.annualSoldGoodsCostRub /
+                                            procData.annualDemandPacks
+                                        ).toLocaleString('ru-RU')
+                                      : 0
+                                  } ₽`}
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono">
-                              {procData.annualDemandPacks.toLocaleString('ru-RU')} компл.
+                              {scopeUnitInfo.isMixed ? (
+                                <div className="space-y-0.5 text-[10.5px] leading-tight">
+                                  {groupQuantitiesByPrimaryUnit(
+                                    procData.perSku.map((x) => ({
+                                      unit: getBrandUnitConfig(x.model).primaryUnit,
+                                      qty: x.plan.annualDemandPacks,
+                                    }))
+                                  ).map((g) => (
+                                    <div key={g.unit}>
+                                      {g.qty.toLocaleString('ru-RU')} {g.unit}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                `${procData.annualDemandPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`
+                              )}
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono">
-                              {formatMln(investmentSummary.annualSoldGoodsCostRub)}
+                              {formatCostMln(investmentSummary.annualSoldGoodsCostRub)}
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono">
-                              {procData.totalScenarioPacks.toLocaleString('ru-RU')} компл.
+                              {scopeUnitInfo.isMixed ? (
+                                <div className="space-y-0.5 text-[10.5px] leading-tight">
+                                  {groupQuantitiesByPrimaryUnit(
+                                    procData.perSku.map((x) => ({
+                                      unit: getBrandUnitConfig(x.model).primaryUnit,
+                                      qty:
+                                        x.plan.totalApprovedReceiptsPacks +
+                                        x.plan.totalRecommendedPacks,
+                                    }))
+                                  ).map((g) => (
+                                    <div key={g.unit}>
+                                      {g.qty.toLocaleString('ru-RU')} {g.unit}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`
+                              )}
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono text-emerald-700 bg-emerald-500/8">
-                              <div>{formatMln(procData.firstWaveBudgetRub)}</div>
+                              <div>{formatCostMln(procData.firstWaveBudgetRub)}</div>
                               <div className="text-[10px] font-semibold text-[#475569]">
-                                ав. {formatMln(procData.firstWavePrepaymentRub)}
+                                ав. {formatCostMln(procData.firstWavePrepaymentRub)}
                               </div>
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono">
-                              {formatMln(
+                              {formatCostMln(
                                 Math.max(
                                   0,
                                   procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub
@@ -3386,7 +3846,7 @@ export function ProcurementContourView() {
                               )}
                             </td>
                             <td className="px-2.5 py-3 text-right font-mono text-[13px]">
-                              {formatMln(procData.totalScenarioBudgetRub)}
+                              {formatCostMln(procData.totalScenarioBudgetRub)}
                             </td>
                             <td className="py-3 pr-3.5 pl-2.5 text-right font-mono text-[11px] text-[#475569]">
                               100% сводки
@@ -3409,6 +3869,7 @@ export function ProcurementContourView() {
             const effectiveWorkbenchScenario = activeSkuEntry?.scenario || currentScenario;
             return (
             <SkuProcurementMvpWorkbench
+              key={activeSkuModel.id}
               model={activeSkuModel}
               scenario={effectiveWorkbenchScenario}
               currentScenario={effectiveWorkbenchScenario}
@@ -3442,11 +3903,20 @@ export function ProcurementContourView() {
                     onChange={(e) => setSelectedSkuId(e.target.value)}
                     className="h-9 min-w-[260px] max-w-[460px] rounded-[8px] border border-[#CFCEC6] bg-[#FAF9F6] px-3 text-[13.5px] font-extrabold text-[#141413] hover:border-[#141413] focus:border-[#141413] focus:bg-white focus:outline-none cursor-pointer"
                   >
-                    {filteredSkus.map(({ model: m, plan }) => (
-                      <option key={m.id} value={m.id}>
-                        {m.title} ({m.code} · {m.unitsInPack} изд.) — {plan.totalRecommendedPacks.toLocaleString('ru-RU')} компл.
-                      </option>
-                    ))}
+                    {filteredSkus.map(({ model: m, plan }) => {
+                      const optUnit = getBrandUnitConfig(m);
+                      const packSuffix =
+                        (m.unitsInPack || 1) === 1 && optUnit.primaryUnit === optUnit.secondaryUnit
+                          ? ''
+                          : ` · ${m.unitsInPack} ${optUnit.secondaryUnit}`;
+                      return (
+                        <option key={m.id} value={m.id}>
+                          {m.title} ({m.code}
+                          {packSuffix}) — {plan.totalRecommendedPacks.toLocaleString('ru-RU')}{' '}
+                          {optUnit.primaryUnit}
+                        </option>
+                      );
+                    })}
                   </select>
                   <button
                     type="button"
@@ -3535,7 +4005,7 @@ export function FinanceContourView() {
   });
 
   useEffect(() => {
-    safeSetStorageJson('borners_finance_contour_params_v1', {
+    writeStoredFinanceContourParams({
       initialCashMln,
       wbLagMonths,
       whatIfPriceDelta,
@@ -3544,8 +4014,48 @@ export function FinanceContourView() {
     });
   }, [initialCashMln, wbLagMonths, whatIfPriceDelta, whatIfCostDelta, whatIfMpAdsDelta]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncParams = () => {
+      const saved = readStoredFinanceContourParams();
+      if (typeof saved.initialCashMln === 'number') {
+        setInitialCashMln((prev) => (prev === saved.initialCashMln ? prev : saved.initialCashMln!));
+      }
+      if (typeof saved.wbLagMonths === 'number') {
+        setWbLagMonths((prev) => (prev === saved.wbLagMonths ? prev : saved.wbLagMonths!));
+      }
+      if (typeof saved.whatIfPriceDelta === 'number') {
+        setWhatIfPriceDelta((prev) =>
+          prev === saved.whatIfPriceDelta ? prev : saved.whatIfPriceDelta!
+        );
+      }
+      if (typeof saved.whatIfCostDelta === 'number') {
+        setWhatIfCostDelta((prev) =>
+          prev === saved.whatIfCostDelta ? prev : saved.whatIfCostDelta!
+        );
+      }
+      if (typeof saved.whatIfMpAdsDelta === 'number') {
+        setWhatIfMpAdsDelta((prev) =>
+          prev === saved.whatIfMpAdsDelta ? prev : saved.whatIfMpAdsDelta!
+        );
+      }
+    };
+    window.addEventListener('borners-finance-params-changed', syncParams);
+    window.addEventListener('storage', syncParams);
+    return () => {
+      window.removeEventListener('borners-finance-params-changed', syncParams);
+      window.removeEventListener('storage', syncParams);
+    };
+  }, []);
+
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
+  const canEditActiveFinanceScope =
+    brandFilter === 'ALL'
+      ? ['BORNERS', 'FUKAI', 'NA_TELE', 'AKUSHA', 'LISKANI'].some((code) =>
+          canUserEditBrand(currentUser, code)
+        )
+      : canUserEditBrand(currentUser, brandFilter);
 
   const isHoldingAllBrands = brandFilter === 'ALL';
   const holdingSourceModels = models.length > 0 ? models : scenarioAllEligibleModels;
@@ -3581,28 +4091,58 @@ export function FinanceContourView() {
     ]
   );
 
-  const brandsReport = useMemo(
-    () =>
-      computeGroupBrandsInvestmentReport(
-        holdingSourceModels,
-        currentScenario,
-        {
-          initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
-          settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
-          wbPayoutScheduleSpecified: wbLagMonths >= 0,
-          allScenarios: scenarios,
-          selectedScenarioByBrand,
-        }
-      ),
-    [
+  const brandsReport = useMemo(() => {
+    const effectiveSelectedByBrand = isHoldingAllBrands
+      ? selectedScenarioByBrand
+      : { ...selectedScenarioByBrand, [brandFilter]: currentScenario.id };
+    const fullReport = computeGroupBrandsInvestmentReport(
       holdingSourceModels,
       currentScenario,
-      initialCashMln,
-      wbLagMonths,
-      scenarios,
-      selectedScenarioByBrand,
-    ]
-  );
+      {
+        initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+        wbPayoutScheduleSpecified: wbLagMonths >= 0,
+        allScenarios: scenarios,
+        selectedScenarioByBrand: effectiveSelectedByBrand,
+      }
+    );
+    if (isHoldingAllBrands) return fullReport;
+    const scopedBrands = fullReport.brands.filter((b) => b.brandCode === brandFilter);
+    const activeBrandRow = scopedBrands[0];
+    return {
+      brands: scopedBrands,
+      groupTotal: activeBrandRow
+        ? {
+            ...fullReport.groupTotal,
+            modelsCount: activeBrandRow.modelsCount,
+            annualRevenueRub: activeBrandRow.annualRevenueRub,
+            decemberRevenueRub: activeBrandRow.decemberRevenueRub,
+            annualDemandPacks: activeBrandRow.annualDemandPacks,
+            totalProcurementPacks: activeBrandRow.totalProcurementPacks,
+            totalProcurementUnits: activeBrandRow.totalProcurementUnits,
+            totalProcurementBudgetRub: activeBrandRow.totalProcurementBudgetRub,
+            annualSoldGoodsCostRub: activeBrandRow.annualSoldGoodsCostRub,
+            annualEstimatedOperatingProfitRub: activeBrandRow.annualEstimatedOperatingProfitRub,
+            firstWaveStartBudgetRub: activeBrandRow.firstWaveStartBudgetRub,
+            firstWavePrepaymentRub: activeBrandRow.firstWavePrepaymentRub,
+            peakWorkingCapitalRub: activeBrandRow.peakWorkingCapitalRub,
+            netOwnMoneyRequiredRub: activeBrandRow.peakWorkingCapitalRub,
+            peakMonthIdx: activeBrandRow.peakMonthIdx,
+            peakMonthLabel: activeBrandRow.peakMonthLabel,
+            selfFundingMonthLabel: activeBrandRow.selfFundingMonthLabel,
+          }
+        : fullReport.groupTotal,
+    };
+  }, [
+    isHoldingAllBrands,
+    brandFilter,
+    holdingSourceModels,
+    currentScenario,
+    initialCashMln,
+    wbLagMonths,
+    scenarios,
+    selectedScenarioByBrand,
+  ]);
 
   const scopedFinanceEntries = useMemo(() => {
     if (isHoldingAllBrands) {
@@ -3903,88 +4443,128 @@ export function FinanceContourView() {
           )}
 
           {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (В ВОЗДУШНОМ ДИЗАЙН-КОДЕ С 3PX ПОЛОСКОЙ) */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                1. Вложить на старт (Партия №1 · Q1)
-              </div>
-              <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто ролью'}
-              </div>
-              <div className="text-[11.5px] text-[#64748B]">
-                <strong className="text-[#0F172A] dark:text-[#EDF0F7]">Аванс 30% сейчас: {formatMln(investmentSummary.firstWavePrepaymentRub)}</strong> ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} компл.)
-              </div>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
-            </div>
-
-            <div
-              onClick={() => {
-                const el = document.getElementById('peak-own-money-chart-anchor');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] hover:border-amber-400 p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)] cursor-pointer transition"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                  2. Пик своих денег (с оборотом WB)
-                </div>
-                <span className="rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
-                  📍 {investmentSummary.peakMonthLabel} {currentScenario.year || 2027}
-                </span>
-              </div>
-              {investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
-              investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
-                <>
+          {(() => {
+            const distinctFinUnits = Array.from(
+              new Set(scopedFinanceEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
+            );
+            const isMixedFinUnits = distinctFinUnits.length > 1;
+            const finPrimaryUnit =
+              !isMixedFinUnits && distinctFinUnits.length === 1
+                ? distinctFinUnits[0]
+                : !isHoldingAllBrands
+                ? getBrandUnitConfig(brandFilter).primaryUnit
+                : 'ед.';
+            return (
+              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                    1. Вложить на старт (Партия №1 · Q1)
+                  </div>
                   <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                    {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
+                    {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто'}
                   </div>
-                  <div className="text-[11px] text-[#64748B] leading-snug">
-                    <strong className="text-amber-800 dark:text-amber-300">
-                      {investmentSummary.peakPhase === 'before_wb_inflow'
-                        ? `1–15 ${investmentSummary.peakMonthLabel.toLowerCase()}. (до прихода WB)`
-                        : `Конец ${investmentSummary.peakMonthLabel.toLowerCase()}.`}
-                    </strong>
-                    {investmentSummary.selfFundingMonthLabel
-                      ? ` · с ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB ↓`
-                      : ' · нажмите для подробного графика ↓'}
+                  <div className="text-[11.5px] text-[#64748B]">
+                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                      Аванс 30% сейчас:{' '}
+                      {hasCost ? formatMln(investmentSummary.firstWavePrepaymentRub) : 'Скрыто'}
+                    </strong>{' '}
+                    ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} {finPrimaryUnit})
                   </div>
-                </>
-              ) : (
-                <div className="text-[12.5px] font-semibold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
-                  {investmentSummary.ownMoneyStatusLabel}
+                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
                 </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/85" />
-            </div>
 
-            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                3. Закупки за год vs Себест. продаж
-              </div>
-              <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто ролью'}
-              </div>
-              <div className="text-[11.5px] text-[#64748B]">
-                Себестоимость проданного товара:{' '}
-                <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : '—'}</strong>
-              </div>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/80" />
-            </div>
+                <div
+                  onClick={() => {
+                    const el = document.getElementById('peak-own-money-chart-anchor');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] hover:border-amber-400 p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)] cursor-pointer transition"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                      2. Пик своих денег (с оборотом WB)
+                    </div>
+                    <span className="rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                      {wbLagMonths < 0
+                        ? 'Лаг WB не задан'
+                        : `📍 ${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`}
+                    </span>
+                  </div>
+                  {!hasCost ? (
+                    <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                      Скрыто
+                    </div>
+                  ) : wbLagMonths < 0 ? (
+                    <div className="text-[13px] font-bold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
+                      Лаг WB не задан
+                    </div>
+                  ) : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
+                    investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
+                    <>
+                      <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                        {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
+                      </div>
+                      <div className="text-[11px] text-[#64748B] leading-snug">
+                        <strong className="text-amber-800 dark:text-amber-300">
+                          {investmentSummary.peakPhase === 'before_wb_inflow'
+                            ? `1–15 ${investmentSummary.peakMonthLabel.toLowerCase()}. (до прихода WB)`
+                            : `Конец ${investmentSummary.peakMonthLabel.toLowerCase()}.`}
+                        </strong>
+                        {investmentSummary.selfFundingMonthLabel
+                          ? ` · с ${investmentSummary.selfFundingMonthLabel} — самоокупаемость из WB ↓`
+                          : ' · нажмите для подробного графика ↓'}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[12.5px] font-semibold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
+                      {investmentSummary.ownMoneyStatusLabel}
+                    </div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/85" />
+                </div>
 
-            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
-                4. Ожидаемая прибыль 2027 (после WB и рекламы)
-              </div>
-              <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                +{formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}
-              </div>
-              <div className="text-[11.5px] text-[#64748B]">
-                Выручка: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{formatMln(effectiveAnnualRevenueRub)}</strong> · Рентабельность:{' '}
-                <strong className="text-emerald-600 dark:text-emerald-400">{investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%</strong>
-              </div>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
-            </div>
-          </section>
+                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                    3. Закупки за год vs Себест. продаж
+                  </div>
+                  <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                    {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто'}
+                  </div>
+                  <div className="text-[11.5px] text-[#64748B]">
+                    Себестоимость проданного товара:{' '}
+                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                      {hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : 'Скрыто'}
+                    </strong>
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/80" />
+                </div>
+
+                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                    4. Ожидаемая прибыль 2027 (после WB и рекламы)
+                  </div>
+                  <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {hasCost
+                      ? `+${formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}`
+                      : 'Скрыто'}
+                  </div>
+                  <div className="text-[11.5px] text-[#64748B]">
+                    Выручка:{' '}
+                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                      {formatMln(effectiveAnnualRevenueRub)}
+                    </strong>{' '}
+                    · Рентабельность:{' '}
+                    <strong className="text-emerald-600 dark:text-emerald-400">
+                      {hasCost
+                        ? `${investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%`
+                        : '—'}
+                    </strong>
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
+                </div>
+              </section>
+            );
+          })()}
 
           {/* ИНТЕРАКТИВНЫЙ КАЛЬКУЛЯТОР «ЧТО ЕСЛИ?» В КОНТУРЕ 04 · ФИНАНСЫ */}
           {(() => {
@@ -4140,11 +4720,12 @@ export function FinanceContourView() {
                     <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-3">
                       <div className="text-[11px] text-[#64748B]">Новая прибыль</div>
                       <div className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                        +{formatMln(sim.simulatedProfitRub)}
+                        {hasCost ? `+${formatMln(sim.simulatedProfitRub)}` : 'Скрыто'}
                       </div>
                       <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
-                        {sim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}
-                        {formatMln(Math.abs(sim.profitDeltaRub))}
+                        {hasCost
+                          ? `${sim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}${formatMln(Math.abs(sim.profitDeltaRub))}`
+                          : '—'}
                       </div>
                     </div>
                     <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
@@ -4153,16 +4734,24 @@ export function FinanceContourView() {
                         {formatMln(sim.simulatedRevenueRub)}
                       </div>
                       <div className="font-mono text-[10.5px] text-[#64748B]">
-                        Маржа {sim.simulatedMarginPct.toFixed(1).replace('.', ',')}%
+                        {hasCost
+                          ? `Маржа ${sim.simulatedMarginPct.toFixed(1).replace('.', ',')}%`
+                          : 'Скрыто'}
                       </div>
                     </div>
                     <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
                       <div className="text-[11px] text-[#64748B]">Пик своих денег</div>
                       <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
-                        {formatMln(sim.simulatedOwnCapitalRub)}
+                        {!hasCost
+                          ? 'Скрыто'
+                          : wbLagMonths < 0
+                          ? 'Лаг WB не задан'
+                          : formatMln(sim.simulatedOwnCapitalRub)}
                       </div>
                       <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
-                        {sim.simulatedRoiMult ? `ROI ×${sim.simulatedRoiMult}` : 'с WB'}
+                        {hasCost && wbLagMonths >= 0 && sim.simulatedRoiMult
+                          ? `ROI ×${sim.simulatedRoiMult}`
+                          : 'с WB'}
                       </div>
                     </div>
                   </div>
@@ -4239,45 +4828,67 @@ export function FinanceContourView() {
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
                         {b.modelsCount > 0
-                          ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} компл.`
+                          ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} ${getBrandUnitConfig(b.brandCode).primaryUnit}`
                           : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono bg-emerald-500/6 text-emerald-700 dark:text-emerald-300">
                         {b.modelsCount > 0 ? (
-                          <div>
-                            <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
-                            <div className="text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80">
-                              аванс 30%: {formatMln(b.firstWavePrepaymentRub)}
+                          hasCost ? (
+                            <div>
+                              <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
+                              <div className="text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80">
+                                аванс 30%: {formatMln(b.firstWavePrepaymentRub)}
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            'Скрыто'
+                          )
                         ) : (
                           '—'
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7]">
                         {b.modelsCount > 0 ? (
-                          <div>
-                            <div>{formatMln(b.peakWorkingCapitalRub)}</div>
-                            <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">
-                              пик: {b.peakMonthLabel || 'Янв'}
-                              {b.selfFundingMonthLabel
-                                ? ` · с ${b.selfFundingMonthLabel} с WB`
-                                : ''}
+                          !hasCost ? (
+                            'Скрыто'
+                          ) : wbLagMonths < 0 ? (
+                            <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                              Лаг WB не задан
+                            </span>
+                          ) : (
+                            <div>
+                              <div>{formatMln(b.peakWorkingCapitalRub)}</div>
+                              <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">
+                                пик: {b.peakMonthLabel || 'Янв'}
+                                {b.selfFundingMonthLabel
+                                  ? ` · с ${b.selfFundingMonthLabel} с WB`
+                                  : ''}
+                              </div>
                             </div>
-                          </div>
+                          )
                         ) : (
                           '—'
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
-                        {b.modelsCount > 0 ? formatMln(b.totalProcurementBudgetRub) : '—'}
+                        {b.modelsCount > 0
+                          ? hasCost
+                            ? formatMln(b.totalProcurementBudgetRub)
+                            : 'Скрыто'
+                          : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#5E5D58]">
-                        {b.modelsCount > 0 ? formatMln(b.annualSoldGoodsCostRub) : '—'}
+                        {b.modelsCount > 0
+                          ? hasCost
+                            ? formatMln(b.annualSoldGoodsCostRub)
+                            : 'Скрыто'
+                          : '—'}
                       </td>
                       <td className="py-2.5 px-3.5 text-right font-mono font-bold text-[#157347]">
                         {b.modelsCount > 0
-                          ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
+                          ? hasCost
+                            ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
+                            : 'Скрыто'
                           : '—'}
                       </td>
                     </tr>
@@ -4288,7 +4899,11 @@ export function FinanceContourView() {
                     onClick={() => setBrandFilter('ALL')}
                     className="bg-[#F5F5F1] font-extrabold text-[#141413] border-t-[1.5px] border-[#CECDC4] cursor-pointer"
                   >
-                    <td className="py-3 px-3.5">ИТОГО ПО ГРУППЕ (без дублей)</td>
+                    <td className="py-3 px-3.5">
+                      {isHoldingAllBrands
+                        ? 'ИТОГО ПО ГРУППЕ (без дублей)'
+                        : `ИТОГО (${formatLabBrandLabel(brandFilter)})`}
+                    </td>
                     <td className="py-3 px-2.5 text-right font-mono">
                       {brandsReport.groupTotal.modelsCount}
                     </td>
@@ -4296,31 +4911,66 @@ export function FinanceContourView() {
                       {formatMln(brandsReport.groupTotal.annualRevenueRub)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
-                      {brandsReport.groupTotal.totalProcurementPacks.toLocaleString('ru-RU')} компл.
+                      {formatGroupedUnitInline(
+                        brandsReport.brands.map((b) => ({
+                          unit: getBrandUnitConfig(b.brandCode).primaryUnit,
+                          qty: b.totalProcurementPacks,
+                        })),
+                        isHoldingAllBrands ? 'ед.' : getBrandUnitConfig(brandFilter).primaryUnit
+                      )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
-                      <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
-                      <div className="text-[10.5px] font-semibold">
-                        аванс 30%: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
-                      </div>
+                      {hasCost ? (
+                        <>
+                          <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                          <div className="text-[10.5px] font-semibold">
+                            аванс 30%: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
+                          </div>
+                        </>
+                      ) : (
+                        'Скрыто'
+                      )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
-                      <div>{formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}</div>
-                      <div className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300">
-                        пик: {holdingSummary.groupTotal.peakMonthLabel}
-                        {holdingSummary.groupTotal.selfFundingMonthLabel
-                          ? ` · в плюс с ${holdingSummary.groupTotal.selfFundingMonthLabel}`
-                          : ''}
-                      </div>
+                      {!hasCost ? (
+                        'Скрыто'
+                      ) : wbLagMonths < 0 ? (
+                        <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                          Лаг WB не задан
+                        </div>
+                      ) : (
+                        <>
+                          <div>{formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}</div>
+                          <div className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300">
+                            пик:{' '}
+                            {isHoldingAllBrands
+                              ? holdingSummary.groupTotal.peakMonthLabel
+                              : brandsReport.groupTotal.peakMonthLabel}
+                            {(
+                              isHoldingAllBrands
+                                ? holdingSummary.groupTotal.selfFundingMonthLabel
+                                : brandsReport.groupTotal.selfFundingMonthLabel
+                            )
+                              ? ` · в плюс с ${
+                                  isHoldingAllBrands
+                                    ? holdingSummary.groupTotal.selfFundingMonthLabel
+                                    : brandsReport.groupTotal.selfFundingMonthLabel
+                                }`
+                              : ''}
+                          </div>
+                        </>
+                      )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
-                      {formatMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
+                      {hasCost ? formatMln(brandsReport.groupTotal.totalProcurementBudgetRub) : 'Скрыто'}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
-                      {formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
+                      {hasCost ? formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub) : 'Скрыто'}
                     </td>
                     <td className="py-3 px-3.5 text-right font-mono text-[#157347]">
-                      +{formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
+                      {hasCost
+                        ? `+${formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}`
+                        : 'Скрыто'}
                     </td>
                   </tr>
                 </tfoot>
@@ -4359,7 +5009,7 @@ export function FinanceContourView() {
                 </h2>
               </div>
 
-              {finSummary.unfilledOpCount > 0 && (
+              {finSummary.unfilledOpCount > 0 && canEditActiveFinanceScope && (
                 <button
                   type="button"
                   onClick={() => {
@@ -4382,8 +5032,12 @@ export function FinanceContourView() {
                 <thead>
                   <tr className="bg-[#F5F5F1] text-[#5E5D58] border-b-[1.5px] border-[#CECDC4]">
                     <th className="py-2.5 px-3.5 font-bold">Модель / Артикул</th>
-                    <th className="py-2.5 px-3 font-bold text-right">Цена компл.</th>
-                    <th className="py-2.5 px-3 font-bold text-right">Себест. компл.</th>
+                    <th className="py-2.5 px-3 font-bold text-right">
+                      {isHoldingAllBrands ? 'Цена ед.' : `Цена (${getBrandUnitConfig(brandFilter).primaryUnit})`}
+                    </th>
+                    <th className="py-2.5 px-3 font-bold text-right">
+                      {isHoldingAllBrands ? 'Себест. ед.' : `Себест. (${getBrandUnitConfig(brandFilter).primaryUnit})`}
+                    </th>
                     <th className="py-2.5 px-3 font-bold text-right">Валовая наценка</th>
                     <th className="py-2.5 px-3 font-bold text-right">Выручка 2027</th>
                     <th className="py-2.5 px-3.5 font-bold text-right">Опер. прибыль 2027</th>
@@ -4402,14 +5056,16 @@ export function FinanceContourView() {
                         <td className="py-2.5 px-3.5">
                           <div className="font-bold text-[#141413]">{model.title}</div>
                           <div className="font-mono text-[10.5px] text-[#5E5D58]">
-                            {acting ? `WB ${acting.wbSku}` : model.code}
+                            {acting ? `WB ${acting.wbSku}` : model.code} · {getBrandUnitConfig(model).primaryUnit}
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono">
                           {Math.round(pnl.avgRealizedPricePerPackRub).toLocaleString('ru-RU')} ₽
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-[#5E5D58]">
-                          {hasCost && pnl.unitCostPerPackRub !== null
+                          {!hasCost
+                            ? 'Скрыто'
+                            : pnl.unitCostPerPackRub !== null
                             ? `${pnl.unitCostPerPackRub.toLocaleString('ru-RU')} ₽`
                             : '—'}
                         </td>
@@ -4422,7 +5078,9 @@ export function FinanceContourView() {
                           {formatMln(pnl.annualRevenueRub)}
                         </td>
                         <td className="py-2.5 px-3.5 text-right">
-                          {pnl.annualOperatingProfitRub !== null ? (
+                          {!hasCost ? (
+                            <span className="font-mono text-[#5E5D58]">Скрыто</span>
+                          ) : pnl.annualOperatingProfitRub !== null ? (
                             <span className="font-mono font-bold text-[#157347]">
                               {formatMln(pnl.annualOperatingProfitRub)}
                             </span>

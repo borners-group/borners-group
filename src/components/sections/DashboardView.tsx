@@ -23,6 +23,8 @@ import {
   TASK_STATUS_LABELS_RU,
   calculatePlanFactVariance,
   calculateUnitEconomics,
+  canUserEditBrand,
+  canUserViewCostPrice,
   canUserViewFinance,
   formatCompactRub,
   normalizeConceptStageToSeven,
@@ -30,6 +32,9 @@ import {
 import { TaskStatus } from '@/types/platform';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { safeGetStorageJson } from '@/lib/safeStorage';
+import { computeMultiBrandPortfolioSummary } from '@/lib/unifiedBusinessEngine';
+import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 
 export function DashboardView() {
   const {
@@ -52,6 +57,59 @@ export function DashboardView() {
   const [chartMetric, setChartMetric] = useState<'revenue' | 'profit'>('revenue');
   const [dashboardMode, setDashboardMode] = useState<'all' | 'miro'>('all');
   const { draftModules } = useDraftModules();
+  const { models: liveModels, scenarios: liveScenarios, selectedScenarioByBrand } =
+    useLiveScenarioPortfolio();
+
+  const [financeParams, setFinanceParams] = useState<{
+    initialCashMln: number;
+    wbLagMonths: number;
+  }>(() => {
+    const saved = safeGetStorageJson<{ initialCashMln?: number; wbLagMonths?: number }>(
+      'borners_finance_contour_params_v1'
+    );
+    return {
+      initialCashMln: typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0,
+      wbLagMonths: typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0,
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncFinanceParams = () => {
+      const saved = safeGetStorageJson<{ initialCashMln?: number; wbLagMonths?: number }>(
+        'borners_finance_contour_params_v1'
+      );
+      const nextCash = typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0;
+      const nextLag = typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0;
+      setFinanceParams((prev) =>
+        prev.initialCashMln === nextCash && prev.wbLagMonths === nextLag
+          ? prev
+          : { initialCashMln: nextCash, wbLagMonths: nextLag }
+      );
+    };
+    window.addEventListener('borners-finance-params-changed', syncFinanceParams);
+    window.addEventListener('storage', syncFinanceParams);
+    return () => {
+      window.removeEventListener('borners-finance-params-changed', syncFinanceParams);
+      window.removeEventListener('storage', syncFinanceParams);
+    };
+  }, []);
+
+  const livePortfolioCashflowSummary = useMemo(
+    () =>
+      computeMultiBrandPortfolioSummary(liveModels, liveScenarios, selectedScenarioByBrand, {
+        initialCashRub: Math.round((Number(financeParams.initialCashMln) || 0) * 1_000_000),
+        settlementLagMonths: financeParams.wbLagMonths < 0 ? null : financeParams.wbLagMonths,
+        wbPayoutScheduleSpecified: financeParams.wbLagMonths >= 0,
+      }),
+    [
+      liveModels,
+      liveScenarios,
+      selectedScenarioByBrand,
+      financeParams.initialCashMln,
+      financeParams.wbLagMonths,
+    ]
+  );
 
   useEffect(() => {
     const onResetHome = () => {
@@ -62,6 +120,13 @@ export function DashboardView() {
   }, []);
 
   const hasFinanceAccess = canUserViewFinance(currentUser);
+  const hasCostAccess = canUserViewCostPrice(currentUser);
+
+  useEffect(() => {
+    if (!hasCostAccess && chartMetric === 'profit') {
+      setChartMetric('revenue');
+    }
+  }, [hasCostAccess, chartMetric]);
 
   const filteredProducts = useMemo(
     () =>
@@ -361,8 +426,26 @@ export function DashboardView() {
                           Целевая маржа
                         </div>
                         <div className="font-serif-editorial text-[22px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                          {hasFinanceAccess ? `${brand.targetMarginPct}%` : '—'}
+                          {hasFinanceAccess && hasCostAccess
+                            ? `${brand.targetMarginPct}%`
+                            : 'Скрыто'}
                         </div>
+                        {hasFinanceAccess &&
+                          hasCostAccess &&
+                          livePortfolioCashflowSummary.groupTotal.modelsCount > 0 && (
+                            <div className="text-[10px] text-[#8C867E] mt-0.5 truncate">
+                              {financeParams.wbLagMonths < 0
+                                ? 'Лаг WB не задан'
+                                : (() => {
+                                    const bRow = livePortfolioCashflowSummary.brands.find(
+                                      (b) => b.brandCode === brand.code
+                                    );
+                                    return bRow && bRow.modelsCount > 0
+                                      ? `Пик (с WB): ${formatCompactRub(bRow.peakWorkingCapitalRub)}`
+                                      : '';
+                                  })()}
+                            </div>
+                          )}
                       </div>
                       <div className="px-3">
                         <div className="text-[11.5px] text-[#8C867E]">
@@ -513,8 +596,14 @@ export function DashboardView() {
                   <div onClick={(e) => e.stopPropagation()}>
                     <select
                       value={task.status}
+                      disabled={
+                        !canUserEditBrand(
+                          currentUser,
+                          task.brandId === 'ALL' ? 'BORNERS' : normalizeLabBrandCode(task.brandId)
+                        )
+                      }
                       onChange={(e) => updateTaskStatus(task.id, e.target.value as TaskStatus)}
-                      className="w-full h-8 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] px-2.5 text-[12px] font-semibold text-[#181715] cursor-pointer"
+                      className="w-full h-8 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] px-2.5 text-[12px] font-semibold text-[#181715] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {(['To Do', 'In Progress', 'Review', 'Done', 'Blocked'] as TaskStatus[]).map(
                         (st) => (
@@ -560,17 +649,19 @@ export function DashboardView() {
               >
                 Выручка
               </button>
-              <button
-                type="button"
-                onClick={() => setChartMetric('profit')}
-                className={`px-3 py-1 rounded-[4px] text-[12px] font-medium transition cursor-pointer ${
-                  chartMetric === 'profit'
-                    ? 'bg-white text-[#161615] shadow-2xs'
-                    : 'text-[#6E6A63]'
-                }`}
-              >
-                Прибыль
-              </button>
+              {hasCostAccess && (
+                <button
+                  type="button"
+                  onClick={() => setChartMetric('profit')}
+                  className={`px-3 py-1 rounded-[4px] text-[12px] font-medium transition cursor-pointer ${
+                    chartMetric === 'profit'
+                      ? 'bg-white text-[#161615] shadow-2xs'
+                      : 'text-[#6E6A63]'
+                  }`}
+                >
+                  Прибыль
+                </button>
+              )}
             </div>
           </div>
 
