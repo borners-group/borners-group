@@ -8190,6 +8190,633 @@ test('113. Полная RBAC-изоляция себестоимости, фин
   );
 });
 
+test('114. v9 safeStorage: стриппинг любых больших data:* (PDF/XLSX/видео), регидратация фото доказательств R&D + документов IDB и защита от воскрешения пустых galleryUrls: []', async () => {
+  const {
+    stripOversizedDataUrls,
+    rehydrateConceptsFromIdbSnapshot,
+    rehydrateMiroItemsFromIdbSnapshot,
+    rehydrateDocumentsFromIdbSnapshot,
+  } = await import('../src/lib/safeStorage.ts');
+
+  const bigPdfDataUrl = 'data:application/pdf;base64,' + 'A'.repeat(90_000);
+  const bigEvidencePhoto = 'data:image/jpeg;base64,' + 'B'.repeat(85_000);
+  const bigProtocolPhoto = 'data:image/png;base64,' + 'C'.repeat(85_000);
+
+  const idbConcepts = [
+    {
+      id: 'c-v9-rich',
+      imageUrl: '',
+      galleryPhotos: [],
+      samples: [],
+      attachments: [{ id: 'att-pdf', name: 'techpack.pdf', url: bigPdfDataUrl }],
+      analysisReport: {
+        marketEvidences: [{ id: 'ev-1', competitorTitle: 'Comp A', screenshotUrl: bigEvidencePhoto }],
+      },
+      testProtocols: [{ id: 'tp-1', title: 'Стирка', evidencePhotos: [bigProtocolPhoto] }],
+    },
+  ];
+
+  const strippedConcepts = stripOversizedDataUrls(idbConcepts, 45_000);
+  assert.equal(
+    strippedConcepts[0].attachments[0].url,
+    '',
+    'stripOversizedDataUrls обязан обрезать огромные data:application/pdf вложения, чтобы не блокировать квоту 5 МБ localStorage'
+  );
+  assert.equal(strippedConcepts[0].analysisReport.marketEvidences[0].screenshotUrl, '');
+  assert.equal(strippedConcepts[0].testProtocols[0].evidencePhotos[0], '');
+
+  const rehydratedConcepts = rehydrateConceptsFromIdbSnapshot(strippedConcepts, idbConcepts);
+  assert.equal(rehydratedConcepts[0].attachments[0].url, bigPdfDataUrl);
+  assert.equal(
+    rehydratedConcepts[0].analysisReport.marketEvidences[0].screenshotUrl,
+    bigEvidencePhoto,
+    'rehydrateConceptsFromIdbSnapshot обязан восстанавливать analysisReport.marketEvidences[].screenshotUrl из IndexedDB'
+  );
+  assert.equal(
+    rehydratedConcepts[0].testProtocols[0].evidencePhotos[0],
+    bigProtocolPhoto,
+    'rehydrateConceptsFromIdbSnapshot обязан восстанавливать testProtocols[].evidencePhotos из IndexedDB'
+  );
+
+  // Явно очищенный пользователем массив galleryUrls: [] в Miro НЕ должен воскрешать старые фото из IDB
+  const localMiroCleared = [{ id: 'miro-1', imageUrl: '', galleryUrls: [] as string[] }];
+  const idbMiroStale = [{ id: 'miro-1', imageUrl: '', galleryUrls: [bigProtocolPhoto] }];
+  const rehydratedMiro = rehydrateMiroItemsFromIdbSnapshot(localMiroCleared, idbMiroStale);
+  assert.deepEqual(
+    rehydratedMiro[0].galleryUrls,
+    [],
+    'Явно очищенный массив galleryUrls: [] на карточке Miro не должен перетираться старым снэпшотом IDB'
+  );
+
+  // Регидратация документов из IDB
+  const strippedDocs = [{ id: 'doc-99', title: 'Спецификация PDF', dataUrl: '' }];
+  const idbDocs = [{ id: 'doc-99', title: 'Спецификация PDF', dataUrl: bigPdfDataUrl }];
+  const rehydratedDocs = rehydrateDocumentsFromIdbSnapshot(strippedDocs, idbDocs);
+  assert.equal(rehydratedDocs[0].dataUrl, bigPdfDataUrl);
+});
+
+test('115. v9 Корзина удалений SKU (borners_deleted_models_snapshots_v1), восстановление в 1 клик и точная замена при импорте бэкапа (applyPortfolioBackupSnapshotToStorage)', async () => {
+  const prevWin = (globalThis as any).window;
+  const memStore = new Map<string, string>();
+  const fakeWindow = {
+    localStorage: {
+      getItem: (k: string) => (memStore.has(k) ? memStore.get(k)! : null),
+      setItem: (k: string, v: string) => memStore.set(k, String(v)),
+      removeItem: (k: string) => memStore.delete(k),
+      clear: () => memStore.clear(),
+    },
+    dispatchEvent: () => true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  (globalThis as any).window = fakeWindow;
+
+  try {
+    const {
+      deleteModelFromPortfolio,
+      getDeletedModelSnapshots,
+      restoreDeletedModelFromTrash,
+      permanentlyDeleteModelFromTrash,
+      markScenarioAsDeletedInStorage,
+      getDeletedScenariosRegistry,
+      applyPortfolioBackupSnapshotToStorage,
+      persistPortfolioModels,
+      hydratePortfolioModelsFromStorage,
+    } = await import('../src/lib/portfolioPersistence.ts');
+    const { createBrandProductModel, createIndependentBrandScenario } = await import(
+      '../src/lib/unifiedBusinessEngine.ts'
+    );
+
+    const { model: customNaTele } = createBrandProductModel([], INITIAL_SCENARIOS, {
+      brandCode: 'NA_TELE',
+      code: 'NTL-TRASH-99',
+      title: 'НА ТЕЛЕ Боди Невесомый Шёлк',
+      categoryLabel: 'Боди женское',
+      retailPriceRub: 3290,
+      unitCostRub: 740,
+    });
+
+    const baseList = persistPortfolioModels([S1_100M_SCENARIO_MODELS[0], customNaTele]);
+    assert.equal(baseList.some((m) => m.id === customNaTele.id), true);
+
+    const afterDel = deleteModelFromPortfolio(baseList, customNaTele);
+    assert.equal(afterDel.some((m) => m.id === customNaTele.id), false);
+
+    const snaps = getDeletedModelSnapshots();
+    assert.equal(
+      snaps.some((s) => s.id === customNaTele.id && s.title.includes('НА ТЕЛЕ Боди')),
+      true,
+      'Удалённый из каталога SKU обязан сохраняться в снэпшотах Корзины удалений'
+    );
+
+    const restored = restoreDeletedModelFromTrash(customNaTele.id);
+    assert.ok(restored, 'restoreDeletedModelFromTrash обязан вернуть восстановленную модель');
+    assert.equal(restored!.code, 'NTL-TRASH-99');
+    assert.equal(
+      getDeletedModelSnapshots().some((s) => s.id === customNaTele.id),
+      false,
+      'После восстановления модель должна исчезать из Корзины'
+    );
+    assert.equal(
+      hydratePortfolioModelsFromStorage().some((m) => m.id === customNaTele.id),
+      true,
+      'Восстановленная из Корзины модель обязана переживать F5 (hydratePortfolioModelsFromStorage)'
+    );
+
+    // Повторное удаление и безвозвратная очистка из Корзины
+    deleteModelFromPortfolio(hydratePortfolioModelsFromStorage(), customNaTele);
+    permanentlyDeleteModelFromTrash(customNaTele.id);
+    assert.equal(getDeletedModelSnapshots().some((s) => s.id === customNaTele.id), false);
+
+    // Точный импорт бэкапа: удаляет post-backup модели из backup-кэша и снимает томбстоун со сценария
+    const { model: postBackupGhost } = createBrandProductModel([], INITIAL_SCENARIOS, {
+      brandCode: 'NA_TELE',
+      code: 'NTL-POST-BACKUP',
+      title: 'Создан после бэкапа',
+      categoryLabel: 'Топ',
+      retailPriceRub: 1990,
+      unitCostRub: 450,
+    });
+    persistPortfolioModels([S1_100M_SCENARIO_MODELS[0], postBackupGhost]);
+
+    const { scenario: customScen } = createIndependentBrandScenario(INITIAL_SCENARIOS, [], {
+      brandCode: 'NA_TELE',
+      title: 'НА ТЕЛЕ Весна 2027',
+      monthlyTargetMln: 18,
+    });
+    markScenarioAsDeletedInStorage(customScen.id);
+    assert.equal(getDeletedScenariosRegistry().includes(customScen.id), true);
+
+    applyPortfolioBackupSnapshotToStorage(
+      [...S1_100M_SCENARIO_MODELS, customNaTele],
+      [...INITIAL_SCENARIOS, customScen]
+    );
+    assert.equal(
+      getDeletedScenariosRegistry().includes(customScen.id),
+      false,
+      'Импорт бэкапа обязан снимать томбстоун с импортируемого кастомного сценария'
+    );
+    const hydratedAfterBackup = hydratePortfolioModelsFromStorage();
+    assert.equal(
+      hydratedAfterBackup.some((m) => m.id === postBackupGhost.id),
+      false,
+      'Модель, созданная после бэкапа, НЕ должна воскресать из STORAGE_KEY_USER_PLANS_BACKUP при F5'
+    );
+    assert.equal(hydratedAfterBackup.some((m) => m.id === customNaTele.id), true);
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('116. v9 rndCatalogSync: реактивация архивного SKU после REJECTED без дублей, сохранение unitsInPack бренда и защита ручных PO (version > 1)', async () => {
+  const { syncConceptToScenarioPortfolio, findLinkedScenarioModelForConcept } = await import(
+    '../src/lib/rndCatalogSync.ts'
+  );
+
+  const bornersConcept: any = {
+    id: 'concept-v9-reopen',
+    code: 'BRN-LAB-777',
+    name: 'Боксеры BORNERS Reopen Test',
+    brandId: 'BORNERS',
+    category: 'Боксеры',
+    stage: 'PRODUCTION',
+    plannedRetailPrice: 2490,
+    plannedUnitCost: 350,
+    // packUnitsCount не задан — должен подхватиться дефолт BORNERS (4 шт. в паке), а не сброситься в 1!
+    productionOrders: [
+      {
+        id: 'po-rnd-1',
+        orderVersion: 1,
+        factoryName: 'Guangdong Apex',
+        approvedSampleVersion: 'v1',
+        materialAndColors: 'Modal',
+        packColorComposition: 'Black',
+        unitsPerPack: 4,
+        packsBySize: { S: 50, M: 100, L: 100, XL: 100, XXL: 50 },
+        unitPrice: 350,
+        currency: 'RUB',
+        plannedReadyDate: '2027-04-10',
+        qcNotes: '',
+        logisticsTracking: '',
+      },
+    ],
+  };
+
+  const sync1 = syncConceptToScenarioPortfolio(bornersConcept, [], INITIAL_SCENARIOS);
+  assert.equal(
+    sync1.model.unitsInPack,
+    3,
+    'При пустом packUnitsCount для BORNERS должен подтягиваться дефолт профиля бренда (3 ед. в наборе, а не 1)'
+  );
+
+  // Переводим карточку в REJECTED -> SKU уходит «В архиве»
+  const rejectedSync = syncConceptToScenarioPortfolio(
+    { ...bornersConcept, linkedScenarioModelId: sync1.model.id, stage: 'REJECTED' },
+    [sync1.model],
+    INITIAL_SCENARIOS
+  );
+  assert.equal(rejectedSync.model.launchStatus, 'В архиве');
+
+  // Возвращаем карточку из архива обратно в PRODUCTION -> НЕ должен создаваться дубль, а существующий SKU выходит из архива!
+  const foundArchived = findLinkedScenarioModelForConcept(
+    { ...bornersConcept, linkedScenarioModelId: sync1.model.id },
+    [rejectedSync.model]
+  );
+  assert.ok(foundArchived, 'findLinkedScenarioModelForConcept обязан находить связанный архивный SKU');
+
+  // Симулируем ручную правку PO пользователем в 03 · Закупки (version: 2, packsQty: 950)
+  const manuallyEditedModel = {
+    ...rejectedSync.model,
+    sharedSupplyAndFact: {
+      ...rejectedSync.model.sharedSupplyAndFact!,
+      approvedOrders: rejectedSync.model.sharedSupplyAndFact!.approvedOrders.map((po) => ({
+        ...po,
+        version: 2,
+        packsQty: 950,
+      })),
+    },
+  };
+
+  const reopenedSync = syncConceptToScenarioPortfolio(
+    { ...bornersConcept, linkedScenarioModelId: sync1.model.id, stage: 'LAUNCH' },
+    [manuallyEditedModel],
+    INITIAL_SCENARIOS
+  );
+  assert.equal(reopenedSync.createdNew, false, 'При возврате из REJECTED дубликат SKU не создаётся');
+  assert.equal(reopenedSync.model.id, sync1.model.id);
+  assert.notEqual(reopenedSync.model.launchStatus, 'В архиве');
+  assert.equal(
+    reopenedSync.model.sharedSupplyAndFact!.approvedOrders[0].packsQty,
+    950,
+    'Вручную отредактированный PO (version > 1) в 03 · Закупки не должен затираться авто-синком R&D'
+  );
+});
+
+test('117. v9 document-export & Mobile Downloads: посимвольный перенос китайских строк (中文) в wrapCanvasText, RBAC скрытие цен в PDF/Excel и отложенный URL.revokeObjectURL во всех 10 точках', async () => {
+  const { wrapCanvasText } = await import('../src/lib/document-export.ts');
+
+  // Мокаем Canvas 2D context: каждый CJK-символ = 18px, латинский = 9px
+  const mockCtx: any = {
+    measureText: (str: string) => ({
+      width: Array.from(str).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 18 : 9), 0),
+    }),
+  };
+
+  const longChineseTechSpec =
+    '无缝激光切割工艺，超细锦纶氨纶混纺面料，贴身无痕不卷边，洗后不变形且色牢度达到四级标准';
+  const lines = wrapCanvasText(mockCtx, longChineseTechSpec, 180);
+  assert.ok(
+    lines.length >= 4,
+    `Китайский текст без пробелов должен разбиваться на строки (получено ${lines.length})`
+  );
+  for (const line of lines) {
+    assert.ok(
+      mockCtx.measureText(line).width <= 180,
+      `Каждая строка CJK обязана помещаться в maxWidth=180px: "${line}" (${mockCtx.measureText(line).width}px)`
+    );
+  }
+
+  // Проверяем, что ни в одном файле src/ не осталось синхронного URL.revokeObjectURL без setTimeout
+  const filesWithDownloads = [
+    'src/lib/document-export.ts',
+    'src/components/shell/AppShell.tsx',
+    'src/components/sections/ManagementAndSystemViews.tsx',
+    'src/components/sections/FinanceAndImportViews.tsx',
+    'src/components/sections/SkuProcurementMvpWorkbench.tsx',
+    'src/components/sections/ScenarioModelCardScreen.tsx',
+    'src/components/sections/GrowthScenariosShowcase.tsx',
+    'src/components/sections/UnifiedContourViews.tsx',
+  ];
+  for (const rel of filesWithDownloads) {
+    const code = fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
+    assert.equal(
+      code.includes('URL.revokeObjectURL') && code.includes('10_000'),
+      true,
+      `Файл ${rel} обязан вызывать URL.revokeObjectURL через setTimeout(..., 10_000) для iOS Safari / Mobile Chrome`
+    );
+  }
+
+  const docExportCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/document-export.ts'),
+    'utf8'
+  );
+  assert.equal(
+    docExportCode.includes('canViewCostPrice') && docExportCode.includes('Скрыто'),
+    true,
+    'document-export.ts обязан маскировать себестоимость при canViewCostPrice === false'
+  );
+});
+
+test('118. v9 scenarioData & LISKANI: нулевой план при scenario.id === -1 («Нет сценария»), строгая изоляция ownerBrandCode в autoDistribute и иммутабельность эталона LISKANI 202705', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, updateLiskaniModelSizeVariant } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+
+  // 1. Sentinel scenario.id === -1 обязан возвращать строго 0 выкупов и 0 ₽ выручки
+  const noneScen: any = {
+    ...INITIAL_SCENARIOS[0],
+    id: -1,
+    name: 'Нет активного сценария',
+    monthlyTargetMln: 0,
+  };
+  const metNone = computeModelScenarioMetrics(AKUSHA_2027_MODELS[0], noneScen);
+  assert.equal(metNone.annualPacks, 0, 'При id === -1 годовые выкупы обязаны быть 0');
+  assert.equal(metNone.annualRevenueRub, 0, 'При id === -1 годовая выручка обязана быть 0 ₽');
+
+  // 2. autoDistributeScenarioByPriority для AKUSHA (202706) НЕ должен затрагивать модели BORNERS или LISKANI
+  const mixedPool = [
+    S1_100M_SCENARIO_MODELS[0],
+    LISKANI_2027_MODELS[0],
+    AKUSHA_2027_MODELS[0],
+  ];
+  const distributedAkusha = autoDistributeScenarioByPriority(
+    mixedPool,
+    AKUSHA_2027_SCENARIO_DEF,
+    { targetMonthlyMlnOverride: 25 }
+  );
+  assert.deepEqual(
+    distributedAkusha[0].plansByScenario[1].monthlyPacks,
+    S1_100M_SCENARIO_MODELS[0].plansByScenario[1].monthlyPacks,
+    'Модель BORNERS не должна мутировать при авто-распределении сценария AKUSHA'
+  );
+  assert.equal(
+    Boolean(distributedAkusha[0].plansByScenario[202706]),
+    false,
+    'Чужой сценарий 202706 не должен приписываться модели BORNERS'
+  );
+
+  // 3. Редактирование размерного варианта штор LISKANI в кастомном сценарии (id: 777) НЕ трогает эталонный план 202705!
+  const lsc0 = LISKANI_2027_MODELS[0];
+  const orig202705Rev = computeModelScenarioMetrics(lsc0, LISKANI_2027_SCENARIO_DEF).annualRevenueRub;
+  const variant0 = lsc0.liskaniSizeVariants![0];
+  const updatedCustomOnly = updateLiskaniModelSizeVariant(
+    lsc0,
+    variant0.skuIndex,
+    { retailPriceRub: variant0.retailPriceRub + 500 },
+    777
+  );
+  const after202705Rev = computeModelScenarioMetrics(
+    updatedCustomOnly,
+    LISKANI_2027_SCENARIO_DEF
+  ).annualRevenueRub;
+  assert.equal(
+    after202705Rev,
+    orig202705Rev,
+    'Правка размерного варианта в кастомном сценарии 777 не должна изменять эталонный сценарий LISKANI 202705'
+  );
+});
+
+test('119. v9 unifiedBusinessEngine: RBAC-маскировка себестоимости в фабричных CSV, сохранение 2028 года у PO при сдвиге месяца и учёт procureByOrdersVolume в carry-over AKUSHA', async () => {
+  const {
+    approveRecommendedBatch,
+    updateApprovedPurchaseOrder,
+    computeProcurementPlan,
+    computeCarryOverStock2027To2028,
+    createIndependentBrandScenario,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const maskedCsv = serializeScenarioFactoryOrdersToCsv(
+    [S1_100M_SCENARIO_MODELS[0]],
+    s1,
+    'all',
+    { canViewCostPrice: false }
+  );
+  assert.equal(
+    maskedCsv.includes('Размер S (компл.)') && maskedCsv.includes('Размер XXL (компл.)'),
+    true,
+    'Заголовки размеров S–XXL обязаны сохраняться даже при маскировке себестоимости (Инвариант Test 31)'
+  );
+  assert.equal(
+    maskedCsv.includes('Скрыто'),
+    true,
+    'При canViewCostPrice: false фабричный CSV обязан маскировать закупочные цены словом «Скрыто»'
+  );
+
+  // Создаём сценарий 2028 года, утверждаем партию -> номер PO-2028-... и сдвиг месяца прихода оставляет 2028 год!
+  const { scenario: scen2028 } = createIndependentBrandScenario(INITIAL_SCENARIOS, [], {
+    brandCode: 'BORNERS',
+    title: 'BORNERS Масштабирование 2028',
+    monthlyTargetMln: 140,
+    year: 2028,
+  });
+  const modelFor2028 = {
+    ...S1_100M_SCENARIO_MODELS[0],
+    plansByScenario: {
+      ...S1_100M_SCENARIO_MODELS[0].plansByScenario,
+      [scen2028.id]: {
+        ...S1_100M_SCENARIO_MODELS[0].plansByScenario[1],
+        scenarioId: scen2028.id,
+        initialStockPacks: 0,
+      },
+    },
+  };
+  const plan2028 = computeProcurementPlan(modelFor2028, scen2028);
+  assert.ok(plan2028.recommendedBatches.length > 0);
+  const withPo2028 = approveRecommendedBatch(
+    modelFor2028,
+    plan2028.recommendedBatches[0],
+    'Владелец'
+  );
+  const po2028 = withPo2028.sharedSupplyAndFact!.approvedOrders.slice(-1)[0];
+  assert.ok(
+    po2028.orderNumber.startsWith('PO-2028-'),
+    `Заказ на партию 2028 года должен иметь префикс PO-2028-, получено: ${po2028.orderNumber}`
+  );
+
+  const movedPoModel = updateApprovedPurchaseOrder(withPo2028, po2028.id, {
+    arrivalMonthIdx: 5,
+  });
+  const movedPo = movedPoModel.sharedSupplyAndFact!.approvedOrders.find(
+    (p) => p.id === po2028.id
+  )!;
+  assert.ok(
+    movedPo.requiredArrivalDateIso.startsWith('2028-'),
+    `После смены месяца прихода без явного year PO обязан остаться в 2028 году, получено: ${movedPo.requiredArrivalDateIso}`
+  );
+
+  // Carry-over AKUSHA с избыточным начальным остатком учитывает спрос по объёму заказов (procureByOrdersVolume)
+  const akuWithStock = {
+    ...AKUSHA_2027_MODELS[0],
+    sharedSupplyAndFact: {
+      ...AKUSHA_2027_MODELS[0].sharedSupplyAndFact!,
+      actualOpeningStockPacks: 5000,
+    },
+  };
+  const akuBuyoutsOnly = {
+    ...akuWithStock,
+    procureByOrdersVolume: false,
+  };
+  const carryOverOrders = computeCarryOverStock2027To2028(akuWithStock, AKUSHA_2027_SCENARIO_DEF);
+  const carryOverBuyoutsOnly = computeCarryOverStock2027To2028(
+    akuBuyoutsOnly,
+    AKUSHA_2027_SCENARIO_DEF
+  );
+  assert.ok(
+    carryOverOrders < carryOverBuyoutsOnly,
+    'Для AKUSHA (procureByOrdersVolume=true) переходящий остаток на 2028 обязан вычитать полный объём заказов с учётом процента выкупа, а не только выкупы'
+  );
+});
+
+test('120. v9 Лаборатория R&D + НА ТЕЛЕ: авто-сброс черновиков (flushUncommittedDrafts), дробные цены 24.24 CNY с конвертацией валют, deletedConceptIds и профиль НА ТЕЛЕ', () => {
+  const labTabsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabTabs.tsx'),
+    'utf8'
+  );
+  const labViewCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+  const ctxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/context/PlatformContext.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    ctxCode.includes('deletedConceptIds') &&
+      ctxCode.includes('rehydrateDocumentsFromIdbSnapshot') &&
+      ctxCode.includes('resetPortfolioStorageToDemoDefaults'),
+    true,
+    'PlatformContext обязан хранить deletedConceptIds, регидратировать документы из IDB и сбрасывать портфель при resetToDemoDefaults'
+  );
+  assert.equal(
+    labTabsCode.includes('onRegisterDraftFlusher') &&
+      labViewCode.includes('onRegisterDraftFlusher') &&
+      labTabsCode.includes('parseCleanFloat'),
+    true,
+    'ProductLabTabs и ProductLabView обязаны сохранять незафиксированные черновики перед сохранением/сменой этапа и поддерживать дробные цены фабрики (parseCleanFloat)'
+  );
+  assert.equal(
+    labTabsCode.includes('Boolean(linkedScenarioModelCode || linkedProduct)'),
+    true,
+    'Этап 07 Запуск обязан распознавать синхронизацию по linkedScenarioModelCode для НА ТЕЛЕ / AKUSHA / LISKANI'
+  );
+});
+
+test('121. v9 PdfConstructorModal и MiroBoardView: совместимость ключей чекбоксов 06 Производство, сохранение backPhotoUrl, защита effectiveIncludePricing и Mobile Touch/Pointer', () => {
+  const pdfModalCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PdfConstructorModal.tsx'),
+    'utf8'
+  );
+  const miroCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/MiroBoardView.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    pdfModalCode.includes('photosFrontBack') &&
+      pdfModalCode.includes('unitAndTotalPrice') &&
+      pdfModalCode.includes('effectiveIncludePricing') &&
+      pdfModalCode.includes('galleryPhotos'),
+    true,
+    'PdfConstructorModal обязан принимать ключи чекбоксов из 06 Производство, сохранять backPhotoUrl в galleryPhotos и защищать цену через effectiveIncludePricing'
+  );
+  assert.equal(
+    miroCode.includes('touch-none') &&
+      (miroCode.includes('onPointerDown') || miroCode.includes('onTouchStart')),
+    true,
+    'MiroBoardView обязан поддерживать мобильное сенсорное управление (Pointer/Touch events + touch-none)'
+  );
+});
+
+test('122. v9 Честный пустой кабинет (0 ₽ без фейковых 82%/×3,2/декабрьского пика), Паспорт 14 блоков и тёмная тема кнопок/карточек в globals.css', () => {
+  const peakChartCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeakOwnMoneyChartPanel.tsx'),
+    'utf8'
+  );
+  const groupsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  const strategyCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/BrandStrategyView.tsx'),
+    'utf8'
+  );
+  const cssCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/globals.css'),
+    'utf8'
+  );
+
+  assert.equal(
+    peakChartCode.includes('hasAnyActivity') &&
+      peakChartCode.includes('canUserViewFinance') &&
+      peakChartCode.includes('canUserViewCostPrice'),
+    true,
+    'PeakOwnMoneyChartPanel обязан проверять hasAnyActivity для пустых кабинетов и закрывать данные по RBAC'
+  );
+  assert.equal(
+    groupsCode.includes('const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);') &&
+      groupsCode.includes('const wbLogisticsStorageRub = 0;') &&
+      groupsCode.includes('const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);'),
+    true,
+    'Инвариант Test 47 в PeaklyBrandCatalogAndGroups обязан оставаться нетронутым'
+  );
+  assert.equal(
+    strategyCode.includes('borners_open_brand_passport'),
+    true,
+    'BrandStrategyView обязан открывать 14-блочный паспорт ДНК при клике «Паспорт (14)»'
+  );
+  assert.equal(
+    cssCode.includes('#FAF9F7') &&
+      cssCode.includes('#141413') &&
+      cssCode.includes('#181715'),
+    true,
+    'globals.css обязан адаптировать карточки #FAF9F7/#FDFCFA и акцентные тёмные кнопки #141413/#181715 в html.dark'
+  );
+});
+
+test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормализация НА ТЕЛЕ в DashboardView, динамические месяцы релизов и защита переводов между брендами', () => {
+  const nextConfigCode = fs.readFileSync(
+    path.join(process.cwd(), 'next.config.ts'),
+    'utf8'
+  );
+  const dashCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/DashboardView.tsx'),
+    'utf8'
+  );
+  const cardScreenCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ScenarioModelCardScreen.tsx'),
+    'utf8'
+  );
+  const finViewsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/FinanceAndImportViews.tsx'),
+    'utf8'
+  );
+  const launchViewsCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/LaunchAndGrowthViews.tsx'),
+    'utf8'
+  );
+
+  assert.equal(
+    nextConfigCode.includes('borners-2027-natele-lab-v9'),
+    true,
+    'next.config.ts обязан экспортировать актуальный buildId borners-2027-natele-lab-v9'
+  );
+  assert.equal(
+    dashCode.includes('normalizeLabBrandCode'),
+    true,
+    'DashboardView обязан нормализовать фильтр бренда НА ТЕЛЕ -> NA_TELE через normalizeLabBrandCode'
+  );
+  assert.equal(
+    cardScreenCode.includes('Нет активного сценария') &&
+      cardScreenCode.includes('canUserEditBrand(currentUser'),
+    true,
+    'ScenarioModelCardScreen обязан поддерживать sentinel -1 («Нет активного сценария») и фильтровать доступные бренды через canUserEditBrand'
+  );
+  assert.equal(
+    finViewsCode.includes('useLiveScenarioPortfolio') &&
+      launchViewsCode.includes('canUserViewBrandConcept'),
+    true,
+    'FinanceAndImportViews обязан включать живой каталог SKU в юнит-экономику, а LaunchAndGrowthViews — фильтровать запуски по брендовым правам'
+  );
+});
+
+
 
 
 

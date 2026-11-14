@@ -35,7 +35,12 @@ import {
   matchesBrandFilter,
   normalizePortfolioBrandCode,
 } from './unifiedBusinessEngine.ts';
-import { safeGetStorageJson, safeSetStorageJson } from './safeStorage.ts';
+import {
+  deleteModelGalleryFromIdb,
+  safeGetStorageJson,
+  safeSetStorageJson,
+  savePortfolioSnapshotToIdb,
+} from './safeStorage.ts';
 
 const CLIENT_SAVED_S1_MODELS = applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS);
 const RAW_BRN_001_SC_PACKS =
@@ -59,6 +64,7 @@ export const STORAGE_KEY_S1_GROUP_PORTFOLIO = 'borners_s1_include_fukai_v1';
 export const STORAGE_KEY_SCENARIO_BY_BRAND = 'borners_selected_scenario_by_brand_v1';
 export const STORAGE_KEY_DELETED_MODELS = 'borners_deleted_model_ids_v1';
 export const STORAGE_KEY_DELETED_SCENARIOS = 'borners_deleted_scenario_ids_v1';
+export const STORAGE_KEY_DELETED_MODEL_SNAPSHOTS = 'borners_deleted_models_snapshots_v1';
 export const STORAGE_KEY_PORTFOLIO_UPDATED_AT = 'borners_portfolio_updated_at_v1';
 export const STORAGE_KEY_BACKUP_UPDATED_AT = 'borners_backup_updated_at_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
@@ -555,6 +561,97 @@ const LOCKED_SCENARIO_IDS_PERSISTENCE = new Set<number>([
   AKUSHA_2027_SCENARIO_ID,
 ]);
 
+export interface DeletedScenarioModelSnapshot {
+  id: string;
+  code: string;
+  title: string;
+  brandCode: string;
+  imageUrl?: string;
+  deletedAt: string;
+  model: ScenarioModelSpec;
+}
+
+function safeDispatchWindowEvent(eventName: string): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try {
+      window.dispatchEvent(new Event(eventName));
+    } catch {
+      // ignore in minimal test mocks
+    }
+  }
+}
+
+export function getDeletedModelSnapshots(): DeletedScenarioModelSnapshot[] {
+  const list = safeGetStorageJson<DeletedScenarioModelSnapshot[]>(
+    STORAGE_KEY_DELETED_MODEL_SNAPSHOTS
+  );
+  if (!Array.isArray(list)) return [];
+  return list.filter((item) => Boolean(item && item.id && item.code && item.model));
+}
+
+export function saveDeletedModelSnapshot(model: ScenarioModelSpec): void {
+  if (!model || !model.id || !model.code) return;
+  const rawBrand = normalizePortfolioBrandCode(model.customBrandLabel || model.brandId);
+  const brandCode = rawBrand === 'ALL' ? 'BORNERS' : rawBrand;
+  const imageUrl = model.gallery?.[0]?.url || undefined;
+  const idUpper = model.id.trim().toUpperCase();
+  const codeUpper = model.code.trim().toUpperCase();
+
+  const prev = getDeletedModelSnapshots();
+  const deduped = prev.filter(
+    (s) =>
+      s.id.trim().toUpperCase() !== idUpper &&
+      s.code.trim().toUpperCase() !== codeUpper
+  );
+  const snapshot: DeletedScenarioModelSnapshot = {
+    id: model.id,
+    code: model.code,
+    title: model.title,
+    brandCode,
+    imageUrl,
+    deletedAt: new Date().toISOString(),
+    model,
+  };
+  const next = [snapshot, ...deduped].slice(0, 100);
+  safeSetStorageJson(STORAGE_KEY_DELETED_MODEL_SNAPSHOTS, next);
+  safeDispatchWindowEvent('borners-trash-models-changed');
+}
+
+export function removeDeletedModelSnapshot(
+  idOrCode: string
+): DeletedScenarioModelSnapshot | null {
+  const target = (idOrCode || '').trim().toUpperCase();
+  if (!target) return null;
+  const prev = getDeletedModelSnapshots();
+  if (prev.length === 0) return null;
+  const found =
+    prev.find(
+      (s) =>
+        s.id.trim().toUpperCase() === target ||
+        s.code.trim().toUpperCase() === target
+    ) || null;
+  if (!found) return null;
+  const foundIdUpper = found.id.trim().toUpperCase();
+  const foundCodeUpper = found.code.trim().toUpperCase();
+  const remaining = prev.filter(
+    (s) =>
+      s.id.trim().toUpperCase() !== target &&
+      s.code.trim().toUpperCase() !== target &&
+      s.id.trim().toUpperCase() !== foundIdUpper &&
+      s.code.trim().toUpperCase() !== foundCodeUpper
+  );
+  safeSetStorageJson(STORAGE_KEY_DELETED_MODEL_SNAPSHOTS, remaining);
+  safeDispatchWindowEvent('borners-trash-models-changed');
+  return found;
+}
+
+export function clearAllDeletedModelSnapshots(): DeletedScenarioModelSnapshot[] {
+  const prev = getDeletedModelSnapshots();
+  safeSetStorageJson(STORAGE_KEY_DELETED_MODEL_SNAPSHOTS, []);
+  safeDispatchWindowEvent('borners-trash-models-changed');
+  return prev;
+}
+
 export function getDeletedScenariosRegistry(): number[] {
   const list = safeGetStorageJson<number[]>(STORAGE_KEY_DELETED_SCENARIOS);
   if (!Array.isArray(list)) return [];
@@ -573,6 +670,17 @@ export function markScenarioAsDeletedInStorage(scenarioId: number): void {
   const prev = getDeletedScenariosRegistry();
   if (!prev.includes(cleanId)) {
     safeSetStorageJson(STORAGE_KEY_DELETED_SCENARIOS, [...prev, cleanId]);
+  }
+}
+
+export function unmarkScenarioAsDeletedInStorage(scenarioId: number): void {
+  const cleanId = Number(scenarioId);
+  if (!Number.isFinite(cleanId)) return;
+  const prev = getDeletedScenariosRegistry();
+  if (prev.length === 0) return;
+  const filtered = prev.filter((id) => id !== cleanId);
+  if (filtered.length !== prev.length) {
+    safeSetStorageJson(STORAGE_KEY_DELETED_SCENARIOS, filtered);
   }
 }
 
@@ -595,8 +703,11 @@ export function isModelMarkedDeleted(
 }
 
 export function markModelAsDeletedInStorage(
-  model: Pick<ScenarioModelSpec, 'id' | 'code'>
+  model: Pick<ScenarioModelSpec, 'id' | 'code'> & Partial<ScenarioModelSpec>
 ): void {
+  if (typeof model.title === 'string' && model.plansByScenario) {
+    saveDeletedModelSnapshot(model as ScenarioModelSpec);
+  }
   const prev = getDeletedModelsRegistry();
   const next = new Set(prev.map((x) => x.toUpperCase()));
   if (model.id) next.add(model.id.toUpperCase());
@@ -607,6 +718,8 @@ export function markModelAsDeletedInStorage(
 export function unmarkModelAsDeletedInStorage(
   model: Pick<ScenarioModelSpec, 'id' | 'code'>
 ): void {
+  if (model.id) removeDeletedModelSnapshot(model.id);
+  if (model.code) removeDeletedModelSnapshot(model.code);
   const prev = getDeletedModelsRegistry();
   if (prev.length === 0) return;
   const idUpper = (model.id || '').toUpperCase();
@@ -624,7 +737,10 @@ export function clearDeletedModelsRegistry(): void {
   safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, []);
 }
 
-export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
+export function syncUserPlansBackup(
+  modelsList: ScenarioModelSpec[],
+  options?: { replaceExact?: boolean }
+): void {
   const deletedReg = getDeletedModelsRegistry();
   const prevBackup =
     safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
@@ -632,17 +748,19 @@ export function syncUserPlansBackup(modelsList: ScenarioModelSpec[]): void {
     ) || {};
 
   const backup: Record<string, UserSavedModelPlanBackup> = {};
-  // Сохраняем все ранее созданные пользователем модели из prevBackup, если они не помечены удалёнными
-  for (const [k, entry] of Object.entries(prevBackup)) {
-    if (
-      entry &&
-      entry.id &&
-      entry.code &&
-      !isLegacyPlaceholderLiskani(entry) &&
-      !isLegacyPlaceholderAkusha(entry) &&
-      !isModelMarkedDeleted(entry, deletedReg)
-    ) {
-      backup[k] = entry;
+  // Сохраняем все ранее созданные пользователем модели из prevBackup, если они не помечены удалёнными (если не запрошена точная перезапись)
+  if (!options?.replaceExact) {
+    for (const [k, entry] of Object.entries(prevBackup)) {
+      if (
+        entry &&
+        entry.id &&
+        entry.code &&
+        !isLegacyPlaceholderLiskani(entry) &&
+        !isLegacyPlaceholderAkusha(entry) &&
+        !isModelMarkedDeleted(entry, deletedReg)
+      ) {
+        backup[k] = entry;
+      }
     }
   }
 
@@ -946,6 +1064,14 @@ export function deleteModelFromPortfolio(
   modelsList: ScenarioModelSpec[],
   modelToDelete: Pick<ScenarioModelSpec, 'id' | 'code'>
 ): ScenarioModelSpec[] {
+  const fullMatch = modelsList.find(
+    (m) =>
+      m.id === modelToDelete.id ||
+      m.code.trim().toUpperCase() === modelToDelete.code.trim().toUpperCase()
+  );
+  if (fullMatch) {
+    saveDeletedModelSnapshot(fullMatch);
+  }
   markModelAsDeletedInStorage(modelToDelete);
   const remaining = modelsList.filter(
     (m) =>
@@ -956,6 +1082,136 @@ export function deleteModelFromPortfolio(
   safeSetStorageJson(STORAGE_KEY_MODELS, remaining);
   syncUserPlansBackup(remaining);
   return remaining;
+}
+
+export function restoreDeletedModelFromTrash(
+  idOrCode: string
+): ScenarioModelSpec | null {
+  const target = (idOrCode || '').trim().toUpperCase();
+  if (!target) return null;
+  const snapshots = getDeletedModelSnapshots();
+  const snap =
+    snapshots.find(
+      (s) =>
+        s.id.trim().toUpperCase() === target ||
+        s.code.trim().toUpperCase() === target
+    ) || null;
+  if (!snap) return null;
+
+  unmarkModelAsDeletedInStorage(snap.model);
+  removeDeletedModelSnapshot(idOrCode);
+
+  const currentModels = hydratePortfolioModelsFromStorage();
+  const restored = ensureModelUnifiedV11(snap.model);
+  const existingIdx = currentModels.findIndex(
+    (m) =>
+      m.id === restored.id ||
+      m.code.trim().toUpperCase() === restored.code.trim().toUpperCase()
+  );
+  const nextModels =
+    existingIdx >= 0
+      ? currentModels.map((m, i) => (i === existingIdx ? restored : m))
+      : [restored, ...currentModels];
+
+  const persisted = persistPortfolioModels(nextModels);
+  void savePortfolioSnapshotToIdb(persisted, getPortfolioUpdatedAt() || undefined);
+  safeDispatchWindowEvent('borners-scenario-models-changed');
+  safeDispatchWindowEvent('borners-trash-models-changed');
+  return restored;
+}
+
+export function permanentlyDeleteModelFromTrash(idOrCode: string): void {
+  const removed = removeDeletedModelSnapshot(idOrCode);
+  if (removed) {
+    void deleteModelGalleryFromIdb(removed.id);
+  }
+  safeDispatchWindowEvent('borners-trash-models-changed');
+}
+
+export function applyPortfolioBackupSnapshotToStorage(
+  models: ScenarioModelSpec[],
+  scenarios?: GrowthScenarioDef[]
+): void {
+  const presentIds = new Set<string>();
+  const presentCodes = new Set<string>();
+  const presentTitles = new Set<string>();
+
+  for (const m of models) {
+    if (!m) continue;
+    if (m.id) presentIds.add(m.id.trim().toUpperCase());
+    if (m.code) presentCodes.add(m.code.trim().toUpperCase());
+    if (m.title) presentTitles.add(m.title.trim().toUpperCase());
+  }
+
+  const nextDeleted = new Set(
+    getDeletedModelsRegistry()
+      .map((x) => x.toUpperCase())
+      .filter((x) => !presentIds.has(x) && !presentCodes.has(x))
+  );
+
+  for (const seed of [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ]) {
+    const idU = seed.id.trim().toUpperCase();
+    const codeU = seed.code.trim().toUpperCase();
+    const titleU = seed.title.trim().toUpperCase();
+    if (!presentIds.has(idU) && !presentCodes.has(codeU) && !presentTitles.has(titleU)) {
+      nextDeleted.add(idU);
+      nextDeleted.add(codeU);
+    }
+  }
+
+  safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, Array.from(nextDeleted));
+  touchPortfolioUpdatedAt();
+  safeSetStorageJson(STORAGE_KEY_MODELS, models);
+  syncUserPlansBackup(models, { replaceExact: true });
+  void savePortfolioSnapshotToIdb(models, getPortfolioUpdatedAt() || undefined);
+
+  if (Array.isArray(scenarios) && scenarios.length > 0) {
+    for (const s of scenarios) {
+      if (s && typeof s.id === 'number') {
+        unmarkScenarioAsDeletedInStorage(s.id);
+      }
+    }
+    safeSetStorageJson(STORAGE_KEY_SCENARIOS, scenarios);
+  }
+
+  safeSetStorageJson(STORAGE_KEY_DELETED_MODEL_SNAPSHOTS, []);
+}
+
+export async function resetPortfolioStorageToDemoDefaults(): Promise<void> {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const keysToClear = [
+      STORAGE_KEY_MODELS,
+      STORAGE_KEY_SCENARIOS,
+      STORAGE_KEY_USER_PLANS_BACKUP,
+      STORAGE_KEY_DELETED_MODELS,
+      STORAGE_KEY_DELETED_SCENARIOS,
+      STORAGE_KEY_DELETED_MODEL_SNAPSHOTS,
+      STORAGE_KEY_SCENARIO_BY_BRAND,
+      STORAGE_KEY_ACTIVE_SCENARIO_ID,
+      STORAGE_KEY_S1_GROUP_PORTFOLIO,
+    ];
+    for (const k of keysToClear) {
+      try {
+        window.localStorage.removeItem(k);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const freshModels = hydratePortfolioModelsFromStorage();
+  const updatedIso = touchPortfolioUpdatedAt();
+  await savePortfolioSnapshotToIdb(freshModels, updatedIso);
+
+  safeDispatchWindowEvent('borners-scenario-models-changed');
+  safeDispatchWindowEvent('borners-scenarios-changed');
+  safeDispatchWindowEvent('borners-active-scenario-changed');
+  safeDispatchWindowEvent('borners-trash-models-changed');
 }
 
 export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {

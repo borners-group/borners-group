@@ -13,6 +13,7 @@ import {
   canUserAccessSection,
   canUserEditApprovedStrategy,
   canUserEditBrand,
+  canUserViewBrandConcept,
   canUserViewCostPrice,
   canUserViewFinance,
   formatCompactRub,
@@ -232,8 +233,18 @@ export function BrandPortfolioView() {
         };
       });
 
-    return [...coreCards, ...extraCustomBrands];
-  }, [brands, concepts, launches, livePortfolio.models, multiBrandSummary.brands, products]);
+    return [...coreCards, ...extraCustomBrands].filter((card) =>
+      canUserViewBrandConcept(currentUser, normalizeLabBrandCode(String(card.code)))
+    );
+  }, [
+    brands,
+    concepts,
+    currentUser,
+    launches,
+    livePortfolio.models,
+    multiBrandSummary.brands,
+    products,
+  ]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -356,6 +367,14 @@ export function BrandPortfolioView() {
               <div className="grid grid-cols-3 divide-x-[1.5px] divide-[#CFC8BC] bg-[#FAF8F5] border-t-[1.5px] border-[#CFC8BC]">
                 <button
                   onClick={() => {
+                    try {
+                      window.sessionStorage.setItem(
+                        'borners_open_brand_passport',
+                        String(brand.code)
+                      );
+                    } catch {
+                      // ignore storage restriction
+                    }
                     setBrandFilter(brand.code);
                     navigateTo('brand-strategy');
                   }}
@@ -529,24 +548,84 @@ export function BrandStrategyView() {
   } = usePlatform();
 
   const { draftModules } = useDraftModules();
+  const visibleHoldingTabs = useMemo(
+    () =>
+      HOLDING_BRAND_TABS.filter((t) => canUserViewBrandConcept(currentUser, t.code)),
+    [currentUser]
+  );
+
   const [selectedBrand, setSelectedBrand] = useState<HoldingBrandCode>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const pendingPassport = window.sessionStorage.getItem('borners_open_brand_passport');
+        if (pendingPassport) {
+          const normPending = normalizeLabBrandCode(pendingPassport);
+          if (
+            (HOLDING_BRAND_CODES as readonly string[]).includes(normPending) &&
+            canUserViewBrandConcept(currentUser, normPending)
+          ) {
+            return normPending as HoldingBrandCode;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (brandFilter && brandFilter !== 'ALL') {
       const norm = normalizeLabBrandCode(brandFilter);
-      if ((HOLDING_BRAND_CODES as readonly string[]).includes(norm)) {
+      if (
+        (HOLDING_BRAND_CODES as readonly string[]).includes(norm) &&
+        canUserViewBrandConcept(currentUser, norm)
+      ) {
         return norm as HoldingBrandCode;
       }
     }
-    return 'BORNERS';
+    return visibleHoldingTabs[0]?.code || 'BORNERS';
+  });
+
+  const [strategyTab, setStrategyTab] = useState<'scenarios' | 'dna'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.sessionStorage.getItem('borners_open_brand_passport')) {
+          return 'dna';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return 'scenarios';
   });
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const pendingPassport = window.sessionStorage.getItem('borners_open_brand_passport');
+        if (pendingPassport) {
+          window.sessionStorage.removeItem('borners_open_brand_passport');
+          const normPending = normalizeLabBrandCode(pendingPassport);
+          if (
+            (HOLDING_BRAND_CODES as readonly string[]).includes(normPending) &&
+            canUserViewBrandConcept(currentUser, normPending)
+          ) {
+            setSelectedBrand(normPending as HoldingBrandCode);
+          }
+          setStrategyTab('dna');
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (brandFilter && brandFilter !== 'ALL') {
       const norm = normalizeLabBrandCode(brandFilter);
-      if ((HOLDING_BRAND_CODES as readonly string[]).includes(norm)) {
+      if (
+        (HOLDING_BRAND_CODES as readonly string[]).includes(norm) &&
+        canUserViewBrandConcept(currentUser, norm)
+      ) {
         setSelectedBrand(norm as HoldingBrandCode);
       }
     }
-  }, [brandFilter]);
+  }, [brandFilter, currentUser]);
 
   const activeBrand = useMemo(() => {
     const meta =
@@ -578,7 +657,6 @@ export function BrandStrategyView() {
     ).sort((a, b) => a.sectionOrder - b.sectionOrder);
   }, [strategies, selectedBrand, activeBrand]);
 
-  const [strategyTab, setStrategyTab] = useState<'scenarios' | 'dna'>('scenarios');
   const [editingBlock, setEditingBlock] = useState<StrategyBlock | null>(null);
   const [historyBlock, setHistoryBlock] = useState<StrategyBlock | null>(null);
 
@@ -649,62 +727,55 @@ export function BrandStrategyView() {
     setEditingBlock(null);
   };
 
-  const showDraftStrategyTools =
-    draftModules.brandPortfolio || draftModules.strategyPresentationCard;
-
   return (
     <div className="space-y-6 pb-20">
-      {/* Переключатель 14 блоков ДНК и презентации показывается, только если включён в черновике админки */}
-      {showDraftStrategyTools && (
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E0D5] pb-4">
-          <div className="inline-flex rounded-[12px] bg-[#EFECE6] p-1 border border-[#E5E0D5]">
-            <button
-              type="button"
-              onClick={() => setStrategyTab('scenarios')}
-              className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
-                strategyTab === 'scenarios'
-                  ? 'bg-white text-[#1D1D1F] shadow-xs'
-                  : 'text-[#6E6E73] hover:text-[#1D1D1F]'
-              }`}
-            >
-              Сценарии развития (100 / 150 / 200 млн ₽)
-            </button>
-            {draftModules.brandPortfolio && (
-              <button
-                type="button"
-                onClick={() => setStrategyTab('dna')}
-                className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
-                  strategyTab === 'dna'
-                    ? 'bg-white text-[#1D1D1F] shadow-xs'
-                    : 'text-[#6E6E73] hover:text-[#1D1D1F]'
-                }`}
-              >
-                Паспорт бренда (14 блоков · Черновик)
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {draftModules.strategyPresentationCard && canAccessStrategyDeck && (
-              <button
-                onClick={() => setPlatformMode('strategy')}
-                className="h-9 px-4 rounded-[10px] bg-[#1E3A5F] text-white text-[12.5px] font-semibold hover:bg-[#162C49] transition cursor-pointer"
-              >
-                Презентация стратегии (8 слайдов)
-              </button>
-            )}
-
-            <button
-              onClick={() => navigateTo('product-catalog')}
-              className="h-9 px-3.5 rounded-[10px] border border-[#E5E0D5] bg-white text-[12.5px] font-semibold text-[#1D1D1F] hover:border-[#1D1D1F] transition cursor-pointer"
-            >
-              Модели (SKU) →
-            </button>
-          </div>
+      {/* Переключатель Сценариев роста и 14 блоков Паспорта бренда */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E0D5] pb-4">
+        <div className="inline-flex rounded-[12px] bg-[#EFECE6] p-1 border border-[#E5E0D5]">
+          <button
+            type="button"
+            onClick={() => setStrategyTab('scenarios')}
+            className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
+              strategyTab === 'scenarios'
+                ? 'bg-white text-[#1D1D1F] shadow-xs'
+                : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+            }`}
+          >
+            Сценарии развития (100 / 150 / 200 млн ₽)
+          </button>
+          <button
+            type="button"
+            onClick={() => setStrategyTab('dna')}
+            className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
+              strategyTab === 'dna'
+                ? 'bg-white text-[#1D1D1F] shadow-xs'
+                : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+            }`}
+          >
+            Паспорт бренда (14 блоков)
+          </button>
         </div>
-      )}
 
-      {strategyTab === 'scenarios' || !draftModules.brandPortfolio ? (
+        <div className="flex flex-wrap items-center gap-2.5">
+          {draftModules.strategyPresentationCard && canAccessStrategyDeck && (
+            <button
+              onClick={() => setPlatformMode('strategy')}
+              className="h-9 px-4 rounded-[10px] bg-[#1E3A5F] text-white text-[12.5px] font-semibold hover:bg-[#162C49] transition cursor-pointer"
+            >
+              Презентация стратегии (8 слайдов)
+            </button>
+          )}
+
+          <button
+            onClick={() => navigateTo('product-catalog')}
+            className="h-9 px-3.5 rounded-[10px] border border-[#E5E0D5] bg-white text-[12.5px] font-semibold text-[#1D1D1F] hover:border-[#1D1D1F] transition cursor-pointer"
+          >
+            Модели (SKU) →
+          </button>
+        </div>
+      </div>
+
+      {strategyTab === 'scenarios' ? (
         <GrowthScenariosShowcase />
       ) : (
         <>
@@ -720,7 +791,7 @@ export function BrandStrategyView() {
             </div>
 
             <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F2EFE9] p-1 border border-[#E5E0D8]">
-              {HOLDING_BRAND_TABS.map((tab) => {
+              {visibleHoldingTabs.map((tab) => {
                 const isSelected = selectedBrand === tab.code;
                 return (
                   <button

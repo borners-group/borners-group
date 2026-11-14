@@ -746,7 +746,7 @@ export function StrategyPresentationDeck({
                     <div className="text-[11.5px] font-medium text-[#7A756D]">
                       План выручки 2027
                     </div>
-                    {effectiveEditMode ? (
+                    {effectiveEditMode && hasFinance ? (
                       <input
                         value={getOverride(`${kpiPrefix}kpi_revenue_2027`, formatCompactRub(totalPlanYearRub))}
                         onChange={(e) => updatePresentationOverride(`${kpiPrefix}kpi_revenue_2027`, e.target.value)}
@@ -765,7 +765,7 @@ export function StrategyPresentationDeck({
                     <div className="text-[11.5px] font-medium text-[#7A756D]">
                       Операционная прибыль
                     </div>
-                    {effectiveEditMode ? (
+                    {effectiveEditMode && hasFinance ? (
                       <input
                         value={getOverride(`${kpiPrefix}kpi_profit_2027`, formatCompactRub(totalPlanProfitYearRub))}
                         onChange={(e) => updatePresentationOverride(`${kpiPrefix}kpi_profit_2027`, e.target.value)}
@@ -830,8 +830,9 @@ export function StrategyPresentationDeck({
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {DECK_BRAND_PROFILES.filter(
               (bp) =>
-                brandFilter === 'ALL' ||
-                normalizeLabBrandCode(brandFilter) === bp.code
+                canUserViewBrandConcept(currentUser, bp.code) &&
+                (brandFilter === 'ALL' ||
+                  normalizeLabBrandCode(brandFilter) === bp.code)
             ).map((bp) => {
               const liveRow = holdingSummary.brands.find((r) => r.brandCode === bp.code);
               const legacyBrand = brands.find(
@@ -857,12 +858,24 @@ export function StrategyPresentationDeck({
                 rawHero.startsWith('data:') || rawHero.startsWith('http')
                   ? rawHero
                   : resolvePublicAssetUrl(rawHero);
-              const liveRev2027 =
+              const baseLiveRev2027 =
                 liveRow?.annualRevenueRub ?? legacyBrand?.plannedRevenue2027Rub ?? 0;
-              const targetMargin =
+              const baseTargetMargin =
                 legacyBrand && !legacyBrand.isStrategyInDevelopment && legacyBrand.targetMarginPct > 0
                   ? legacyBrand.targetMarginPct
                   : bp.targetMarginPct;
+              const revOverrideKey = `slide1.${bp.code}.revRub`;
+              const marginOverrideKey = `slide1.${bp.code}.marginPct`;
+              const revOverrideRaw = presentationOverrides?.[revOverrideKey];
+              const marginOverrideRaw = presentationOverrides?.[marginOverrideKey];
+              const effectiveRev2027 =
+                revOverrideRaw !== undefined && revOverrideRaw !== ''
+                  ? Math.max(0, Number(revOverrideRaw) || 0)
+                  : baseLiveRev2027;
+              const effectiveMarginPct =
+                marginOverrideRaw !== undefined && marginOverrideRaw !== ''
+                  ? Math.max(0, Number(marginOverrideRaw) || 0)
+                  : baseTargetMargin;
               const skuCount = liveRow?.modelsCount ?? 0;
 
               return (
@@ -899,39 +912,49 @@ export function StrategyPresentationDeck({
                     <div className="grid grid-cols-3 divide-x-[1.5px] divide-[#DFD8CC] pt-3.5 border-t-[1.5px] border-[#CFC8BC]">
                       <div className="pr-2.5">
                         <div className="text-[11px] text-[#8C867E]">План 2027</div>
-                        {effectiveEditMode && legacyBrand ? (
+                        {effectiveEditMode && hasFinance ? (
                           <input
                             type="number"
-                            value={legacyBrand.plannedRevenue2027Rub || Math.round(liveRev2027)}
-                            onChange={(e) =>
-                              updateBrand(legacyBrand.id, {
-                                plannedRevenue2027Rub: Math.max(0, Number(e.target.value) || 0),
-                              })
-                            }
+                            value={Math.round(effectiveRev2027)}
+                            onChange={(e) => {
+                              const nextRev = Math.max(0, Number(e.target.value) || 0);
+                              updatePresentationOverride(revOverrideKey, String(nextRev));
+                              if (legacyBrand) {
+                                updateBrand(legacyBrand.id, {
+                                  plannedRevenue2027Rub: nextRev,
+                                  isStrategyInDevelopment: false,
+                                });
+                              }
+                            }}
                             className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[12px] font-mono font-semibold text-[#181715]"
                           />
                         ) : (
                           <div className="font-serif-editorial text-[20px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                            {hasFinance ? formatCompactRub(liveRev2027) : 'Скрыто'}
+                            {hasFinance ? formatCompactRub(effectiveRev2027) : 'Скрыто'}
                           </div>
                         )}
                       </div>
                       <div className="px-2.5">
                         <div className="text-[11px] text-[#8C867E]">Целевая маржа</div>
-                        {effectiveEditMode && legacyBrand ? (
+                        {effectiveEditMode && hasFinance && hasCost ? (
                           <input
                             type="number"
-                            value={targetMargin}
-                            onChange={(e) =>
-                              updateBrand(legacyBrand.id, {
-                                targetMarginPct: Math.max(0, Number(e.target.value) || 0),
-                              })
-                            }
+                            value={effectiveMarginPct}
+                            onChange={(e) => {
+                              const nextMargin = Math.max(0, Number(e.target.value) || 0);
+                              updatePresentationOverride(marginOverrideKey, String(nextMargin));
+                              if (legacyBrand) {
+                                updateBrand(legacyBrand.id, {
+                                  targetMarginPct: nextMargin,
+                                  isStrategyInDevelopment: false,
+                                });
+                              }
+                            }}
                             className="mt-0.5 w-full h-8 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2 text-[12px] font-mono font-semibold text-[#181715]"
                           />
                         ) : (
                           <div className="font-serif-editorial text-[20px] font-medium text-[#181715] mt-0.5 tabular-nums">
-                            {hasFinance && hasCost ? `${targetMargin}%` : 'Скрыто'}
+                            {hasFinance && hasCost ? `${effectiveMarginPct}%` : 'Скрыто'}
                           </div>
                         )}
                       </div>

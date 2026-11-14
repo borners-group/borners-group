@@ -62,24 +62,31 @@ import {
   normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 import {
-  STORAGE_KEY_MODELS,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
-  STORAGE_KEY_SCENARIOS,
+  applyPortfolioBackupSnapshotToStorage,
   buildFullPlatformBackupBundle,
+  clearAllDeletedModelSnapshots,
+  getDeletedModelSnapshots,
   getDeletedModelsRegistry,
   parseFullPlatformBackupBundle,
+  permanentlyDeleteModelFromTrash,
   resolveEffectiveScenarioForModel,
-  syncUserPlansBackup,
+  restoreDeletedModelFromTrash,
   touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
-import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
+import {
+  formatLabBrandLabel,
+  normalizeLabBrandCode,
+  syncConceptToScenarioPortfolio,
+} from '@/lib/rndCatalogSync';
 import {
   deleteModelGalleryFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
+  savePlatformRichStateToIdb,
   savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
 import { pushPortfolioCoreToSupabase } from '@/lib/supabaseCloudSync';
@@ -204,11 +211,18 @@ export function AppShell() {
     concepts,
     miroItems,
     launches,
+    campaigns,
+    experiments,
     financialPlans,
     projects,
     tasks,
     documents,
     competitors,
+    opportunities,
+    research,
+    strategicGoals,
+    auditLog,
+    deletedConceptIds,
     presentationOverrides,
     activeSection,
     navHistory,
@@ -326,8 +340,27 @@ export function AppShell() {
     ]
   );
 
+  const [trashModelsTick, setTrashModelsTick] = useState(0);
+
+  useEffect(() => {
+    const bumpTrash = () => setTrashModelsTick((t) => t + 1);
+    window.addEventListener('borners-trash-models-changed', bumpTrash);
+    window.addEventListener('borners-scenario-models-changed', bumpTrash);
+    return () => {
+      window.removeEventListener('borners-trash-models-changed', bumpTrash);
+      window.removeEventListener('borners-scenario-models-changed', bumpTrash);
+    };
+  }, []);
+
   const topScenarioDrivers = useMemo(() => {
     return [...livePortfolio.eligibleModels]
+      .filter((m) => {
+        const portfolioBrand = detectModelBrandPortfolioLabel(m);
+        const brandNorm = normalizePortfolioBrandCode(
+          portfolioBrand || m.brandId || 'BORNERS'
+        );
+        return canUserViewBrandConcept(currentUser, brandNorm);
+      })
       .sort(
         (a, b) =>
           computeModelScenarioMetrics(b, livePortfolio.currentScenario)
@@ -336,46 +369,98 @@ export function AppShell() {
             .targetMonthRevenueRub
       )
       .slice(0, 5);
-  }, [livePortfolio.eligibleModels, livePortfolio.currentScenario]);
+  }, [livePortfolio.eligibleModels, livePortfolio.currentScenario, currentUser]);
 
   const trashItems = useMemo(() => {
+    void trashModelsTick;
+    void trashModalOpen;
     const items: {
       id: string;
-      entityType: 'product' | 'concept' | 'launch' | 'task' | 'document';
+      code?: string;
+      brandLabel?: string;
+      imageUrl?: string;
+      type: 'scenario-model' | 'product' | 'concept' | 'launch' | 'task' | 'document';
+      entityType: 'scenario-model' | 'product' | 'concept' | 'launch' | 'task' | 'document';
       typeLabel: string;
       title: string;
       subtitle: string;
     }[] = [];
 
+    const deletedSkuCodes = new Set<string>();
+    const deletedSnapshots = getDeletedModelSnapshots();
+    deletedSnapshots.forEach((snap) => {
+      const brandNorm = normalizeLabBrandCode(snap.brandCode || 'BORNERS');
+      if (!canUserViewBrandConcept(currentUser, brandNorm)) return;
+      if (snap.code) deletedSkuCodes.add(snap.code.trim().toUpperCase());
+      const bLabel = formatLabBrandLabel(brandNorm);
+      items.push({
+        id: snap.id,
+        code: snap.code,
+        brandLabel: bLabel,
+        imageUrl: snap.imageUrl || snap.model?.gallery?.[0]?.url,
+        type: 'scenario-model' as const,
+        entityType: 'scenario-model' as const,
+        typeLabel: 'Модель каталога SKU',
+        title: `${snap.code} — ${snap.title}`,
+        subtitle: `Бренд: ${bLabel} · Удалено из каталога 2027`,
+      });
+    });
+
     concepts
-      .filter((c) => c.isArchived)
+      .filter(
+        (c) =>
+          c.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))
+      )
       .forEach((c) => {
+        const bLabel = formatLabBrandLabel(c.brandId);
         items.push({
           id: c.id,
+          code: c.code,
+          brandLabel: bLabel,
+          imageUrl: c.imageUrl,
+          type: 'concept',
           entityType: 'concept',
           typeLabel: 'Карточка R&D',
           title: `${c.code} — ${c.name}`,
-          subtitle: `Бренд: ${formatLabBrandLabel(c.brandId)} · Этап: ${CONCEPT_STAGE_LABELS_RU[c.stage]}`,
+          subtitle: `Бренд: ${bLabel} · Этап: ${CONCEPT_STAGE_LABELS_RU[c.stage]}`,
         });
       });
 
     products
-      .filter((p) => p.isArchived)
+      .filter(
+        (p) =>
+          p.isArchived &&
+          !deletedSkuCodes.has((p.sku || '').trim().toUpperCase()) &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(p.brandId))
+      )
       .forEach((p) => {
+        const bLabel = formatLabBrandLabel(p.brandId);
         items.push({
           id: p.id,
+          code: p.sku,
+          brandLabel: bLabel,
+          imageUrl: p.imageUrl || p.galleryUrls?.[0],
+          type: 'product',
           entityType: 'product',
           typeLabel: 'Модель SKU',
           title: `${p.sku} — ${p.name}`,
-          subtitle: `Бренд: ${formatLabBrandLabel(p.brandId)} · ${p.collection}`,
+          subtitle: `Бренд: ${bLabel} · ${p.collection}`,
         });
       });
 
     launches
-      .filter((l) => l.isArchived)
+      .filter(
+        (l) =>
+          l.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(l.brandId))
+      )
       .forEach((l) => {
         items.push({
           id: l.id,
+          brandLabel: formatLabBrandLabel(l.brandId),
+          imageUrl: l.imageUrl,
+          type: 'launch',
           entityType: 'launch',
           typeLabel: 'Релиз в календаре',
           title: l.name,
@@ -384,10 +469,16 @@ export function AppShell() {
       });
 
     tasks
-      .filter((t) => t.isArchived)
+      .filter(
+        (t) =>
+          t.isArchived &&
+          (t.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(t.brandId)))
+      )
       .forEach((t) => {
         items.push({
           id: t.id,
+          type: 'task',
           entityType: 'task',
           typeLabel: 'Задача CRM',
           title: t.title,
@@ -396,10 +487,17 @@ export function AppShell() {
       });
 
     documents
-      .filter((d) => d.isArchived)
+      .filter(
+        (d) =>
+          d.isArchived &&
+          (!d.isFinancialRestricted || canUserViewFinance(currentUser)) &&
+          (d.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(d.brandId)))
+      )
       .forEach((d) => {
         items.push({
           id: d.id,
+          type: 'document',
           entityType: 'document',
           typeLabel: 'Документ / ТЗ',
           title: d.title,
@@ -408,7 +506,17 @@ export function AppShell() {
       });
 
     return items;
-  }, [concepts, products, launches, tasks, documents]);
+  }, [
+    trashModelsTick,
+    trashModalOpen,
+    livePortfolio.models,
+    currentUser,
+    concepts,
+    products,
+    launches,
+    tasks,
+    documents,
+  ]);
 
   const [swipeFeedback, setSwipeFeedback] = useState<'back' | 'forward' | null>(null);
 
@@ -744,16 +852,17 @@ export function AppShell() {
     const seenLiveTitles = new Set<string>();
     for (const m of livePortfolio.models) {
       if (m.launchStatus === 'В архиве') continue;
+      const portfolioBrand = detectModelBrandPortfolioLabel(m);
+      const modelBrandNorm = normalizePortfolioBrandCode(
+        portfolioBrand || m.brandId || 'BORNERS'
+      );
+      if (!canUserViewBrandConcept(currentUser, modelBrandNorm)) continue;
       const acting = getActingSkuByWbOrVendor(m.code, m.title);
       if (m.code) seenLiveSkus.add(m.code.trim().toLowerCase());
       if (m.wbArticle) seenLiveSkus.add(m.wbArticle.trim().toLowerCase());
       if (acting?.wbSku) seenLiveSkus.add(acting.wbSku.trim().toLowerCase());
       if (m.title) seenLiveTitles.add(m.title.trim().toLowerCase());
 
-      const portfolioBrand = detectModelBrandPortfolioLabel(m);
-      const modelBrandNorm = normalizePortfolioBrandCode(
-        portfolioBrand || m.brandId || 'BORNERS'
-      );
       const wbArtLower = (m.wbArticle || '').trim().toLowerCase();
       const wbStr = [
         acting ? `wb ${acting.wbSku}` : '',
@@ -810,6 +919,7 @@ export function AppShell() {
 
     for (const p of products) {
       if (p.isArchived) continue;
+      if (!canUserViewBrandConcept(currentUser, normalizeLabBrandCode(p.brandId))) continue;
       if (
         seenLiveSkus.has((p.sku || '').trim().toLowerCase()) ||
         seenLiveTitles.has((p.name || '').trim().toLowerCase())
@@ -867,6 +977,7 @@ export function AppShell() {
 
     for (const l of launches) {
       if (l.isArchived) continue;
+      if (!canUserViewBrandConcept(currentUser, normalizeLabBrandCode(l.brandId))) continue;
       if (l.name.toLowerCase().includes(q) || l.collectionName.toLowerCase().includes(q)) {
         results.push({
           id: `l-${l.id}`,
@@ -886,6 +997,12 @@ export function AppShell() {
 
     if (canUserAccessSection(currentUser, 'roadmap-tasks')) {
       for (const pr of projects) {
+        if (
+          pr.brandId !== 'ALL' &&
+          !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(pr.brandId))
+        ) {
+          continue;
+        }
         if (pr.name.toLowerCase().includes(q)) {
           results.push({
             id: `pr-${pr.id}`,
@@ -904,6 +1021,12 @@ export function AppShell() {
 
       for (const t of tasks) {
         if (t.isArchived) continue;
+        if (
+          t.brandId !== 'ALL' &&
+          !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(t.brandId))
+        ) {
+          continue;
+        }
         if (t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) {
           results.push({
             id: `t-${t.id}`,
@@ -925,6 +1048,12 @@ export function AppShell() {
     for (const d of documents) {
       if (d.isArchived) continue;
       if (d.isFinancialRestricted && !hasFin) continue;
+      if (
+        d.brandId !== 'ALL' &&
+        !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(d.brandId))
+      ) {
+        continue;
+      }
       if (d.title.toLowerCase().includes(q) || d.fileName.toLowerCase().includes(q)) {
         results.push({
           id: `d-${d.id}`,
@@ -1203,17 +1332,17 @@ export function AppShell() {
     <div>
       <div className="min-h-screen bg-[#EEF2F6] dark:bg-[#0B0E14] text-[#0F172A] dark:text-[#EDF0F7] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-50 h-[56px] bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#D5DCE6] dark:border-[#222938] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+        <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip">
+          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#D5DCE6] dark:border-[#222938] px-2.5 sm:px-6 lg:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
               <button
                 type="button"
                 onClick={() => handleGoHomeSummary('home')}
                 title="Перейти на Главную страницу BORNERS GROUP"
-                className="inline-flex items-center gap-2.5 pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
+                className="inline-flex items-center gap-2 pr-0 sm:pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
               >
-                <span className="h-8.5 w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
+                <span className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={resolvePublicAssetUrl('images/products/borners-lion-emblem.png')}
@@ -1234,7 +1363,7 @@ export function AppShell() {
               <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block" />
 
               {/* Кнопки Назад (←) и Вперёд (→) */}
-              <div className="inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
+              <div className="hidden sm:inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={goBack}
@@ -1282,13 +1411,13 @@ export function AppShell() {
               )}
 
               {/* Переключатель бренда (чистая типографика без цветных точек) */}
-              <div className="relative" data-tour="brand-switcher">
+              <div className="relative min-w-0" data-tour="brand-switcher">
                 <button
                   type="button"
                   onClick={() => setBrandDropdownOpen(!brandDropdownOpen)}
-                  className="h-8.5 px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12.5px] text-[#0F172A] inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-8 sm:h-8.5 px-2 sm:px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12px] sm:text-[12.5px] text-[#0F172A] inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer transition max-w-full"
                 >
-                  <span className="font-semibold truncate max-w-[120px] sm:max-w-none">
+                  <span className="font-semibold truncate max-w-[82px] sm:max-w-none">
                     {brandFilter === 'ALL'
                       ? 'Все бренды'
                       : brandFilter === 'NA_TELE'
@@ -1302,7 +1431,7 @@ export function AppShell() {
                       : brands.find((b) => b.code === brandFilter || b.id === brandFilter)?.name ||
                         brandFilter}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-[#64748B]" />
+                  <ChevronDown className="h-3.5 w-3.5 text-[#64748B] shrink-0" />
                 </button>
 
                 {brandDropdownOpen && (
@@ -1311,7 +1440,7 @@ export function AppShell() {
                       className="fixed inset-0 z-40"
                       onClick={() => setBrandDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 mt-1.5 w-64 rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_16px_36px_rgba(15,23,42,0.1)] p-1.5 z-50 text-[12.5px] space-y-0.5">
+                    <div className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-20px)] rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_16px_36px_rgba(15,23,42,0.1)] p-1.5 z-50 text-[12.5px] space-y-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1345,7 +1474,9 @@ export function AppShell() {
                         { code: 'AKUSHA', label: 'AKUSHA', sub: 'Обувь · пары' },
                         { code: 'LISKANI', label: 'LISKANI', sub: 'Шторы · компл.' },
                         { code: 'NA_TELE', label: 'НА ТЕЛЕ', sub: 'База и женское' },
-                      ].map((bItem) => {
+                      ]
+                        .filter((bItem) => canUserViewBrandConcept(currentUser, bItem.code))
+                        .map((bItem) => {
                         const isSelected = brandFilter === bItem.code;
                         return (
                           <button
@@ -1453,26 +1584,27 @@ export function AppShell() {
             </nav>
 
             {/* Правая группа: Кнопка вызова Бенто-Атласа («Все разделы») + Поиск + Профиль без лишних иконок */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setAtlasOpen((v) => !v)}
                 aria-expanded={atlasOpen}
-                className={`inline-flex items-center gap-1.5 h-8.5 px-3.5 rounded-[9px] border text-[12.5px] font-bold transition cursor-pointer ${
+                className={`inline-flex items-center gap-1 sm:gap-1.5 h-8 sm:h-8.5 px-2 sm:px-3.5 rounded-[9px] border text-[11.5px] sm:text-[12.5px] font-bold transition cursor-pointer ${
                   atlasOpen
                     ? 'bg-[#F1F5F9] text-[#111827] border-[#94A3B8]'
                     : 'bg-white hover:border-[#94A3B8] text-[#1E293B] border-[#E2E8F0]'
                 }`}
               >
-                <span>Все разделы</span>
+                <span className="sm:hidden">Разделы</span>
+                <span className="hidden sm:inline">Все разделы</span>
                 <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${
+                  className={`h-3.5 w-3.5 transition-transform shrink-0 ${
                     atlasOpen ? 'rotate-180 text-[#111827]' : 'text-[#64748B]'
                   }`}
                 />
               </button>
 
-              {/* Поиск SKU и задач — чистый текст + хоткей без лишнего значка лупы */}
+              {/* Поиск SKU и задач — чистый текст + хоткей (компактная лупа на <640px) */}
               <button
                 type="button"
                 onClick={() => {
@@ -1480,9 +1612,10 @@ export function AppShell() {
                   setSearchModalOpen(true);
                 }}
                 aria-label="Глобальный поиск"
-                className="inline-flex items-center gap-1.5 h-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 h-8 w-8 sm:h-8.5 sm:w-auto rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-0 sm:px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
               >
-                <span>Поиск</span>
+                <Search className="h-3.5 w-3.5 sm:hidden" />
+                <span className="hidden sm:inline">Поиск</span>
                 <span className="hidden md:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#121620] border border-[#E2E8F0] dark:border-[#222938]">
                   ⌘K
                 </span>
@@ -1494,17 +1627,17 @@ export function AppShell() {
                 onClick={() => setDarkMode(!darkMode)}
                 title={darkMode ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
                 aria-label={darkMode ? 'Светлая тема' : 'Тёмная тема'}
-                className="inline-flex items-center justify-center h-8.5 w-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition cursor-pointer"
+                className="inline-flex items-center justify-center h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition cursor-pointer shrink-0"
               >
                 {darkMode ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
               </button>
 
               {/* Профиль и системное меню */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="inline-flex items-center gap-2 h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] pl-2 pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
+                  className="inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-1.5 sm:pl-2 sm:pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
                 >
                   <span className="h-5 w-5 rounded-[5px] bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] flex items-center justify-center font-mono text-[10px] font-bold">
                     {currentUser.avatarInitials}
@@ -1520,7 +1653,7 @@ export function AppShell() {
                       onClick={() => setProfileMenuOpen(false)}
                       className="fixed inset-0 z-40"
                     />
-                    <div className="absolute right-0 mt-1.5 w-76 bg-white rounded-[16px] border-[1.5px] border-[#141413] shadow-[0_18px_48px_rgba(20,20,19,0.16)] p-4 z-50 text-[13px] space-y-3">
+                    <div className="absolute right-0 mt-1.5 w-76 max-w-[calc(100vw-20px)] bg-white rounded-[16px] border-[1.5px] border-[#141413] shadow-[0_18px_48px_rgba(20,20,19,0.16)] p-4 z-50 text-[13px] space-y-3">
                       <div className="border-b border-[#ECEBE6] pb-3">
                         <div className="font-semibold text-[15px] text-[#141413]">
                           {currentUser.fullName}
@@ -1624,12 +1757,19 @@ export function AppShell() {
                                   concepts,
                                   products,
                                   launches,
+                                  campaigns,
+                                  experiments,
                                   financialPlans,
                                   projects,
                                   tasks,
                                   documents,
                                   competitors,
+                                  opportunities,
+                                  research,
+                                  strategicGoals,
                                   miroItems,
+                                  auditLog,
+                                  deletedConceptIds,
                                   presentationOverrides,
                                 },
                               });
@@ -1640,8 +1780,10 @@ export function AppShell() {
                               const a = document.createElement('a');
                               a.href = url;
                               a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+                              document.body.appendChild(a);
                               a.click();
-                              URL.revokeObjectURL(url);
+                              a.remove();
+                              window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
                               setProfileMenuOpen(false);
                               notify(
                                 'success',
@@ -1685,6 +1827,7 @@ export function AppShell() {
                                   return;
                                 }
                                 const b = parsed.bundle;
+                                applyPortfolioBackupSnapshotToStorage(b.models, b.scenarios);
                                 for (const m of b.models) {
                                   unmarkModelAsDeletedInStorage(m);
                                   if (Array.isArray(m.gallery) && m.gallery.length > 0) {
@@ -1694,10 +1837,7 @@ export function AppShell() {
                                   }
                                 }
                                 const restoredIso = touchPortfolioUpdatedAt();
-                                safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
-                                syncUserPlansBackup(b.models);
                                 await savePortfolioSnapshotToIdb(b.models, restoredIso);
-                                safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
                                 safeSetStorageJson(
                                   STORAGE_KEY_SCENARIO_BY_BRAND,
                                   b.selectedScenarioByBrand
@@ -1723,6 +1863,11 @@ export function AppShell() {
                                 livePortfolio.updateScenariosBatch(() => b.scenarios);
                                 if (b.platformState) {
                                   restorePlatformBackupState(b.platformState);
+                                  await savePlatformRichStateToIdb(
+                                    (b.platformState.concepts as unknown[]) || [],
+                                    (b.platformState.miroItems as unknown[]) || [],
+                                    (b.platformState.documents as unknown[]) || []
+                                  );
                                 }
                                 if (typeof window !== 'undefined') {
                                   window.dispatchEvent(
@@ -2179,17 +2324,34 @@ export function AppShell() {
                       key={`${item.entityType}-${item.id}`}
                       className="rounded-xl border-[1.5px] border-[#D4CDC2] bg-[#FAF8F5] p-4 flex flex-wrap items-center justify-between gap-4"
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-[4px] bg-white border border-[#CFC8BC] font-mono text-[10.5px] font-semibold uppercase text-[#B85D35]">
-                            {item.typeLabel}
-                          </span>
-                        </div>
-                        <div className="text-[15px] font-bold text-[#181715] truncate">
-                          {item.title}
-                        </div>
-                        <div className="text-[12.5px] text-[#6E6A63] truncate">
-                          {item.subtitle}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {item.imageUrl && (
+                          <div className="h-12 w-12 rounded-[8px] border border-[#D4CDC2] bg-white overflow-hidden shrink-0 flex items-center justify-center">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={resolvePublicAssetUrl(item.imageUrl)}
+                              alt={item.title}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1 min-w-0">
+                          <div className="inline-flex flex-wrap items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-[4px] bg-white border border-[#CFC8BC] font-mono text-[10.5px] font-semibold uppercase text-[#B85D35]">
+                              {item.typeLabel}
+                            </span>
+                            {item.brandLabel && (
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#181715] text-white font-mono text-[10px] font-semibold uppercase">
+                                {item.brandLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[15px] font-bold text-[#181715] truncate">
+                            {item.title}
+                          </div>
+                          <div className="text-[12.5px] text-[#6E6A63] truncate">
+                            {item.subtitle}
+                          </div>
                         </div>
                       </div>
 
@@ -2197,7 +2359,101 @@ export function AppShell() {
                         {currentUser.role !== 'Viewer' && currentUser.role !== 'Partner' && (
                           <button
                             type="button"
-                            onClick={() => restoreEntity(item.entityType, item.id)}
+                            onClick={() => {
+                              if (item.entityType === 'scenario-model') {
+                                const restored = restoreDeletedModelFromTrash(item.id);
+                                if (restored) {
+                                  livePortfolio.updateModelsBatch((prev) =>
+                                    prev.some(
+                                      (m) =>
+                                        m.id === restored.id ||
+                                        m.code.trim().toUpperCase() ===
+                                          restored.code.trim().toUpperCase()
+                                    )
+                                      ? prev.map((m) =>
+                                          m.id === restored.id
+                                            ? {
+                                                ...restored,
+                                                launchStatus:
+                                                  restored.launchStatus === 'В архиве'
+                                                    ? 'Утверждено'
+                                                    : restored.launchStatus,
+                                              }
+                                            : m
+                                        )
+                                      : [...prev, restored]
+                                  );
+                                }
+                                products
+                                  .filter(
+                                    (p) =>
+                                      p.isArchived &&
+                                      (p.id === item.id ||
+                                        (Boolean(item.code) &&
+                                          p.sku.trim().toUpperCase() ===
+                                            item.code!.trim().toUpperCase()))
+                                  )
+                                  .forEach((p) => restoreEntity('product', p.id));
+                                setTrashModelsTick((t) => t + 1);
+                                notify('success', 'Модель возвращена в каталог', item.title);
+                                return;
+                              }
+
+                              if (item.entityType === 'concept') {
+                                const concept = concepts.find((c) => c.id === item.id);
+                                restoreEntity('concept', item.id);
+                                if (concept) {
+                                  const linkedCode = (
+                                    concept as { linkedScenarioModelCode?: string }
+                                  ).linkedScenarioModelCode;
+                                  const lookupKey =
+                                    concept.linkedScenarioModelId ||
+                                    linkedCode ||
+                                    concept.code;
+                                  const restoredModel = lookupKey
+                                    ? restoreDeletedModelFromTrash(lookupKey)
+                                    : null;
+                                  if (restoredModel) {
+                                    livePortfolio.updateModelsBatch((prev) =>
+                                      prev.some(
+                                        (m) =>
+                                          m.id === restoredModel.id ||
+                                          m.code.trim().toUpperCase() ===
+                                            restoredModel.code.trim().toUpperCase()
+                                      )
+                                        ? prev.map((m) =>
+                                            m.id === restoredModel.id
+                                              ? {
+                                                  ...restoredModel,
+                                                  launchStatus:
+                                                    restoredModel.launchStatus === 'В архиве'
+                                                      ? 'Утверждено'
+                                                      : restoredModel.launchStatus,
+                                                }
+                                              : m
+                                          )
+                                        : [...prev, restoredModel]
+                                    );
+                                  } else if (concept.linkedScenarioModelId || linkedCode) {
+                                    unmarkModelAsDeletedInStorage({
+                                      id: concept.linkedScenarioModelId || '',
+                                      code: linkedCode || concept.code,
+                                    });
+                                    livePortfolio.updateModelsBatch(
+                                      (prev) =>
+                                        syncConceptToScenarioPortfolio(
+                                          { ...concept, isArchived: false },
+                                          prev
+                                        ).models
+                                    );
+                                  }
+                                }
+                                setTrashModelsTick((t) => t + 1);
+                                return;
+                              }
+
+                              restoreEntity(item.entityType, item.id);
+                            }}
                             className="h-9 px-3.5 rounded-[8px] bg-[#1F6E50] hover:bg-[#17563E] text-white text-[12.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5"
                           >
                             <RotateCcw className="h-3.5 w-3.5" />
@@ -2207,7 +2463,15 @@ export function AppShell() {
                         {isOwnerOrAdmin && (
                           <button
                             type="button"
-                            onClick={() => permanentlyDeleteEntity(item.entityType, item.id)}
+                            onClick={() => {
+                              if (item.entityType === 'scenario-model') {
+                                permanentlyDeleteModelFromTrash(item.id);
+                                setTrashModelsTick((t) => t + 1);
+                                notify('warning', 'Модель удалена из корзины навсегда', item.title);
+                                return;
+                              }
+                              permanentlyDeleteEntity(item.entityType, item.id);
+                            }}
                             className="h-9 px-3 rounded-[8px] border border-[#C94B4B]/40 hover:bg-[#C94B4B] text-[#C94B4B] hover:text-white text-[12px] font-semibold transition cursor-pointer"
                           >
                             Удалить навсегда
@@ -2230,6 +2494,9 @@ export function AppShell() {
                       onClick={() => {
                         if (window.confirm('Очистить корзину удалений безвозвратно?')) {
                           emptyTrash();
+                          const cleared = clearAllDeletedModelSnapshots();
+                          cleared.forEach((s) => permanentlyDeleteModelFromTrash(s.id));
+                          setTrashModelsTick((t) => t + 1);
                         }
                       }}
                       className="h-9 px-4 rounded-[8px] border border-[#C94B4B] text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white text-[12.5px] font-semibold transition cursor-pointer"

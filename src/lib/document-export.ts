@@ -635,22 +635,44 @@ function loadImageForPdf(url?: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function wrapCanvasText(
+export function wrapCanvasText(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number
 ): string[] {
-  const words = String(text || '').split(/\s+/);
+  const raw = String(text ?? '').trim();
+  if (!raw) return ['—'];
+  const words = raw.split(/\s+/);
   const lines: string[] = [];
   let current = '';
 
   for (const w of words) {
+    if (!w) continue;
     const candidate = current ? `${current} ${w}` : w;
-    if (ctx.measureText(candidate).width <= maxWidth) {
+    if (maxWidth <= 0 || ctx.measureText(candidate).width <= maxWidth) {
       current = candidate;
-    } else {
-      if (current) lines.push(current);
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      current = '';
+    }
+
+    if (ctx.measureText(w).width <= maxWidth) {
       current = w;
+    } else {
+      let chunk = '';
+      for (const ch of Array.from(w)) {
+        const nextChunk = chunk + ch;
+        if (chunk && ctx.measureText(nextChunk).width > maxWidth) {
+          lines.push(chunk);
+          chunk = ch;
+        } else {
+          chunk = nextChunk;
+        }
+      }
+      current = chunk;
     }
   }
   if (current) lines.push(current);
@@ -1208,8 +1230,13 @@ export function downloadEditorialPdfDocument(spec: EditorialPdfDocumentSpec): vo
     const a = document.createElement('a');
     a.href = url;
     a.download = spec.fileName.endsWith('.pdf') ? spec.fileName : `${spec.fileName}.pdf`;
+    if (document.body) document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    if (typeof a.remove === 'function') a.remove();
+    const revokeTimer = setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    if (typeof (revokeTimer as unknown as { unref?: () => void })?.unref === 'function') {
+      (revokeTimer as unknown as { unref: () => void }).unref();
+    }
   };
 
   if (spec.frontPhotoUrl || spec.backPhotoUrl) {
@@ -1235,8 +1262,13 @@ export function downloadXlsxWorkbook(fileName: string, sheets: XlsxSheetSpec[]):
   a.href = url;
   const cleanName = fileName.replace(/\.[^/.]+$/, '');
   a.download = `${cleanName}.xlsx`;
+  if (document.body) document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  if (typeof a.remove === 'function') a.remove();
+  const revokeTimer = setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  if (typeof (revokeTimer as unknown as { unref?: () => void })?.unref === 'function') {
+    (revokeTimer as unknown as { unref: () => void }).unref();
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -1297,8 +1329,14 @@ export function exportDocumentAsPdf(
     products?: Product[];
     concepts?: ProductConcept[];
     financialPlans?: FinancialPlanRow[];
+    canViewCostPrice?: boolean;
+    canViewFinance?: boolean;
   }
 ): void {
+  const canSeeCost = opts?.canViewCostPrice !== false;
+  const canSeeFinance = opts?.canViewFinance !== false;
+  const hiddenByRole = 'Скрыто (доступ по роли)';
+
   const brandLabel =
     doc.brandId === 'ALL'
       ? 'BORNERS GROUP'
@@ -1513,8 +1551,14 @@ export function exportDocumentAsPdf(
       subtitle:
         'Сводный управленческий план выручки, валовой маржи, юнит-экономики SKU и сценариев развития холдинга на 2027 год',
       metaGrid: [
-        { label: 'Годовой план выручки', value: '142,8 млн ₽ (Базовый)' },
-        { label: 'Целевая валовая маржа', value: '52% BORNERS / 56% НА ТЕЛЕ' },
+        {
+          label: 'Годовой план выручки',
+          value: canSeeFinance ? '142,8 млн ₽ (Базовый)' : hiddenByRole,
+        },
+        {
+          label: 'Целевая валовая маржа',
+          value: canSeeCost && canSeeFinance ? '52% BORNERS / 56% НА ТЕЛЕ' : hiddenByRole,
+        },
         { label: 'Формула выручки', value: 'Выкупы (шт.) × Ср. чек (₽)' },
         { label: 'Финансовый контролёр', value: `${doc.uploadedBy} · ${doc.uploadedAt}` },
       ],
@@ -1525,9 +1569,27 @@ export function exportDocumentAsPdf(
           table: {
             headers: ['Сценарий', 'Объём выкупов (год)', 'Средний чек', 'Годовая выручка', 'Опер. прибыль (EBITDA)'],
             rows: [
-              ['Консервативный', '54 200 шт.', '2 050 ₽', '111 110 000 ₽', '28 400 000 ₽ (25,5%)'],
-              ['Базовый (Основной)', '64 800 шт.', '2 203 ₽', '142 800 000 ₽', '41 900 000 ₽ (29,3%)'],
-              ['Оптимистичный', '78 500 шт.', '2 340 ₽', '183 690 000 ₽', '58 700 000 ₽ (31,9%)'],
+              [
+                'Консервативный',
+                '54 200 шт.',
+                canSeeFinance ? '2 050 ₽' : hiddenByRole,
+                canSeeFinance ? '111 110 000 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '28 400 000 ₽ (25,5%)' : hiddenByRole,
+              ],
+              [
+                'Базовый (Основной)',
+                '64 800 шт.',
+                canSeeFinance ? '2 203 ₽' : hiddenByRole,
+                canSeeFinance ? '142 800 000 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '41 900 000 ₽ (29,3%)' : hiddenByRole,
+              ],
+              [
+                'Оптимистичный',
+                '78 500 шт.',
+                canSeeFinance ? '2 340 ₽' : hiddenByRole,
+                canSeeFinance ? '183 690 000 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '58 700 000 ₽ (31,9%)' : hiddenByRole,
+              ],
             ],
           },
         },
@@ -1537,10 +1599,34 @@ export function exportDocumentAsPdf(
           table: {
             headers: ['Артикул и модель', 'Бренд', 'РРЦ (со скидкой)', 'Себестоимость (COGS)', 'Чистая прибыль / Маржа'],
             rows: [
-              ['BRN-MOD-01 · Боксеры Modal Core', 'BORNERS', '1 790 ₽', '360 ₽', '+584 ₽ (32,6%)'],
-              ['BRN-BL-2027 · Капсула BIG LOVE', 'BORNERS', '2 490 ₽', '460 ₽', '+892 ₽ (35,8%)'],
-              ['NTL-SKN-01 · Бралетт Оттенки кожи', 'НА ТЕЛЕ', '2 890 ₽', '510 ₽', '+1 065 ₽ (36,8%)'],
-              ['NTL-BS-02 · Слипы Невидимый край', 'НА ТЕЛЕ', '1 690 ₽', '290 ₽', '+590 ₽ (34,9%)'],
+              [
+                'BRN-MOD-01 · Боксеры Modal Core',
+                'BORNERS',
+                canSeeFinance ? '1 790 ₽' : hiddenByRole,
+                canSeeCost ? '360 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '+584 ₽ (32,6%)' : hiddenByRole,
+              ],
+              [
+                'BRN-BL-2027 · Капсула BIG LOVE',
+                'BORNERS',
+                canSeeFinance ? '2 490 ₽' : hiddenByRole,
+                canSeeCost ? '460 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '+892 ₽ (35,8%)' : hiddenByRole,
+              ],
+              [
+                'NTL-SKN-01 · Бралетт Оттенки кожи',
+                'НА ТЕЛЕ',
+                canSeeFinance ? '2 890 ₽' : hiddenByRole,
+                canSeeCost ? '510 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '+1 065 ₽ (36,8%)' : hiddenByRole,
+              ],
+              [
+                'NTL-BS-02 · Слипы Невидимый край',
+                'НА ТЕЛЕ',
+                canSeeFinance ? '1 690 ₽' : hiddenByRole,
+                canSeeCost ? '290 ₽' : hiddenByRole,
+                canSeeCost && canSeeFinance ? '+590 ₽ (34,9%)' : hiddenByRole,
+              ],
             ],
           },
         },
@@ -1572,12 +1658,16 @@ export function exportDocumentAsPdf(
         rows: [
           {
             label: 'BORNERS (Мужской и унисекс базовый слой)',
-            value: 'Инженерная посадка, плотный микромодал 190 г/м² и пима-хлопок, ресурс 80+ стирок, целевая маржа 52%',
+            value: canSeeCost && canSeeFinance
+              ? 'Инженерная посадка, плотный микромодал 190 г/м² и пима-хлопок, ресурс 80+ стирок, целевая маржа 52%'
+              : `Инженерная посадка, плотный микромодал 190 г/м² и пима-хлопок, ресурс 80+ стирок, целевая маржа: ${hiddenByRole}`,
             highlight: true,
           },
           {
             label: 'НА ТЕЛЕ (Женская «вторая кожа»)',
-            value: 'Бесшовная лазерная обработка края Free-Cut, 6 телесных оттенков Pantone, целевая маржа 56%',
+            value: canSeeCost && canSeeFinance
+              ? 'Бесшовная лазерная обработка края Free-Cut, 6 телесных оттенков Pantone, целевая маржа 56%'
+              : `Бесшовная лазерная обработка края Free-Cut, 6 телесных оттенков Pantone, целевая маржа: ${hiddenByRole}`,
           },
           {
             label: 'Новые бренды в разработке (2026–2027)',
@@ -1616,8 +1706,13 @@ export function exportDocumentAsExcel(
     products?: Product[];
     concepts?: ProductConcept[];
     financialPlans?: FinancialPlanRow[];
+    canViewCostPrice?: boolean;
+    canViewFinance?: boolean;
   }
 ): void {
+  const canSeeCost = opts?.canViewCostPrice !== false;
+  const canSeeFinance = opts?.canViewFinance !== false;
+
   const brandLabel =
     doc.brandId === 'ALL'
       ? 'BORNERS GROUP'
@@ -1681,9 +1776,15 @@ export function exportDocumentAsExcel(
           { value: formatLabBrandLabel(r.brandId), style: even ? 5 : 6 },
           { value: 'Базовый', style: even ? 5 : 6 },
           { value: r.plannedBuyoutUnits, type: 'number', style: even ? 7 : 8 },
-          { value: r.avgSellingPriceRub, type: 'number', style: even ? 9 : 10 },
-          { value: r.plannedRevenueRub, type: 'number', style: even ? 9 : 10 },
-          { value: r.plannedOperatingProfitRub, type: 'number', style: even ? 9 : 10 },
+          canSeeFinance
+            ? { value: r.avgSellingPriceRub, type: 'number', style: even ? 9 : 10 }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
+          canSeeFinance
+            ? { value: r.plannedRevenueRub, type: 'number', style: even ? 9 : 10 }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
+          canSeeCost && canSeeFinance
+            ? { value: r.plannedOperatingProfitRub, type: 'number', style: even ? 9 : 10 }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
         ],
       });
     });
@@ -1695,9 +1796,15 @@ export function exportDocumentAsExcel(
         { value: 'ВСЕ БРЕНДЫ', style: 11 },
         { value: 'Базовый сценарий', style: 11 },
         { value: sumUnits, type: 'number', style: 11 },
-        { value: sumUnits > 0 ? Math.round(sumRev / sumUnits) : 2190, type: 'number', style: 12 },
-        { value: sumRev, type: 'number', style: 12 },
-        { value: sumProfit, type: 'number', style: 12 },
+        canSeeFinance
+          ? { value: sumUnits > 0 ? Math.round(sumRev / sumUnits) : 2190, type: 'number', style: 12 }
+          : { value: 'Скрыто', style: 11 },
+        canSeeFinance
+          ? { value: sumRev, type: 'number', style: 12 }
+          : { value: 'Скрыто', style: 11 },
+        canSeeCost && canSeeFinance
+          ? { value: sumProfit, type: 'number', style: 12 }
+          : { value: 'Скрыто', style: 11 },
       ],
     });
 
@@ -1741,13 +1848,19 @@ export function exportDocumentAsExcel(
           { value: p.name, style: even ? 5 : 6 },
           { value: formatLabBrandLabel(p.brandId), style: even ? 5 : 6 },
           { value: p.collection, style: even ? 5 : 6 },
-          { value: p.economics.actualRetailPrice, type: 'number', style: even ? 9 : 10 },
-          { value: p.economics.unitCostPrice, type: 'number', style: even ? 9 : 10 },
-          {
-            value: p.economics.marketplaceCommissionRub + p.economics.logisticsRub,
-            type: 'number',
-            style: even ? 9 : 10,
-          },
+          canSeeFinance
+            ? { value: p.economics.actualRetailPrice, type: 'number', style: even ? 9 : 10 }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
+          canSeeCost
+            ? { value: p.economics.unitCostPrice, type: 'number', style: even ? 9 : 10 }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
+          canSeeFinance
+            ? {
+                value: p.economics.marketplaceCommissionRub + p.economics.logisticsRub,
+                type: 'number',
+                style: even ? 9 : 10,
+              }
+            : { value: 'Скрыто', style: even ? 5 : 6 },
         ],
       });
     });
@@ -1914,7 +2027,12 @@ export function exportDocumentAsExcel(
     docProfile.sizes,
     docProfile.sizeSharesPct
   );
-  const baseUnitCostRub = Math.max(1, Math.round(c?.plannedUnitCost || 360));
+  const conceptFx =
+    c?.currency === 'CNY' ? 13.4 : c?.currency === 'USD' ? 92.5 : 1;
+  const baseUnitCostRub =
+    c?.plannedUnitCost !== undefined && c?.plannedUnitCost !== null
+      ? Math.max(0, Math.round(c.plannedUnitCost * conceptFx))
+      : 360;
 
   let totalPacks = 0;
   let totalPcs = 0;
@@ -1937,8 +2055,12 @@ export function exportDocumentAsExcel(
         { value: `${sharePct}%`, style: even ? 5 : 6 },
         { value: packs, type: 'number', style: even ? 7 : 8 },
         { value: pcs, type: 'number', style: even ? 7 : 8 },
-        { value: baseUnitCostRub, type: 'number', style: even ? 9 : 10 },
-        { value: sum, type: 'number', style: even ? 9 : 10 },
+        canSeeCost
+          ? { value: baseUnitCostRub, type: 'number', style: even ? 9 : 10 }
+          : { value: 'Скрыто', style: even ? 5 : 6 },
+        canSeeCost
+          ? { value: sum, type: 'number', style: even ? 9 : 10 }
+          : { value: 'Скрыто', style: even ? 5 : 6 },
       ],
     });
   });
@@ -1950,8 +2072,12 @@ export function exportDocumentAsExcel(
       { value: docSizeRange, style: 11 },
       { value: totalPacks, type: 'number', style: 11 },
       { value: totalPcs, type: 'number', style: 11 },
-      { value: totalPcs > 0 ? Math.round(totalRub / totalPcs) : baseUnitCostRub, type: 'number', style: 12 },
-      { value: totalRub, type: 'number', style: 12 },
+      canSeeCost
+        ? { value: totalPcs > 0 ? Math.round(totalRub / totalPcs) : baseUnitCostRub, type: 'number', style: 12 }
+        : { value: 'Скрыто', style: 11 },
+      canSeeCost
+        ? { value: totalRub, type: 'number', style: 12 }
+        : { value: 'Скрыто', style: 11 },
     ],
   });
 
@@ -2211,8 +2337,10 @@ export function exportConceptProductionExcel(
     plannedReadyDate: string;
     paymentTerms: string;
     orderVersion: number;
+    canViewCostPrice?: boolean;
   }
 ): void {
+  const canSeeCost = orderInfo.canViewCostPrice !== false;
   const brandLabel = formatLabBrandLabel(concept.brandId);
   const profile = getBrandProductionProfile(concept.brandId, concept.name);
   const extraSizeKeys = Object.keys(orderInfo.packsBySize || {}).filter(
@@ -2272,8 +2400,12 @@ export function exportConceptProductionExcel(
         { value: sz, style: even ? 5 : 6 },
         { value: packs, type: 'number', style: even ? 7 : 8 },
         { value: pcs, type: 'number', style: even ? 7 : 8 },
-        { value: orderInfo.unitPrice || 0, type: 'number', style: even ? 9 : 10 },
-        { value: sum, type: 'number', style: even ? 9 : 10 },
+        canSeeCost
+          ? { value: orderInfo.unitPrice || 0, type: 'number', style: even ? 9 : 10 }
+          : { value: 'Скрыто', style: even ? 5 : 6 },
+        canSeeCost
+          ? { value: sum, type: 'number', style: even ? 9 : 10 }
+          : { value: 'Скрыто', style: even ? 5 : 6 },
       ],
     });
   });
@@ -2284,8 +2416,12 @@ export function exportConceptProductionExcel(
       { value: 'ИТОГО ПО ЗАКАЗУ', style: 11 },
       { value: totalPacks, type: 'number', style: 11 },
       { value: totalPcs, type: 'number', style: 11 },
-      { value: orderInfo.unitPrice || 0, type: 'number', style: 12 },
-      { value: totalSum, type: 'number', style: 12 },
+      canSeeCost
+        ? { value: orderInfo.unitPrice || 0, type: 'number', style: 12 }
+        : { value: 'Скрыто', style: 11 },
+      canSeeCost
+        ? { value: totalSum, type: 'number', style: 12 }
+        : { value: 'Скрыто', style: 11 },
     ],
   });
 

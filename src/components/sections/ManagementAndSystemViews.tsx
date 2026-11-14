@@ -38,6 +38,7 @@ import {
 } from '@/lib/document-export';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { DRAFT_MODULES_META, useDraftModules } from '@/lib/draftModules';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import {
   GrowthScenarioDef,
@@ -49,15 +50,13 @@ import {
   normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 import {
-  STORAGE_KEY_MODELS,
   STORAGE_KEY_S1_GROUP_PORTFOLIO,
   STORAGE_KEY_SCENARIO_BY_BRAND,
-  STORAGE_KEY_SCENARIOS,
+  applyPortfolioBackupSnapshotToStorage,
   buildFullPlatformBackupBundle,
   getDeletedModelsRegistry,
   parseFullPlatformBackupBundle,
   resolveEffectiveScenarioForModel,
-  syncUserPlansBackup,
   touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
@@ -66,6 +65,7 @@ import {
   safeGetStorageJson,
   safeSetStorageJson,
   saveModelGalleryToIdb,
+  savePlatformRichStateToIdb,
   savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
 import { pushPortfolioCoreToSupabase } from '@/lib/supabaseCloudSync';
@@ -90,6 +90,7 @@ function buildLiveCatalogProductsForExport(
     const brandCode = normalizePortfolioBrandCode(
       m.customBrandLabel || m.brandId || 'BORNERS'
     );
+    const brandProfile = getBrandProductionProfile(brandCode, m.title);
     const effSc = resolveEffectiveScenarioForModel(
       m,
       liveScenarios,
@@ -119,10 +120,12 @@ function buildLiveCatalogProductsForExport(
       fabricComposition: m.fabric?.composition || '',
       fabricDensityGsm: parseInt(m.fabric?.density || '180', 10) || 180,
       waistbandType: m.waistband?.type || '',
-      fitType: m.construction?.fit || '',
+      fitType: m.construction?.fit || brandProfile.defaultConstructionRu,
       constructionDetails: m.construction?.seams || '',
-      sizes: ['S', 'M', 'L', 'XL', 'XXL'],
-      supplierName: 'Фабрика BORNERS GROUP',
+      sizes: [...brandProfile.sizes],
+      supplierName:
+        m.sharedSupplyAndFact?.factoryParams?.factoryName ||
+        brandProfile.defaultFactoryNameZh,
       supplierCountry: 'КНР / РФ',
       moq: 500,
       productionLeadDays: 35,
@@ -175,6 +178,7 @@ export function MarketIntelligenceView() {
     competitors,
     research,
     opportunities,
+    currentUser,
     brandFilter,
     platformMode,
     createCompetitor,
@@ -182,6 +186,10 @@ export function MarketIntelligenceView() {
   } = usePlatform();
 
   const isStrategyMode = platformMode === 'strategy';
+  const canEditMarket =
+    !isStrategyMode &&
+    currentUser.role !== 'Viewer' &&
+    currentUser.role !== 'Partner';
 
   const [tab, setTab] = useState<'competitors' | 'matrix' | 'trends'>('competitors');
   const [compModalOpen, setCompModalOpen] = useState(false);
@@ -212,22 +220,26 @@ export function MarketIntelligenceView() {
     () =>
       research.filter(
         (i) =>
-          brandFilter === 'ALL' ||
-          i.brandId === 'ALL' ||
-          normalizeLabBrandCode(i.brandId) === normalizeLabBrandCode(brandFilter)
+          (i.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(i.brandId))) &&
+          (brandFilter === 'ALL' ||
+            i.brandId === 'ALL' ||
+            normalizeLabBrandCode(i.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [research, brandFilter]
+    [research, brandFilter, currentUser]
   );
 
   const filteredOpportunities = useMemo(
     () =>
       opportunities.filter(
         (o) =>
-          brandFilter === 'ALL' ||
-          o.brandId === 'ALL' ||
-          normalizeLabBrandCode(o.brandId) === normalizeLabBrandCode(brandFilter)
+          (o.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(o.brandId))) &&
+          (brandFilter === 'ALL' ||
+            o.brandId === 'ALL' ||
+            normalizeLabBrandCode(o.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [opportunities, brandFilter]
+    [opportunities, brandFilter, currentUser]
   );
 
   return (
@@ -277,7 +289,7 @@ export function MarketIntelligenceView() {
             </button>
           </div>
 
-          {!isStrategyMode && (
+          {canEditMarket && (
             <button
               onClick={() => setCompModalOpen(true)}
               className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
@@ -386,7 +398,7 @@ export function MarketIntelligenceView() {
       {/* Вкладка 3: Исследования и ниши */}
       {tab === 'trends' && (
         <div className="space-y-6">
-          {!isStrategyMode && (
+          {canEditMarket && (
             <div className="flex justify-end">
               <button
                 onClick={() => setInsightModalOpen(true)}
@@ -655,10 +667,40 @@ export function RoadmapTasksView() {
 
   const todayStr = '2027-02-01';
 
+  const editableTaskBrandOptions = useMemo(() => {
+    const base = [
+      { code: 'BORNERS', label: 'BORNERS' },
+      { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
+      { code: 'AKUSHA', label: 'AKUSHA' },
+      { code: 'LISKANI', label: 'LISKANI' },
+      { code: 'FUKAI', label: 'FUKAI' },
+    ].filter((b) => canUserEditBrand(currentUser, b.code));
+    if (currentUser.role === 'Owner' || currentUser.role === 'Admin') {
+      base.push({ code: 'ALL', label: 'Общая задача холдинга' });
+    }
+    return base;
+  }, [currentUser]);
+
+  const canCreateTask =
+    !isStrategyMode &&
+    currentUser.role !== 'Viewer' &&
+    currentUser.role !== 'Partner' &&
+    editableTaskBrandOptions.length > 0;
+
+  const canEditTaskItem = (t: TaskItem): boolean =>
+    !isStrategyMode &&
+    currentUser.role !== 'Viewer' &&
+    currentUser.role !== 'Partner' &&
+    (t.brandId === 'ALL'
+      ? currentUser.role === 'Owner' || currentUser.role === 'Admin'
+      : canUserEditBrand(currentUser, normalizeLabBrandCode(t.brandId)));
+
   const overdueCount = useMemo(() => {
     return tasks.filter(
       (t) =>
         !t.isArchived &&
+        (t.brandId === 'ALL' ||
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(t.brandId))) &&
         (brandFilter === 'ALL' ||
           t.brandId === 'ALL' ||
           normalizeLabBrandCode(t.brandId) === normalizeLabBrandCode(brandFilter)) &&
@@ -666,11 +708,17 @@ export function RoadmapTasksView() {
         t.deadline < todayStr &&
         t.status !== 'Done'
     ).length;
-  }, [tasks, brandFilter, assigneeFilter]);
+  }, [tasks, brandFilter, assigneeFilter, currentUser]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.isArchived) return false;
+      if (
+        t.brandId !== 'ALL' &&
+        !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(t.brandId))
+      ) {
+        return false;
+      }
       if (
         brandFilter !== 'ALL' &&
         t.brandId !== 'ALL' &&
@@ -686,7 +734,7 @@ export function RoadmapTasksView() {
       }
       return true;
     });
-  }, [tasks, brandFilter, assigneeFilter, overdueOnly]);
+  }, [tasks, brandFilter, assigneeFilter, overdueOnly, currentUser]);
 
   const overdueOrBlockedCount = useMemo(
     () =>
@@ -696,20 +744,35 @@ export function RoadmapTasksView() {
     [filteredTasks]
   );
 
-  const selectedTask: TaskItem | null = useMemo(
-    () => tasks.find((t) => t.id === selectedTaskId) || null,
-    [tasks, selectedTaskId]
-  );
+  const selectedTask: TaskItem | null = useMemo(() => {
+    const found = tasks.find((t) => t.id === selectedTaskId) || null;
+    if (
+      found &&
+      found.brandId !== 'ALL' &&
+      !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(found.brandId))
+    ) {
+      return null;
+    }
+    return found;
+  }, [tasks, selectedTaskId, currentUser]);
+
+  const canEditSelectedTask = selectedTask ? canEditTaskItem(selectedTask) : false;
 
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
-    if (isStrategyMode) return;
+    const t = tasks.find((item) => item.id === taskId);
+    if (!t || !canEditTaskItem(t)) {
+      e.preventDefault();
+      return;
+    }
     setDraggedTaskId(taskId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
   };
 
   const handleDragOver = (e: React.DragEvent, status: TaskStatus) => {
-    if (isStrategyMode) return;
+    if (isStrategyMode || currentUser.role === 'Viewer' || currentUser.role === 'Partner') {
+      return;
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (dragOverColumn !== status) {
@@ -718,12 +781,14 @@ export function RoadmapTasksView() {
   };
 
   const handleDrop = (e: React.DragEvent, targetStatus: TaskStatus) => {
-    if (isStrategyMode) return;
+    if (isStrategyMode || currentUser.role === 'Viewer' || currentUser.role === 'Partner') {
+      return;
+    }
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
     if (taskId) {
       const task = tasks.find((t) => t.id === taskId);
-      if (task && task.status !== targetStatus) {
+      if (task && canEditTaskItem(task) && task.status !== targetStatus) {
         updateTaskStatus(taskId, targetStatus);
       }
     }
@@ -820,9 +885,22 @@ export function RoadmapTasksView() {
             </button>
           </div>
 
-          {!isStrategyMode && (
+          {canCreateTask && (
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => {
+                const defaultBrand =
+                  brandFilter !== 'ALL' &&
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter))
+                    ? normalizeLabBrandCode(brandFilter)
+                    : editableTaskBrandOptions[0]?.code || 'BORNERS';
+                setNewTask((prev) => ({
+                  ...prev,
+                  brandId: editableTaskBrandOptions.some((o) => o.code === prev.brandId)
+                    ? prev.brandId
+                    : defaultBrand,
+                }));
+                setModalOpen(true);
+              }}
               className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
             >
               Новая задача
@@ -912,22 +990,29 @@ export function RoadmapTasksView() {
                     const linkedLaunch = launches.find((l) => l.id === task.launchId);
                     const isBeingDragged = draggedTaskId === task.id;
                     const isOverdue = task.deadline < todayStr && task.status !== 'Done';
+                    const canDragThis = canEditTaskItem(task);
 
                     return (
                       <div
                         key={task.id}
-                        draggable={!isStrategyMode}
+                        draggable={canDragThis}
                         onDragStart={(e) => handleDragStart(e, task.id)}
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedTaskId(task.id)}
-                        className={`bg-white dark:bg-zinc-950 rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-3 cursor-grab active:cursor-grabbing transition select-none ${
+                        className={`bg-white dark:bg-zinc-950 rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-3 ${
+                          canDragThis
+                            ? 'cursor-grab active:cursor-grabbing'
+                            : 'cursor-pointer'
+                        } transition select-none ${
                           isBeingDragged ? 'opacity-40 scale-[0.98]' : ''
                         }`}
                       >
                         {/* Верхняя строка: Бренд и Приоритет */}
                         <div className="flex items-center justify-between gap-2 text-[13px]">
                           <div className="flex items-center gap-1.5 font-semibold text-[#737373]">
-                            <GripVertical className="h-4 w-4 text-[#737373]" />
+                            {canDragThis && (
+                              <GripVertical className="h-4 w-4 text-[#737373]" />
+                            )}
                             <span
                               style={{
                                 color:
@@ -1088,12 +1173,13 @@ export function RoadmapTasksView() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <select
-                        disabled={isStrategyMode}
+                        disabled={!canEditTaskItem(task)}
                         value={task.status}
-                        onChange={(e) =>
-                          updateTaskStatus(task.id, e.target.value as TaskStatus)
-                        }
-                        className="h-10 rounded-xl border border-[#E8E8E5] px-3 text-[14px] font-semibold bg-white cursor-pointer"
+                        onChange={(e) => {
+                          if (!canEditTaskItem(task)) return;
+                          updateTaskStatus(task.id, e.target.value as TaskStatus);
+                        }}
+                        className="h-10 rounded-xl border border-[#E8E8E5] px-3 text-[14px] font-semibold bg-white disabled:opacity-60 cursor-pointer"
                       >
                         {TASK_COLUMNS.map((st) => (
                           <option key={st} value={st}>
@@ -1139,13 +1225,27 @@ export function RoadmapTasksView() {
             {strategicGoals
               .filter(
                 (g) =>
-                  brandFilter === 'ALL' ||
-                  g.brandId === 'ALL' ||
-                  normalizeLabBrandCode(g.brandId) === normalizeLabBrandCode(brandFilter)
+                  (g.brandId === 'ALL' ||
+                    canUserViewBrandConcept(
+                      currentUser,
+                      normalizeLabBrandCode(g.brandId)
+                    )) &&
+                  (brandFilter === 'ALL' ||
+                    g.brandId === 'ALL' ||
+                    normalizeLabBrandCode(g.brandId) === normalizeLabBrandCode(brandFilter))
               )
               .map((goal) => {
                 const goalProjects = projects.filter((p) => {
                   if (p.strategicGoalId !== goal.id) return false;
+                  if (
+                    p.brandId !== 'ALL' &&
+                    !canUserViewBrandConcept(
+                      currentUser,
+                      normalizeLabBrandCode(p.brandId)
+                    )
+                  ) {
+                    return false;
+                  }
                   if (
                     roadmapPeriodFilter !== 'ALL' &&
                     !p.quarter.includes(roadmapPeriodFilter)
@@ -1181,7 +1281,14 @@ export function RoadmapTasksView() {
                       {goalProjects.map((proj) => {
                         const owner = users.find((u) => u.id === proj.ownerId);
                         const projTasks = tasks.filter(
-                          (t) => !t.isArchived && t.projectId === proj.id
+                          (t) =>
+                            !t.isArchived &&
+                            t.projectId === proj.id &&
+                            (t.brandId === 'ALL' ||
+                              canUserViewBrandConcept(
+                                currentUser,
+                                normalizeLabBrandCode(t.brandId)
+                              ))
                         );
                         const doneCount = projTasks.filter(
                           (t) => t.status === 'Done'
@@ -1280,12 +1387,12 @@ export function RoadmapTasksView() {
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">Статус</label>
                 <select
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedTask}
                   value={selectedTask.status}
                   onChange={(e) =>
                     updateTaskStatus(selectedTask.id, e.target.value as TaskStatus)
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
                 >
                   {TASK_COLUMNS.map((st) => (
                     <option key={st} value={st}>
@@ -1297,14 +1404,14 @@ export function RoadmapTasksView() {
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">Приоритет</label>
                 <select
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedTask}
                   value={selectedTask.priority}
                   onChange={(e) =>
                     updateTask(selectedTask.id, {
                       priority: e.target.value as TaskPriority,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
                 >
                   <option value="Critical">Критический</option>
                   <option value="High">Высокий</option>
@@ -1315,12 +1422,12 @@ export function RoadmapTasksView() {
               <div>
                 <label className="block font-semibold text-[#737373] mb-1">Ответственный</label>
                 <select
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedTask}
                   value={selectedTask.assigneeId}
                   onChange={(e) =>
                     updateTask(selectedTask.id, { assigneeId: e.target.value })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
                 >
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
@@ -1333,12 +1440,12 @@ export function RoadmapTasksView() {
                 <label className="block font-semibold text-[#737373] mb-1">Дедлайн</label>
                 <input
                   type="date"
-                  disabled={isStrategyMode}
+                  disabled={!canEditSelectedTask}
                   value={selectedTask.deadline}
                   onChange={(e) =>
                     updateTask(selectedTask.id, { deadline: e.target.value })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
                 />
               </div>
             </div>
@@ -1349,12 +1456,12 @@ export function RoadmapTasksView() {
               </label>
               <textarea
                 rows={3}
-                disabled={isStrategyMode}
+                disabled={!canEditSelectedTask}
                 value={selectedTask.description}
                 onChange={(e) =>
                   updateTask(selectedTask.id, { description: e.target.value })
                 }
-                className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[14px]"
+                className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[14px] disabled:opacity-60"
               />
             </div>
 
@@ -1364,7 +1471,7 @@ export function RoadmapTasksView() {
                 <h4 className="text-[16px] font-bold">
                   Вложения ({selectedTask.attachments.length})
                 </h4>
-                {!isStrategyMode && (
+                {canEditSelectedTask && (
                   <label className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer">
                     <Paperclip className="h-4 w-4" />
                     <span>Прикрепить файл</span>
@@ -1413,7 +1520,7 @@ export function RoadmapTasksView() {
                 ))}
               </div>
 
-              {!isStrategyMode && (
+              {canEditSelectedTask && (
                 <div className="flex gap-2">
                   <input
                     value={taskCommentText}
@@ -1446,7 +1553,7 @@ export function RoadmapTasksView() {
               )}
             </div>
 
-            {!isStrategyMode && (
+            {canEditSelectedTask && (
               <div className="pt-4 border-t border-[#E8E8E5] flex justify-between items-center">
                 <button
                   type="button"
@@ -1496,12 +1603,11 @@ export function RoadmapTasksView() {
                     onChange={(e) => setNewTask({ ...newTask, brandId: e.target.value })}
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
                   >
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
-                    <option value="FUKAI">FUKAI</option>
-                    <option value="ALL">Общая задача холдинга</option>
+                    {editableTaskBrandOptions.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1616,10 +1722,31 @@ export function DocumentsView() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const hasFinanceAccess = canUserViewFinance(currentUser);
+  const hasCostAccess = canUserViewCostPrice(currentUser);
+  const editableDocBrandOptions = useMemo(() => {
+    const out: { code: string; label: string }[] = [];
+    if (currentUser.role === 'Owner' || currentUser.role === 'Admin') {
+      out.push({ code: 'ALL', label: 'BORNERS GROUP (Общий)' });
+    }
+    for (const b of [
+      { code: 'BORNERS', label: 'BORNERS' },
+      { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
+      { code: 'AKUSHA', label: 'AKUSHA' },
+      { code: 'LISKANI', label: 'LISKANI' },
+      { code: 'FUKAI', label: 'FUKAI' },
+    ]) {
+      if (canUserEditBrand(currentUser, b.code)) {
+        out.push(b);
+      }
+    }
+    return out;
+  }, [currentUser]);
+
   const canEditDocs =
     !isStrategyMode &&
     currentUser.role !== 'Viewer' &&
-    currentUser.role !== 'Partner';
+    currentUser.role !== 'Partner' &&
+    editableDocBrandOptions.length > 0;
 
   const visibleConcepts = useMemo(
     () =>
@@ -1696,10 +1823,26 @@ export function DocumentsView() {
     ]
   );
 
+  const visibleCatalogProducts = useMemo(
+    () =>
+      mergedCatalogProducts.filter(
+        (p) =>
+          !p.isArchived &&
+          canUserViewBrandConcept(currentUser, normalizeLabBrandCode(p.brandId))
+      ),
+    [mergedCatalogProducts, currentUser]
+  );
+
   const filteredDocs = useMemo(() => {
     return documents.filter((d) => {
       if (d.isArchived) return false;
       if (d.isFinancialRestricted && !hasFinanceAccess) return false;
+      if (
+        d.brandId !== 'ALL' &&
+        !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(d.brandId))
+      ) {
+        return false;
+      }
       if (
         brandFilter !== 'ALL' &&
         d.brandId !== 'ALL' &&
@@ -1718,21 +1861,25 @@ export function DocumentsView() {
       }
       return true;
     });
-  }, [documents, hasFinanceAccess, brandFilter, categoryFilter, searchQuery]);
+  }, [documents, hasFinanceAccess, brandFilter, categoryFilter, searchQuery, currentUser]);
 
   const handleDownloadPdf = (doc: (typeof documents)[number]) => {
     if (doc.dataUrl && doc.fileName.toLowerCase().endsWith('.pdf')) {
       const a = document.createElement('a');
       a.href = doc.dataUrl;
       a.download = doc.fileName;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       notify('success', `PDF «${doc.fileName}» выгружен`);
       return;
     }
     exportDocumentAsPdf(doc, {
-      products: mergedCatalogProducts,
-      concepts,
+      products: visibleCatalogProducts,
+      concepts: visibleConcepts,
       financialPlans,
+      canViewCostPrice: hasCostAccess,
+      canViewFinance: hasFinanceAccess,
     });
     notify(
       'success',
@@ -1750,14 +1897,18 @@ export function DocumentsView() {
       const a = document.createElement('a');
       a.href = doc.dataUrl;
       a.download = doc.fileName;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       notify('success', `Таблица «${doc.fileName}» выгружена`);
       return;
     }
     exportDocumentAsExcel(doc, {
-      products: mergedCatalogProducts,
-      concepts,
+      products: visibleCatalogProducts,
+      concepts: visibleConcepts,
       financialPlans,
+      canViewCostPrice: hasCostAccess,
+      canViewFinance: hasFinanceAccess,
     });
     notify(
       'success',
@@ -1793,7 +1944,20 @@ export function DocumentsView() {
               />
             </label>
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => {
+                const defaultBrand =
+                  brandFilter !== 'ALL' &&
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter))
+                    ? normalizeLabBrandCode(brandFilter)
+                    : editableDocBrandOptions[0]?.code || 'BORNERS';
+                setForm((prev) => ({
+                  ...prev,
+                  brandId: editableDocBrandOptions.some((o) => o.code === prev.brandId)
+                    ? prev.brandId
+                    : defaultBrand,
+                }));
+                setModalOpen(true);
+              }}
               className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
             >
               Добавить ТЗ / документ
@@ -1960,13 +2124,11 @@ export function DocumentsView() {
                               ))}
                             </optgroup>
                             <optgroup label="Модели каталога SKU">
-                              {mergedCatalogProducts
-                                .filter((p) => !p.isArchived)
-                                .map((p) => (
-                                  <option key={p.id} value={`product:${p.id}`}>
-                                    SKU: {p.sku} — {p.name}
-                                  </option>
-                                ))}
+                              {visibleCatalogProducts.map((p) => (
+                                <option key={p.id} value={`product:${p.id}`}>
+                                  SKU: {p.sku} — {p.name}
+                                </option>
+                              ))}
                             </optgroup>
                           </select>
                         </div>
@@ -2089,12 +2251,11 @@ export function DocumentsView() {
                     onChange={(e) => setForm({ ...form, brandId: e.target.value })}
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
                   >
-                    <option value="ALL">BORNERS GROUP (Общий)</option>
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
-                    <option value="FUKAI">FUKAI</option>
+                    {editableDocBrandOptions.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2127,13 +2288,11 @@ export function DocumentsView() {
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 text-[13.5px] bg-white"
                   >
                     <option value="">Без привязки к SKU</option>
-                    {mergedCatalogProducts
-                      .filter((p) => !p.isArchived)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} — {p.name}
-                        </option>
-                      ))}
+                    {visibleCatalogProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.sku} — {p.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2468,11 +2627,18 @@ export function SettingsView() {
     products,
     concepts,
     launches,
+    campaigns,
+    experiments,
     financialPlans,
     projects,
     tasks,
     competitors,
+    opportunities,
+    research,
+    strategicGoals,
     miroItems,
+    auditLog,
+    deletedConceptIds,
     presentationOverrides,
     restorePlatformBackupState,
     updateBrandPalette,
@@ -2726,9 +2892,21 @@ export function SettingsView() {
                       isArchived: false,
                     };
                     exportDocumentAsExcel(finDoc, {
-                      products: mergedCatalogProducts,
-                      concepts,
+                      products: mergedCatalogProducts.filter((p) =>
+                        canUserViewBrandConcept(
+                          currentUser,
+                          normalizeLabBrandCode(p.brandId)
+                        )
+                      ),
+                      concepts: concepts.filter((c) =>
+                        canUserViewBrandConcept(
+                          currentUser,
+                          normalizeLabBrandCode(c.brandId)
+                        )
+                      ),
                       financialPlans,
+                      canViewCostPrice: canUserViewCostPrice(currentUser),
+                      canViewFinance: canUserViewFinance(currentUser),
                     });
                     notify(
                       'success',
@@ -2762,12 +2940,19 @@ export function SettingsView() {
                             concepts,
                             products,
                             launches,
+                            campaigns,
+                            experiments,
                             financialPlans,
                             projects,
                             tasks,
                             documents,
                             competitors,
+                            opportunities,
+                            research,
+                            strategicGoals,
                             miroItems,
+                            auditLog,
+                            deletedConceptIds,
                             presentationOverrides,
                           },
                         });
@@ -2778,8 +2963,10 @@ export function SettingsView() {
                         const a = document.createElement('a');
                         a.href = url;
                         a.download = `BORNERS_GROUP_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+                        document.body.appendChild(a);
                         a.click();
-                        URL.revokeObjectURL(url);
+                        a.remove();
+                        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
                         notify(
                           'success',
                           '✓ Полная резервная копия JSON скачана',
@@ -2818,6 +3005,7 @@ export function SettingsView() {
                             return;
                           }
                           const b = parsed.bundle;
+                          applyPortfolioBackupSnapshotToStorage(b.models, b.scenarios);
                           for (const m of b.models) {
                             unmarkModelAsDeletedInStorage(m);
                             if (Array.isArray(m.gallery) && m.gallery.length > 0) {
@@ -2827,10 +3015,7 @@ export function SettingsView() {
                             }
                           }
                           const restoredIso = touchPortfolioUpdatedAt();
-                          safeSetStorageJson(STORAGE_KEY_MODELS, b.models);
-                          syncUserPlansBackup(b.models);
                           await savePortfolioSnapshotToIdb(b.models, restoredIso);
-                          safeSetStorageJson(STORAGE_KEY_SCENARIOS, b.scenarios);
                           safeSetStorageJson(
                             STORAGE_KEY_SCENARIO_BY_BRAND,
                             b.selectedScenarioByBrand
@@ -2851,6 +3036,11 @@ export function SettingsView() {
                           livePortfolio.updateScenariosBatch(() => b.scenarios);
                           if (b.platformState) {
                             restorePlatformBackupState(b.platformState);
+                            await savePlatformRichStateToIdb(
+                              (b.platformState.concepts as unknown[]) || [],
+                              (b.platformState.miroItems as unknown[]) || [],
+                              (b.platformState.documents as unknown[]) || []
+                            );
                           }
                           if (typeof window !== 'undefined') {
                             window.dispatchEvent(new Event('borners-scenario-models-changed'));

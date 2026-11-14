@@ -191,6 +191,10 @@ export function ScenarioSalesPlanScreen({
     12,
     ...metrics.monthlyRevenuesRub.map((r) => r / 1_000_000)
   );
+  const maxMonthlyPacks = Math.max(
+    1,
+    ...plan.monthlyPacks.map((p) => Math.max(0, p || 0))
+  );
 
   // Квартальная агрегация для переключателей «Годовой план» и «Поквартально»
   const quarters = [0, 1, 2, 3].map((q) => {
@@ -210,10 +214,13 @@ export function ScenarioSalesPlanScreen({
     );
     const avgPriceRub =
       packs > 0 ? Math.round(revRub / packs) : metrics.avgRetailPriceRub;
-    const shareOfYearPct =
-      metrics.annualRevenueRub > 0
+    const shareOfYearPct = hasFinance
+      ? metrics.annualRevenueRub > 0
         ? Math.round((revRub / metrics.annualRevenueRub) * 1000) / 10
-        : 0;
+        : 0
+      : metrics.annualPacks > 0
+      ? Math.round((packs / metrics.annualPacks) * 1000) / 10
+      : 0;
     return {
       qNum: q + 1,
       shortLabel: `Q${q + 1}`,
@@ -228,6 +235,7 @@ export function ScenarioSalesPlanScreen({
   });
 
   const maxQuarterRevRub = Math.max(1, ...quarters.map((q) => q.revRub));
+  const maxQuarterPacks = Math.max(1, ...quarters.map((q) => q.packs));
 
   // Динамическая детализация по размерам (LISKANI шторы / обувные сетки AKUSHA / XS–XL NA_TELE / S–4XL)
   const sizeBreakdownInfo = (() => {
@@ -396,9 +404,16 @@ export function ScenarioSalesPlanScreen({
             onChange={(e) => onSelectScenario(Number(e.target.value))}
             className="h-9 px-3.5 rounded-[10px] bg-white border border-[#DED8CC] text-[12.5px] font-semibold text-[#1D1D1F] cursor-pointer"
           >
+            {scenario.id === -1 && !compatibleScenarios.some((s) => s.id === -1) && (
+              <option value={-1}>Нет активного сценария</option>
+            )}
             {compatibleScenarios.map((sc) => (
               <option key={sc.id} value={sc.id}>
-                {sc.title} — {sc.monthlyTargetMln} млн ₽ / мес
+                {sc.id === -1
+                  ? 'Нет активного сценария'
+                  : hasFinance
+                  ? `${sc.title} — ${sc.monthlyTargetMln} млн ₽ / мес`
+                  : sc.title}
               </option>
             ))}
           </select>
@@ -476,10 +491,14 @@ export function ScenarioSalesPlanScreen({
           <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
             <div className="text-[11.5px] text-[#6E6E73]">Годовая выручка</div>
             <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
-              {(metrics.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽
+              {hasFinance
+                ? `${(metrics.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
+                : 'Скрыто'}
             </div>
             <div className="text-[11px] font-semibold text-[#8B6F47]">
-              {metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария
+              {hasFinance
+                ? `${metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария`
+                : 'Финансы скрыты'}
             </div>
           </div>
 
@@ -635,10 +654,12 @@ export function ScenarioSalesPlanScreen({
           ) : displayMode === 'chart' ? (
             <>
               <div className="flex items-center gap-4 text-[11px] text-[#6E6E73]">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-[3px] bg-[#D9B89C]" />
-                  Выручка, млн ₽
-                </span>
+                {hasFinance && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-[#D9B89C]" />
+                    Выручка, млн ₽
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-[#1D1D1F]" />
                   Продажи, {primaryUnit}
@@ -654,7 +675,9 @@ export function ScenarioSalesPlanScreen({
                         Сводный годовой план {scenario.year} · {scenario.title}
                       </div>
                       <div className="text-[22px] font-bold text-[#1D1D1F] mt-0.5">
-                        {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                        {hasFinance
+                          ? `${(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                          : `${metrics.annualPacks.toLocaleString('ru-RU')} ${primaryUnit}`}
                       </div>
                       <div className="text-[12px] text-[#5A564F]">
                         Выкупы: <strong>{metrics.annualPacks.toLocaleString('ru-RU')} {primaryUnit}</strong> · Заказы (при {metrics.buyoutRatePct}%):{' '}
@@ -667,7 +690,9 @@ export function ScenarioSalesPlanScreen({
                         {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                       </div>
                       <div className="text-[11px] font-semibold text-[#2E6B4E]">
-                        {metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария
+                        {hasFinance
+                          ? `${metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария`
+                          : 'Финансы скрыты'}
                       </div>
                     </div>
                   </div>
@@ -678,17 +703,30 @@ export function ScenarioSalesPlanScreen({
                       const revMln = q.revRub / 1_000_000;
                       const barPct = Math.max(
                         12,
-                        Math.min(100, Math.round((q.revRub / maxQuarterRevRub) * 100))
+                        Math.min(
+                          100,
+                          Math.round(
+                            hasFinance
+                              ? (q.revRub / maxQuarterRevRub) * 100
+                              : (q.packs / maxQuarterPacks) * 100
+                          )
+                        )
                       );
                       return (
                         <div
                           key={q.label}
                           onClick={() => setPeriodMode('monthly')}
-                          title={`${q.label}: ${revMln.toFixed(2)} млн ₽ (${q.packs.toLocaleString('ru-RU')} ${primaryUnit})`}
+                          title={
+                            hasFinance
+                              ? `${q.label}: ${revMln.toFixed(2)} млн ₽ (${q.packs.toLocaleString('ru-RU')} ${primaryUnit})`
+                              : `${q.label}: ${q.packs.toLocaleString('ru-RU')} ${primaryUnit}`
+                          }
                           className="h-full flex flex-col justify-end items-center gap-1 cursor-pointer group"
                         >
                           <span className="text-[10.5px] font-bold text-[#1D1D1F]">
-                            {revMln.toFixed(1).replace('.', ',')} м
+                            {hasFinance
+                              ? `${revMln.toFixed(1).replace('.', ',')} м`
+                              : q.packs.toLocaleString('ru-RU')}
                           </span>
                           <div className="w-full h-[76px] flex items-end justify-center px-2">
                             <div
@@ -729,7 +767,9 @@ export function ScenarioSalesPlanScreen({
                               {q.avgPriceRub.toLocaleString('ru-RU')} ₽
                             </td>
                             <td className="py-1.5 px-3 text-right font-mono font-bold text-[#1D1D1F]">
-                              {(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                              {hasFinance
+                                ? `${(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                                : 'Скрыто'}
                             </td>
                           </tr>
                         ))}
@@ -744,7 +784,9 @@ export function ScenarioSalesPlanScreen({
                             {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                           </td>
                           <td className="py-2 px-3 text-right font-mono text-[#2E6B4E]">
-                            {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                            {hasFinance
+                              ? `${(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                         </tr>
                       </tfoot>
@@ -765,10 +807,14 @@ export function ScenarioSalesPlanScreen({
                         </div>
                         <div>
                           <div className="text-[18px] font-bold text-[#1D1D1F]">
-                            {revMln.toFixed(1).replace('.', ',')} млн ₽
+                            {hasFinance
+                              ? `${revMln.toFixed(1).replace('.', ',')} млн ₽`
+                              : `${q.packs.toLocaleString('ru-RU')} ${primaryUnit}`}
                           </div>
                           <div className="text-[11.5px] text-[#8B6F47] font-medium">
-                            {q.packs.toLocaleString('ru-RU')} {primaryUnit}
+                            {hasFinance
+                              ? `${q.packs.toLocaleString('ru-RU')} ${primaryUnit}`
+                              : `Заказы: ${q.ordersPacks.toLocaleString('ru-RU')} ${primaryUnit}`}
                           </div>
                         </div>
                       </div>
@@ -780,15 +826,18 @@ export function ScenarioSalesPlanScreen({
                   {/* Плашка пикового месяца (Декабрь) как на макете Стр. 15 */}
                   <div className="absolute right-0 top-0 rounded-[10px] bg-[#F5F5F1] text-[#1D1D1F] border border-[#CECDC4] px-3 py-1.5 text-[11px] shadow-2xs">
                     <div className="font-bold">
-                      {(metrics.targetMonthRevenueRub / 1_000_000)
-                        .toFixed(1)
-                        .replace('.', ',')}{' '}
-                      млн ₽
+                      {hasFinance
+                        ? `${(metrics.targetMonthRevenueRub / 1_000_000)
+                            .toFixed(1)
+                            .replace('.', ',')} млн ₽`
+                        : `${metrics.targetMonthPacks.toLocaleString('ru-RU')} ${primaryUnit}`}
                     </div>
-                    <div className="text-[#5A564F] text-[10px]">
-                      {(metrics.targetMonthPacks / 1000).toFixed(1).replace('.', ',')}{' '}
-                      тыс. {primaryUnit}
-                    </div>
+                    {hasFinance && (
+                      <div className="text-[#5A564F] text-[10px]">
+                        {(metrics.targetMonthPacks / 1000).toFixed(1).replace('.', ',')}{' '}
+                        тыс. {primaryUnit}
+                      </div>
+                    )}
                   </div>
 
                   <div className="h-[220px] grid grid-cols-12 gap-2 items-end pt-6 border-b border-[#E6E0D4] px-1">
@@ -796,7 +845,14 @@ export function ScenarioSalesPlanScreen({
                       const revMln = metrics.monthlyRevenuesRub[idx] / 1_000_000;
                       const heightPct = Math.max(
                         8,
-                        Math.min(100, Math.round((revMln / maxMonthlyRevMln) * 100))
+                        Math.min(
+                          100,
+                          Math.round(
+                            hasFinance
+                              ? (revMln / maxMonthlyRevMln) * 100
+                              : ((plan.monthlyPacks[idx] || 0) / maxMonthlyPacks) * 100
+                          )
+                        )
                       );
                       const isTarget = idx === scenario.targetMonthIdx;
                       const isStart = idx === plan.salesStartMonthIdx;
@@ -804,13 +860,21 @@ export function ScenarioSalesPlanScreen({
                         <div
                           key={mName}
                           onClick={() => setDisplayMode('table')}
-                          title={`${mName}: ${revMln.toFixed(2)} млн ₽ (${plan.monthlyPacks[
-                            idx
-                          ].toLocaleString('ru-RU')} ${primaryUnit}) — нажмите для редактирования`}
+                          title={
+                            hasFinance
+                              ? `${mName}: ${revMln.toFixed(2)} млн ₽ (${plan.monthlyPacks[
+                                  idx
+                                ].toLocaleString('ru-RU')} ${primaryUnit}) — нажмите для редактирования`
+                              : `${mName}: ${plan.monthlyPacks[idx].toLocaleString(
+                                  'ru-RU'
+                                )} ${primaryUnit} — нажмите для редактирования`
+                          }
                           className="h-full flex flex-col justify-end items-center gap-1.5 group cursor-pointer"
                         >
                           <div className="text-[10px] font-semibold text-[#6E6E73] group-hover:text-[#1D1D1F]">
-                            {revMln.toFixed(1).replace('.', ',')}
+                            {hasFinance
+                              ? revMln.toFixed(1).replace('.', ',')
+                              : plan.monthlyPacks[idx].toLocaleString('ru-RU')}
                           </div>
                           <div className="w-full h-[160px] flex items-end justify-center">
                             <div
@@ -848,14 +912,18 @@ export function ScenarioSalesPlanScreen({
                   <div className="text-[11px] text-[#6E6E73]">Стартовый месяц</div>
                   <div className="text-[13px] font-bold text-[#1D1D1F] mt-0.5">
                     {MONTHS_SHORT_RU[plan.salesStartMonthIdx]} —{' '}
-                    {(
-                      (metrics.monthlyRevenuesRub[plan.salesStartMonthIdx] || 0) /
-                      1_000_000
-                    )
-                      .toFixed(1)
-                      .replace('.', ',')}{' '}
-                    млн ₽ ({(plan.monthlyPacks[plan.salesStartMonthIdx] || 0).toLocaleString('ru-RU')}{' '}
-                    {primaryUnit})
+                    {hasFinance
+                      ? `${(
+                          (metrics.monthlyRevenuesRub[plan.salesStartMonthIdx] || 0) /
+                          1_000_000
+                        )
+                          .toFixed(1)
+                          .replace('.', ',')} млн ₽ (${(
+                          plan.monthlyPacks[plan.salesStartMonthIdx] || 0
+                        ).toLocaleString('ru-RU')} ${primaryUnit})`
+                      : `${(
+                          plan.monthlyPacks[plan.salesStartMonthIdx] || 0
+                        ).toLocaleString('ru-RU')} ${primaryUnit}`}
                   </div>
                 </div>
                 <div className="rounded-[12px] bg-[#FAF4F0] border border-[#E8D5C8] p-3">
@@ -863,10 +931,13 @@ export function ScenarioSalesPlanScreen({
                     Декабрь {scenario.year} (целевой месяц)
                   </div>
                   <div className="text-[13px] font-bold text-[#1D1D1F] mt-0.5">
-                    {(metrics.targetMonthRevenueRub / 1_000_000)
-                      .toFixed(1)
-                      .replace('.', ',')}{' '}
-                    млн ₽ ({metrics.targetMonthPacks.toLocaleString('ru-RU')} {primaryUnit})
+                    {hasFinance
+                      ? `${(metrics.targetMonthRevenueRub / 1_000_000)
+                          .toFixed(1)
+                          .replace('.', ',')} млн ₽ (${metrics.targetMonthPacks.toLocaleString(
+                          'ru-RU'
+                        )} ${primaryUnit})`
+                      : `${metrics.targetMonthPacks.toLocaleString('ru-RU')} ${primaryUnit}`}
                   </div>
                 </div>
               </div>
@@ -917,7 +988,9 @@ export function ScenarioSalesPlanScreen({
                           {q.receipts.toLocaleString('ru-RU')}
                         </td>
                         <td className="py-2 px-3 text-right font-mono font-bold text-[#1D1D1F]">
-                          {(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                          {hasFinance
+                            ? `${(q.revRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                            : 'Скрыто'}
                         </td>
                       </tr>
                     ))}
@@ -938,7 +1011,9 @@ export function ScenarioSalesPlanScreen({
                         {primaryUnit}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[#2E6B4E]">
-                        {(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                        {hasFinance
+                          ? `${(metrics.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
+                          : 'Скрыто'}
                       </td>
                     </tr>
                   </tfoot>
@@ -1049,7 +1124,9 @@ export function ScenarioSalesPlanScreen({
                             />
                           </td>
                           <td className="py-1.5 px-3 text-right font-bold text-[#1D1D1F]">
-                            {revMln.toFixed(2).replace('.', ',')} млн ₽
+                            {hasFinance
+                              ? `${revMln.toFixed(2).replace('.', ',')} млн ₽`
+                              : 'Скрыто'}
                           </td>
                         </tr>
                       );
@@ -1102,7 +1179,7 @@ export function ScenarioSalesPlanScreen({
                             ? 'bg-[#2E6B4E] text-white'
                             : step.status === 'in_progress'
                             ? 'bg-[#D97706] text-white'
-                            : 'bg-[#E2DDD2] text-[#5A564F]'
+                            : 'bg-[#EAE9E2] dark:bg-[#222938] text-[#5A564F] dark:text-slate-300'
                         }`}
                       >
                         {step.status === 'done' ? '✓' : step.stepNum}

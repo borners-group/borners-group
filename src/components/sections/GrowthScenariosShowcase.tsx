@@ -21,7 +21,12 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { canUserViewCostPrice, canUserViewFinance } from '@/lib/finance';
+import {
+  canUserAccessSection,
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
 import {
   GalleryMediaItem,
   GrowthScenarioDef,
@@ -181,8 +186,43 @@ export function GrowthScenariosShowcase({
 
   const hasFinance = canUserViewFinance(currentUser);
   const hasCost = canUserViewCostPrice(currentUser);
-  const isReadOnlyRole =
-    currentUser.role === 'Viewer' || currentUser.role === 'Partner';
+  const editableBrands = useMemo(
+    () =>
+      (['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'] as CanonicalBrandCode[]).filter((c) =>
+        canUserEditBrand(currentUser, c)
+      ),
+    [currentUser]
+  );
+  const canEditAnyBrand = editableBrands.length > 0;
+  const canEditAllBrands = editableBrands.length === 5;
+  const canEditAllStarterBrands = (['AKUSHA', 'LISKANI', 'NA_TELE'] as const).every((c) =>
+    canUserEditBrand(currentUser, c)
+  );
+  const canEditBrandCode = useCallback(
+    (bInput?: string) => {
+      if (!bInput || bInput === 'ALL') return canEditAllBrands;
+      const norm = normalizePortfolioBrandCode(bInput);
+      if (norm === 'ALL') return canEditAllBrands;
+      return canUserEditBrand(currentUser, norm);
+    },
+    [currentUser, canEditAllBrands]
+  );
+  const canEditModel = useCallback(
+    (mod: ScenarioModelSpec) =>
+      canUserEditBrand(
+        currentUser,
+        normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(mod))
+      ),
+    [currentUser]
+  );
+  const safeNavigateTo = useCallback(
+    (sec: Parameters<typeof navigateTo>[0]) => {
+      if (canUserAccessSection(currentUser, sec)) {
+        navigateTo(sec);
+      }
+    },
+    [currentUser, navigateTo]
+  );
 
   // Архитектура из 3 экранов (п. 02 ТЗ):
   // 'scenarios' (Экран №1) -> 'model' (Экран №2) -> 'sales-plan' (Экран №3)
@@ -339,6 +379,25 @@ export function GrowthScenariosShowcase({
   }, [brandFilter]);
   const [includeGroupPortfolioInS1, setIncludeGroupState] =
     useState<boolean>(false);
+  const canEditScenario = useCallback(
+    (sc: GrowthScenarioDef) => {
+      if (sc.ownerBrandCode && sc.ownerBrandCode !== 'ALL') {
+        return canUserEditBrand(currentUser, normalizePortfolioBrandCode(sc.ownerBrandCode));
+      }
+      if (sc.ownerBrandCode === 'ALL') return canEditAllBrands;
+      if (Array.isArray(sc.includedBrands) && sc.includedBrands.length > 0) {
+        if (sc.id === 1 && includeGroupPortfolioInS1) {
+          return (
+            canUserEditBrand(currentUser, 'BORNERS') &&
+            canUserEditBrand(currentUser, 'FUKAI')
+          );
+        }
+        return sc.includedBrands.every((b) => canUserEditBrand(currentUser, b));
+      }
+      return canEditAllBrands;
+    },
+    [currentUser, canEditAllBrands, includeGroupPortfolioInS1]
+  );
   const setIncludeGroupPortfolioInS1 = useCallback((nextVal: boolean) => {
     setIncludeGroupState(nextVal);
     safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, nextVal);
@@ -416,9 +475,20 @@ export function GrowthScenariosShowcase({
   });
   const [groupMonthlyDetailsOpen, setGroupMonthlyDetailsOpen] = useState(false);
   const [trajectoryChartMetric, setTrajectoryChartMetric] = useState<
-    'revenue' | 'profit' | 'procurement'
-  >('revenue');
+    'revenue' | 'profit' | 'procurement' | 'packs'
+  >(hasFinance ? 'revenue' : 'packs');
   const [homeSubView, setHomeSubView] = useState<'home' | 'summary'>('home');
+
+  useEffect(() => {
+    if (!hasFinance && (trajectoryChartMetric === 'revenue' || trajectoryChartMetric === 'profit')) {
+      setTrajectoryChartMetric('packs');
+    } else if (
+      !hasCost &&
+      (trajectoryChartMetric === 'profit' || trajectoryChartMetric === 'procurement')
+    ) {
+      setTrajectoryChartMetric(hasFinance ? 'revenue' : 'packs');
+    }
+  }, [hasFinance, hasCost, trajectoryChartMetric]);
 
   const switchHomeSubView = useCallback((nextView: 'home' | 'summary') => {
     setHomeSubView(nextView);
@@ -459,7 +529,10 @@ export function GrowthScenariosShowcase({
               : null;
           const safeBrandSlot =
             targetOwner && targetOwner !== normCode ? targetOwner : normCode;
-          if (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, safeBrandSlot)) {
+          if (
+            canUserEditBrand(currentUser, safeBrandSlot) &&
+            (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, safeBrandSlot))
+          ) {
             setSelectedScenarioByBrandState((prev) => {
               const next = sanitizeSelectedScenarioByBrand(
                 { ...prev, [safeBrandSlot]: nextId },
@@ -477,13 +550,14 @@ export function GrowthScenariosShowcase({
         }, 0);
       }
     },
-    [brandFilterLocal, scenarios]
+    [brandFilterLocal, scenarios, currentUser]
   );
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenId: number | null) => {
       const code = normalizePortfolioBrandCode(brandInput);
       if (code === 'ALL') return;
+      if (!canUserEditBrand(currentUser, code)) return;
       if (scenId !== null) {
         const targetScen = scenarios.find((s) => s.id === scenId);
         if (targetScen && !isScenarioCompatibleWithBrand(targetScen, code)) {
@@ -510,7 +584,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    [brandFilterLocal, scenarios]
+    [brandFilterLocal, scenarios, currentUser]
   );
 
   const SHOWCASE_BRAND_PRESETS: Record<
@@ -601,7 +675,7 @@ export function GrowthScenariosShowcase({
   useEffect(() => {
     if (brandFilter && brandFilter !== 'ALL') {
       const norm = normalizePortfolioBrandCode(brandFilter);
-      if (norm !== 'ALL') {
+      if (norm !== 'ALL' && canUserEditBrand(currentUser, norm)) {
         setDraftBrand(norm);
         setDraftScenBrand(norm);
         const preset = SHOWCASE_BRAND_PRESETS[norm] || SHOWCASE_BRAND_PRESETS.BORNERS;
@@ -612,7 +686,21 @@ export function GrowthScenariosShowcase({
         setDraftCode(computeNextDraftCodeForBrand(norm));
       }
     }
-  }, [brandFilter, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
+  }, [brandFilter, currentUser, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
+
+  useEffect(() => {
+    if (editableBrands.length === 0) return;
+    const normDraft = normalizePortfolioBrandCode(draftBrand || 'BORNERS');
+    const safeDraft = normDraft === 'ALL' ? 'BORNERS' : normDraft;
+    if (!canUserEditBrand(currentUser, safeDraft)) {
+      setDraftBrand(editableBrands[0]);
+    }
+    const normScenDraft = normalizePortfolioBrandCode(draftScenBrand || 'BORNERS');
+    const safeScenDraft = normScenDraft === 'ALL' ? 'BORNERS' : normScenDraft;
+    if (!canUserEditBrand(currentUser, safeScenDraft)) {
+      setDraftScenBrand(editableBrands[0]);
+    }
+  }, [currentUser, editableBrands, draftBrand, draftScenBrand]);
 
   useEffect(() => {
     if (draftBrand) {
@@ -710,6 +798,7 @@ export function GrowthScenariosShowcase({
   // Мгновенный запуск стартовой матрицы пустого кабинета (AKUSHA / LISKANI / НА ТЕЛЕ · 3 SKU + сценарий 2027)
   const handleLaunchStarterCabinet = useCallback(
     (brandCode: 'AKUSHA' | 'LISKANI' | 'NA_TELE') => {
+      if (!canUserEditBrand(currentUser, brandCode)) return;
       const res = launchBrandStarterMatrix(models, scenarios, brandCode);
       const nextByBrand = {
         ...selectedScenarioByBrand,
@@ -749,6 +838,7 @@ export function GrowthScenariosShowcase({
       );
     },
     [
+      currentUser,
       models,
       scenarios,
       selectedScenarioByBrand,
@@ -761,6 +851,7 @@ export function GrowthScenariosShowcase({
 
   // Запуск всех 5 кабинетов холдинга в 1 клик
   const handleLaunchAllCabinets = useCallback(() => {
+    if (!canEditAllStarterBrands) return;
     const res = launchAllEmptyCabinetsInHolding(
       models,
       scenarios,
@@ -795,6 +886,7 @@ export function GrowthScenariosShowcase({
       'Стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ активированы в сводке 2027'
     );
   }, [
+    canEditAllStarterBrands,
     models,
     scenarios,
     selectedScenarioByBrand,
@@ -805,6 +897,7 @@ export function GrowthScenariosShowcase({
 
   // Возврат от демо-матриц к эталонным портфелям холдинга
   const handleResetStarterCabinets = useCallback(() => {
+    if (!canEditAllStarterBrands) return;
     const res = resetStarterCabinetsFromHolding(
       models,
       scenarios,
@@ -855,9 +948,13 @@ export function GrowthScenariosShowcase({
     notify(
       'success',
       'Демо-матрицы сброшены · официальные портфели сохранены',
-      'Официальные кабинеты BORNERS, AKUSHA (105,79 млн ₽), LISKANI (500 млн ₽) и FUKAI (90,55 млн ₽) остаются в силе.'
+      hasFinance
+        ? 'Официальные кабинеты BORNERS, AKUSHA (105,79 млн ₽), LISKANI (500 млн ₽) и FUKAI (90,55 млн ₽) остаются в силе.'
+        : 'Официальные кабинеты BORNERS, AKUSHA, LISKANI и FUKAI остаются в силе.'
     );
   }, [
+    canEditAllStarterBrands,
+    hasFinance,
     models,
     scenarios,
     selectedScenarioByBrand,
@@ -1387,7 +1484,39 @@ export function GrowthScenariosShowcase({
       brandsReport,
       multiBrandSummary,
     };
-  }, [models, scenarios, currentScenario, includeGroupPortfolioInS1, selectedScenarioByBrand]);
+  }, [models, scenarios, currentScenario, includeGroupPortfolioInS1, selectedScenarioByBrand, brandFilterLocal]);
+
+  const activeBrandUnits = useMemo(() => {
+    const effectiveCode: CanonicalBrandCode | 'ALL' =
+      brandFilterLocal && brandFilterLocal !== 'ALL'
+        ? normalizePortfolioBrandCode(brandFilterLocal)
+        : currentScenario.ownerBrandCode && currentScenario.ownerBrandCode !== 'ALL'
+        ? normalizePortfolioBrandCode(currentScenario.ownerBrandCode)
+        : 'ALL';
+    if (effectiveCode === 'AKUSHA') {
+      return { short: 'пар', columnTitle: 'Пар', priceHeader: 'Цена пары' };
+    }
+    if (effectiveCode === 'NA_TELE') {
+      return { short: 'изд.', columnTitle: 'Изделий', priceHeader: 'Цена изд.' };
+    }
+    if (effectiveCode === 'ALL' && v11ScenarioSummary.eligibleModels.length > 0) {
+      const brandSet = new Set(
+        v11ScenarioSummary.eligibleModels.map((m) =>
+          normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m))
+        )
+      );
+      if (brandSet.size === 1 && brandSet.has('AKUSHA')) {
+        return { short: 'пар', columnTitle: 'Пар', priceHeader: 'Цена пары' };
+      }
+      if (brandSet.size === 1 && brandSet.has('NA_TELE')) {
+        return { short: 'изд.', columnTitle: 'Изделий', priceHeader: 'Цена изд.' };
+      }
+      if (brandSet.has('AKUSHA') || brandSet.has('NA_TELE')) {
+        return { short: 'ед.', columnTitle: 'Единиц', priceHeader: 'Цена ед.' };
+      }
+    }
+    return { short: 'компл.', columnTitle: 'Комплектов', priceHeader: 'Цена компл.' };
+  }, [brandFilterLocal, currentScenario.ownerBrandCode, v11ScenarioSummary.eligibleModels]);
 
   // Отфильтрованные модели для каталога на Экране №1
   const filteredModels = useMemo(() => {
@@ -1419,28 +1548,33 @@ export function GrowthScenariosShowcase({
     });
 
     if (sortBy === 'dec_desc') {
-      return [...list].sort(
-        (a, b) =>
-          computeModelScenarioMetrics(b, currentScenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).targetMonthRevenueRub
-      );
+      return [...list].sort((a, b) => {
+        const mb = computeModelScenarioMetrics(b, currentScenario);
+        const ma = computeModelScenarioMetrics(a, currentScenario);
+        return hasFinance
+          ? mb.targetMonthRevenueRub - ma.targetMonthRevenueRub
+          : mb.targetMonthPacks - ma.targetMonthPacks;
+      });
     }
     if (sortBy === 'year_desc') {
-      return [...list].sort(
-        (a, b) =>
-          computeModelScenarioMetrics(b, currentScenario).annualRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).annualRevenueRub
-      );
+      return [...list].sort((a, b) => {
+        const mb = computeModelScenarioMetrics(b, currentScenario);
+        const ma = computeModelScenarioMetrics(a, currentScenario);
+        return hasFinance
+          ? mb.annualRevenueRub - ma.annualRevenueRub
+          : mb.annualPacks - ma.annualPacks;
+      });
     }
     if (sortBy === 'priority') {
       return [...list].sort((a, b) => {
         const wDiff =
           PRIORITY_WEIGHTS[getModelPriority(b)] - PRIORITY_WEIGHTS[getModelPriority(a)];
         if (wDiff !== 0) return wDiff;
-        return (
-          computeModelScenarioMetrics(b, currentScenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a, currentScenario).targetMonthRevenueRub
-        );
+        const mb = computeModelScenarioMetrics(b, currentScenario);
+        const ma = computeModelScenarioMetrics(a, currentScenario);
+        return hasFinance
+          ? mb.targetMonthRevenueRub - ma.targetMonthRevenueRub
+          : mb.targetMonthPacks - ma.targetMonthPacks;
       });
     }
     return list;
@@ -1452,6 +1586,7 @@ export function GrowthScenariosShowcase({
     statusFilterLocal,
     searchQuery,
     sortBy,
+    hasFinance,
   ]);
 
   // Единая синхронизация модели сценария с основным Каталогом моделей (SKU)
@@ -1564,7 +1699,9 @@ export function GrowthScenariosShowcase({
   );
 
   const handleUpdateModel = (updated: ScenarioModelSpec) => {
+    if (!canEditModel(updated)) return;
     const prevSpec = models.find((m) => m.id === updated.id);
+    if (prevSpec && !canEditModel(prevSpec)) return;
     commitModels((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
     syncScenarioModelToCatalog(updated, prevSpec);
   };
@@ -1572,7 +1709,7 @@ export function GrowthScenariosShowcase({
   // Смена приоритета прямо на карточке модели (Высший -> Высокий -> Средний -> Не указан)
   const handleCycleCardPriority = (mod: ScenarioModelSpec, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isReadOnlyRole) return;
+    if (!canEditModel(mod)) return;
     const cur = getModelPriority(mod);
     const nextPrio = cycleModelPriority(cur);
     const updated: ScenarioModelSpec = {
@@ -1597,7 +1734,7 @@ export function GrowthScenariosShowcase({
     e?: React.SyntheticEvent
   ) => {
     if (e) e.stopPropagation();
-    if (isReadOnlyRole) return;
+    if (!canEditModel(mod)) return;
     const nextDecPacks = Math.max(0, Math.round(nextDecPacksRaw));
     const targetScen = resolveEffectiveScenarioForModel(
       mod,
@@ -1658,6 +1795,7 @@ export function GrowthScenariosShowcase({
 
   // Авто-расчёт всех карточек сценария под целевую сумму (млн ₽ в декабре) по приоритетности
   const handleAutoCalculateByPriority = (targetOverrideMln?: number) => {
+    if (!canEditScenario(currentScenario)) return;
     const targetMln = targetOverrideMln ?? currentScenario.monthlyTargetMln;
     commitModels((prev) =>
       autoDistributeScenarioByPriority(prev, currentScenario, {
@@ -1668,13 +1806,16 @@ export function GrowthScenariosShowcase({
     );
     notify(
       'success',
-      `⚡ Авто-расчёт по приоритету выполнен (цель: ${targetMln} млн ₽ / дек)`,
+      hasFinance
+        ? `⚡ Авто-расчёт по приоритету выполнен (цель: ${targetMln} млн ₽ / дек)`
+        : '⚡ Авто-расчёт по приоритету выполнен',
       'Объёмы карточек распределены пропорционально приоритетам (Высший ×1.40, Высокий ×1.15, Средний ×0.90, Не указан ×0.75).'
     );
   };
 
   // Изменение целевой суммы сценария (млн ₽ / дек) прямо из панели управления
   const handleUpdateScenarioTargetMln = (nextTargetMln: number) => {
+    if (!canEditScenario(currentScenario)) return;
     const cleanVal = Math.max(5, Math.round(nextTargetMln * 100) / 100);
     commitScenarios((prev) =>
       prev.map((s) =>
@@ -1685,21 +1826,31 @@ export function GrowthScenariosShowcase({
 
   // Восстановление сохранённых клиентом продаж (109,94 млн ₽ в дек · 686,28 млн ₽ за 2027 г.)
   const handleRestoreClientSavedSales = () => {
+    if (!canUserEditBrand(currentUser, 'BORNERS') || !canEditScenario(currentScenario)) {
+      return;
+    }
     clearDeletedModelsRegistry();
     commitModels((prev) => applyClientSavedS1SalesPlan(prev));
     notify(
       'success',
-      '✓ Восстановлены сохранённые продажи (109,94 млн ₽ в дек · 686,28 млн ₽ за 2027 г.)',
-      'Декабрь 2027: 109 938 111 ₽ · Годовой план 2027: 686 284 972 ₽ · 21 SKU в цели BORNERS.'
+      hasFinance
+        ? '✓ Восстановлены сохранённые продажи (109,94 млн ₽ в дек · 686,28 млн ₽ за 2027 г.)'
+        : '✓ Восстановлены сохранённые продажи',
+      hasFinance
+        ? 'Декабрь 2027: 109 938 111 ₽ · Годовой план 2027: 686 284 972 ₽ · 21 SKU в цели BORNERS.'
+        : 'Сохранённые объёмы 21 SKU BORNERS восстановлены.'
     );
   };
 
   // Сброс к эталону 28-страничного PDF (15,04 млн WB + 85,11 млн 16 новых = 100,15 млн ₽ в дек)
   const handleResetToPdfBaseline = () => {
+    if (!canEditAllBrands) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Сбросить план продаж к исходному эталону PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)? Несохранённые ручные правки плана BORNERS будут перезаписаны.'
+        hasFinance
+          ? 'Сбросить план продаж к исходному эталону PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)? Несохранённые ручные правки плана BORNERS будут перезаписаны.'
+          : 'Сбросить план продаж к исходному эталону PDF? Несохранённые ручные правки плана будут перезаписаны.'
       )
     ) {
       return;
@@ -1727,8 +1878,12 @@ export function GrowthScenariosShowcase({
     ]);
     notify(
       'success',
-      '↺ Восстановлен эталон PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)',
-      '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.) + матрицы LISKANI и AKUSHA.'
+      hasFinance
+        ? '↺ Восстановлен эталон PDF (100,15 млн ₽ в дек · 606,37 млн ₽ за 2027 г.)'
+        : '↺ Восстановлен эталон PDF',
+      hasFinance
+        ? '5 подтверждённых SKU WB (15,04 млн ₽) + 16 новых вариантов (85,11 млн ₽ / 41 400 компл.) + матрицы LISKANI и AKUSHA.'
+        : '5 подтверждённых SKU WB + 16 новых вариантов + матрицы LISKANI и AKUSHA.'
     );
   };
 
@@ -1737,6 +1892,7 @@ export function GrowthScenariosShowcase({
     computeNextDraftCodeForBrand(brandLabel);
 
   const handleDuplicateModel = (source: ScenarioModelSpec) => {
+    if (!canEditModel(source)) return;
     const sourceBrandLabel = detectModelBrandPortfolioLabel(source);
     const nextCode = generateNextUniqueModelCode(sourceBrandLabel);
     const copy: ScenarioModelSpec = {
@@ -1759,6 +1915,7 @@ export function GrowthScenariosShowcase({
 
   // Полное удаление модели с немедленным сохранением в localStorage
   const handleDeleteOrArchiveModel = (target: ScenarioModelSpec) => {
+    if (!canEditModel(target)) return;
     markModelAsDeletedInStorage(target);
     commitModels((prev) => {
       const remaining = prev.filter(
@@ -1793,9 +1950,13 @@ export function GrowthScenariosShowcase({
   const createAndSaveModel = (openCardAfterSave: boolean) => {
     const rawBrand =
       draftBrand ||
-      (brandFilterLocal !== 'ALL' ? brandFilterLocal : 'BORNERS');
+      (brandFilterLocal !== 'ALL' ? brandFilterLocal : editableBrands[0] || 'BORNERS');
     const norm = normalizePortfolioBrandCode(rawBrand);
-    const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const candidateBrand: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+    const bCode: CanonicalBrandCode | undefined = canUserEditBrand(currentUser, candidateBrand)
+      ? candidateBrand
+      : editableBrands[0];
+    if (!bCode || !canUserEditBrand(currentUser, bCode)) return;
     const unitCfg = getBrandUnitConfig(bCode);
     const cleanTitle =
       draftTitle.trim() || `${unitCfg.displayCode} НОВАЯ МОДЕЛЬ`;
@@ -1848,7 +2009,7 @@ export function GrowthScenariosShowcase({
         categoryLabel: draftType || unitCfg.categoryDefault,
         unitsInPack: draftUnitsInPack || unitCfg.secondaryPerPrimaryDefault,
         retailPriceRub: draftRetailPrice || 1990,
-        unitCostRub: draftUnitCost || 650,
+        unitCostRub: hasCost ? draftUnitCost || 650 : 0,
         imageUrl: draftImageUrl || undefined,
       }
     );
@@ -1913,9 +2074,20 @@ export function GrowthScenariosShowcase({
   // Создание нового сценария (Раздел 3.1–3.4 и 5.3 ТЗ: независимый сценарий бренда на 2027 или 2028 год без дублирования товаров и заказов)
   const handleCreateNewScenario = (e: React.FormEvent) => {
     e.preventDefault();
-    const targetBrand =
+    const rawTargetBrand =
       draftScenBrand ||
-      (brandFilterLocal !== 'ALL' ? brandFilterLocal : 'BORNERS');
+      (brandFilterLocal !== 'ALL' ? brandFilterLocal : editableBrands[0] || 'BORNERS');
+    const normTarget = normalizePortfolioBrandCode(rawTargetBrand);
+    const candidateTarget: CanonicalBrandCode =
+      normTarget === 'ALL' ? 'BORNERS' : normTarget;
+    const targetBrand: CanonicalBrandCode | undefined = canUserEditBrand(
+      currentUser,
+      candidateTarget
+    )
+      ? candidateTarget
+      : editableBrands[0];
+    if (!targetBrand || !canUserEditBrand(currentUser, targetBrand)) return;
+
     const copyId =
       draftCopyFromScenarioId > 0 ? draftCopyFromScenarioId : null;
 
@@ -1936,7 +2108,9 @@ export function GrowthScenariosShowcase({
     setDraftScenTitle('');
     notify(
       'success',
-      `✓ Сценарий «${newScen.title}» (${newScen.year} г. · цель ${newScen.monthlyTargetMln} млн ₽/мес) создан`,
+      hasFinance
+        ? `✓ Сценарий «${newScen.title}» (${newScen.year} г. · цель ${newScen.monthlyTargetMln} млн ₽/мес) создан`
+        : `✓ Сценарий «${newScen.title}» (${newScen.year} г.) создан`,
       copyId
         ? 'Скопированы плановые цены и объёмы продаж без дублирования карточек, остатков и утверждённых заказов фабрикам.'
         : 'Создан независимый сценарий бренда. Заполните помесячный план продаж для моделей.'
@@ -1945,6 +2119,7 @@ export function GrowthScenariosShowcase({
 
   // Удаление сценария роста с немедленным сохранением в localStorage
   const handleDeleteScenario = (scToDelete: GrowthScenarioDef) => {
+    if (!canEditScenario(scToDelete)) return;
     if (scenarios.length <= 1) {
       notify(
         'warning',
@@ -1992,12 +2167,15 @@ export function GrowthScenariosShowcase({
     });
     notify(
       'warning',
-      `Сценарий «${scToDelete.title} (${scToDelete.monthlyTargetMln} млн ₽/мес)» удалён`
+      hasFinance
+        ? `Сценарий «${scToDelete.title} (${scToDelete.monthlyTargetMln} млн ₽/мес)» удалён`
+        : `Сценарий «${scToDelete.title}» удалён`
     );
   };
 
   // Экспорт структурированного плана всего сценария (CSV / JSON, Тест-кейс №9 ТЗ v1.1)
   const handleExportScenarioPlan = (format: 'csv' | 'json') => {
+    if (!hasFinance) return;
     const rows = exportStructuredScenarioPlan(
       v11ScenarioSummary.eligibleModels,
       currentScenario
@@ -2013,8 +2191,12 @@ export function GrowthScenariosShowcase({
     const a = document.createElement('a');
     a.href = url;
     a.download = `borners_plan_scenario_${currentScenario.id}_2027.${format}`;
+    if (document.body) {
+      document.body.appendChild(a);
+    }
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     notify(
       'success',
       `План «${currentScenario.title}» выгружен (${rows.length} записей · ${format.toUpperCase()})`,
@@ -2026,6 +2208,10 @@ export function GrowthScenariosShowcase({
   const handleImportScenarioPlanFile = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
+    if (!hasFinance || !canEditScenario(currentScenario)) {
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -2183,13 +2369,18 @@ export function GrowthScenariosShowcase({
                   const met = computeModelScenarioMetrics(m, mEffScen);
                   const acting = getActingSkuByWbOrVendor(m.code, m.title);
                   const codeLbl = acting ? `WB ${acting.wbSku}` : m.code;
+                  const mUnitCfg = getBrandUnitConfig(
+                    normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m))
+                  );
                   return (
                     <option key={m.id} value={m.id}>
                       {idx + 1}/{switcherModels.length} · {codeLbl} — {m.title} (
-                      {(met.targetMonthRevenueRub / 1_000_000)
-                        .toFixed(2)
-                        .replace('.', ',')}{' '}
-                      млн/дек)
+                      {hasFinance
+                        ? `${(met.targetMonthRevenueRub / 1_000_000)
+                            .toFixed(2)
+                            .replace('.', ',')} млн/дек`
+                        : `${met.targetMonthPacks.toLocaleString('ru-RU')} ${mUnitCfg.primaryUnit}/дек`}
+                      )
                     </option>
                   );
                 })}
@@ -2223,8 +2414,10 @@ export function GrowthScenariosShowcase({
           onBackToScenarios={() => navigateScreen('scenarios')}
           onOpenSalesPlan={() => navigateScreen('sales-plan')}
           onUpdateModel={handleUpdateModel}
-          onDuplicateModel={handleDuplicateModel}
-          onDeleteOrArchiveModel={handleDeleteOrArchiveModel}
+          onDuplicateModel={canEditModel(activeModel) ? handleDuplicateModel : undefined}
+          onDeleteOrArchiveModel={
+            canEditModel(activeModel) ? handleDeleteOrArchiveModel : undefined
+          }
           onOpenPdfModal={() => setPdfModalOpen(true)}
           notify={notify}
         />
@@ -2280,21 +2473,29 @@ export function GrowthScenariosShowcase({
                   setSelectedScenarioId(scenId);
                 }}
                 onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-                  if (isReadOnlyRole) return;
+                  if (!canUserEditBrand(currentUser, bCode)) return;
                   setDraftScenBrand(bCode);
                   setDraftScenTitle(defaultTitle);
                   setDraftCopyFromScenarioId(0);
                   setNewScenarioModalOpen(true);
                 }}
                 onOpenCreateModelForBrand={(bCode) => {
-                  if (isReadOnlyRole) return;
-                  setDraftBrand(bCode);
+                  const norm = normalizePortfolioBrandCode(bCode);
+                  const target = norm === 'ALL' ? editableBrands[0] : norm;
+                  if (!target || !canUserEditBrand(currentUser, target)) return;
+                  setDraftBrand(target);
                   setNewModelModalOpen(true);
                 }}
-                onLaunchStarterCabinet={isReadOnlyRole ? () => {} : handleLaunchStarterCabinet}
-                onLaunchAllCabinets={isReadOnlyRole ? () => {} : handleLaunchAllCabinets}
-                onResetStarterCabinets={isReadOnlyRole ? () => {} : handleResetStarterCabinets}
-                onNavigateSection={(sec) => navigateTo(sec)}
+                onLaunchStarterCabinet={
+                  canEditAnyBrand ? handleLaunchStarterCabinet : undefined
+                }
+                onLaunchAllCabinets={
+                  canEditAllStarterBrands ? handleLaunchAllCabinets : undefined
+                }
+                onResetStarterCabinets={
+                  canEditAllStarterBrands ? handleResetStarterCabinets : undefined
+                }
+                onNavigateSection={(sec) => safeNavigateTo(sec)}
               />
             </div>
           )}
@@ -2336,13 +2537,14 @@ export function GrowthScenariosShowcase({
                   >
                     <span>Все (5)</span>
                     <span className="font-mono text-[10.5px] opacity-80">
-                      {(
-                        v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
-                        1_000_000
-                      )
-                        .toFixed(1)
-                        .replace('.', ',')}{' '}
-                      млн
+                      {hasFinance
+                        ? `${(
+                            v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                            1_000_000
+                          )
+                            .toFixed(1)
+                            .replace('.', ',')} млн`
+                        : `${v11ScenarioSummary.multiBrandSummary.groupTotal.modelsCount} SKU`}
                     </span>
                   </button>
 
@@ -2381,7 +2583,7 @@ export function GrowthScenariosShowcase({
                       >
                         <span className="font-bold">{b.displayCode}</span>
                         <span className="font-mono text-[10.5px] opacity-80">
-                          {b.annualRevenueRub > 0
+                          {hasFinance && b.annualRevenueRub > 0
                             ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
                             : `${b.modelsCount} SKU`}
                         </span>
@@ -2394,26 +2596,27 @@ export function GrowthScenariosShowcase({
                   <span className="px-2.5 py-1 rounded-[8px] bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[#334155]">
                     Холдинг:{' '}
                     <strong className="font-extrabold text-[#0F172A]">
-                      {(
-                        v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
-                        1_000_000
-                      )
-                        .toFixed(2)
-                        .replace('.', ',')}{' '}
-                      млн ₽
+                      {hasFinance
+                        ? `${(
+                            v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
+                            1_000_000
+                          )
+                            .toFixed(2)
+                            .replace('.', ',')} млн ₽`
+                        : 'Скрыто'}
                     </strong>
                   </span>
                   <span className="px-2.5 py-1 rounded-[8px] bg-[#ECFDF5] border border-[#A7F3D0] font-mono text-[#047857]">
                     Прибыль:{' '}
                     <strong className="font-extrabold text-[#064E3B]">
-                      +
-                      {(
-                        v11ScenarioSummary.multiBrandSummary.groupTotal
-                          .annualEstimatedOperatingProfitRub / 1_000_000
-                      )
-                        .toFixed(2)
-                        .replace('.', ',')}{' '}
-                      млн ₽
+                      {hasFinance && hasCost
+                        ? `+${(
+                            v11ScenarioSummary.multiBrandSummary.groupTotal
+                              .annualEstimatedOperatingProfitRub / 1_000_000
+                          )
+                            .toFixed(2)
+                            .replace('.', ',')} млн ₽`
+                        : 'Скрыто'}
                     </strong>
                   </span>
                 </div>
@@ -2472,7 +2675,9 @@ export function GrowthScenariosShowcase({
                   className="hidden"
                 />
 
-                {currentScenario.id !== ACTING_2027_SCENARIO_ID && !isReadOnlyRole && (
+                {currentScenario.id !== ACTING_2027_SCENARIO_ID &&
+                  canEditScenario(currentScenario) &&
+                  hasFinance && (
                   <div className="inline-flex items-center gap-1 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] p-0.5 pl-2.5">
                     <span className="text-[11.5px] font-medium text-[#64748B]">Цель дек:</span>
                     <input
@@ -2537,41 +2742,49 @@ export function GrowthScenariosShowcase({
                         className="fixed inset-0 z-40"
                       />
                       <div className="absolute right-0 mt-1.5 w-76 rounded-[14px] bg-white border border-[#CFD6E0] shadow-[0_16px_40px_rgba(15,23,42,0.12)] p-2 z-50 text-[12px] space-y-1.5">
-                        {currentScenario.id !== ACTING_2027_SCENARIO_ID && !isReadOnlyRole && (
+                        {currentScenario.id !== ACTING_2027_SCENARIO_ID &&
+                          ((canUserEditBrand(currentUser, 'BORNERS') &&
+                            canEditScenario(currentScenario)) ||
+                            canEditAllBrands) && (
                           <div className="pb-1.5 border-b border-[#EEF2F6] space-y-0.5">
                             <div className="px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-[#64748B]">
                               Эталоны продаж и веса
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExportMenuOpen(false);
-                                handleRestoreClientSavedSales();
-                              }}
-                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
-                            >
-                              <span>Сохранённые продажи</span>
-                              {hasFinance && (
-                                <span className="font-mono text-[11px] text-[#111827] font-bold">
-                                  109,94 млн ₽
-                                </span>
+                            {canUserEditBrand(currentUser, 'BORNERS') &&
+                              canEditScenario(currentScenario) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExportMenuOpen(false);
+                                    handleRestoreClientSavedSales();
+                                  }}
+                                  className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
+                                >
+                                  <span>Сохранённые продажи</span>
+                                  {hasFinance && (
+                                    <span className="font-mono text-[11px] text-[#111827] font-bold">
+                                      109,94 млн ₽
+                                    </span>
+                                  )}
+                                </button>
                               )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExportMenuOpen(false);
-                                handleResetToPdfBaseline();
-                              }}
-                              className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
-                            >
-                              <span>Сбросить к эталону PDF</span>
-                              {hasFinance && (
-                                <span className="font-mono text-[11px] text-[#64748B]">
-                                  100,15 млн ₽
-                                </span>
-                              )}
-                            </button>
+                            {canEditAllBrands && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExportMenuOpen(false);
+                                  handleResetToPdfBaseline();
+                                }}
+                                className="w-full px-2.5 py-2 rounded-[8px] hover:bg-[#F8FAFC] text-left font-semibold text-[#111827] flex items-center justify-between cursor-pointer"
+                              >
+                                <span>Сбросить к эталону PDF</span>
+                                {hasFinance && (
+                                  <span className="font-mono text-[11px] text-[#64748B]">
+                                    100,15 млн ₽
+                                  </span>
+                                )}
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -2602,7 +2815,7 @@ export function GrowthScenariosShowcase({
                               <span>Экспорт плана</span>
                               <span className="font-mono text-[10.5px] text-[#64748B]">JSON</span>
                             </button>
-                            {!isReadOnlyRole && (
+                            {canEditScenario(currentScenario) && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2659,10 +2872,18 @@ export function GrowthScenariosShowcase({
                   </button>
                 )}
 
-                {!isReadOnlyRole && (
+                {canEditAnyBrand && (
                   <button
                     type="button"
-                    onClick={() => setNewScenarioModalOpen(true)}
+                    onClick={() => {
+                      const normCur = normalizePortfolioBrandCode(brandFilterLocal);
+                      const target =
+                        normCur !== 'ALL' && canUserEditBrand(currentUser, normCur)
+                          ? normCur
+                          : editableBrands[0] || 'BORNERS';
+                      setDraftScenBrand(target);
+                      setNewScenarioModalOpen(true);
+                    }}
                     className="h-8 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                   >
                     + Новый сценарий
@@ -2687,7 +2908,10 @@ export function GrowthScenariosShowcase({
                 if (visibleScenarios.length === 0) {
                   const nb = normalizePortfolioBrandCode(brandFilterLocal);
                   const canQuickLaunch =
-                    nb === 'AKUSHA' || nb === 'LISKANI' || nb === 'NA_TELE';
+                    (nb === 'AKUSHA' || nb === 'LISKANI' || nb === 'NA_TELE') &&
+                    canUserEditBrand(currentUser, nb);
+                  const canCreateForNb =
+                    nb === 'ALL' ? canEditAnyBrand : canUserEditBrand(currentUser, nb);
                   return (
                     <div className="col-span-full rounded-2xl border border-dashed border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -2695,30 +2919,37 @@ export function GrowthScenariosShowcase({
                           Нет сценария для выбранного бренда ({brandFilterLocal})
                         </div>
                         <div className="text-[12px] text-[#64748B] mt-0.5">
-                          Запустите готовую стартовую матрицу (3 флагманских SKU + сценарий 2027) в 1 клик или создайте пустой сценарий вручную.
+                          {canCreateForNb
+                            ? 'Запустите готовую стартовую матрицу (3 флагманских SKU + сценарий 2027) в 1 клик или создайте пустой сценарий вручную.'
+                            : 'Для выбранного бренда пока не активирован сценарий развития.'}
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {canQuickLaunch && (
+                      {canCreateForNb && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canQuickLaunch &&
+                            (nb === 'AKUSHA' || nb === 'LISKANI' || nb === 'NA_TELE') && (
+                              <button
+                                type="button"
+                                onClick={() => handleLaunchStarterCabinet(nb)}
+                                className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                              >
+                                🚀 Запустить матрицу {nb === 'NA_TELE' ? 'НА ТЕЛЕ' : nb} (3 SKU)
+                              </button>
+                            )}
                           <button
                             type="button"
-                            onClick={() => handleLaunchStarterCabinet(nb)}
-                            className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                            onClick={() => {
+                              setDraftScenBrand(
+                                nb === 'ALL' ? editableBrands[0] || 'BORNERS' : nb
+                              );
+                              setNewScenarioModalOpen(true);
+                            }}
+                            className="h-9 px-4 rounded-xl bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
                           >
-                            🚀 Запустить матрицу {nb === 'NA_TELE' ? 'НА ТЕЛЕ' : nb} (3 SKU)
+                            + Создать сценарий бренда
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
-                            setNewScenarioModalOpen(true);
-                          }}
-                          className="h-9 px-4 rounded-xl bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
-                        >
-                          + Создать сценарий бренда
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -2765,7 +2996,10 @@ export function GrowthScenariosShowcase({
                           ) / 100
                       : sc.monthlyTargetMln;
                   const pctNum = agg ? agg.goalCompletionPct : 100;
-                  const progressWidth = Math.min(100, Math.max(10, Math.round(pctNum)));
+                  const progressWidth = hasFinance
+                    ? Math.min(100, Math.max(10, Math.round(pctNum)))
+                    : 100;
+                  const canMutateSc = canEditScenario(sc);
 
                   return (
                     <div
@@ -2820,71 +3054,75 @@ export function GrowthScenariosShowcase({
                                 {agg?.modelsCount || 0} SKU
                               </span>
                             )}
-                            {!isReadOnlyRole && (
-                              <>
+                            {canEditAnyBrand && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDraftScenTitle(`${sc.title} (копия)`);
+                                  const rawNb = sc.ownerBrandCode
+                                    ? normalizePortfolioBrandCode(sc.ownerBrandCode)
+                                    : brandFilterLocal !== 'ALL'
+                                    ? normalizePortfolioBrandCode(brandFilterLocal)
+                                    : 'BORNERS';
+                                  const candidateNb = rawNb === 'ALL' ? 'BORNERS' : rawNb;
+                                  const safeNb = canUserEditBrand(currentUser, candidateNb)
+                                    ? candidateNb
+                                    : editableBrands[0] || 'BORNERS';
+                                  setDraftScenBrand(safeNb);
+                                  setDraftScenYear((sc.year as 2027 | 2028) || 2027);
+                                  setDraftScenTargetMln(sc.monthlyTargetMln);
+                                  setDraftCopyFromScenarioId(sc.id);
+                                  setNewScenarioModalOpen(true);
+                                }}
+                                title={`Скопировать сценарий «${sc.title}»`}
+                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                              >
+                                Копия
+                              </button>
+                            )}
+                            {canMutateSc && sc.id !== ACTING_2027_SCENARIO_ID && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const nextName =
+                                    typeof window !== 'undefined'
+                                      ? window.prompt('Новое название сценария:', sc.title)
+                                      : null;
+                                  if (nextName && nextName.trim()) {
+                                    commitScenarios((prev) =>
+                                      renameBrandScenario(prev, sc.id, { title: nextName.trim() })
+                                    );
+                                    notify(
+                                      'success',
+                                      'Сценарий переименован',
+                                      `Новое название: «${nextName.trim()}»`
+                                    );
+                                  }
+                                }}
+                                title={`Переименовать сценарий «${sc.title}»`}
+                                className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                              >
+                                Имя
+                              </button>
+                            )}
+                            {canMutateSc &&
+                              scenarios.length > 1 &&
+                              sc.id !== ACTING_2027_SCENARIO_ID && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setDraftScenTitle(`${sc.title} (копия)`);
-                                    const nb = sc.ownerBrandCode
-                                      ? normalizePortfolioBrandCode(sc.ownerBrandCode)
-                                      : brandFilterLocal !== 'ALL'
-                                      ? normalizePortfolioBrandCode(brandFilterLocal)
-                                      : 'BORNERS';
-                                    setDraftScenBrand(nb === 'ALL' ? 'BORNERS' : nb);
-                                    setDraftScenYear((sc.year as 2027 | 2028) || 2027);
-                                    setDraftScenTargetMln(sc.monthlyTargetMln);
-                                    setDraftCopyFromScenarioId(sc.id);
-                                    setNewScenarioModalOpen(true);
+                                    handleDeleteScenario(sc);
                                   }}
-                                  title={`Скопировать сценарий «${sc.title}»`}
-                                  className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
+                                  title={`Удалить сценарий «${sc.title}»`}
+                                  aria-label={`Удалить сценарий ${sc.title}`}
+                                  className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-medium transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
                                 >
-                                  Копия
+                                  ×
                                 </button>
-                                {sc.id !== ACTING_2027_SCENARIO_ID && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const nextName =
-                                        typeof window !== 'undefined'
-                                          ? window.prompt('Новое название сценария:', sc.title)
-                                          : null;
-                                      if (nextName && nextName.trim()) {
-                                        commitScenarios((prev) =>
-                                          renameBrandScenario(prev, sc.id, { title: nextName.trim() })
-                                        );
-                                        notify(
-                                          'success',
-                                          'Сценарий переименован',
-                                          `Новое название: «${nextName.trim()}»`
-                                        );
-                                      }
-                                    }}
-                                    title={`Переименовать сценарий «${sc.title}»`}
-                                    className="h-5 px-1.5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[10px] leading-none font-medium transition cursor-pointer bg-white hover:bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]"
-                                  >
-                                    Имя
-                                  </button>
-                                )}
-                                {scenarios.length > 1 && sc.id !== ACTING_2027_SCENARIO_ID && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteScenario(sc);
-                                    }}
-                                    title={`Удалить сценарий «${sc.title}»`}
-                                    aria-label={`Удалить сценарий ${sc.title}`}
-                                    className="h-5 w-5 rounded-[5px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center text-[12px] leading-none font-medium transition cursor-pointer bg-white hover:bg-rose-50 text-[#64748B] hover:text-rose-700 border border-[#E2E8F0]"
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </>
-                            )}
+                              )}
                           </div>
                         </div>
 
@@ -2899,12 +3137,14 @@ export function GrowthScenariosShowcase({
                           </div>
                           <span
                             className={`font-mono text-[10.5px] font-medium px-2 py-0.5 rounded-md ${
-                              pctNum >= 100
+                              hasFinance && pctNum >= 100
                                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                                 : 'bg-[#F1F5F9] dark:bg-[#181D2A] text-[#64748B]'
                             }`}
                           >
-                            {pctNum.toFixed(0)}% цели
+                            {hasFinance
+                              ? `${pctNum.toFixed(0)}% цели`
+                              : `${(agg?.targetMonthPacks || 0).toLocaleString('ru-RU')} ${activeBrandUnits.short}`}
                           </span>
                         </div>
                       </div>
@@ -2965,6 +3205,22 @@ export function GrowthScenariosShowcase({
                     ? mbSummary.brands.find((r) => r.brandCode === activeBrandNorm)
                     : null;
 
+                const effectiveChartMetric:
+                  | 'revenue'
+                  | 'profit'
+                  | 'procurement'
+                  | 'packs' =
+                  !hasFinance &&
+                  (trajectoryChartMetric === 'revenue' || trajectoryChartMetric === 'profit')
+                    ? 'packs'
+                    : !hasCost &&
+                      (trajectoryChartMetric === 'profit' ||
+                        trajectoryChartMetric === 'procurement')
+                    ? hasFinance
+                      ? 'revenue'
+                      : 'packs'
+                    : trajectoryChartMetric;
+
                 const groupMarginRatio =
                   mbSummary.groupTotal.annualRevenueRub > 0
                     ? mbSummary.groupTotal.annualEstimatedOperatingProfitRub /
@@ -2977,7 +3233,39 @@ export function GrowthScenariosShowcase({
                       selectedBrandRow.annualRevenueRub
                     : groupMarginRatio;
 
+                const monthlyPacksArr = Array<number>(12).fill(0);
+                if (activeBrandNorm !== 'ALL') {
+                  for (const m of v11ScenarioSummary.eligibleModels) {
+                    const met = computeModelScenarioMetrics(m, currentScenario);
+                    for (let i = 0; i < 12; i++) {
+                      monthlyPacksArr[i] += met.plan.monthlyPacks[i] || 0;
+                    }
+                  }
+                } else {
+                  for (const m of models) {
+                    const mBrand = normalizePortfolioBrandCode(
+                      detectModelBrandPortfolioLabel(m)
+                    );
+                    if (mBrand === 'ALL') continue;
+                    const mappedScenId = selectedScenarioByBrand[mBrand];
+                    if (mappedScenId === null || mappedScenId === undefined) continue;
+                    const scObj = scenarios.find((s) => s.id === mappedScenId && !s.isArchived);
+                    if (!scObj || !isScenarioCompatibleWithBrand(scObj, mBrand)) continue;
+                    if (
+                      filterModelsForScenario([m], scObj, includeGroupPortfolioInS1, mBrand)
+                        .length === 0
+                    ) {
+                      continue;
+                    }
+                    const met = computeModelScenarioMetrics(m, scObj);
+                    for (let i = 0; i < 12; i++) {
+                      monthlyPacksArr[i] += met.plan.monthlyPacks[i] || 0;
+                    }
+                  }
+                }
+
                 const monthlySeries = MONTHS_SHORT_RU.map((mName, idx) => {
+                  const packs = monthlyPacksArr[idx] || 0;
                   if (selectedBrandRow && selectedBrandRow.monthlyRows[idx]) {
                     const mm = selectedBrandRow.monthlyRows[idx];
                     const revMln = mm.grossSalesRub / 1_000_000;
@@ -2989,10 +3277,13 @@ export function GrowthScenariosShowcase({
                       revenueMln: revMln,
                       profitMln: profMln,
                       factoryOutflowMln: procMln,
+                      packs,
                       activeValMln:
-                        trajectoryChartMetric === 'profit'
+                        effectiveChartMetric === 'packs'
+                          ? packs
+                          : effectiveChartMetric === 'profit'
                           ? profMln
-                          : trajectoryChartMetric === 'procurement'
+                          : effectiveChartMetric === 'procurement'
                           ? procMln
                           : revMln,
                     };
@@ -3010,10 +3301,13 @@ export function GrowthScenariosShowcase({
                     revenueMln: revMln,
                     profitMln: profMln,
                     factoryOutflowMln: procMln,
+                    packs,
                     activeValMln:
-                      trajectoryChartMetric === 'profit'
+                      effectiveChartMetric === 'packs'
+                        ? packs
+                        : effectiveChartMetric === 'profit'
                         ? profMln
-                        : trajectoryChartMetric === 'procurement'
+                        : effectiveChartMetric === 'procurement'
                         ? procMln
                         : revMln,
                   };
@@ -3027,6 +3321,7 @@ export function GrowthScenariosShowcase({
                   (s, pt) => s + pt.activeValMln,
                   0
                 );
+                const totalYearPacks = monthlySeries.reduce((s, pt) => s + pt.packs, 0);
                 const selPt =
                   monthlySeries[selectedChartMonthIdx] || monthlySeries[11];
 
@@ -3069,14 +3364,16 @@ export function GrowthScenariosShowcase({
                     : '';
 
                 const strokeColor =
-                  trajectoryChartMetric === 'procurement'
+                  effectiveChartMetric === 'procurement'
                     ? '#0D9488'
                     : '#10B981';
 
                 const metricLabelTitle =
-                  trajectoryChartMetric === 'profit'
+                  effectiveChartMetric === 'packs'
+                    ? 'Помесячная динамика выкупов'
+                    : effectiveChartMetric === 'profit'
                     ? 'Ожидаемая операционная прибыль'
-                    : trajectoryChartMetric === 'procurement'
+                    : effectiveChartMetric === 'procurement'
                     ? 'График оплаты партий фабрикам'
                     : 'Помесячная динамика выручки';
 
@@ -3091,8 +3388,10 @@ export function GrowthScenariosShowcase({
                             </span>
                             <span className="font-mono text-[12px] font-semibold px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] text-[#334155]">
                               Итого за год:{' '}
-                              {(trajectoryChartMetric === 'procurement' ? hasCost : hasFinance)
-                                ? `${trajectoryChartMetric === 'profit' ? '+' : ''}${totalYearActiveMln
+                              {effectiveChartMetric === 'packs'
+                                ? `${totalYearPacks.toLocaleString('ru-RU')} ${activeBrandUnits.short}`
+                                : (effectiveChartMetric === 'procurement' ? hasCost : hasFinance)
+                                ? `${effectiveChartMetric === 'profit' ? '+' : ''}${totalYearActiveMln
                                     .toFixed(2)
                                     .replace('.', ',')} млн ₽`
                                 : 'Скрыто'}
@@ -3100,18 +3399,19 @@ export function GrowthScenariosShowcase({
                           </div>
                         </div>
 
-                        {/* Переключатель метрики графика (Выручка | Опер. прибыль | Закупки) */}
+                        {/* Переключатель метрики графика (Выручка | Опер. прибыль | Закупки | Выкупы) */}
                         <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#CBD5E1] p-0.5 text-[11.5px]">
                           {(
                             [
                               { id: 'revenue' as const, label: 'Выручка', show: hasFinance },
+                              { id: 'packs' as const, label: `Выкупы (${activeBrandUnits.short})`, show: !hasFinance },
                               { id: 'profit' as const, label: 'Опер. прибыль', show: hasFinance && hasCost },
                               { id: 'procurement' as const, label: 'Оплаты партий', show: hasCost },
                             ] as const
                           )
                             .filter((mTab) => mTab.show)
                             .map((mTab) => {
-                              const active = trajectoryChartMetric === mTab.id;
+                              const active = effectiveChartMetric === mTab.id;
                               return (
                                 <button
                                   key={mTab.id}
@@ -3131,7 +3431,7 @@ export function GrowthScenariosShowcase({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                        {hasFinance && (
+                        {hasFinance ? (
                           <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] px-3 py-1">
                             <span className="font-semibold text-[#475569]">
                               {MONTHS_SHORT_RU[selectedChartMonthIdx]}:
@@ -3155,14 +3455,25 @@ export function GrowthScenariosShowcase({
                               </span>
                             )}
                           </div>
+                        ) : (
+                          <div className="inline-flex flex-wrap items-center gap-2 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] px-3 py-1">
+                            <span className="font-semibold text-[#475569]">
+                              {MONTHS_SHORT_RU[selectedChartMonthIdx]}:
+                            </span>
+                            <span className="font-mono font-extrabold text-[#111827]">
+                              {selPt.packs.toLocaleString('ru-RU')} {activeBrandUnits.short}
+                            </span>
+                          </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => navigateTo('launch-calendar')}
-                          className="h-7.5 px-3 rounded-[8px] border border-[#DCE2EC] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#334155] cursor-pointer transition"
-                        >
-                          Таблица 12 мес. →
-                        </button>
+                        {canUserAccessSection(currentUser, 'launch-calendar') && (
+                          <button
+                            type="button"
+                            onClick={() => safeNavigateTo('launch-calendar')}
+                            className="h-7.5 px-3 rounded-[8px] border border-[#DCE2EC] bg-white hover:bg-[#F8FAFC] text-[11.5px] font-semibold text-[#334155] cursor-pointer transition"
+                          >
+                            Таблица 12 мес. →
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -3189,9 +3500,13 @@ export function GrowthScenariosShowcase({
                                     : 'font-semibold text-[#475569] hover:text-[#111827]'
                                 }`}
                               >
-                                {(trajectoryChartMetric === 'procurement' ? hasCost : hasFinance)
+                                {effectiveChartMetric === 'packs'
+                                  ? pt.packs >= 1000
+                                    ? `${(pt.packs / 1000).toFixed(1).replace('.', ',')}к`
+                                    : String(pt.packs)
+                                  : (effectiveChartMetric === 'procurement' ? hasCost : hasFinance)
                                   ? `${
-                                      trajectoryChartMetric === 'profit' && pt.activeValMln > 0
+                                      effectiveChartMetric === 'profit' && pt.activeValMln > 0
                                         ? '+'
                                         : ''
                                     }${pt.activeValMln.toFixed(1).replace('.', ',')}`
@@ -3353,8 +3668,12 @@ export function GrowthScenariosShowcase({
                   const procBudgetRub =
                     v11ScenarioSummary.investmentSummary.totalProcurementBudgetRub;
                   const procBudgetMln = (procBudgetRub / 1_000_000).toFixed(2).replace('.', ',');
-                  const wbShareDecPct =
-                    currentAgg.targetMonthRevenueRub > 0
+                  const actingDecPacks = Math.max(
+                    0,
+                    currentAgg.targetMonthPacks - currentAgg.newDecSets
+                  );
+                  const wbShareDecPct = hasFinance
+                    ? currentAgg.targetMonthRevenueRub > 0
                       ? Math.min(
                           100,
                           Math.round(
@@ -3362,7 +3681,13 @@ export function GrowthScenariosShowcase({
                               100
                           )
                         )
-                      : 100;
+                      : 100
+                    : currentAgg.targetMonthPacks > 0
+                    ? Math.min(
+                        100,
+                        Math.round((actingDecPacks / currentAgg.targetMonthPacks) * 100)
+                      )
+                    : 100;
 
                   return (
                     <div className="rounded-[12px] border border-[#D8D7CF] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EAE9E2] bg-white">
@@ -3374,7 +3699,7 @@ export function GrowthScenariosShowcase({
                               Структура декабря 2027
                             </span>
                             <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#141413]">
-                              {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} компл.
+                              {currentAgg.targetMonthPacks.toLocaleString('ru-RU')} {activeBrandUnits.short}
                             </span>
                           </div>
                           <div className="mt-2 font-mono text-[23px] font-extrabold tracking-[-0.02em] text-[#141413]">
@@ -3412,19 +3737,21 @@ export function GrowthScenariosShowcase({
                               <span>
                                 База WB:{' '}
                                 <strong className="font-mono text-[#141413]">
-                                  {(currentAgg.actingDecRevenueRub / 1_000_000)
-                                    .toFixed(1)
-                                    .replace('.', ',')}{' '}
-                                  млн
+                                  {hasFinance
+                                    ? `${(currentAgg.actingDecRevenueRub / 1_000_000)
+                                        .toFixed(1)
+                                        .replace('.', ',')} млн`
+                                    : `${actingDecPacks.toLocaleString('ru-RU')} ${activeBrandUnits.short}`}
                                 </strong>
                               </span>
                               <span>
                                 Новинки:{' '}
                                 <strong className="font-mono text-[#141413]">
-                                  {(currentAgg.newDecRevenueRub / 1_000_000)
-                                    .toFixed(1)
-                                    .replace('.', ',')}{' '}
-                                  млн
+                                  {hasFinance
+                                    ? `${(currentAgg.newDecRevenueRub / 1_000_000)
+                                        .toFixed(1)
+                                        .replace('.', ',')} млн`
+                                    : `${currentAgg.newDecSets.toLocaleString('ru-RU')} ${activeBrandUnits.short}`}
                                 </strong>
                               </span>
                             </div>
@@ -3454,16 +3781,18 @@ export function GrowthScenariosShowcase({
                           <span>
                             Выкупы:{' '}
                             <strong className="font-mono text-[#141413]">
-                              {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} компл.
+                              {currentAgg.annualBuyoutsPacks.toLocaleString('ru-RU')} {activeBrandUnits.short}
                             </strong>
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => navigateTo('launch-calendar')}
-                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
-                          >
-                            02 · Продажи →
-                          </button>
+                          {canUserAccessSection(currentUser, 'launch-calendar') && (
+                            <button
+                              type="button"
+                              onClick={() => safeNavigateTo('launch-calendar')}
+                              className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                            >
+                              02 · Продажи →
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -3499,7 +3828,7 @@ export function GrowthScenariosShowcase({
 
                         <div className="flex items-center justify-between gap-2 text-[11.5px] text-[#686762]">
                           <span>
-                            {hasCost ? (
+                            {hasCost && hasFinance ? (
                               <>
                                 Пик с WB:{' '}
                                 <strong className="font-mono text-[#141413]">
@@ -3513,17 +3842,21 @@ export function GrowthScenariosShowcase({
                                 </strong>{' '}
                                 · год: {procBudgetMln} млн
                               </>
+                            ) : hasCost ? (
+                              <>Бюджет за год: {procBudgetMln} млн ₽</>
                             ) : (
                               'Закупочный бюджет: Скрыто'
                             )}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => navigateTo('roadmap-tasks')}
-                            className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
-                          >
-                            03 · Закупки →
-                          </button>
+                          {canUserAccessSection(currentUser, 'roadmap-tasks') && (
+                            <button
+                              type="button"
+                              onClick={() => safeNavigateTo('roadmap-tasks')}
+                              className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
+                            >
+                              03 · Закупки →
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -3568,10 +3901,10 @@ export function GrowthScenariosShowcase({
                                 : 'Скрыто'}
                             </strong>
                           </span>
-                          {hasFinance && (
+                          {hasFinance && canUserAccessSection(currentUser, 'finance') && (
                             <button
                               type="button"
-                              onClick={() => navigateTo('finance')}
+                              onClick={() => safeNavigateTo('finance')}
                               className="font-bold text-[#0F5132] hover:underline cursor-pointer shrink-0"
                             >
                               04 · Финансы →
@@ -3624,6 +3957,7 @@ export function GrowthScenariosShowcase({
                         {v11ScenarioSummary.multiBrandSummary.brands.map((b) => {
                           const brandScenarios = b.availableScenarios;
                           const unitCfg = getBrandUnitConfig(b.brandCode);
+                          const canEditThisBrand = canUserEditBrand(currentUser, b.brandCode);
                           return (
                             <tr
                               key={b.brandCode}
@@ -3652,7 +3986,9 @@ export function GrowthScenariosShowcase({
                                 <div className="flex items-center gap-1.5">
                                   <select
                                     value={b.selectedScenarioId ?? ''}
+                                    disabled={!canEditThisBrand}
                                     onChange={(e) => {
+                                      if (!canEditThisBrand) return;
                                       const raw = e.target.value;
                                       const nextId = raw === '' ? null : Number(raw);
                                       setSelectedScenarioForBrand(b.brandCode, nextId);
@@ -3660,7 +3996,7 @@ export function GrowthScenariosShowcase({
                                         setSelectedScenarioId(nextId);
                                       }
                                     }}
-                                    className="h-7 max-w-[210px] px-2 rounded-[7px] border border-[#D8D7CF] bg-white text-[11.5px] font-semibold text-[#141413]"
+                                    className="h-7 max-w-[210px] px-2 rounded-[7px] border border-[#D8D7CF] bg-white text-[11.5px] font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     <option value="">Нет сценария</option>
                                     {brandScenarios.map((sc) => (
@@ -3669,7 +4005,7 @@ export function GrowthScenariosShowcase({
                                       </option>
                                     ))}
                                   </select>
-                                  {!isReadOnlyRole && (
+                                  {canEditThisBrand && (
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -3721,7 +4057,7 @@ export function GrowthScenariosShowcase({
                               </td>
                               <td className="py-2 px-3 text-right font-mono bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7] font-bold">
                                 {b.hasScenario && b.hasModels
-                                  ? !hasCost
+                                  ? !hasCost || !hasFinance
                                     ? 'Скрыто'
                                     : b.verifiedOwnMoneyRequiredRub !== null
                                     ? `${(b.verifiedOwnMoneyRequiredRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
@@ -3788,7 +4124,7 @@ export function GrowthScenariosShowcase({
                               : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
-                            {!hasCost
+                            {!hasCost || !hasFinance
                               ? 'Скрыто'
                               : v11ScenarioSummary.multiBrandSummary.groupTotal
                                   .verifiedOwnMoneyRequiredRub !== null
@@ -3839,7 +4175,9 @@ export function GrowthScenariosShowcase({
                             </td>
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
                               <td key={m.monthIdx} className="py-1.5 px-1.5 text-right">
-                                {(m.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')}
+                                {hasFinance
+                                  ? (m.grossSalesRub / 1_000_000).toFixed(1).replace('.', ',')
+                                  : 'Скрыто'}
                               </td>
                             ))}
                           </tr>
@@ -3849,7 +4187,9 @@ export function GrowthScenariosShowcase({
                             </td>
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
                               <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-rose-800">
-                                {(m.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                                {hasCost
+                                  ? (m.factoryTotalOutflowRub / 1_000_000).toFixed(1).replace('.', ',')
+                                  : 'Скрыто'}
                               </td>
                             ))}
                           </tr>
@@ -3859,7 +4199,9 @@ export function GrowthScenariosShowcase({
                             </td>
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
                               <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-emerald-800">
-                                {(m.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')}
+                                {hasFinance
+                                  ? (m.wbNetInflowRub / 1_000_000).toFixed(1).replace('.', ',')
+                                  : 'Скрыто'}
                               </td>
                             ))}
                           </tr>
@@ -3869,7 +4211,9 @@ export function GrowthScenariosShowcase({
                             </td>
                             {v11ScenarioSummary.multiBrandSummary.groupTotal.monthlyRows.map((m) => (
                               <td key={m.monthIdx} className="py-1.5 px-1.5 text-right text-[#0F172A] dark:text-[#EDF0F7]">
-                                {(m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')}
+                                {hasFinance && hasCost
+                                  ? (m.cumulativeCashBalanceRub / 1_000_000).toFixed(1).replace('.', ',')
+                                  : 'Скрыто'}
                               </td>
                             ))}
                           </tr>
@@ -3885,20 +4229,38 @@ export function GrowthScenariosShowcase({
                         Действующая база WB ({currentAgg.actingConfirmedCount} SKU)
                       </div>
                       <div className="font-mono text-[20px] font-bold text-[#141413] mt-1">
-                        {(currentAgg.actingDecRevenueRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽{' '}
-                        <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
-                          в дек
-                        </span>
+                        {hasFinance ? (
+                          <>
+                            {(currentAgg.actingDecRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽{' '}
+                            <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
+                              в дек
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {Math.max(
+                              0,
+                              currentAgg.targetMonthPacks - currentAgg.newDecSets
+                            ).toLocaleString('ru-RU')}{' '}
+                            {activeBrandUnits.short}{' '}
+                            <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
+                              в дек
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="text-[11.5px] text-[#5E5D58] mt-1">
                         Годовая база:{' '}
-                        {(currentAgg.actingAnnualRevenueRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽ ({currentAgg.actingAnnualSets.toLocaleString('ru-RU')} компл.)
+                        {hasFinance
+                          ? `${(currentAgg.actingAnnualRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')} млн ₽ (${currentAgg.actingAnnualSets.toLocaleString(
+                              'ru-RU'
+                            )} ${activeBrandUnits.short})`
+                          : `${currentAgg.actingAnnualSets.toLocaleString('ru-RU')} ${activeBrandUnits.short}`}
                       </div>
                     </div>
 
@@ -3907,20 +4269,37 @@ export function GrowthScenariosShowcase({
                         Новые варианты 2027 ({currentAgg.newVariantsCount} SKU)
                       </div>
                       <div className="font-mono text-[20px] font-bold text-[#141413] mt-1">
-                        {(currentAgg.newDecRevenueRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽{' '}
-                        <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
-                          в дек
-                        </span>
+                        {hasFinance ? (
+                          <>
+                            {(currentAgg.newDecRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')}{' '}
+                            млн ₽{' '}
+                            <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
+                              в дек
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {currentAgg.newDecSets.toLocaleString('ru-RU')}{' '}
+                            {activeBrandUnits.short}{' '}
+                            <span className="font-sans text-[11.5px] font-medium text-[#5E5D58]">
+                              в дек
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="text-[11.5px] text-[#5E5D58] mt-1">
-                        {currentAgg.newDecSets.toLocaleString('ru-RU')} компл. в дек ·{' '}
-                        {(currentAgg.newAnnualRevenueRub / 1_000_000)
-                          .toFixed(2)
-                          .replace('.', ',')}{' '}
-                        млн ₽ за 2027 г.
+                        {hasFinance
+                          ? `${currentAgg.newDecSets.toLocaleString('ru-RU')} ${
+                              activeBrandUnits.short
+                            } в дек · ${(currentAgg.newAnnualRevenueRub / 1_000_000)
+                              .toFixed(2)
+                              .replace('.', ',')} млн ₽ за 2027 г.`
+                          : `${Math.max(
+                              0,
+                              currentAgg.annualBuyoutsPacks - currentAgg.actingAnnualSets
+                            ).toLocaleString('ru-RU')} ${activeBrandUnits.short} за 2027 г.`}
                       </div>
                     </div>
 
@@ -3951,13 +4330,15 @@ export function GrowthScenariosShowcase({
                       <div className="text-[13px] font-bold text-[#141413]">
                         Ближайшие партии фабрик по месяцу размещения заказа
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('roadmap-tasks')}
-                        className="text-[12px] font-bold text-[#141413] hover:underline cursor-pointer"
-                      >
-                        Открыть все партии ({v11ScenarioSummary.factoryGroups.length}) в разделе 03 · Закупки →
-                      </button>
+                      {canUserAccessSection(currentUser, 'roadmap-tasks') && (
+                        <button
+                          type="button"
+                          onClick={() => safeNavigateTo('roadmap-tasks')}
+                          className="text-[12px] font-bold text-[#141413] hover:underline cursor-pointer"
+                        >
+                          Открыть все партии ({v11ScenarioSummary.factoryGroups.length}) в разделе 03 · Закупки →
+                        </button>
+                      )}
                     </div>
                     <div className="overflow-x-auto rounded-[12px] bg-white border border-[#D8D7CF]">
                       <table className="w-full text-left border-collapse text-[12px]">
@@ -3966,7 +4347,7 @@ export function GrowthScenariosShowcase({
                             <th className="py-2 px-3.5 font-bold">Месяц размещения</th>
                             <th className="py-2 px-3.5 font-bold">Фабрика</th>
                             <th className="py-2 px-3.5 font-bold text-right">Позиций SKU</th>
-                            <th className="py-2 px-3.5 font-bold text-right">Комплектов</th>
+                            <th className="py-2 px-3.5 font-bold text-right">{activeBrandUnits.columnTitle}</th>
                             <th className="py-2 px-3.5 font-bold text-right">Бюджет партии</th>
                           </tr>
                         </thead>
@@ -3984,7 +4365,7 @@ export function GrowthScenariosShowcase({
                               </td>
                               <td className="py-2 px-3.5 text-right">{grp.itemsCount}</td>
                               <td className="py-2 px-3.5 text-right font-semibold">
-                                {grp.totalPacks.toLocaleString('ru-RU')} компл.
+                                {grp.totalPacks.toLocaleString('ru-RU')} {activeBrandUnits.short}
                               </td>
                               <td className="py-2 px-3.5 text-right font-bold text-[#141413]">
                                 {hasCost
@@ -4086,8 +4467,12 @@ export function GrowthScenariosShowcase({
                   className="h-9 px-2.5 rounded-[10px] bg-white border border-[#CBD5E1] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] cursor-pointer"
                 >
                   <option value="default">По порядку</option>
-                  <option value="dec_desc">Выручка дек. ↓</option>
-                  <option value="year_desc">Год 2027 ↓</option>
+                  <option value="dec_desc">
+                    {hasFinance ? 'Выручка дек. ↓' : 'Объём дек. ↓'}
+                  </option>
+                  <option value="year_desc">
+                    {hasFinance ? 'Год 2027 ↓' : 'Объём 2027 ↓'}
+                  </option>
                   <option value="priority">По приоритету</option>
                 </select>
 
@@ -4103,10 +4488,20 @@ export function GrowthScenariosShowcase({
                   <option value="В архиве">В архиве</option>
                 </select>
 
-                {!isReadOnlyRole && (
+                {canEditAnyBrand && (
                   <button
                     type="button"
-                    onClick={() => setNewModelModalOpen(true)}
+                    onClick={() => {
+                      if (
+                        brandFilterLocal !== 'ALL' &&
+                        canUserEditBrand(currentUser, brandFilterLocal)
+                      ) {
+                        setDraftBrand(brandFilterLocal);
+                      } else if (!canUserEditBrand(currentUser, draftBrand)) {
+                        setDraftBrand(editableBrands[0] || 'BORNERS');
+                      }
+                      setNewModelModalOpen(true);
+                    }}
                     className="h-9 px-3.5 rounded-[10px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shadow-2xs"
                   >
                     + Добавить модель
@@ -4139,43 +4534,45 @@ export function GrowthScenariosShowcase({
                       onClick={() => setSelectedScenarioId(2)}
                       className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
                     >
-                      Переключить на Сценарий №2 (150 млн)
+                      {hasFinance
+                        ? 'Переключить на Сценарий №2 (150 млн)'
+                        : 'Переключить на Сценарий №2'}
                     </button>
                   )}
-                  {!isReadOnlyRole &&
-                    (brandFilterLocal === 'NA_TELE' ||
-                      brandFilterLocal === 'AKUSHA' ||
-                      brandFilterLocal === 'LISKANI') && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleLaunchStarterCabinet(
-                            brandFilterLocal as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                  {(brandFilterLocal === 'NA_TELE' ||
+                    brandFilterLocal === 'AKUSHA' ||
+                    brandFilterLocal === 'LISKANI') &&
+                    canUserEditBrand(currentUser, brandFilterLocal) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleLaunchStarterCabinet(
+                              brandFilterLocal as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                            )
+                          }
+                          className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
+                        >
+                          🚀 Запустить стартовую матрицу (3 SKU)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftBrand(brandFilterLocal);
+                            setNewModelModalOpen(true);
+                          }}
+                          className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
+                        >
+                          + Добавить модель (
+                          {brandFilterLocal === 'NA_TELE'
+                            ? 'НА ТЕЛЕ'
+                            : brandFilterLocal === 'AKUSHA'
+                              ? 'AKUSHA'
+                              : 'LISKANI'}
                           )
-                        }
-                        className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
-                      >
-                        🚀 Запустить стартовую матрицу (3 SKU)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDraftBrand(brandFilterLocal);
-                          setNewModelModalOpen(true);
-                        }}
-                        className="h-8 px-3 rounded-[8px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[11.5px] font-semibold cursor-pointer"
-                      >
-                        + Добавить модель (
-                        {brandFilterLocal === 'NA_TELE'
-                          ? 'НА ТЕЛЕ'
-                          : brandFilterLocal === 'AKUSHA'
-                            ? 'AKUSHA'
-                            : 'LISKANI'}
-                        )
-                      </button>
-                    </>
-                  )}
+                        </button>
+                      </>
+                    )}
                   <button
                     type="button"
                     onClick={() => {
@@ -4221,27 +4618,35 @@ export function GrowthScenariosShowcase({
                     setSelectedScenarioId(scenId);
                   }}
                   onOpenCreateScenarioForBrand={(bCode, defaultTitle) => {
-                    if (isReadOnlyRole) return;
+                    if (!canUserEditBrand(currentUser, bCode)) return;
                     setDraftScenBrand(bCode);
                     setDraftScenTitle(defaultTitle);
                     setDraftCopyFromScenarioId(0);
                     setNewScenarioModalOpen(true);
                   }}
                   onOpenModelPassport={(modelId) => navigateScreen('model', modelId)}
-                  onUpdateModel={isReadOnlyRole ? () => {} : handleUpdateModel}
-                  onDeleteModel={isReadOnlyRole ? () => {} : handleDeleteOrArchiveModel}
+                  onUpdateModel={handleUpdateModel}
+                  onDeleteModel={canEditAnyBrand ? handleDeleteOrArchiveModel : undefined}
                   onOpenCreateModel={(defaultBrandCode) => {
-                    if (isReadOnlyRole) return;
-                    if (defaultBrandCode) {
+                    if (!canEditAnyBrand) return;
+                    if (
+                      defaultBrandCode &&
+                      defaultBrandCode !== 'ALL' &&
+                      canUserEditBrand(currentUser, defaultBrandCode)
+                    ) {
                       setDraftBrand(defaultBrandCode);
+                    } else if (!canUserEditBrand(currentUser, draftBrand)) {
+                      setDraftBrand(editableBrands[0] || 'BORNERS');
                     }
                     setNewModelModalOpen(true);
                   }}
                   onQuickAdjustDecPacks={handleQuickAdjustDecPacks}
                   onCyclePriority={handleCycleCardPriority}
-                  onLaunchStarterCabinet={isReadOnlyRole ? () => {} : handleLaunchStarterCabinet}
-                  onLaunchAllCabinets={isReadOnlyRole ? () => {} : handleLaunchAllCabinets}
-                  onResetStarterCabinets={isReadOnlyRole ? () => {} : handleResetStarterCabinets}
+                  onLaunchStarterCabinet={canEditAnyBrand ? handleLaunchStarterCabinet : undefined}
+                  onLaunchAllCabinets={canEditAllStarterBrands ? handleLaunchAllCabinets : undefined}
+                  onResetStarterCabinets={
+                    canEditAllStarterBrands ? handleResetStarterCabinets : undefined
+                  }
                   notify={notify}
                 />
               </div>
@@ -4255,8 +4660,10 @@ export function GrowthScenariosShowcase({
                       <th className="py-3 px-4 font-bold">Модель и линейка</th>
                       <th className="py-3 px-3 font-bold">Статус</th>
                       <th className="py-3 px-3 font-bold">Приоритет</th>
-                      <th className="py-3 px-3 font-bold text-right">Цена компл.</th>
-                      <th className="py-3 px-3 font-bold text-center">Выкупы дек. (компл.)</th>
+                      <th className="py-3 px-3 font-bold text-right">{activeBrandUnits.priceHeader}</th>
+                      <th className="py-3 px-3 font-bold text-center">
+                        Выкупы дек. ({activeBrandUnits.short})
+                      </th>
                       <th className="py-3 px-4 font-bold text-right">Выручка дек.</th>
                       <th className="py-3 px-4 font-bold text-right">Выручка 2027</th>
                       <th className="py-3 px-4 font-bold text-right">Доля цели</th>
@@ -4267,6 +4674,12 @@ export function GrowthScenariosShowcase({
                       const met = computeModelScenarioMetrics(mod, currentScenario);
                       const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
                       const priorityLabel = getModelPriority(mod);
+                      const rowCanEdit = canEditModel(mod) && canEditScenario(currentScenario);
+                      const rowPriorityCanEdit = canEditModel(mod);
+                      const packSharePct =
+                        currentAgg.targetMonthPacks > 0
+                          ? (met.targetMonthPacks / currentAgg.targetMonthPacks) * 100
+                          : 0;
                       return (
                         <tr
                           key={mod.id}
@@ -4304,17 +4717,23 @@ export function GrowthScenariosShowcase({
                             onClick={(e) => e.stopPropagation()}
                           >
                             {!actingMeta ? (
-                              <button
-                                type="button"
-                                onClick={(e) => handleCycleCardPriority(mod, e)}
-                                className={`px-2.5 py-0.5 rounded-[6px] text-[10.5px] font-bold border transition cursor-pointer whitespace-nowrap ${
-                                  priorityLabel === 'Высший'
-                                    ? 'bg-[#EAE9E2] text-[#141413] border-[#9E9D94]'
-                                    : 'bg-[#F5F5F1] hover:border-[#141413] text-[#262624] border-[#CECDC4]'
-                                }`}
-                              >
-                                {priorityLabel}
-                              </button>
+                              rowPriorityCanEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCycleCardPriority(mod, e)}
+                                  className={`px-2.5 py-0.5 rounded-[6px] text-[10.5px] font-bold border transition cursor-pointer whitespace-nowrap ${
+                                    priorityLabel === 'Высший'
+                                      ? 'bg-[#EAE9E2] text-[#141413] border-[#9E9D94]'
+                                      : 'bg-[#F5F5F1] hover:border-[#141413] text-[#262624] border-[#CECDC4]'
+                                  }`}
+                                >
+                                  {priorityLabel}
+                                </button>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-[6px] text-[10.5px] font-bold border whitespace-nowrap bg-[#F5F5F1] text-[#5E5D58] border-[#CECDC4]">
+                                  {priorityLabel}
+                                </span>
+                              )
                             ) : (
                               <span className="text-[11px] text-[#5E5D58]">WB база</span>
                             )}
@@ -4326,7 +4745,7 @@ export function GrowthScenariosShowcase({
                             className="py-2.5 px-3 text-center"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {isReadOnlyRole ? (
+                            {!rowCanEdit ? (
                               <span className="font-mono text-[11.5px] font-bold text-[#141413]">
                                 {met.targetMonthPacks.toLocaleString('ru-RU')}
                               </span>
@@ -4390,7 +4809,9 @@ export function GrowthScenariosShowcase({
                               : 'Скрыто'}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono text-[11.5px] text-[#5E5D58] whitespace-nowrap">
-                            {met.goalSharePct.toFixed(1).replace('.', ',')}%
+                            {(hasFinance ? met.goalSharePct : packSharePct)
+                              .toFixed(1)
+                              .replace('.', ',')}%
                           </td>
                         </tr>
                       );
@@ -4413,7 +4834,7 @@ export function GrowthScenariosShowcase({
                             ИТОГО ПО ВЫБОРКЕ ({filteredModels.length} SKU)
                           </td>
                           <td className="py-3 px-3 text-center font-mono">
-                            {sumDecPacks.toLocaleString('ru-RU')} компл.
+                            {sumDecPacks.toLocaleString('ru-RU')} {activeBrandUnits.short}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-[#157347]">
                             {hasFinance
@@ -4552,13 +4973,25 @@ export function GrowthScenariosShowcase({
       )}
 
       {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ НОВОЙ МОДЕЛИ (п. 7.1 ТЗ, Тест 11) */}
-      {newModelModalOpen && (() => {
+      {newModelModalOpen && canEditAnyBrand && (() => {
         const modalNorm = normalizePortfolioBrandCode(draftBrand || 'BORNERS');
-        const modalBrandCode: CanonicalBrandCode =
+        const rawCandidate: CanonicalBrandCode =
           modalNorm === 'ALL' ? 'BORNERS' : modalNorm;
+        const modalBrandCode: CanonicalBrandCode = canUserEditBrand(currentUser, rawCandidate)
+          ? rawCandidate
+          : editableBrands[0] || 'BORNERS';
         const modalPreset =
           SHOWCASE_BRAND_PRESETS[modalBrandCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
         const modalUnitCfg = getBrandUnitConfig(modalBrandCode);
+        const brandSelectOptions: { code: CanonicalBrandCode; label: string }[] = (
+          [
+            { code: 'BORNERS' as const, label: 'BORNERS' },
+            { code: 'NA_TELE' as const, label: 'НА ТЕЛЕ' },
+            { code: 'FUKAI' as const, label: 'FUKAI' },
+            { code: 'AKUSHA' as const, label: 'AKUSHA (обувь)' },
+            { code: 'LISKANI' as const, label: 'LISKANI (шторы)' },
+          ] as const
+        ).filter((opt) => canUserEditBrand(currentUser, opt.code));
         return (
           <div
             onClick={() => setNewModelModalOpen(false)}
@@ -4596,11 +5029,11 @@ export function GrowthScenariosShowcase({
                       onChange={(e) => setDraftBrand(e.target.value)}
                       className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
                     >
-                      <option value="BORNERS">BORNERS</option>
-                      <option value="NA_TELE">НА ТЕЛЕ</option>
-                      <option value="FUKAI">FUKAI</option>
-                      <option value="AKUSHA">AKUSHA (обувь)</option>
-                      <option value="LISKANI">LISKANI (шторы)</option>
+                      {brandSelectOptions.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -4683,7 +5116,7 @@ export function GrowthScenariosShowcase({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid ${hasCost ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
                   <div>
                     <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
                       Розничная цена (₽)
@@ -4695,17 +5128,19 @@ export function GrowthScenariosShowcase({
                       className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
                     />
                   </div>
-                  <div>
-                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                      Себестоимость (₽)
-                    </label>
-                    <input
-                      type="number"
-                      value={draftUnitCost}
-                      onChange={(e) => setDraftUnitCost(Number(e.target.value))}
-                      className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
-                    />
-                  </div>
+                  {hasCost && (
+                    <div>
+                      <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                        Себестоимость (₽)
+                      </label>
+                      <input
+                        type="number"
+                        value={draftUnitCost}
+                        onChange={(e) => setDraftUnitCost(Number(e.target.value))}
+                        className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -4774,137 +5209,160 @@ export function GrowthScenariosShowcase({
       })()}
 
       {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ НОВОГО СЦЕНАРИЯ (п. 7.3 ТЗ) */}
-      {newScenarioModalOpen && (
-        <div
-          onClick={() => setNewScenarioModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <form
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={handleCreateNewScenario}
-            className="w-full max-w-md rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
+      {newScenarioModalOpen && canEditAnyBrand && (() => {
+        const scenNorm = normalizePortfolioBrandCode(draftScenBrand || 'BORNERS');
+        const scenCand: CanonicalBrandCode =
+          scenNorm === 'ALL' ? 'BORNERS' : scenNorm;
+        const scenModalBrandCode: CanonicalBrandCode = canUserEditBrand(
+          currentUser,
+          scenCand
+        )
+          ? scenCand
+          : editableBrands[0] || 'BORNERS';
+        const scenBrandOptions: { code: CanonicalBrandCode; label: string }[] = (
+          [
+            { code: 'BORNERS' as const, label: 'BORNERS' },
+            { code: 'FUKAI' as const, label: 'FUKAI' },
+            { code: 'AKUSHA' as const, label: 'AKUSHA' },
+            { code: 'LISKANI' as const, label: 'LISKANI' },
+            { code: 'NA_TELE' as const, label: 'НА ТЕЛЕ' },
+          ] as const
+        ).filter((opt) => canUserEditBrand(currentUser, opt.code));
+        return (
+          <div
+            onClick={() => setNewScenarioModalOpen(false)}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-[18px] font-bold text-[#1D1D1F]">
-                Новый сценарий роста
-              </h3>
-              <button
-                type="button"
-                onClick={() => setNewScenarioModalOpen(false)}
-                className="h-8 w-8 rounded-full hover:bg-[#FAF8F4] flex items-center justify-center cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="text-[12px] text-[#6E6E73]">
-              Карточки моделей не дублируются — в новый сценарий копируются только плановые объёмы продаж и допущения.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                  Название сценария
-                </label>
-                <input
-                  type="text"
-                  placeholder="Например: LISKANI — базовый план 2028"
-                  value={draftScenTitle}
-                  onChange={(e) => setDraftScenTitle(e.target.value)}
-                  className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
-                />
+            <form
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={handleCreateNewScenario}
+              className="w-full max-w-md rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-[18px] font-bold text-[#1D1D1F]">
+                  Новый сценарий роста
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setNewScenarioModalOpen(false)}
+                  className="h-8 w-8 rounded-full hover:bg-[#FAF8F4] flex items-center justify-center cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
+              <p className="text-[12px] text-[#6E6E73]">
+                Карточки моделей не дублируются — в новый сценарий копируются только плановые объёмы продаж и допущения.
+              </p>
 
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="space-y-3">
                 <div>
                   <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Бренд сценария
-                  </label>
-                  <select
-                    value={draftScenBrand}
-                    onChange={(e) => {
-                      const nextBrand = normalizePortfolioBrandCode(e.target.value);
-                      setDraftScenBrand(nextBrand === 'ALL' ? 'BORNERS' : nextBrand);
-                      setDraftScenScope(nextBrand === 'BORNERS' ? 'BORNERS' : 'GROUP');
-                    }}
-                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
-                  >
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="FUKAI">FUKAI</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Год планирования
-                  </label>
-                  <select
-                    value={draftScenYear}
-                    onChange={(e) =>
-                      setDraftScenYear(Number(e.target.value) === 2028 ? 2028 : 2027)
-                    }
-                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
-                  >
-                    <option value={2027}>2027 год</option>
-                    <option value={2028}>2028 год</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                    Цель / мес (млн ₽)
+                    Название сценария
                   </label>
                   <input
-                    type="number"
-                    value={draftScenTargetMln}
-                    onChange={(e) =>
-                      setDraftScenTargetMln(Math.max(1, Number(e.target.value) || 50))
-                    }
-                    className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-bold"
+                    type="text"
+                    placeholder="Например: LISKANI — базовый план 2028"
+                    value={draftScenTitle}
+                    onChange={(e) => setDraftScenTitle(e.target.value)}
+                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px]"
                   />
+                </div>
+
+                <div className={`grid ${hasFinance ? 'grid-cols-3' : 'grid-cols-2'} gap-2.5`}>
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Бренд сценария
+                    </label>
+                    <select
+                      value={scenModalBrandCode}
+                      onChange={(e) => {
+                        const nextBrand = normalizePortfolioBrandCode(e.target.value);
+                        setDraftScenBrand(nextBrand === 'ALL' ? 'BORNERS' : nextBrand);
+                        setDraftScenScope(nextBrand === 'BORNERS' ? 'BORNERS' : 'GROUP');
+                      }}
+                      className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
+                    >
+                      {scenBrandOptions.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                      Год планирования
+                    </label>
+                    <select
+                      value={draftScenYear}
+                      onChange={(e) =>
+                        setDraftScenYear(Number(e.target.value) === 2028 ? 2028 : 2027)
+                      }
+                      className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold"
+                    >
+                      <option value={2027}>2027 год</option>
+                      <option value={2028}>2028 год</option>
+                    </select>
+                  </div>
+                  {hasFinance && (
+                    <div>
+                      <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                        Цель / мес (млн ₽)
+                      </label>
+                      <input
+                        type="number"
+                        value={draftScenTargetMln}
+                        onChange={(e) =>
+                          setDraftScenTargetMln(Math.max(1, Number(e.target.value) || 50))
+                        }
+                        className="w-full h-9 px-2.5 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-bold"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
+                    Основа плана (копирование без дублирования карточек, склада и заказов)
+                  </label>
+                  <select
+                    value={draftCopyFromScenarioId}
+                    onChange={(e) =>
+                      setDraftCopyFromScenarioId(Number(e.target.value))
+                    }
+                    className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px]"
+                  >
+                    <option value={0}>С нуля (пустой план без копирования)</option>
+                    {scenarios.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        Скопировать из: {s.title} ({s.year || 2027}
+                        {hasFinance ? ` · ${s.monthlyTargetMln} млн ₽ / мес` : ''})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="text-[11.5px] font-semibold text-[#1D1D1F]">
-                  Основа плана (копирование без дублирования карточек, склада и заказов)
-                </label>
-                <select
-                  value={draftCopyFromScenarioId}
-                  onChange={(e) =>
-                    setDraftCopyFromScenarioId(Number(e.target.value))
-                  }
-                  className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[12.5px]"
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setNewScenarioModalOpen(false)}
+                  className="h-9 px-4 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold cursor-pointer"
                 >
-                  <option value={0}>С нуля (пустой план без копирования)</option>
-                  {scenarios.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      Скопировать из: {s.title} ({s.year || 2027} · {s.monthlyTargetMln} млн ₽ / мес)
-                    </option>
-                  ))}
-                </select>
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Сохранить сценарий</span>
+                </button>
               </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setNewScenarioModalOpen(false)}
-                className="h-9 px-4 rounded-[10px] border border-[#DED8CC] text-[12.5px] font-semibold cursor-pointer"
-              >
-                Отмена
-              </button>
-              <button
-                type="submit"
-                className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
-              >
-                <Check className="h-3.5 w-3.5" />
-                <span>Сохранить сценарий</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            </form>
+          </div>
+        );
+      })()}
 
       {/* КОНСТРУКТОР PDF ТЕХНИЧЕСКОГО ЗАДАНИЯ (Тест 10) */}
       {pdfModalOpen && conceptForPdf && (
@@ -4912,7 +5370,10 @@ export function GrowthScenariosShowcase({
           concept={conceptForPdf}
           onClose={() => setPdfModalOpen(false)}
           onSaveToConcept={(updates) => {
-            if (isReadOnlyRole) return;
+            if (!canEditModel(activeModel)) return;
+            const safeConceptUpdates = hasCost
+              ? updates
+              : { ...updates, plannedUnitCost: undefined };
             const linked = concepts.find(
               (c) =>
                 !c.isArchived &&
@@ -4921,7 +5382,7 @@ export function GrowthScenariosShowcase({
                   c.code.trim().toUpperCase() === activeModel.code.trim().toUpperCase())
             );
             if (linked) {
-              updateConcept(linked.id, updates);
+              updateConcept(linked.id, safeConceptUpdates);
             }
 
             const v11Model = ensureModelUnifiedV11(activeModel);
@@ -4930,7 +5391,7 @@ export function GrowthScenariosShowcase({
                 ? Math.round(updates.packUnitsCount)
                 : v11Model.unitsInPack || 1;
             const nextUnitCostRub =
-              typeof updates.plannedUnitCost === 'number' && updates.plannedUnitCost > 0
+              hasCost && typeof updates.plannedUnitCost === 'number' && updates.plannedUnitCost > 0
                 ? Math.round(updates.plannedUnitCost * nextUnitsInPack)
                 : v11Model.unitCostRub;
             const nextFactoryName =

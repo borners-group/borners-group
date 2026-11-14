@@ -17,10 +17,17 @@ import {
 } from '@/lib/brandProductionConfig';
 
 export interface PdfInitialBlocksConfig {
+  photosFrontBack?: boolean;
   includePhotos?: boolean;
+  bilingualSpecs?: boolean;
+  includeBilingualSpecs?: boolean;
   includeSpecs?: boolean;
+  sizeMatrix?: boolean;
   includeSizeMatrix?: boolean;
+  unitAndTotalPrice?: boolean;
   includePricing?: boolean;
+  qualityAndHonestSign?: boolean;
+  includeQualityBlock?: boolean;
   includeTerms?: boolean;
   multiCurrency?: boolean;
 }
@@ -189,21 +196,32 @@ export function PdfConstructorModal({
 
   // Переключатели блоков: что именно отобразить в PDF перед скачиванием
   const [includePhotos, setIncludePhotos] = useState<boolean>(
-    initialBlocksConfig?.includePhotos ?? true
+    initialBlocksConfig?.photosFrontBack ?? initialBlocksConfig?.includePhotos ?? true
   );
   const [includeBilingualSpecs, setIncludeBilingualSpecs] = useState<boolean>(
-    initialBlocksConfig?.includeSpecs ?? true
+    initialBlocksConfig?.bilingualSpecs ??
+      initialBlocksConfig?.includeBilingualSpecs ??
+      initialBlocksConfig?.includeSpecs ??
+      true
   );
   const [includePricing, setIncludePricing] = useState<boolean>(
-    hasCostAccess ? (initialBlocksConfig?.includePricing ?? true) : false
+    hasCostAccess
+      ? (initialBlocksConfig?.unitAndTotalPrice ??
+          initialBlocksConfig?.includePricing ??
+          initialBlocksConfig?.multiCurrency ??
+          true)
+      : false
   );
   const [showRubInPdf, setShowRubInPdf] = useState<boolean>(false);
-  const [includeTotalSumColumn, setIncludeTotalSumColumn] = useState<boolean>(true);
+  const [includeTotalSumColumn, setIncludeTotalSumColumn] = useState<boolean>(hasCostAccess);
   const [includeSizeMatrix, setIncludeSizeMatrix] = useState<boolean>(
-    initialBlocksConfig?.includeSizeMatrix ?? true
+    initialBlocksConfig?.sizeMatrix ?? initialBlocksConfig?.includeSizeMatrix ?? true
   );
   const [includeFactoryTerms, setIncludeFactoryTerms] = useState<boolean>(
-    initialBlocksConfig?.includeTerms ?? true
+    initialBlocksConfig?.qualityAndHonestSign ??
+      initialBlocksConfig?.includeQualityBlock ??
+      initialBlocksConfig?.includeTerms ??
+      true
   );
   const effectiveIncludePricing = includePricing && hasCostAccess;
 
@@ -388,8 +406,33 @@ export function PdfConstructorModal({
       paymentTerms,
     };
 
+    const existingGallery = concept.galleryPhotos || [];
+    const frontGalleryEntry = {
+      id: existingGallery[0]?.id || `gp-front-${concept.id}`,
+      url: frontPhotoUrl,
+      caption: frontCaption || existingGallery[0]?.caption || 'Лицевой вид',
+    };
+    const nextGalleryPhotos = [...existingGallery];
+    nextGalleryPhotos[0] = frontGalleryEntry;
+    if (backPhotoUrl && backPhotoUrl !== existingGallery[1]?.url) {
+      nextGalleryPhotos[1] = {
+        id: existingGallery[1]?.id || `gp-back-${Date.now()}`,
+        url: backPhotoUrl,
+        caption:
+          backCaption ||
+          prodProfile.defaultDetailCaptionRu ||
+          'Детали конструкции / вид сзади',
+      };
+    } else if (existingGallery[1] && backCaption) {
+      nextGalleryPhotos[1] = {
+        ...existingGallery[1],
+        caption: backCaption,
+      };
+    }
+
     const updates: Partial<ProductConcept> = {
       imageUrl: frontPhotoUrl,
+      galleryPhotos: nextGalleryPhotos,
       ...(hasCostAccess ? { plannedUnitCost: currencyMetrics.unitRub } : {}),
       packUnitsCount: unitsPerPack,
       supplierName: factoryName,
@@ -604,12 +647,12 @@ export function PdfConstructorModal({
       title: docTitle,
       subtitleZh: includeFactoryTerms
         ? `生产工厂：${factoryNameZh} · 交货日期：${plannedReadyDate}${
-            includePricing
+            effectiveIncludePricing
               ? ` · 订单总额：¥ ${currencyMetrics.totalCny.toLocaleString('ru-RU')} / $ ${currencyMetrics.totalUsd.toLocaleString('ru-RU')}`
               : ''
           }`
         : `款号：${concept.code} · 标准：AQL 1.5`,
-      subtitle: includePricing
+      subtitle: effectiveIncludePricing
         ? `Фабрика: ${factoryName} · Сумма партии: ¥ ${currencyMetrics.totalCny.toLocaleString(
             'ru-RU'
           )} / $ ${currencyMetrics.totalUsd.toLocaleString('ru-RU')}${
@@ -631,10 +674,10 @@ export function PdfConstructorModal({
         },
         {
           label: '单价 · Цена 1 ед.',
-          value: includePricing
+          value: effectiveIncludePricing
             ? `¥${currencyMetrics.unitCny} · $${currencyMetrics.unitUsd}`
             : '隐藏价格',
-          subValueRu: includePricing
+          subValueRu: effectiveIncludePricing
             ? showRubInPdf
               ? `${currencyMetrics.unitRub} ₽ / ед.`
               : 'За 1 ед. (CNY / USD)'
@@ -642,10 +685,10 @@ export function PdfConstructorModal({
         },
         {
           label: '总数量及金额 · Тираж и сумма',
-          value: includePricing
+          value: effectiveIncludePricing
             ? `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 · ¥${currencyMetrics.totalCny.toLocaleString('ru-RU')}`
             : `${currencyMetrics.totalUnits.toLocaleString('ru-RU')} 件 (${currencyMetrics.totalPacks.toLocaleString('ru-RU')} 组)`,
-          subValueRu: includePricing
+          subValueRu: effectiveIncludePricing
             ? showRubInPdf
               ? `$${currencyMetrics.totalUsd.toLocaleString('ru-RU')} · ${currencyMetrics.totalRub.toLocaleString('ru-RU')} ₽`
               : `${currencyMetrics.totalPacks.toLocaleString('ru-RU')} (${prodProfile.packUnitLabelRu.toLowerCase()}) · $${currencyMetrics.totalUsd.toLocaleString('ru-RU')}`
@@ -658,7 +701,7 @@ export function PdfConstructorModal({
       backPhotoCaption: backCaption,
       sections: sectionsToRender,
       footerRight: `${concept.code}${
-        includePricing
+        effectiveIncludePricing
           ? ` · ¥${currencyMetrics.totalCny.toLocaleString('ru-RU')} / $${currencyMetrics.totalUsd.toLocaleString('ru-RU')}${
               showRubInPdf
                 ? ` / ${currencyMetrics.totalRub.toLocaleString('ru-RU')}₽`
@@ -767,10 +810,10 @@ export function PdfConstructorModal({
                     onClick={() => {
                       setIncludePhotos(true);
                       setIncludeBilingualSpecs(true);
-                      setIncludePricing(true);
+                      setIncludePricing(hasCostAccess);
                       setIncludeSizeMatrix(true);
                       setIncludeFactoryTerms(true);
-                      setIncludeTotalSumColumn(true);
+                      setIncludeTotalSumColumn(hasCostAccess);
                     }}
                     className="px-2.5 py-1 rounded-lg bg-[#1D1D1F] text-white text-[11px] font-semibold cursor-pointer"
                   >
@@ -781,7 +824,7 @@ export function PdfConstructorModal({
                     onClick={() => {
                       setIncludePhotos(true);
                       setIncludeBilingualSpecs(true);
-                      setIncludePricing(true);
+                      setIncludePricing(hasCostAccess);
                       setIncludeSizeMatrix(true);
                       setIncludeFactoryTerms(true);
                       setShowRubInPdf(false);

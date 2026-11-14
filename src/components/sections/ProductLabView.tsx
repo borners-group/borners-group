@@ -52,6 +52,7 @@ import {
   useLiveScenarioPortfolio,
 } from '@/lib/useLiveScenarioPortfolio';
 import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import {
   buildConceptPatchFromScenarioModel,
   findLinkedScenarioModelForConcept,
@@ -419,12 +420,65 @@ export function ProductLabView() {
     setActiveCardTab(tab || stageToTabId(norm));
   };
 
+  const draftFlusherRef = useRef<(() => Partial<ProductConcept> | null) | null>(null);
+
+  const resolveDefaultFactoryForProfile = (
+    profile: ReturnType<typeof getBrandProductionProfile>
+  ): string =>
+    (profile as { defaultFactoryNameEn?: string }).defaultFactoryNameEn ||
+    (profile.brandCode === 'NA_TELE'
+      ? 'Shantou Seamless Intimate Co.'
+      : profile.brandCode === 'AKUSHA'
+      ? 'Wenzhou Akusha Footwear Co.'
+      : profile.brandCode === 'LISKANI'
+      ? 'Shaoxing Keqiao Home Textile'
+      : 'Guangdong Apex Intimate');
+
+  const handleSaveConceptAndSync = (
+    conceptToSave: ProductConcept,
+    closeAfterSave = false
+  ) => {
+    const flushed =
+      selectedConceptId === conceptToSave.id ? draftFlusherRef.current?.() : null;
+    const savePatch: Partial<ProductConcept> = {
+      name: conceptToSave.name,
+      whatAttracted: conceptToSave.whatAttracted,
+      ideaDescription: conceptToSave.ideaDescription,
+      ...(flushed || {}),
+    };
+    const updatedSnapshot: ProductConcept = {
+      ...conceptToSave,
+      ...savePatch,
+    };
+    updateConcept(conceptToSave.id, savePatch);
+    if (shouldAutoSyncConcept(updatedSnapshot)) {
+      handleSyncConceptToCatalog(updatedSnapshot, true);
+    }
+    notify(
+      'success',
+      '✓ Карточка сохранена',
+      `${conceptToSave.code} · ${conceptToSave.name}`
+    );
+    if (closeAfterSave) {
+      setSelectedConceptId(null);
+    }
+  };
+
   // Короткая проверка перед сменой этапа (Стр. 3 и Сценарий №3 PDF)
-  const attemptStageTransition = (concept: ProductConcept, targetStage: ConceptStage) => {
-    if (!canUserEditBrand(currentUser, normalizeLabBrandCode(concept.brandId))) {
+  const attemptStageTransition = (rawConcept: ProductConcept, targetStage: ConceptStage) => {
+    if (!canUserEditBrand(currentUser, normalizeLabBrandCode(rawConcept.brandId))) {
       notify('error', 'Недостаточно прав для изменения этапа этой модели');
       return;
     }
+    const flushed =
+      selectedConceptId === rawConcept.id ? draftFlusherRef.current?.() : null;
+    if (flushed) {
+      updateConcept(rawConcept.id, flushed);
+    }
+    const concept: ProductConcept = flushed
+      ? { ...rawConcept, ...flushed }
+      : rawConcept;
+
     const normTarget = normalizeConceptStageToSeven(targetStage);
     const normCurrent = normalizeConceptStageToSeven(concept.stage);
 
@@ -438,6 +492,15 @@ export function ProductLabView() {
 
     const check = validateRnDStageTransition(concept, targetStage, currentUser);
     if (!check.allowed) {
+      const gateProfile = getBrandProductionProfile(concept.brandId, concept.name);
+      const defaultPacksCount =
+        gateProfile.brandCode === 'LISKANI'
+          ? '500'
+          : gateProfile.brandCode === 'AKUSHA'
+          ? '600'
+          : gateProfile.brandCode === 'NA_TELE'
+          ? '500'
+          : '1500';
       setGateFillForm({
         ownerId: concept.ownerId || currentUser.id,
         whatAttracted: concept.whatAttracted || concept.ideaDescription || '',
@@ -448,20 +511,20 @@ export function ProductLabView() {
           '',
         risks:
           concept.analysisReport?.openQuestionsAndRisks ||
-          'Проверить посадку и усадку после стирки',
+          'Проверить посадку и сохранение формы',
         supplierName:
           concept.supplierName ||
           concept.samples?.[0]?.factoryName ||
-          `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`,
+          resolveDefaultFactoryForProfile(gateProfile),
         sampleComposition:
-          concept.samples?.[0]?.materialAndComposition || 'Хлопок 95% + Эластан 5%',
+          concept.samples?.[0]?.materialAndComposition || gateProfile.defaultMaterialRu,
         sampleUnitCost: String(concept.plannedUnitCost || 340),
         testSummary:
           concept.testResults && concept.testResults !== 'Нет данных'
             ? concept.testResults
-            : 'Посадка, резинка, стирка и пошив проверены — образец прошёл тест',
+            : 'Посадка, швы, износ и качество пошива проверены — образец прошёл тест',
         approvalJustification: 'Образец и тесты проверены, утверждено в производство',
-        orderTotalPacks: '1500',
+        orderTotalPacks: defaultPacksCount,
         launchStatus: concept.launchSalesStatus || 'in_sale',
       });
       setStageGateModal({
@@ -518,10 +581,12 @@ export function ProductLabView() {
     const normalizedTarget = normalizeConceptStageToSeven(targetStage);
     const todayIso = new Date().toISOString().slice(0, 10);
     const nowTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const profile = getBrandProductionProfile(concept.brandId, concept.name);
+    const defaultProfileFactory = resolveDefaultFactoryForProfile(profile);
     const resolvedSupplier =
       gateFillForm.supplierName.trim() ||
       concept.supplierName ||
-      `${FACTORY_DIRECTORY[0].name} (${FACTORY_DIRECTORY[0].country})`;
+      defaultProfileFactory;
     const parsedUnitCost =
       Number(String(gateFillForm.sampleUnitCost).replace(/[^\d]/g, '')) ||
       concept.plannedUnitCost ||
@@ -578,7 +643,29 @@ export function ProductLabView() {
         (!concept.samples || concept.samples.length === 0))
     ) {
       const compText =
-        gateFillForm.sampleComposition.trim() || 'Хлопок 95% + Эластан 5%';
+        gateFillForm.sampleComposition.trim() || profile.defaultMaterialRu;
+      const defaultDensityGsm =
+        profile.brandCode === 'NA_TELE'
+          ? 145
+          : profile.brandCode === 'AKUSHA'
+          ? 0
+          : profile.brandCode === 'LISKANI'
+          ? 260
+          : 180;
+      const defaultCompRows =
+        profile.brandCode === 'NA_TELE'
+          ? [
+              { material: 'Полиамид', pct: 78 },
+              { material: 'Эластан', pct: 22 },
+            ]
+          : profile.brandCode === 'AKUSHA'
+          ? [{ material: 'Натуральная кожа', pct: 100 }]
+          : profile.brandCode === 'LISKANI'
+          ? [{ material: 'Блэкаут димаут', pct: 100 }]
+          : [
+              { material: 'Хлопок', pct: 95 },
+              { material: 'Эластан', pct: 5 },
+            ];
       patch.sampleStatus = 'Образец получен на тест';
       patch.plannedUnitCost = parsedUnitCost;
       patch.samples = [
@@ -593,12 +680,9 @@ export function ProductLabView() {
           status: 'testing',
           photos: concept.imageUrl ? [concept.imageUrl] : [],
           materialAndComposition: compText,
-          compositionRows: [
-            { material: 'Хлопок', pct: 95 },
-            { material: 'Эластан', pct: 5 },
-          ],
-          densityGsm: 180,
-          sizeTested: 'M / L',
+          compositionRows: defaultCompRows,
+          densityGsm: defaultDensityGsm,
+          sizeTested: profile.sizes.slice(0, 2).join(' / ') || 'M',
           color: 'Базовый',
           measurementsNote: 'По спецификации',
           sampleCostRub: 3500,
@@ -660,21 +744,29 @@ export function ProductLabView() {
 
     if (normalizedTarget === 'LAUNCH') {
       const packsQty =
-        Number(String(gateFillForm.orderTotalPacks).replace(/[^\d]/g, '')) || 1500;
-      const defaultUnitsPerPack =
-        normalizeLabBrandCode(concept.brandId) === 'NA_TELE' ||
-        normalizeLabBrandCode(concept.brandId) === 'AKUSHA' ||
-        normalizeLabBrandCode(concept.brandId) === 'LISKANI' ||
-        normalizeLabBrandCode(concept.brandId) === 'FUKAI'
-          ? 1
-          : 3;
+        Number(String(gateFillForm.orderTotalPacks).replace(/[^\d]/g, '')) || 500;
       const unitsPerPack =
         concept.packUnitsCount && concept.packUnitsCount > 0
           ? concept.packUnitsCount
-          : defaultUnitsPerPack;
+          : profile.defaultPackUnits;
       patch.launchSalesStatus = gateFillForm.launchStatus || 'in_sale';
       patch.actualLaunchDate = concept.actualLaunchDate || todayIso;
       if (!concept.productionOrders || concept.productionOrders.length === 0) {
+        const dynamicPacksBySize: Record<string, number> = {};
+        let allocated = 0;
+        const sizesList = profile.sizes.length > 0 ? profile.sizes : ['S', 'M', 'L', 'XL'];
+        sizesList.forEach((sz, idx) => {
+          if (idx === sizesList.length - 1) {
+            dynamicPacksBySize[sz] = Math.max(0, packsQty - allocated);
+          } else {
+            const share =
+              profile.sizeSharesPct[sz] ?? Math.round(100 / Math.max(1, sizesList.length));
+            const count = Math.max(1, Math.round((packsQty * share) / 100));
+            dynamicPacksBySize[sz] = count;
+            allocated += count;
+          }
+        });
+
         patch.productionOrders = [
           {
             id: `po-gate-${Date.now()}`,
@@ -687,28 +779,14 @@ export function ProductLabView() {
               'Версия 1',
             internalStatus: 'order_placed',
             materialAndColors:
-              gateFillForm.sampleComposition.trim() || 'Хлопок 95% + Эластан 5%',
-            sizeBreakdown: {
-              S: Math.round(packsQty * 0.1),
-              M: Math.round(packsQty * 0.25),
-              L: Math.round(packsQty * 0.3),
-              XL: Math.round(packsQty * 0.2),
-              XXL: Math.round(packsQty * 0.15),
-            },
-            packsBySize: {
-              S: Math.round(packsQty * 0.1),
-              M: Math.round(packsQty * 0.2),
-              L: Math.round(packsQty * 0.25),
-              XL: Math.round(packsQty * 0.2),
-              '2XL': Math.round(packsQty * 0.15),
-              '3XL': Math.round(packsQty * 0.05),
-              '4XL': Math.round(packsQty * 0.05),
-            },
+              gateFillForm.sampleComposition.trim() || profile.defaultMaterialRu,
+            sizeBreakdown: { ...dynamicPacksBySize },
+            packsBySize: { ...dynamicPacksBySize },
             unitsPerPack,
             packColorComposition: 'Базовый ассортимент комплекта',
             totalUnits: packsQty * unitsPerPack,
-            packConfiguration: `${unitsPerPack} шт. в наборе`,
-            packagingDetails: 'Фирменный матовый зип-пакет со штрихкодом EAN-13 / Честный Знак',
+            packConfiguration: `${unitsPerPack} ${profile.itemsUnitLabelRu.toLowerCase()} (${profile.packUnitLabelRu.toLowerCase()})`,
+            packagingDetails: 'Фирменная упаковка со штрихкодом EAN-13 / Честный Знак',
             unitPrice: parsedUnitCost,
             currency: 'RUB',
             plannedReadyDate: concept.targetLaunchDate || '2027-02-15',
@@ -1456,7 +1534,7 @@ export function ProductLabView() {
                                       );
                                     }}
                                     title="Переместить в этап..."
-                                    className="hidden group-hover:block focus:block text-[11px] text-[#181715] bg-[#FAF8F5] border border-[#DCD6CC] rounded-[5px] px-1.5 py-0.5 cursor-pointer transition max-w-[118px] truncate"
+                                    className="block sm:hidden sm:group-hover:block focus:block text-[11px] text-[#181715] bg-[#FAF8F5] border border-[#DCD6CC] rounded-[5px] px-1.5 py-0.5 cursor-pointer transition max-w-[118px] truncate"
                                   >
                                     {SEVEN_KANBAN_STAGES.map((st) => (
                                       <option key={st} value={st}>
@@ -1667,26 +1745,7 @@ export function ProductLabView() {
                   {canEditActiveConcept && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const savePatch: Partial<ProductConcept> = {
-                          name: activeConcept.name,
-                          whatAttracted: activeConcept.whatAttracted,
-                          ideaDescription: activeConcept.ideaDescription,
-                        };
-                        const updatedSnapshot: ProductConcept = {
-                          ...activeConcept,
-                          ...savePatch,
-                        };
-                        updateConcept(activeConcept.id, savePatch);
-                        if (shouldAutoSyncConcept(updatedSnapshot)) {
-                          handleSyncConceptToCatalog(updatedSnapshot, true);
-                        }
-                        notify(
-                          'success',
-                          '✓ Карточка сохранена',
-                          `${activeConcept.code} · ${activeConcept.name}`
-                        );
-                      }}
+                      onClick={() => handleSaveConceptAndSync(activeConcept, false)}
                       className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
                     >
                       <Check className="h-4 w-4" />
@@ -1923,6 +1982,10 @@ export function ProductLabView() {
                         value={normalizeLabBrandCode(activeConcept.brandId)}
                         onChange={(e) => {
                           const nextBrand = normalizeLabBrandCode(e.target.value);
+                          if (!canUserEditBrand(currentUser, nextBrand)) {
+                            notify('error', 'Недостаточно прав для привязки к этому бренду');
+                            return;
+                          }
                           updateConcept(activeConcept.id, { brandId: nextBrand });
                           if (
                             brandFilter !== 'ALL' &&
@@ -1938,11 +2001,25 @@ export function ProductLabView() {
                         }}
                         className="text-[15px] font-bold text-[#171717] bg-transparent outline-none cursor-pointer"
                       >
-                        <option value="BORNERS">BORNERS</option>
-                        <option value="NA_TELE">НА ТЕЛЕ</option>
-                        <option value="FUKAI">FUKAI</option>
-                        <option value="AKUSHA">AKUSHA</option>
-                        <option value="LISKANI">LISKANI</option>
+                        {(
+                          [
+                            { code: 'BORNERS', label: 'BORNERS' },
+                            { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
+                            { code: 'FUKAI', label: 'FUKAI' },
+                            { code: 'AKUSHA', label: 'AKUSHA' },
+                            { code: 'LISKANI', label: 'LISKANI' },
+                          ] as const
+                        )
+                          .filter(
+                            (b) =>
+                              canUserEditBrand(currentUser, b.code) ||
+                              normalizeLabBrandCode(activeConcept.brandId) === b.code
+                          )
+                          .map((b) => (
+                            <option key={b.code} value={b.code}>
+                              {b.label}
+                            </option>
+                          ))}
                       </select>
                       <span className="text-[14px] font-semibold text-[#525252]">
                         · {getUserShortName(activeConcept.authorId || currentUser.id)}
@@ -2156,6 +2233,9 @@ export function ProductLabView() {
                 }
                 handleSyncConceptToCatalog(nextConcept, true);
               }}
+              onRegisterDraftFlusher={(fn) => {
+                draftFlusherRef.current = fn;
+              }}
               onCreateTaskForConcept={(title, assigneeId, deadline) => {
                 createTask({
                   title,
@@ -2197,26 +2277,7 @@ export function ProductLabView() {
                   <>
                     <button
                       type="button"
-                      onClick={() => {
-                        const savePatch: Partial<ProductConcept> = {
-                          name: activeConcept.name,
-                          whatAttracted: activeConcept.whatAttracted,
-                          ideaDescription: activeConcept.ideaDescription,
-                        };
-                        const updatedSnapshot: ProductConcept = {
-                          ...activeConcept,
-                          ...savePatch,
-                        };
-                        updateConcept(activeConcept.id, savePatch);
-                        if (shouldAutoSyncConcept(updatedSnapshot)) {
-                          handleSyncConceptToCatalog(updatedSnapshot, true);
-                        }
-                        notify(
-                          'success',
-                          '✓ Карточка сохранена',
-                          `${activeConcept.code} · ${activeConcept.name}`
-                        );
-                      }}
+                      onClick={() => handleSaveConceptAndSync(activeConcept, false)}
                       className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13.5px] font-bold transition cursor-pointer shadow-xs"
                     >
                       <Check className="h-4 w-4" />
@@ -2224,27 +2285,7 @@ export function ProductLabView() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const savePatch: Partial<ProductConcept> = {
-                          name: activeConcept.name,
-                          whatAttracted: activeConcept.whatAttracted,
-                          ideaDescription: activeConcept.ideaDescription,
-                        };
-                        const updatedSnapshot: ProductConcept = {
-                          ...activeConcept,
-                          ...savePatch,
-                        };
-                        updateConcept(activeConcept.id, savePatch);
-                        if (shouldAutoSyncConcept(updatedSnapshot)) {
-                          handleSyncConceptToCatalog(updatedSnapshot, true);
-                        }
-                        notify(
-                          'success',
-                          '✓ Карточка сохранена',
-                          `${activeConcept.code} · ${activeConcept.name}`
-                        );
-                        setSelectedConceptId(null);
-                      }}
+                      onClick={() => handleSaveConceptAndSync(activeConcept, true)}
                       className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13.5px] font-bold transition cursor-pointer"
                     >
                       <span>Сохранить и закрыть</span>
@@ -2951,7 +2992,7 @@ export function ProductLabView() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                        Объём первой партии (наборов)
+                        Объём первой партии ({getBrandProductionProfile(stageGateModal.concept.brandId, stageGateModal.concept.name).packUnitLabelRu.toLowerCase()})
                       </label>
                       <input
                         type="text"

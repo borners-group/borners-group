@@ -1060,22 +1060,35 @@ export function computeModelScenarioMetrics(
   model: ScenarioModelSpec,
   scenario: GrowthScenarioDef
 ) {
-  const plan =
-    model.plansByScenario[scenario.id] ||
-    model.plansByScenario[AKUSHA_2027_SCENARIO_ID] ||
-    model.plansByScenario[202705] ||
-    model.plansByScenario[1] || {
-      scenarioId: scenario.id,
-      monthlyPacks: Array(12).fill(0),
-      monthlyPricesRub: Array(12).fill(model.retailPriceRub),
-      monthlyReceiptsPacks: Array(12).fill(0),
-      initialStockPacks: 0,
-      firstOrderPacks: 5000,
-      nextOrderDateLabel: '15 мая 2027',
-      salesStartMonthIdx: 2,
-      warehouseArrivalMonthIdx: 2,
-      warehouseArrivalDateLabel: '18 марта',
-    };
+  const plan: ScenarioCommercialPlan =
+    scenario.id === -1
+      ? {
+          scenarioId: -1,
+          monthlyPacks: Array<number>(12).fill(0),
+          monthlyPricesRub: Array<number>(12).fill(model.retailPriceRub),
+          monthlyReceiptsPacks: Array<number>(12).fill(0),
+          initialStockPacks: 0,
+          firstOrderPacks: 0,
+          nextOrderDateLabel: 'Нет активного сценария',
+          salesStartMonthIdx: 0,
+          warehouseArrivalMonthIdx: 0,
+          warehouseArrivalDateLabel: 'Нет активного сценария',
+        }
+      : model.plansByScenario[scenario.id] ||
+        model.plansByScenario[AKUSHA_2027_SCENARIO_ID] ||
+        model.plansByScenario[202705] ||
+        model.plansByScenario[1] || {
+          scenarioId: scenario.id,
+          monthlyPacks: Array(12).fill(0),
+          monthlyPricesRub: Array(12).fill(model.retailPriceRub),
+          monthlyReceiptsPacks: Array(12).fill(0),
+          initialStockPacks: 0,
+          firstOrderPacks: 5000,
+          nextOrderDateLabel: '15 мая 2027',
+          salesStartMonthIdx: 2,
+          warehouseArrivalMonthIdx: 2,
+          warehouseArrivalDateLabel: '18 марта',
+        };
 
   const buyoutRatePct = inferDefaultBuyoutRatePctForModel(model, plan.buyoutRatePct);
   const orderMultiplier =
@@ -1346,6 +1359,36 @@ export function autoDistributeScenarioByPriority(
   const targetDecRub = Math.round(targetMln * 1_000_000);
   const targetMonthIdx = scenario.targetMonthIdx ?? 11;
 
+  const resolveModelBrand = (m: ScenarioModelSpec): string => {
+    const customU = (m.customBrandLabel || '').trim().toUpperCase();
+    const codeU = (m.code || '').trim().toUpperCase();
+    if (
+      m.brandId === 'NA_TELE' ||
+      customU.includes('НА ТЕЛЕ') ||
+      customU.includes('NA_TELE')
+    ) {
+      return 'NA_TELE';
+    }
+    if (
+      customU.includes('LISKANI') ||
+      customU.includes('LISCANI') ||
+      codeU.startsWith('LSC-')
+    ) {
+      return 'LISKANI';
+    }
+    if (
+      customU.includes('AKUSHA') ||
+      customU.includes('АКУША') ||
+      codeU.startsWith('AKU-')
+    ) {
+      return 'AKUSHA';
+    }
+    if (customU.includes('FUKAI') || isUnverifiedActingSku(m.code)) {
+      return 'FUKAI';
+    }
+    return 'BORNERS';
+  };
+
   // Определяем модели, участвующие в сценарии
   const isIncludedInScenario = (m: ScenarioModelSpec) => {
     if (m.launchStatus === 'В архиве') return false;
@@ -1358,6 +1401,21 @@ export function autoDistributeScenarioByPriority(
     ) {
       return false;
     }
+    if (scenario.ownerBrandCode && scenario.ownerBrandCode !== 'ALL') {
+      const rawOwner = scenario.ownerBrandCode.trim().toUpperCase();
+      const ownerBrand =
+        rawOwner === 'LISCANI'
+          ? 'LISKANI'
+          : rawOwner === 'НА ТЕЛЕ'
+          ? 'NA_TELE'
+          : rawOwner === 'АКУША'
+          ? 'AKUSHA'
+          : rawOwner;
+      return resolveModelBrand(m) === ownerBrand;
+    }
+    const mb = resolveModelBrand(m);
+    if (mb === 'AKUSHA' || mb === 'LISKANI') return false;
+    if (mb === 'NA_TELE') return scenario.includedBrands.includes('NA_TELE');
     if (scenario.id === 1 && !includeGroupPortfolioInS1 && isUnverifiedActingSku(m.code)) {
       return false;
     }
@@ -1396,7 +1454,11 @@ export function autoDistributeScenarioByPriority(
       continue;
     }
 
-    const plan = m.plansByScenario[scenario.id] || m.plansByScenario[1];
+    const plan =
+      m.plansByScenario[scenario.id] ||
+      m.plansByScenario[AKUSHA_2027_SCENARIO_ID] ||
+      m.plansByScenario[202705] ||
+      m.plansByScenario[1];
     const s1Var =
       getS1NewVariantByCodeOrId(m.code) || getS1NewVariantByCodeOrId(m.id);
     const salesStartMonthIdx = s1Var
@@ -1456,7 +1518,11 @@ export function autoDistributeScenarioByPriority(
   return models.map((m) => {
     const nextPacks = updatedMap.get(m.id);
     if (!nextPacks) return m;
-    const prevPlan = m.plansByScenario[scenario.id] || m.plansByScenario[1];
+    const prevPlan =
+      m.plansByScenario[scenario.id] ||
+      m.plansByScenario[AKUSHA_2027_SCENARIO_ID] ||
+      m.plansByScenario[202705] ||
+      m.plansByScenario[1];
     const isAkusha =
       (m.customBrandLabel || '').toUpperCase().includes('AKUSHA') ||
       (m.code || '').toUpperCase().startsWith('AKU-');

@@ -1224,14 +1224,23 @@ export function SkuProcurementMvpWorkbench({
     batchOrOrder: RecommendedProcurementBatch | ApprovedPurchaseOrder,
     fileSuffix: string
   ) => {
-    const csv = serializeSingleBatchFactoryOrderDocumentCsv(model, batchOrOrder);
+    const csv = serializeSingleBatchFactoryOrderDocumentCsv(
+      model,
+      batchOrOrder,
+      undefined,
+      { canViewCostPrice: hasCost }
+    );
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `Zakaz_Fabrike_${model.code}_${fileSuffix}.csv`;
+    if (document.body) {
+      document.body.appendChild(a);
+    }
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     triggerSavedIndicator('Выгружен заказ фабрике');
   };
 

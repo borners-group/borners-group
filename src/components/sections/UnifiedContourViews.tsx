@@ -338,7 +338,8 @@ function ScenarioContourHeader({
   eligibleCount: number;
   rightSlot?: React.ReactNode;
 }) {
-  const { brandFilter, setBrandFilter } = usePlatform();
+  const { brandFilter, setBrandFilter, currentUser } = usePlatform();
+  const hasFinance = canUserViewFinance(currentUser);
 
   return (
     <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_12px_-3px_rgba(15,23,42,0.04)]">
@@ -396,7 +397,9 @@ function ScenarioContourHeader({
               >
                 {sc.id === ACTING_2027_SCENARIO_ID
                   ? 'Исходный план (7 SKU)'
-                  : `${sc.title} · ${sc.monthlyTargetMln} млн ₽/мес`}
+                  : hasFinance
+                  ? `${sc.title} · ${sc.monthlyTargetMln} млн ₽/мес`
+                  : sc.title}
               </button>
             );
           })}
@@ -473,7 +476,7 @@ function ScenarioContourHeader({
               onClick={() => onSelectScenario(2, 'NA_TELE')}
               className="h-8 px-3 rounded-[8px] bg-[#EAE9E2] hover:bg-[#DFDED6] text-[#141413] border border-[#CECDC4] text-[11.5px] font-semibold cursor-pointer"
             >
-              Переключить на Сценарий №2 (150 млн)
+              {hasFinance ? 'Переключить на Сценарий №2 (150 млн)' : 'Переключить на Сценарий №2'}
             </button>
             <button
               type="button"
@@ -510,11 +513,22 @@ export function SalesMatrixContourView() {
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
+  const hasFinance = canUserViewFinance(currentUser);
   const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
-  const [unitMode, setUnitMode] = useState<'rub' | 'packs'>('rub');
+  const [unitMode, setUnitMode] = useState<'rub' | 'packs'>(() =>
+    canUserViewFinance(currentUser) ? 'rub' : 'packs'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'default' | 'dec_desc' | 'year_desc' | 'priority'>('dec_desc');
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hasFinance && unitMode === 'rub') {
+      setUnitMode('packs');
+    }
+  }, [hasFinance, unitMode]);
+
+  const effectiveUnitMode: 'rub' | 'packs' = hasFinance ? unitMode : 'packs';
 
   useEffect(() => {
     if (brandFilter === 'ALL') {
@@ -605,31 +619,36 @@ export function SalesMatrixContourView() {
         });
 
     if (sortBy === 'dec_desc') {
-      filtered.sort(
-        (a, b) =>
-          computeModelScenarioMetrics(b.model, b.scenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a.model, a.scenario).targetMonthRevenueRub
-      );
+      filtered.sort((a, b) => {
+        const metB = computeModelScenarioMetrics(b.model, b.scenario);
+        const metA = computeModelScenarioMetrics(a.model, a.scenario);
+        return hasFinance
+          ? metB.targetMonthRevenueRub - metA.targetMonthRevenueRub
+          : metB.targetMonthPacks - metA.targetMonthPacks;
+      });
     } else if (sortBy === 'year_desc') {
-      filtered.sort(
-        (a, b) =>
-          computeModelScenarioMetrics(b.model, b.scenario).annualRevenueRub -
-          computeModelScenarioMetrics(a.model, a.scenario).annualRevenueRub
-      );
+      filtered.sort((a, b) => {
+        const metB = computeModelScenarioMetrics(b.model, b.scenario);
+        const metA = computeModelScenarioMetrics(a.model, a.scenario);
+        return hasFinance
+          ? metB.annualRevenueRub - metA.annualRevenueRub
+          : metB.annualPacks - metA.annualPacks;
+      });
     } else if (sortBy === 'priority') {
       filtered.sort((a, b) => {
         const wDiff =
           PRIORITY_WEIGHTS[getModelPriority(b.model)] - PRIORITY_WEIGHTS[getModelPriority(a.model)];
         if (wDiff !== 0) return wDiff;
-        return (
-          computeModelScenarioMetrics(b.model, b.scenario).targetMonthRevenueRub -
-          computeModelScenarioMetrics(a.model, a.scenario).targetMonthRevenueRub
-        );
+        const metB = computeModelScenarioMetrics(b.model, b.scenario);
+        const metA = computeModelScenarioMetrics(a.model, a.scenario);
+        return hasFinance
+          ? metB.targetMonthRevenueRub - metA.targetMonthRevenueRub
+          : metB.targetMonthPacks - metA.targetMonthPacks;
       });
     }
 
     return filtered;
-  }, [scopedEntries, searchQuery, sortBy]);
+  }, [scopedEntries, searchQuery, sortBy, hasFinance]);
 
   const switcherEntries = visibleEntries.length > 0 ? visibleEntries : scopedEntries;
 
@@ -688,6 +707,7 @@ export function SalesMatrixContourView() {
   }, [editingModel, editingIdx, switcherEntries]);
 
   const handleExportCsv = () => {
+    if (!hasFinance) return;
     const rows = isHoldingAllBrandsActive
       ? scopedEntries.flatMap(({ model, scenario }) =>
           exportStructuredScenarioPlan([model], scenario)
@@ -701,8 +721,12 @@ export function SalesMatrixContourView() {
     a.download = isHoldingAllBrandsActive
       ? 'borners_sales_matrix_holding_5brands_2027.csv'
       : `borners_sales_matrix_s${currentScenario.id}_2027.csv`;
+    if (document.body) {
+      document.body.appendChild(a);
+    }
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     notify(
       'success',
       isHoldingAllBrandsActive
@@ -755,10 +779,14 @@ export function SalesMatrixContourView() {
               >
                 {switcherEntries.map(({ model: m, scenario: mScen }, idx) => {
                   const met = computeModelScenarioMetrics(m, mScen);
+                  const unitCfg = getBrandUnitConfig(m);
                   return (
                     <option key={m.id} value={m.id}>
                       {idx + 1}/{switcherEntries.length} · {m.code} — {m.title} (
-                      {(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн/дек)
+                      {hasFinance
+                        ? `${(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн/дек`
+                        : `${met.targetMonthPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}/дек`}
+                      )
                     </option>
                   );
                 })}
@@ -853,22 +881,24 @@ export function SalesMatrixContourView() {
               </div>
             )}
             <div className="inline-flex rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[12px] font-medium">
-              <button
-                type="button"
-                onClick={() => setUnitMode('rub')}
-                className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
-                  unitMode === 'rub'
-                    ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
-                    : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
-                }`}
-              >
-                Млн ₽
-              </button>
+              {hasFinance && (
+                <button
+                  type="button"
+                  onClick={() => setUnitMode('rub')}
+                  className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
+                    effectiveUnitMode === 'rub'
+                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
+                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
+                  }`}
+                >
+                  Млн ₽
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setUnitMode('packs')}
                 className={`h-7.5 px-3 rounded-lg transition cursor-pointer ${
-                  unitMode === 'packs'
+                  effectiveUnitMode === 'packs'
                     ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
                     : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7]'
                 }`}
@@ -887,13 +917,15 @@ export function SalesMatrixContourView() {
                 })()}
               </button>
             </div>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="h-9 px-3.5 rounded-xl bg-white dark:bg-[#121620] hover:bg-[#F8FAFC] dark:hover:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[12px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] cursor-pointer"
-            >
-              Экспорт CSV
-            </button>
+            {hasFinance && (
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="h-9 px-3.5 rounded-xl bg-white dark:bg-[#121620] hover:bg-[#F8FAFC] dark:hover:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[12px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] cursor-pointer"
+              >
+                Экспорт CSV
+              </button>
+            )}
           </>
         }
       />
@@ -927,7 +959,8 @@ export function SalesMatrixContourView() {
             </button>
             {(brandFilter === 'AKUSHA' ||
               brandFilter === 'LISKANI' ||
-              brandFilter === 'NA_TELE') && (
+              brandFilter === 'NA_TELE') &&
+              canUserEditBrand(currentUser, brandFilter) && (
               <button
                 type="button"
                 onClick={() => {
@@ -952,7 +985,7 @@ export function SalesMatrixContourView() {
                 }}
                 className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
               >
-                Переключить на Сценарий №2 · 150 млн
+                {hasFinance ? 'Переключить на Сценарий №2 · 150 млн' : 'Переключить на Сценарий №2'}
               </button>
             )}
             {brandFilter === 'FUKAI' && selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
@@ -982,10 +1015,12 @@ export function SalesMatrixContourView() {
             Годовая выручка 2027
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {formatMln(effectiveTotals.annualRevenueRub)}
+            {hasFinance ? formatMln(effectiveTotals.annualRevenueRub) : 'Скрыто'}
           </div>
           <div className="text-[11.5px] text-[#64748B]">
-            {effectiveTotals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.
+            {hasFinance
+              ? `${effectiveTotals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.`
+              : 'Скрыто по роли'}
           </div>
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
         </div>
@@ -995,10 +1030,12 @@ export function SalesMatrixContourView() {
             Выручка в декабре 2027
           </div>
           <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-            {formatMln(effectiveTotals.decRevenueRub)}
+            {hasFinance ? formatMln(effectiveTotals.decRevenueRub) : 'Скрыто'}
           </div>
           <div className="text-[11.5px] text-emerald-600 dark:text-emerald-400 font-medium">
-            {isHoldingAllBrandsActive
+            {!hasFinance
+              ? 'Скрыто по роли'
+              : isHoldingAllBrandsActive
               ? 'Сводный план всех активных брендов группы'
               : `Цель сценария: ${currentScenario.monthlyTargetMln} млн ₽ / мес`}
           </div>
@@ -1037,9 +1074,16 @@ export function SalesMatrixContourView() {
                   <strong className="font-mono text-emerald-700 dark:text-emerald-400">
                     {singleUnit
                       ? `${effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')} ${singleUnit}`
-                      : formatMln(effectiveTotals.annualOrdersRub)}
+                      : hasFinance
+                      ? formatMln(effectiveTotals.annualOrdersRub)
+                      : formatGroupedUnitInline(
+                          scopedEntries.map((e) => ({
+                            unit: getBrandUnitConfig(e.model).primaryUnit,
+                            qty: computeModelScenarioMetrics(e.model, e.scenario).annualOrdersPacks,
+                          }))
+                        )}
                   </strong>
-                  {singleUnit ? ` · ${formatMln(effectiveTotals.annualOrdersRub)}` : ''}
+                  {singleUnit && hasFinance ? ` · ${formatMln(effectiveTotals.annualOrdersRub)}` : ''}
                 </div>
               </>
             );
@@ -1056,6 +1100,9 @@ export function SalesMatrixContourView() {
           </div>
           <div className="text-[11.5px] text-[#64748B]">
             {(() => {
+              if (!hasFinance) {
+                return 'Средний чек: скрыто по роли';
+              }
               const distinctUnits = new Set(
                 scopedEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit)
               );
@@ -1078,7 +1125,7 @@ export function SalesMatrixContourView() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             Помесячная матрица (
-            {unitMode === 'rub'
+            {effectiveUnitMode === 'rub'
               ? 'млн ₽'
               : (() => {
                   const units = Array.from(
@@ -1099,7 +1146,9 @@ export function SalesMatrixContourView() {
               }
               className="h-9 px-3 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] hover:border-emerald-500/40 text-[12px] font-semibold text-[#0F172A] dark:text-[#EDF0F7] cursor-pointer"
             >
-              <option value="dec_desc">Сортировка: Выручка дек. ↓</option>
+              <option value="dec_desc">
+                {hasFinance ? 'Сортировка: Выручка дек. ↓' : 'Сортировка: Декабрь ↓'}
+              </option>
               <option value="year_desc">Сортировка: Год 2027 ↓</option>
               <option value="priority">Сортировка: По приоритету</option>
               <option value="default">Сортировка: По порядку портфеля</option>
@@ -1207,7 +1256,7 @@ export function SalesMatrixContourView() {
                               : 'text-[#0F172A] dark:text-[#E2E8F0]'
                           }`}
                         >
-                          {unitMode === 'rub'
+                          {effectiveUnitMode === 'rub'
                             ? valRub > 0
                               ? (valRub / 1_000_000).toFixed(2).replace('.', ',')
                               : '—'
@@ -1219,13 +1268,13 @@ export function SalesMatrixContourView() {
                     })}
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] bg-[#F8FAFC] dark:bg-[#161C28] whitespace-nowrap">
                       <div>
-                        {unitMode === 'rub'
+                        {effectiveUnitMode === 'rub'
                           ? (met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                           : met.annualPacks.toLocaleString('ru-RU')}
                       </div>
                       <div className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
                         Зак:{' '}
-                        {unitMode === 'rub'
+                        {effectiveUnitMode === 'rub'
                           ? `${(met.annualOrdersRub / 1_000_000).toFixed(2).replace('.', ',')} м`
                           : met.annualOrdersPacks.toLocaleString('ru-RU')}
                       </div>
@@ -1252,7 +1301,7 @@ export function SalesMatrixContourView() {
                     <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
                       {!isMixedPackUnits && effectiveTotals.annualOrdersPacks > 0
                         ? `${Math.round((effectiveTotals.annualPacks / effectiveTotals.annualOrdersPacks) * 100)}%`
-                        : effectiveTotals.annualOrdersRub > 0
+                        : hasFinance && effectiveTotals.annualOrdersRub > 0
                         ? `${Math.round((effectiveTotals.annualRevenueRub / effectiveTotals.annualOrdersRub) * 100)}%`
                         : '—'}
                     </td>
@@ -1265,7 +1314,7 @@ export function SalesMatrixContourView() {
                             : ''
                         }`}
                       >
-                        {unitMode === 'rub'
+                        {effectiveUnitMode === 'rub'
                           ? (effectiveTotals.monthlyRevRub[mIdx] / 1_000_000)
                               .toFixed(1)
                               .replace('.', ',')
@@ -1275,7 +1324,7 @@ export function SalesMatrixContourView() {
                       </td>
                     ))}
                     <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
-                      {unitMode === 'rub' ? (
+                      {effectiveUnitMode === 'rub' ? (
                         (effectiveTotals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                       ) : isMixedPackUnits ? (
                         <div className="space-y-0.5 text-[10.5px] leading-tight">
@@ -1905,7 +1954,8 @@ export function ProcurementContourView() {
     const csv = serializeScenarioFactoryOrdersToCsv(
       modelsToExport,
       currentScenario,
-      mode
+      mode,
+      { canViewCostPrice: hasCost }
     );
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1915,8 +1965,12 @@ export function ProcurementContourView() {
       mode === 'first_wave'
         ? `BORNERS_Zakaz_Fabrike_Start_Q1_Scenario_${currentScenario.id}.csv`
         : `BORNERS_Zakaz_Fabrike_2027_Scenario_${currentScenario.id}.csv`;
+    if (document.body) {
+      document.body.appendChild(a);
+    }
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     notify(
       'success',
       mode === 'first_wave'
@@ -2050,12 +2104,20 @@ export function ProcurementContourView() {
                   sc.id === 100
                     ? 'Исходный'
                     : sc.id === 105 || sc.id === 202705
-                    ? 'LISKANI · 500 млн'
+                    ? hasFinance
+                      ? 'LISKANI · 500 млн'
+                      : 'LISKANI'
                     : sc.id === 202706
-                    ? 'AKUSHA · 105,8 млн'
+                    ? hasFinance
+                      ? 'AKUSHA · 105,8 млн'
+                      : 'AKUSHA'
                     : ownerNorm && ownerNorm !== 'ALL' && ownerNorm !== 'BORNERS'
-                    ? `${sc.title} · ${sc.monthlyTargetMln} млн`
-                    : `№${sc.id} · ${sc.monthlyTargetMln} млн`;
+                    ? hasFinance
+                      ? `${sc.title} · ${sc.monthlyTargetMln} млн`
+                      : sc.title
+                    : hasFinance
+                    ? `№${sc.id} · ${sc.monthlyTargetMln} млн`
+                    : `Сценарий №${sc.id}`;
                 return (
                   <button
                     key={sc.id}
@@ -2121,7 +2183,9 @@ export function ProcurementContourView() {
               {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}»
             </h3>
             <p className="text-[13.5px] leading-relaxed text-[#52514C]">
-              В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).
+              {hasFinance
+                ? 'В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).'
+                : 'В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 и Сценария №3.'}
             </p>
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
               <button
@@ -2140,7 +2204,8 @@ export function ProcurementContourView() {
               </button>
               {(brandFilter === 'AKUSHA' ||
                 brandFilter === 'LISKANI' ||
-                brandFilter === 'NA_TELE') && (
+                brandFilter === 'NA_TELE') &&
+                canUserEditBrand(currentUser, brandFilter) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2172,7 +2237,9 @@ export function ProcurementContourView() {
                   }}
                   className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
                 >
-                  Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)
+                  {hasFinance
+                    ? 'Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)'
+                    : 'Переключить на Сценарий №2 (с линейкой НА ТЕЛЕ)'}
                 </button>
               )}
               {selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
@@ -2204,7 +2271,7 @@ export function ProcurementContourView() {
                     </strong>{' '}
                     ({wavesSummary.totalPacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit} · утв. PO: {wavesSummary.totalApprovedPosCount}, план: {wavesSummary.totalDraftBatchesCount}) · Пик своих денег:{' '}
                     <strong className="font-mono text-amber-700 dark:text-amber-400">
-                      {!hasCost
+                      {!hasCost || !hasFinance
                         ? 'Скрыто'
                         : wbLagMonths < 0
                         ? 'Лаг WB не задан'
@@ -2212,7 +2279,7 @@ export function ProcurementContourView() {
                         ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} (${investmentSummary.peakMonthLabel})`
                         : '—'}
                     </strong>
-                    {hasCost && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
+                    {hasCost && hasFinance && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
                       ? ` · С ${investmentSummary.selfFundingMonthLabel} — выход в плюс из выручки WB`
                       : ''}
                   </p>
@@ -2250,8 +2317,8 @@ export function ProcurementContourView() {
                           w.selfFunded
                             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                             : w.fundedFromWbPct > 0
-                            ? 'bg-indigo-50 text-indigo-800'
-                            : 'bg-amber-50 text-amber-900'
+                            ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-500/30'
+                            : 'bg-amber-50 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300'
                         }`}
                       >
                         {w.selfFunded
@@ -2394,10 +2461,14 @@ export function ProcurementContourView() {
                         </button>
                       </div>
                       <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
-                        {formatMln(investmentSummary.annualRevenueRub)}
+                        {hasFinance ? formatMln(investmentSummary.annualRevenueRub) : 'Скрыто'}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Дек: <strong className="text-[#141413]">{formatMln(investmentSummary.decemberRevenueRub)}</strong> ·{' '}
+                        Дек:{' '}
+                        <strong className="text-[#141413]">
+                          {hasFinance ? formatMln(investmentSummary.decemberRevenueRub) : 'Скрыто'}
+                        </strong>{' '}
+                        ·{' '}
                         {scopeUnitInfo.isMixed
                           ? formatGroupedUnitInline(
                               procData.perSku.map((x) => ({
@@ -2432,7 +2503,9 @@ export function ProcurementContourView() {
                           Пик своих денег (с WB)
                         </span>
                         <span className="rounded-md bg-[#F4F3EE] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#52514C]">
-                          {wbLagMonths < 0
+                          {!hasCost || !hasFinance
+                            ? 'Скрыто'
+                            : wbLagMonths < 0
                             ? 'Лаг WB не задан'
                             : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
                               investmentSummary.verifiedOwnMoneyRequiredRub !== undefined
@@ -2440,7 +2513,7 @@ export function ProcurementContourView() {
                             : 'График WB не указан'}
                         </span>
                       </div>
-                      {!hasCost ? (
+                      {!hasCost || !hasFinance ? (
                         <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
                           Скрыто
                         </div>
@@ -2544,7 +2617,11 @@ export function ProcurementContourView() {
                               {b.modelsCount}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#141413]">
-                              {b.modelsCount > 0 ? formatMln(b.annualRevenueRub) : '—'}
+                              {b.modelsCount > 0
+                                ? hasFinance
+                                  ? formatMln(b.annualRevenueRub)
+                                  : 'Скрыто'
+                                : '—'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
                               {b.modelsCount > 0
@@ -2567,7 +2644,7 @@ export function ProcurementContourView() {
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
                               {b.modelsCount > 0 ? (
-                                !hasCost ? (
+                                !hasCost || !hasFinance ? (
                                   'Скрыто'
                                 ) : wbLagMonths < 0 ? (
                                   <span className="text-[11px] font-semibold text-amber-800">
@@ -2614,7 +2691,9 @@ export function ProcurementContourView() {
                             {brandsReport.groupTotal.modelsCount}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {formatMln(brandsReport.groupTotal.annualRevenueRub)}
+                            {hasFinance
+                              ? formatMln(brandsReport.groupTotal.annualRevenueRub)
+                              : 'Скрыто'}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
                             {formatGroupedUnitInline(
@@ -2632,7 +2711,7 @@ export function ProcurementContourView() {
                             </div>
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {!hasCost
+                            {!hasCost || !hasFinance
                               ? 'Скрыто'
                               : wbLagMonths < 0
                               ? 'Лаг WB не задан'
@@ -2851,14 +2930,14 @@ export function ProcurementContourView() {
                           </span>
                           <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                             📍 Пик своих денег:{' '}
-                            {!hasCost
+                            {!hasCost || !hasFinance
                               ? 'Скрыто'
                               : wbLagMonths < 0
                               ? 'Лаг WB не задан'
                               : investmentSummary.verifiedOwnMoneyRequiredRub != null
                               ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} в ${investmentSummary.peakMonthLabel}`
                               : '—'}
-                            {hasCost && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
+                            {hasCost && hasFinance && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
                               ? ` · с ${investmentSummary.selfFundingMonthLabel} — в плюс с WB`
                               : ''}
                           </span>
@@ -2899,19 +2978,30 @@ export function ProcurementContourView() {
                       return (
                         <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5 pt-1">
                           {wavesSummary.monthlySchedule.map((ms) => {
-                            const isPeakM = ms.monthIdx === investmentSummary.peakMonthIdx;
-                            const prepayH = Math.round((ms.prepayRub / maxOut) * 34);
-                            const balH = Math.round((ms.balanceRub / maxOut) * 34);
+                            const isPeakM =
+                              hasCost &&
+                              hasFinance &&
+                              ms.monthIdx === investmentSummary.peakMonthIdx;
+                            const prepayH = hasCost
+                              ? Math.round((ms.prepayRub / maxOut) * 34)
+                              : 0;
+                            const balH = hasCost
+                              ? Math.round((ms.balanceRub / maxOut) * 34)
+                              : 0;
                             return (
                               <button
                                 key={ms.monthIdx}
                                 type="button"
                                 onClick={() => setScenarioDrawerTab('investment')}
-                                title={`${ms.monthLabel}: всего фабрикам ${formatMln(ms.totalOutflowRub)} (аванс ${formatMln(ms.prepayRub)} + доплата ${formatMln(ms.balanceRub)})${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`}
+                                title={
+                                  hasCost
+                                    ? `${ms.monthLabel}: всего фабрикам ${formatMln(ms.totalOutflowRub)} (аванс ${formatMln(ms.prepayRub)} + доплата ${formatMln(ms.balanceRub)})${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`
+                                    : `${ms.monthLabel}: суммы выплат фабрикам скрыты по роли${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`
+                                }
                                 className={`rounded-lg border p-1.5 text-center transition cursor-pointer ${
                                   isPeakM
                                     ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/70 dark:bg-amber-500/15'
-                                    : ms.totalOutflowRub > 0
+                                    : hasCost && ms.totalOutflowRub > 0
                                     ? 'border-[#E2E8F0] dark:border-[#283246] bg-[#F8FAFC] dark:bg-[#181D2A] hover:border-[#94A3B8]'
                                     : 'border-[#F1F5F9] dark:border-[#222938] bg-white dark:bg-[#121620] opacity-75'
                                 }`}
@@ -2935,7 +3025,9 @@ export function ProcurementContourView() {
                                   )}
                                 </div>
                                 <div className="font-mono text-[10px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                                  {ms.totalOutflowRub > 0
+                                  {!hasCost
+                                    ? '—'
+                                    : ms.totalOutflowRub > 0
                                     ? `−${(ms.totalOutflowRub / 1_000_000).toFixed(1)}`
                                     : '0'}
                                 </div>
@@ -3350,10 +3442,10 @@ export function ProcurementContourView() {
                                     <div>
                                       {plan.annualBuyoutsPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                     </div>
-                                    <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 font-semibold">
+                                    <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 font-semibold">
                                       <span>Зак: {plan.annualOrdersPacks.toLocaleString('ru-RU')}</span>
                                       {canEditRow ? (
-                                        <span className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50/70 px-1 py-0.5">
+                                        <span className="inline-flex items-center rounded border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/70 dark:bg-indigo-500/15 px-1 py-0.5">
                                           <BufferedInlineNumberInput
                                             min={5}
                                             max={100}
@@ -3366,12 +3458,12 @@ export function ProcurementContourView() {
                                                 })
                                               );
                                             }}
-                                            className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 focus:outline-none"
+                                            className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 dark:text-indigo-200 focus:outline-none"
                                           />
                                           <span>%</span>
                                         </span>
                                       ) : (
-                                        <span className="font-mono text-[10px] font-bold text-indigo-900">
+                                        <span className="font-mono text-[10px] font-bold text-indigo-900 dark:text-indigo-300">
                                           ({plan.buyoutRatePct}%)
                                         </span>
                                       )}

@@ -66,11 +66,13 @@ import {
   cleanupLegacyStorageKeys,
   loadPlatformRichStateFromIdb,
   rehydrateConceptsFromIdbSnapshot,
+  rehydrateDocumentsFromIdbSnapshot,
   rehydrateMiroItemsFromIdbSnapshot,
   safeSetStorageJson,
   savePlatformRichStateToIdb,
   stripOversizedDataUrls,
 } from '@/lib/safeStorage';
+import { resetPortfolioStorageToDemoDefaults } from '@/lib/portfolioPersistence';
 import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 
 const STORAGE_KEY = 'borners_group_platform_state_ru_v9_editorial';
@@ -95,6 +97,7 @@ interface PersistedState {
   documents: DocumentItem[];
   auditLog: AuditLogEntry[];
   miroItems: MiroBoardItem[];
+  deletedConceptIds?: string[];
   presentationOverrides: Record<string, string>;
 }
 
@@ -311,6 +314,7 @@ const DEFAULT_STATE: PersistedState = {
   documents: INITIAL_DOCUMENTS,
   auditLog: INITIAL_AUDIT_LOG,
   miroItems: INITIAL_MIRO_ITEMS,
+  deletedConceptIds: [],
   presentationOverrides: {},
 };
 
@@ -437,8 +441,28 @@ function normalizeAndMergeHydratedPlatformState(
       ? incoming.products
       : prev.products;
 
-  const baseConcepts = Array.isArray(incoming.concepts) ? [...incoming.concepts] : [...prev.concepts];
+  const mergedDeletedConceptIds = Array.from(
+    new Set(
+      (Array.isArray(incoming.deletedConceptIds)
+        ? incoming.deletedConceptIds
+        : prev.deletedConceptIds || []
+      )
+        .map((id) => (id || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const deletedConceptSet = new Set(mergedDeletedConceptIds.map((id) => id.toUpperCase()));
+
+  const baseConcepts = (
+    Array.isArray(incoming.concepts) ? [...incoming.concepts] : [...prev.concepts]
+  ).filter((c) => c && !deletedConceptSet.has((c.id || '').toUpperCase()));
   for (const initConcept of INITIAL_CONCEPTS) {
+    if (
+      deletedConceptSet.has(initConcept.id.toUpperCase()) ||
+      (initConcept.code && deletedConceptSet.has(initConcept.code.toUpperCase()))
+    ) {
+      continue;
+    }
     if (
       !baseConcepts.some(
         (c) =>
@@ -488,11 +512,24 @@ function normalizeAndMergeHydratedPlatformState(
     strategies: mergedStrategies,
     miroItems: mergedMiroItems,
     launches: Array.isArray(incoming.launches) ? incoming.launches : prev.launches,
+    campaigns: Array.isArray(incoming.campaigns) ? incoming.campaigns : prev.campaigns,
+    experiments: Array.isArray(incoming.experiments) ? incoming.experiments : prev.experiments,
+    competitors: Array.isArray(incoming.competitors) ? incoming.competitors : prev.competitors,
+    opportunities: Array.isArray(incoming.opportunities)
+      ? incoming.opportunities
+      : prev.opportunities,
+    research: Array.isArray(incoming.research) ? incoming.research : prev.research,
+    strategicGoals: Array.isArray(incoming.strategicGoals)
+      ? incoming.strategicGoals
+      : prev.strategicGoals,
+    projects: Array.isArray(incoming.projects) ? incoming.projects : prev.projects,
     tasks: Array.isArray(incoming.tasks) ? incoming.tasks : prev.tasks,
     documents: Array.isArray(incoming.documents) ? incoming.documents : prev.documents,
+    auditLog: Array.isArray(incoming.auditLog) ? incoming.auditLog : prev.auditLog,
     financialPlans: Array.isArray(incoming.financialPlans)
       ? incoming.financialPlans
       : prev.financialPlans,
+    deletedConceptIds: mergedDeletedConceptIds,
     presentationOverrides: incoming.presentationOverrides || prev.presentationOverrides || {},
   };
 }
@@ -500,7 +537,16 @@ function normalizeAndMergeHydratedPlatformState(
 const PlatformContext = createContext<PlatformContextValue | null>(null);
 
 export function PlatformProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<PersistedState>(DEFAULT_STATE);
+  const [rawState, setRawState] = useState<PersistedState>(DEFAULT_STATE);
+  const mutationSeqRef = useRef(0);
+  const setState: React.Dispatch<React.SetStateAction<PersistedState>> = useCallback(
+    (updater) => {
+      mutationSeqRef.current += 1;
+      setRawState(updater);
+    },
+    []
+  );
+  const state = rawState;
   const [hydrated, setHydrated] = useState(false);
   const [idbRichMediaReady, setIdbRichMediaReady] = useState(false);
 
@@ -592,7 +638,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             // ignore
           }
         }
-        setState((prev) =>
+        setRawState((prev) =>
           normalizeAndMergeHydratedPlatformState(prev, parsed, nextProducts)
         );
       }
@@ -655,17 +701,59 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to hydrate state from localStorage:', err);
     } finally {
       setHydrated(true);
-      loadPlatformRichStateFromIdb<ProductConcept, MiroBoardItem>()
-        .then(({ concepts: idbConcepts, miroItems: idbMiro }) => {
+      const seqAtStart = mutationSeqRef.current;
+      loadPlatformRichStateFromIdb<ProductConcept, MiroBoardItem, DocumentItem>()
+        .then(({ concepts: idbConcepts, miroItems: idbMiro, documents: idbDocs }) => {
           if (
             (Array.isArray(idbConcepts) && idbConcepts.length > 0) ||
-            (Array.isArray(idbMiro) && idbMiro.length > 0)
+            (Array.isArray(idbMiro) && idbMiro.length > 0) ||
+            (Array.isArray(idbDocs) && idbDocs.length > 0)
           ) {
-            setState((prev) => ({
-              ...prev,
-              concepts: rehydrateConceptsFromIdbSnapshot(prev.concepts, idbConcepts),
-              miroItems: rehydrateMiroItemsFromIdbSnapshot(prev.miroItems, idbMiro),
-            }));
+            const userMutatedDuringLoad = mutationSeqRef.current !== seqAtStart;
+            setRawState((prev) => {
+              const deletedSet = new Set(
+                (prev.deletedConceptIds || []).map((id) => id.toUpperCase())
+              );
+              const cleanIdbConcepts = Array.isArray(idbConcepts)
+                ? idbConcepts.filter(
+                    (c) =>
+                      c &&
+                      !deletedSet.has((c.id || '').toUpperCase()) &&
+                      !(c.code && deletedSet.has(c.code.toUpperCase()))
+                  )
+                : null;
+              const rehydratedConcepts = rehydrateConceptsFromIdbSnapshot(
+                prev.concepts,
+                cleanIdbConcepts
+              ).map((rehydrated, idx) => {
+                const current = prev.concepts[idx];
+                if (
+                  userMutatedDuringLoad &&
+                  current &&
+                  current.imageUrl === '' &&
+                  Array.isArray(current.galleryPhotos) &&
+                  current.galleryPhotos.length === 0
+                ) {
+                  return { ...rehydrated, imageUrl: '', galleryPhotos: [] };
+                }
+                return rehydrated;
+              });
+              const rehydratedMiro = rehydrateMiroItemsFromIdbSnapshot(prev.miroItems, idbMiro);
+              const rehydratedDocs = rehydrateDocumentsFromIdbSnapshot(prev.documents, idbDocs);
+              if (userMutatedDuringLoad) {
+                void savePlatformRichStateToIdb(
+                  rehydratedConcepts,
+                  rehydratedMiro,
+                  rehydratedDocs
+                );
+              }
+              return {
+                ...prev,
+                concepts: rehydratedConcepts,
+                miroItems: rehydratedMiro,
+                documents: rehydratedDocs,
+              };
+            });
           }
         })
         .catch(() => {
@@ -717,8 +805,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated || !idbRichMediaReady) return;
-    void savePlatformRichStateToIdb(state.concepts, state.miroItems);
-  }, [state.concepts, state.miroItems, hydrated, idbRichMediaReady]);
+    void savePlatformRichStateToIdb(state.concepts, state.miroItems, state.documents);
+  }, [state.concepts, state.miroItems, state.documents, hydrated, idbRichMediaReady]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -1123,6 +1211,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
           ? 'images/liskani/LSC-001.webp'
           : 'images/products/borners-core-modal.svg');
 
+      const profile = getBrandProductionProfile(input.brandId, input.name);
+
       const newConcept: ProductConcept = {
         id,
         code,
@@ -1150,6 +1240,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         // На этапе Идеи запрещено подставлять вымышленные коммерческие показатели (п. 4.1, 6, 21 ТЗ)
         plannedRetailPrice: Number(input.plannedRetailPrice ?? 0),
         plannedUnitCost: Number(input.plannedUnitCost ?? 0),
+        packUnitsCount: input.packUnitsCount ?? profile.defaultPackUnits,
         currency: 'RUB',
         targetLaunchDate: input.targetLaunchDate || '',
         ownerId: input.ownerId || currentUser.id,
@@ -1189,9 +1280,17 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         comments: [],
         techPack: (() => {
           if (input.techPack) return input.techPack;
-          const profile = getBrandProductionProfile(input.brandId, input.name);
           const sizeStr = profile.sizes.join(', ');
           const paletteStr = (input.colorCombinations || []).filter(Boolean).join(' / ');
+          const trimSpecEn =
+            (profile as { defaultTrimSpecEn?: string }).defaultTrimSpecEn ||
+            (profile.brandCode === 'NA_TELE'
+              ? 'Invisible bonded edge / ultra-soft microfiber trim without elastic pressure'
+              : profile.brandCode === 'AKUSHA'
+              ? 'Velcro strap / waxed laces & branded hardware, individual shoebox'
+              : profile.brandCode === 'LISKANI'
+              ? '6 cm header pleat tape (1:2 ratio) + curtain hooks set'
+              : '38 mm soft jacquard elastic waistband, anti-roll finish');
           return {
             zh: {
               modelName: `${input.name} (${code})`,
@@ -1201,7 +1300,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
               colorAndPantone: paletteStr || '按确认色卡生产',
               sizeGrading: sizeStr,
               waistbandSpec: profile.defaultWaistbandOrTrimZh,
-              seamsSpec: profile.defaultDetailCaptionZh,
+              seamsSpec: profile.defaultConstructionZh,
               packagingSpec: '独立品牌防尘包装袋 + EAN-13及俄罗斯诚实标签 (DataMatrix)',
               qualityRequirements: 'AQL 1.5',
               referencesNote: input.referencesNotes || '',
@@ -1213,8 +1312,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
               compositionAndDensity: profile.defaultMaterialEn,
               colorAndPantone: paletteStr || 'Per Approved Swatch Card',
               sizeGrading: sizeStr,
-              waistbandSpec: profile.defaultConstructionEn,
-              seamsSpec: 'Reinforced Precision Stitching',
+              waistbandSpec: trimSpecEn,
+              seamsSpec: profile.defaultConstructionEn,
               packagingSpec: 'Individual Branded Packaging + EAN-13 & DataMatrix',
               qualityRequirements: 'AQL 1.5',
               referencesNote: input.referencesNotes || '',
@@ -1227,7 +1326,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
               colorAndPantone: paletteStr || 'По утверждённой палитре',
               sizeGrading: sizeStr,
               waistbandSpec: profile.defaultWaistbandOrTrimRu,
-              seamsSpec: profile.defaultDetailCaptionRu,
+              seamsSpec: profile.defaultConstructionRu,
               packagingSpec: 'Индивидуальная фирменная упаковка + EAN-13 и Честный ЗНАК',
               qualityRequirements: 'AQL 1.5',
               referencesNote: input.referencesNotes || '',
@@ -1308,9 +1407,6 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             ? { ...p, isArchived: true }
             : p
         ),
-        miroItems: prev.miroItems.map((m) =>
-          m.linkedConceptId === id ? { ...m, linkedConceptId: undefined } : m
-        ),
         auditLog: [
           appendAudit('concept', id, 'deleted', `Перемещена в Корзину удалений карточка «${target?.code || id} · ${target?.name || ''}»`),
           ...prev.auditLog,
@@ -1369,6 +1465,38 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString().slice(0, 10);
       const productId = makeUniqueId('prod');
       const sku = concept.code.replace('-LAB-', '-PRD-');
+      const profile = getBrandProductionProfile(concept.brandId, concept.name);
+      const defaultCategoryRu =
+        (profile as { defaultCategoryRu?: string }).defaultCategoryRu ||
+        (profile.brandCode === 'NA_TELE'
+          ? 'Женское бесшовное бельё'
+          : profile.brandCode === 'AKUSHA'
+          ? 'Детская и взрослая обувь'
+          : profile.brandCode === 'LISKANI'
+          ? 'Интерьерные шторы'
+          : profile.brandCode === 'FUKAI'
+          ? 'Аксессуары и текстиль для сна'
+          : 'Базовое бельё');
+      const defaultFactoryEn =
+        (profile as { defaultFactoryNameEn?: string }).defaultFactoryNameEn ||
+        (profile.brandCode === 'NA_TELE'
+          ? 'Shantou / Yiwu Seamless Intimate Apparel Co., Ltd.'
+          : profile.brandCode === 'AKUSHA'
+          ? 'Guangzhou / Wenzhou Footwear Manufacturing Co., Ltd.'
+          : profile.brandCode === 'LISKANI'
+          ? 'Shaoxing Keqiao Home Textile & Curtain Co., Ltd.'
+          : 'Zhongshan / Shantou Knitwear Manufacturing Co., Ltd.');
+      const parsedDensityGsm =
+        parseInt((profile.defaultMaterialRu.match(/(\d+)\s*г\/м/i) || [])[1] || '', 10) ||
+        (profile.brandCode === 'AKUSHA'
+          ? 0
+          : profile.brandCode === 'NA_TELE'
+          ? 145
+          : profile.brandCode === 'LISKANI'
+          ? 260
+          : 180);
+      const packUnits = concept.packUnitsCount || profile.defaultPackUnits || 1;
+      const sampleSizes = profile.sizes.slice(0, 2);
 
       const newProduct: Product = {
         id: productId,
@@ -1376,26 +1504,30 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         name: concept.name,
         brandId: concept.brandId,
         conceptId: concept.id,
-        category: 'Боксеры',
+        category: defaultCategoryRu,
         productType: 'Лимитированная коллекция',
         collection: concept.collectionName,
-        priceSegment: concept.brandId === 'NA_TELE' ? 'Premium' : 'Middle+',
+        priceSegment:
+          profile.brandCode === 'NA_TELE' || profile.brandCode === 'AKUSHA'
+            ? 'Premium'
+            : 'Middle+',
         status: concept.stage === 'APPROVED' || concept.stage === 'PRODUCTION' ? 'approved' : 'in_development',
         description: concept.ideaDescription,
         ownerId: concept.ownerId,
         imageUrl: concept.imageUrl,
         galleryUrls: [concept.imageUrl],
         colorCombinations: concept.colorCombinations,
-        materials: concept.techPack.ru.material,
-        fabricComposition: concept.techPack.ru.compositionAndDensity,
-        fabricDensityGsm: 180,
-        waistbandType: concept.techPack.ru.waistbandSpec,
-        fitType: 'Анатомическая 3D-посадка',
-        constructionDetails: concept.techPack.ru.construction,
-        sizes: ['S', 'M', 'L', 'XL', 'XXL'],
-        supplierName: concept.supplierName || 'Guangdong Apex Intimate Apparel Co., Ltd.',
+        materials: concept.techPack.ru.material || profile.defaultMaterialRu,
+        fabricComposition:
+          concept.techPack.ru.compositionAndDensity || profile.defaultMaterialRu,
+        fabricDensityGsm: parsedDensityGsm,
+        waistbandType: concept.techPack.ru.waistbandSpec || profile.defaultWaistbandOrTrimRu,
+        fitType: concept.techPack.ru.construction || profile.defaultConstructionRu,
+        constructionDetails: concept.techPack.ru.construction || profile.defaultConstructionRu,
+        sizes: [...profile.sizes],
+        supplierName: concept.supplierName || defaultFactoryEn,
         supplierCountry: 'Китай',
-        moq: 2000,
+        moq: profile.brandCode === 'LISKANI' ? 500 : profile.brandCode === 'AKUSHA' ? 600 : 1000,
         productionLeadDays: 32,
         deliveryLeadDays: 16,
         techFiles: [
@@ -1425,33 +1557,22 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         operatingProfitRub: 0,
         monthlyDynamicsPct: 0,
         salesChannels:
-          concept.brandId === 'NA_TELE'
-            ? ['Собственный магазин', 'Ozon']
+          profile.brandCode === 'NA_TELE'
+            ? ['Wildberries', 'Ozon', 'Собственный магазин']
             : ['Wildberries', 'Ozon', 'Собственный магазин'],
-        variants: [
-          {
-            id: makeUniqueId('var'),
-            productId,
-            variantSku: `${sku}-M`,
-            colorName: concept.colorCombinations[0] || 'Чёрный + Тёмно-синий',
-            colorHex: concept.brandId === 'NA_TELE' ? '#8B8078' : '#D97745',
-            secondaryColorHex: '#171717',
-            size: 'M',
-            packConfiguration: '1 шт.',
-            stockQty: 0,
-          },
-          {
-            id: makeUniqueId('var'),
-            productId,
-            variantSku: `${sku}-L`,
-            colorName: concept.colorCombinations[0] || 'Чёрный + Тёмно-синий',
-            colorHex: concept.brandId === 'NA_TELE' ? '#8B8078' : '#D97745',
-            secondaryColorHex: '#171717',
-            size: 'L',
-            packConfiguration: '1 шт.',
-            stockQty: 0,
-          },
-        ],
+        variants: sampleSizes.map((sz) => ({
+          id: makeUniqueId('var'),
+          productId,
+          variantSku: `${sku}-${sz}`,
+          colorName:
+            concept.colorCombinations[0] ||
+            (profile.brandCode === 'NA_TELE' ? 'Молочный / Нюд' : 'Базовый цвет'),
+          colorHex: profile.brandCode === 'NA_TELE' ? '#8B8078' : '#D97745',
+          secondaryColorHex: '#171717',
+          size: sz as Product['variants'][number]['size'],
+          packConfiguration: `${packUnits} шт.`,
+          stockQty: 0,
+        })),
         isDemo: false,
         isArchived: false,
         createdAt: now,
@@ -2125,8 +2246,40 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             p.id === id ? { ...p, isArchived: false, status: 'active' } : p
           );
         } else if (type === 'concept') {
-          next.concepts = prev.concepts.map((c) =>
-            c.id === id ? { ...c, isArchived: false } : c
+          const targetConcept = prev.concepts.find((c) => c.id === id);
+          next.deletedConceptIds = (prev.deletedConceptIds || []).filter(
+            (delId) =>
+              delId.toUpperCase() !== id.toUpperCase() &&
+              (!targetConcept?.code ||
+                delId.toUpperCase() !== targetConcept.code.toUpperCase())
+          );
+          next.concepts = prev.concepts.map((c) => {
+            if (c.id !== id) return c;
+            let restoredStage = c.stage;
+            if (c.stage === 'REJECTED' || c.stage === 'CANCELLED') {
+              const prevStageFromHistory = (c.stageHistory || [])
+                .flatMap((h) => [h.fromStage, h.toStage])
+                .find(
+                  (st): st is ConceptStage =>
+                    Boolean(st) && st !== 'REJECTED' && st !== 'CANCELLED'
+                );
+              restoredStage = prevStageFromHistory || 'IDEA';
+            }
+            return {
+              ...c,
+              isArchived: false,
+              stage: restoredStage,
+            };
+          });
+          next.products = prev.products.map((p) =>
+            p.conceptId === id ||
+            (targetConcept?.linkedProductId && p.id === targetConcept.linkedProductId)
+              ? {
+                  ...p,
+                  isArchived: false,
+                  status: p.status === 'archived' ? 'active' : p.status,
+                }
+              : p
           );
         } else if (type === 'launch') {
           next.launches = prev.launches.map((l) =>
@@ -2160,6 +2313,12 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
           next.products = prev.products.filter((p) => p.id !== id);
         } else if (type === 'concept') {
           next.concepts = prev.concepts.filter((c) => c.id !== id);
+          next.deletedConceptIds = Array.from(
+            new Set([...(prev.deletedConceptIds || []), id])
+          );
+          next.miroItems = (prev.miroItems || []).map((m) =>
+            m.linkedConceptId === id ? { ...m, linkedConceptId: undefined } : m
+          );
         } else if (type === 'launch') {
           next.launches = prev.launches.filter((l) => l.id !== id);
         } else if (type === 'task') {
@@ -2175,14 +2334,28 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   );
 
   const emptyTrash = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      products: prev.products.filter((p) => !p.isArchived),
-      concepts: prev.concepts.filter((c) => !c.isArchived),
-      launches: prev.launches.filter((l) => !l.isArchived),
-      tasks: prev.tasks.filter((t) => !t.isArchived),
-      documents: prev.documents.filter((d) => !d.isArchived),
-    }));
+    setState((prev) => {
+      const archivedConceptIds = prev.concepts
+        .filter((c) => c.isArchived)
+        .map((c) => c.id);
+      const archivedSet = new Set(archivedConceptIds);
+      return {
+        ...prev,
+        products: prev.products.filter((p) => !p.isArchived),
+        concepts: prev.concepts.filter((c) => !c.isArchived),
+        launches: prev.launches.filter((l) => !l.isArchived),
+        tasks: prev.tasks.filter((t) => !t.isArchived),
+        documents: prev.documents.filter((d) => !d.isArchived),
+        deletedConceptIds: Array.from(
+          new Set([...(prev.deletedConceptIds || []), ...archivedConceptIds])
+        ),
+        miroItems: (prev.miroItems || []).map((m) =>
+          m.linkedConceptId && archivedSet.has(m.linkedConceptId)
+            ? { ...m, linkedConceptId: undefined }
+            : m
+        ),
+      };
+    });
     notify('warning', 'Корзина удалений полностью очищена');
   }, [notify]);
 
@@ -2320,19 +2493,24 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => {
         const next = normalizeAndMergeHydratedPlatformState(prev, snapshot);
         safeSetStorageJson(STORAGE_KEY, next);
-        void savePlatformRichStateToIdb(next.concepts, next.miroItems);
+        void savePlatformRichStateToIdb(next.concepts, next.miroItems, next.documents);
         return next;
       });
     },
-    []
+    [setState]
   );
 
   const resetToDemoDefaults = useCallback(() => {
     setState(DEFAULT_STATE);
     window.localStorage.removeItem(STORAGE_KEY);
-    void savePlatformRichStateToIdb(DEFAULT_STATE.concepts, DEFAULT_STATE.miroItems);
+    void savePlatformRichStateToIdb(
+      DEFAULT_STATE.concepts,
+      DEFAULT_STATE.miroItems,
+      DEFAULT_STATE.documents
+    );
+    void resetPortfolioStorageToDemoDefaults();
     notify('success', 'Демо-данные восстановлены по умолчанию');
-  }, [notify]);
+  }, [notify, setState]);
 
   const value = useMemo<PlatformContextValue>(
     () => ({

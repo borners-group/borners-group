@@ -22,11 +22,15 @@ export function BoxerPackStackSvg({
     upperBrand.includes('LISCAN') ||
     upperBrand.includes('ЛИСК');
   const isAkusha = upperBrand.includes('AKU') || upperBrand.includes('АКУ');
+  const isNaTele =
+    upperBrand.includes('NA_TELE') ||
+    upperBrand.includes('НА ТЕЛЕ') ||
+    upperBrand.includes('NATELE');
 
   const safePhotoUrl =
     customPhotoUrl &&
     !(
-      (isLiskani || isAkusha) &&
+      (isLiskani || isAkusha || isNaTele || brandLabel.toUpperCase().includes('FUKAI')) &&
       (customPhotoUrl.includes('borners-core-modal.svg') ||
         customPhotoUrl.includes('244995893_main.webp'))
     )
@@ -156,7 +160,7 @@ export function BoxerPackStackSvg({
             x="160"
             y="172"
             textAnchor="middle"
-            fill="#334155"
+            className="fill-slate-700 dark:fill-slate-300"
             fontSize="10.5"
             fontWeight="700"
             letterSpacing="1.8"
@@ -169,14 +173,21 @@ export function BoxerPackStackSvg({
   }
 
   if (category === 'waistband') {
+    const detailHint = isAkusha
+      ? 'Анатомическая подошва и фиксация пятки'
+      : isLiskani
+      ? 'Шторная лента, люверсы и ровный подгиб'
+      : isNaTele
+      ? 'Тонкие бретели и бесшовная обработка краёв'
+      : 'Жаккардовая резинка 38 мм в тон ткани';
     return (
       <div
         className={`relative w-full flex flex-col items-center justify-center gap-3 p-4 select-none ${
           large ? 'h-[260px]' : 'h-[155px]'
         }`}
       >
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A756C]">
-          Макро-деталь · Жаккардовая резинка 38 мм в тон ткани
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A756C] dark:text-slate-400">
+          Макро-деталь · {detailHint}
         </div>
         {colors.slice(0, 3).map((c, idx) => (
           <div
@@ -238,6 +249,13 @@ export function BoxerPackStackSvg({
   }
 
   if (category === 'video') {
+    const videoFooterText = isAkusha
+      ? 'Анатомическая подошва и фиксация пятки · 00:42'
+      : isLiskani
+      ? 'Шторная лента, люверсы и ровный подгиб · 00:42'
+      : isNaTele
+      ? 'Тонкие бретели и бесшовная обработка краёв · 00:42'
+      : 'Тест эластичности пояса 38 мм и швов Flatlock · 00:42';
     return (
       <div
         className={`relative w-full flex flex-col items-center justify-center gap-2 rounded-[14px] bg-[#1D1D1F] text-white p-4 select-none ${
@@ -247,9 +265,9 @@ export function BoxerPackStackSvg({
         <div className="h-12 w-12 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-[18px]">
           ▶
         </div>
-        <div className="text-[13px] font-bold">Видео-обзор посадки и растяжения</div>
+        <div className="text-[13px] font-bold">Видео-обзор посадки и конструкции</div>
         <div className="text-[11px] text-white/65">
-          Тест эластичности пояса 38 мм и швов Flatlock · 00:42
+          {videoFooterText}
         </div>
       </div>
     );
@@ -397,7 +415,13 @@ export function TechnicalFlatDrawingSvg() {
           strokeWidth="1"
           strokeDasharray="3 2"
         />
-        <text x="92" y="138" textAnchor="middle" fontSize="10" fill="#6E6E73">
+        <text
+          x="92"
+          y="138"
+          textAnchor="middle"
+          fontSize="10"
+          className="fill-[#6E6E73] dark:fill-slate-400"
+        >
           Вид спереди (3D панель, ≈25 см)
         </text>
       </g>
@@ -434,7 +458,13 @@ export function TechnicalFlatDrawingSvg() {
           strokeWidth="1"
           strokeDasharray="3 2"
         />
-        <text x="92" y="138" textAnchor="middle" fontSize="10" fill="#6E6E73">
+        <text
+          x="92"
+          y="138"
+          textAnchor="middle"
+          fontSize="10"
+          className="fill-[#6E6E73] dark:fill-slate-400"
+        >
           Вид сзади (без среднего шва)
         </text>
       </g>

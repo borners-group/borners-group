@@ -8,7 +8,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
-import { FinancialPlanRow, FinancialScenario } from '@/types/platform';
+import { FinancialPlanRow, FinancialScenario, Product } from '@/types/platform';
 import {
   ROLE_LABELS_RU,
   SCENARIO_LABELS_RU,
@@ -25,9 +25,14 @@ import {
   validateAndCheckDuplicates,
   ParsedImportRow,
 } from '@/lib/finance';
+import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
-import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+import {
+  createBrandProductModel,
+  detectModelBrandPortfolioLabel,
+  ensureModelUnifiedV11,
+} from '@/lib/unifiedBusinessEngine';
 
 const RU_MONTH_LABELS_2027 = [
   { month: '2027-01', label: 'Январь 2027' },
@@ -67,11 +72,16 @@ export function FinanceView() {
     updateFinancialPlanRow,
     addFinancialPlanRow,
     createProduct,
+    updateProduct,
     createCompetitor,
     notify,
   } = usePlatform();
 
-  const { models: liveScenarioModels } = useLiveScenarioPortfolio();
+  const {
+    models: liveScenarioModels,
+    scenarios: liveScenarios,
+    updateModelsBatch,
+  } = useLiveScenarioPortfolio();
 
   const isStrategyMode = platformMode === 'strategy';
   const isReadOnlyRole =
@@ -360,6 +370,121 @@ export function FinanceView() {
       ),
     [products, brandFilter, currentUser]
   );
+
+  const unitEconomicsProducts = useMemo<Product[]>(() => {
+    const seenSkus = new Set<string>();
+    const merged: Product[] = [];
+
+    for (const p of filteredProducts) {
+      const skuNorm = (p.sku || '').trim().toUpperCase();
+      if (skuNorm) seenSkus.add(skuNorm);
+      merged.push(p);
+    }
+
+    for (const sm of liveScenarioModels) {
+      if (sm.launchStatus === 'В архиве') continue;
+      const brandLabel = detectModelBrandPortfolioLabel(sm);
+      const brandCode = normalizeLabBrandCode(brandLabel);
+      if (!canUserViewBrandConcept(currentUser, brandCode)) continue;
+      if (
+        brandFilter !== 'ALL' &&
+        brandCode !== normalizeLabBrandCode(brandFilter)
+      ) {
+        continue;
+      }
+      const skuNorm = (sm.code || '').trim().toUpperCase();
+      if (skuNorm && seenSkus.has(skuNorm)) continue;
+      if (skuNorm) seenSkus.add(skuNorm);
+
+      const profile = getBrandProductionProfile(brandCode, sm.title);
+      const retail = Math.max(100, Math.round(sm.retailPriceRub || 2490));
+      const cost = Math.max(0, Math.round(sm.unitCostRub || 0));
+
+      merged.push({
+        id: sm.id,
+        sku: sm.code,
+        name: sm.title,
+        brandId: brandCode,
+        category: sm.categoryLabel || profile.defaultConstructionRu,
+        productType: 'Базовая коллекция',
+        collection: `${brandLabel} · ${sm.subtitle || '2027'}`,
+        priceSegment: brandCode === 'NA_TELE' ? 'Premium' : 'Mass-Market+',
+        status: 'active',
+        description: sm.description || sm.subtitle || '',
+        ownerId: 'user-owner',
+        imageUrl: sm.gallery?.[0]?.url || '',
+        galleryUrls: (sm.gallery || [])
+          .map((g) => g.url)
+          .filter((u): u is string => Boolean(u)),
+        colorCombinations: (sm.palettes || []).map((pal) => pal.title),
+        materials: sm.fabric?.composition || profile.defaultMaterialRu,
+        fabricComposition: sm.fabric?.composition || profile.defaultMaterialRu,
+        fabricDensityGsm: parseInt(sm.fabric?.density || '180', 10) || 180,
+        waistbandType: sm.waistband?.type || profile.defaultWaistbandOrTrimRu,
+        fitType: sm.construction?.fit || profile.defaultConstructionRu,
+        constructionDetails: sm.construction?.seams || '',
+        sizes: [...profile.sizes],
+        supplierName:
+          sm.sharedSupplyAndFact?.factoryParams?.factoryName ||
+          profile.defaultFactoryNameZh,
+        supplierCountry: 'КНР / РФ',
+        moq: 500,
+        productionLeadDays: 35,
+        deliveryLeadDays: 18,
+        techFiles: [],
+        economics: {
+          currency: 'RUB',
+          plannedRetailPrice: retail,
+          actualRetailPrice: retail,
+          discountPct: 0,
+          vatPct: 0,
+          returnRatePct: Math.max(0, 100 - (sm.buyoutRatePct ?? 85)),
+          unitCostPrice: cost,
+          marketplaceCommissionRub: Math.round(
+            retail * ((sm.marketplaceFeePct || 24) / 100)
+          ),
+          logisticsRub: sm.logisticsRub || 95,
+          advertisingRub: Math.round(retail * ((sm.adsPct || 10) / 100)),
+          otherVariableRub:
+            sm.sharedSupplyAndFact?.otherVariableRubPerPack || 35,
+        },
+        unitsSold: 0,
+        revenueRub: 0,
+        operatingProfitRub: 0,
+        monthlyDynamicsPct: 0,
+        salesChannels: ['Wildberries', 'Ozon'],
+        variants: [],
+        isDemo: false,
+        isArchived: false,
+        createdAt: '2026-01-01',
+        updatedAt: '2027-01-01',
+      });
+    }
+
+    return merged;
+  }, [filteredProducts, liveScenarioModels, brandFilter, currentUser]);
+
+  const existingSkusForImport = useMemo(() => {
+    const out: { sku: string }[] = [];
+    const seen = new Set<string>();
+    for (const p of products) {
+      if (p.isArchived) continue;
+      const k = (p.sku || '').trim().toUpperCase();
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        out.push({ sku: p.sku });
+      }
+    }
+    for (const m of liveScenarioModels) {
+      if (m.launchStatus === 'В архиве') continue;
+      const k = (m.code || '').trim().toUpperCase();
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        out.push({ sku: m.code });
+      }
+    }
+    return out;
+  }, [products, liveScenarioModels]);
 
   const filteredCampaigns = useMemo(
     () =>
@@ -679,7 +804,7 @@ export function FinanceView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E8E8E5]">
-              {filteredProducts.map((p) => {
+              {unitEconomicsProducts.map((p) => {
                 const u = p.economics;
                 const calc = calculateUnitEconomics(u);
                 return (
@@ -956,8 +1081,10 @@ export function FinanceView() {
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = tpl.file;
+                    document.body.appendChild(a);
                     a.click();
-                    URL.revokeObjectURL(url);
+                    a.remove();
+                    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
                     notify('success', `Шаблон ${tpl.file} выгружен`);
                   }}
                   className="inline-flex items-center justify-center gap-2 h-10 rounded-lg bg-white border border-[#E8E8E5] text-[13px] font-semibold text-[#171717] hover:bg-[#111111] hover:text-white transition cursor-pointer"
@@ -974,7 +1101,7 @@ export function FinanceView() {
       {importModalOpen && (
         <CsvImportWizardModal
           onClose={() => setImportModalOpen(false)}
-          existingProducts={products}
+          existingProducts={existingSkusForImport}
           existingCompetitorNames={competitors.map((c) => c.brandName.trim().toUpperCase())}
           existingFinanceKeys={financialPlans
             .filter((f) => f.scenario === financialScenario)
@@ -984,34 +1111,151 @@ export function FinanceView() {
               const raw = (v ?? '').trim().replace(/\s+/g, '').replace(',', '.');
               return raw === '' ? Number.NaN : Number(raw);
             };
-            rows.forEach((r) => {
-              const parsedRetail = parseCsvNum(r.retailPriceRub);
-              const retail = Number.isFinite(parsedRetail) ? parsedRetail : 2290;
-              const parsedCost = parseCsvNum(r.costPriceRub);
-              const cost = Number.isFinite(parsedCost) ? parsedCost : 450;
-              createProduct({
-                sku: r.sku || `SKU-${Date.now().toString().slice(-4)}`,
-                name: r.name || 'Импортированная модель',
-                brandId: normalizeLabBrandCode(r.brandId || 'BORNERS'),
-                collection: r.collection || 'CORE 2027',
-                materials: r.materials || 'Модал / Хлопок',
-                status: 'in_development',
-                economics: {
-                  currency: 'RUB',
-                  plannedRetailPrice: retail,
-                  actualRetailPrice: retail,
-                  discountPct: 10,
-                  vatPct: 20,
-                  returnRatePct: 8,
-                  unitCostPrice: cost,
-                  marketplaceCommissionRub: Math.round(retail * 0.18),
-                  logisticsRub: 95,
-                  advertisingRub: Math.round(retail * 0.1),
-                  otherVariableRub: 40,
-                },
-              });
+            const preparedRows = rows
+              .map((r, idx) => {
+                const normBrand = normalizeLabBrandCode(r.brandId || 'BORNERS');
+                if (!canUserEditBrand(currentUser, normBrand)) return null;
+                const sku = (
+                  r.sku || `SKU-${Date.now().toString().slice(-4)}-${idx + 1}`
+                ).trim();
+                const name = (r.name || 'Импортированная модель').trim();
+                const collection = (r.collection || 'CORE 2027').trim();
+                const profile = getBrandProductionProfile(normBrand, name);
+                const materials = (r.materials || profile.defaultMaterialRu).trim();
+                const parsedRetail = parseCsvNum(r.retailPriceRub);
+                const retail = Number.isFinite(parsedRetail) ? parsedRetail : 2290;
+                const parsedCost = parseCsvNum(r.costPriceRub);
+                const cost = Number.isFinite(parsedCost) ? parsedCost : 450;
+                return {
+                  sku,
+                  name,
+                  normBrand,
+                  collection,
+                  materials,
+                  retail,
+                  cost,
+                  profile,
+                };
+              })
+              .filter((item): item is NonNullable<typeof item> => item !== null);
+
+            if (preparedRows.length === 0) {
+              notify('warning', 'Нет доступных для редактирования строк импорта');
+              return;
+            }
+
+            const seenBatchLegacy = new Map<string, string>();
+            for (const p of products) {
+              if (!p.isArchived) {
+                seenBatchLegacy.set(p.sku.trim().toUpperCase(), p.id);
+              }
+            }
+
+            preparedRows.forEach((item) => {
+              const skuUpper = item.sku.toUpperCase();
+              const existingLegacyId = seenBatchLegacy.get(skuUpper);
+              const economics = {
+                currency: 'RUB' as const,
+                plannedRetailPrice: item.retail,
+                actualRetailPrice: item.retail,
+                discountPct: 10,
+                vatPct: 20,
+                returnRatePct: 8,
+                unitCostPrice: item.cost,
+                marketplaceCommissionRub: Math.round(item.retail * 0.18),
+                logisticsRub: 95,
+                advertisingRub: Math.round(item.retail * 0.1),
+                otherVariableRub: 40,
+              };
+
+              if (existingLegacyId) {
+                updateProduct(existingLegacyId, {
+                  sku: item.sku,
+                  name: item.name,
+                  brandId: item.normBrand,
+                  collection: item.collection,
+                  materials: item.materials,
+                  fabricComposition: item.materials,
+                  sizes: [...item.profile.sizes],
+                  economics,
+                });
+              } else {
+                const created = createProduct({
+                  sku: item.sku,
+                  name: item.name,
+                  brandId: item.normBrand,
+                  category: item.profile.defaultConstructionRu,
+                  fitType: item.profile.defaultConstructionRu,
+                  sizes: [...item.profile.sizes],
+                  supplierName: item.profile.defaultFactoryNameZh,
+                  moq: 500,
+                  collection: item.collection,
+                  materials: item.materials,
+                  status: 'in_development',
+                  economics,
+                });
+                seenBatchLegacy.set(skuUpper, created.id);
+              }
             });
-            notify('success', `Импортировано позиций SKU: ${rows.length}`);
+
+            updateModelsBatch((prevModels) => {
+              let nextModels = [...prevModels];
+              for (const item of preparedRows) {
+                const skuUpper = item.sku.toUpperCase();
+                const existingIdx = nextModels.findIndex(
+                  (m) => (m.code || '').trim().toUpperCase() === skuUpper
+                );
+                if (existingIdx >= 0) {
+                  const prev = nextModels[existingIdx];
+                  const prevRetail = prev.retailPriceRub;
+                  const updatedPlans = { ...prev.plansByScenario };
+                  for (const scKey of Object.keys(updatedPlans)) {
+                    const scId = Number(scKey);
+                    const pl = updatedPlans[scId];
+                    if (pl) {
+                      updatedPlans[scId] = {
+                        ...pl,
+                        monthlyPricesRub: (
+                          pl.monthlyPricesRub || Array<number>(12).fill(item.retail)
+                        ).map((pr) => (!pr || pr === prevRetail ? item.retail : pr)),
+                      };
+                    }
+                  }
+                  nextModels[existingIdx] = ensureModelUnifiedV11({
+                    ...prev,
+                    title: item.name,
+                    subtitle: item.collection || prev.subtitle,
+                    retailPriceRub: item.retail,
+                    unitCostRub: item.cost,
+                    launchStatus:
+                      prev.launchStatus === 'В архиве'
+                        ? 'В разработке'
+                        : prev.launchStatus,
+                    fabric: {
+                      ...prev.fabric,
+                      composition: item.materials || prev.fabric.composition,
+                    },
+                    plansByScenario: updatedPlans,
+                  });
+                } else {
+                  const created = createBrandProductModel(nextModels, liveScenarios, {
+                    brandCode: item.normBrand,
+                    title: item.name,
+                    code: item.sku,
+                    categoryLabel: item.collection,
+                    retailPriceRub: item.retail,
+                    unitCostRub: item.cost,
+                    unitsInPack: item.profile.defaultPackUnits,
+                    composition: item.materials,
+                    factoryName: item.profile.defaultFactoryNameZh,
+                  });
+                  nextModels = created.models;
+                }
+              }
+              return nextModels;
+            });
+
+            notify('success', `Импортировано позиций SKU: ${preparedRows.length}`);
             setImportModalOpen(false);
           }}
           onImportCompetitors={(rows) => {

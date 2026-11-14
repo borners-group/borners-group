@@ -370,6 +370,8 @@ export function ScenarioModelCardScreen({
       ? model.wbArticle
       : actingSkuRef?.wbSku || '';
 
+  const canCreateNewBrand = canUserEditBrand(currentUser, 'BORNERS');
+
   const availableBrandOptions = useMemo(() => {
     const set = new Set<string>(DEFAULT_BRAND_OPTIONS);
     if (model.customBrandLabel && model.customBrandLabel.trim()) {
@@ -381,8 +383,12 @@ export function ScenarioModelCardScreen({
     if (brandPortfolioLabel && brandPortfolioLabel !== 'Подтвердить бренд') {
       set.add(brandPortfolioLabel);
     }
-    return Array.from(set);
-  }, [model.customBrandLabel, shared.customBrandOptions, brandPortfolioLabel]);
+    return Array.from(set).filter((opt) => {
+      if (opt === brandPortfolioLabel) return true;
+      const norm = normalizePortfolioBrandCode(opt);
+      return canUserEditBrand(currentUser, norm === 'ALL' ? 'BORNERS' : norm);
+    });
+  }, [model.customBrandLabel, shared.customBrandOptions, brandPortfolioLabel, currentUser]);
 
   const filteredGallery = useMemo(
     () => model.gallery.filter((g) => Boolean(g.url || g.originalUrl)),
@@ -477,11 +483,16 @@ export function ScenarioModelCardScreen({
   const handleBrandSelectChange = (nextBrandLabel: string) => {
     if (!canEdit) return;
     if (nextBrandLabel === '__CREATE_NEW__') {
+      if (!canCreateNewBrand) return;
       setCreatingBrandOpen(true);
       return;
     }
     const clean = nextBrandLabel.trim();
     if (!clean || clean === brandPortfolioLabel) return;
+    const targetNorm = normalizePortfolioBrandCode(clean);
+    if (!canUserEditBrand(currentUser, targetNorm === 'ALL' ? 'BORNERS' : targetNorm)) {
+      return;
+    }
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
@@ -497,7 +508,7 @@ export function ScenarioModelCardScreen({
   };
 
   const handleCreateCustomBrand = () => {
-    if (!canEdit) return;
+    if (!canEdit || !canCreateNewBrand) return;
     const clean = newBrandDraft.trim();
     if (!clean) return;
     const nextCustomList = Array.from(
@@ -956,6 +967,7 @@ export function ScenarioModelCardScreen({
 
   // Экспорт плана текущего SKU (CSV или JSON)
   const handleExportSkuPlan = (format: 'csv' | 'json') => {
+    if (!hasFinance) return;
     const rows = exportStructuredScenarioPlan([model], scenario);
     const content =
       format === 'csv'
@@ -968,8 +980,12 @@ export function ScenarioModelCardScreen({
     const a = document.createElement('a');
     a.href = url;
     a.download = `${model.code.replace(/\s+/g, '_')}_plan_${scenario.id}.${format}`;
+    if (document.body) {
+      document.body.appendChild(a);
+    }
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     notify(
       'success',
       `План ${model.code} экспортирован в ${format.toUpperCase()}`,
@@ -979,6 +995,7 @@ export function ScenarioModelCardScreen({
 
   // Импорт плана из JSON / CSV
   const handleImportSkuPlanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -1026,6 +1043,7 @@ export function ScenarioModelCardScreen({
       : pnl.revenueStatus;
 
   const maxSalesBarRub = Math.max(1, ...baseMetrics.monthlyRevenuesRub);
+  const maxSalesBarPacks = Math.max(1, ...plan.monthlyPacks);
 
   // Расчёт показателей для Блока Б («Результат за выбранный период: Месяц / Год», Стр. 5 ТЗ)
   const periodPacks =
@@ -1118,7 +1136,9 @@ export function ScenarioModelCardScreen({
                       Бренд: {b}
                     </option>
                   ))}
-                  <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                  {canCreateNewBrand && (
+                    <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                  )}
                 </select>
 
                 {/* Статус жизненного цикла модели (Идея / В разработке / Тест / Масштабирование / Действующий / Приостановлен) */}
@@ -1158,14 +1178,25 @@ export function ScenarioModelCardScreen({
                 {/* Годовой итог компактной строкой в верхней части (Стр. 2 ТЗ: без дублирования внутри месячной карточки) */}
                 <span className="text-[12px] text-[#5E5D58]">
                   За 12 мес. ({scenario.year}):{' '}
-                  <strong className="text-[#141413]">
-                    {formatMln(pnl.annualRevenueRub)}
-                  </strong>{' '}
-                  ({pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} {primaryUnitShort}
-                  {hasDistinctSecondary
-                    ? ` / ${pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} ${secondaryUnitShort}`
-                    : ''}
-                  )
+                  {hasFinance ? (
+                    <>
+                      <strong className="text-[#141413]">
+                        {formatMln(pnl.annualRevenueRub)}
+                      </strong>{' '}
+                      ({pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} {primaryUnitShort}
+                      {hasDistinctSecondary
+                        ? ` / ${pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} ${secondaryUnitShort}`
+                        : ''}
+                      )
+                    </>
+                  ) : (
+                    <strong className="text-[#141413]">
+                      {pnl.annualBuyoutsPacks.toLocaleString('ru-RU')} {primaryUnitShort}
+                      {hasDistinctSecondary
+                        ? ` / ${pnl.annualBuyoutsUnits.toLocaleString('ru-RU')} ${secondaryUnitShort}`
+                        : ''}
+                    </strong>
+                  )}
                 </span>
               </div>
             </div>
@@ -1188,8 +1219,12 @@ export function ScenarioModelCardScreen({
                   onChange={(e) => onSelectScenario(Number(e.target.value))}
                   className="bg-transparent text-[12px] font-bold text-[#141413] focus:outline-none cursor-pointer"
                 >
+                  {scenario.id < 0 && (
+                    <option value={-1}>Нет активного сценария</option>
+                  )}
                   {allScenarios
                     .filter((sc) => {
+                      if (sc.id < 0) return false;
                       if (sc.id === scenario.id) return true;
                       if (sc.isArchived) return false;
                       const mCode = normalizePortfolioBrandCode(brandPortfolioLabel);
@@ -1197,14 +1232,20 @@ export function ScenarioModelCardScreen({
                     })
                     .map((sc) => (
                       <option key={sc.id} value={sc.id}>
-                        {sc.title} ({sc.monthlyTargetMln} млн ₽/мес)
+                        {hasFinance
+                          ? `${sc.title} (${sc.monthlyTargetMln} млн ₽/мес)`
+                          : sc.title}
                       </option>
                     ))}
                 </select>
               </div>
             ) : (
               <span className="h-9 px-3 rounded-[9px] bg-[#F5F5F1] border-[1.5px] border-[#CECDC4] text-[12px] font-semibold text-[#141413] inline-flex items-center">
-                {scenario.title} · {scenario.monthlyTargetMln} млн ₽/мес
+                {scenario.id < 0
+                  ? 'Нет активного сценария'
+                  : hasFinance
+                  ? `${scenario.title} · ${scenario.monthlyTargetMln} млн ₽/мес`
+                  : scenario.title}
               </span>
             )}
 
@@ -1213,7 +1254,7 @@ export function ScenarioModelCardScreen({
               disabled={!canEdit}
               onClick={() => canEdit && setIsEditing((v) => !v)}
               className={`h-9 px-3.5 rounded-[9px] text-[12.5px] font-semibold border-[1.5px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                isEditing
+                isEditing && canEdit
                   ? 'bg-[#E6E5DE] text-[#141413] border-[#9E9D94]'
                   : 'bg-white hover:bg-[#F5F5F1] text-[#141413] border-[#CECDC4]'
               }`}
@@ -1290,7 +1331,7 @@ export function ScenarioModelCardScreen({
         </div>
 
         {/* Быстрое создание нового бренда (если нажали «+ Создать бренд...») */}
-        {creatingBrandOpen && (
+        {creatingBrandOpen && canEdit && canCreateNewBrand && (
           <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-[#F7F7F4] border border-[#CECDC4] px-3.5 py-2.5 text-[12.5px]">
             <span className="font-semibold text-[#141413]">Новый бренд:</span>
             <input
@@ -1318,7 +1359,7 @@ export function ScenarioModelCardScreen({
         )}
 
         {/* ФОРМА «РЕДАКТИРОВАТЬ» (Раздел 03 ТЗ, Стр. 3): Бренд, Название, Код, Артикул WB, Статус, Комплектация и Характеристики */}
-        {isEditing && (
+        {isEditing && canEdit && (
           <div className="rounded-[14px] bg-[#F7F7F4] border-[1.5px] border-[#141413] p-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DFDED6] pb-2.5">
               <div>
@@ -1333,13 +1374,15 @@ export function ScenarioModelCardScreen({
                   · Все изменения едины для всех сценариев и сохраняются при обновлении страницы (F5).
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreatingBrandOpen(true)}
-                className="h-8 px-3 rounded-[8px] bg-white hover:border-[#141413] border border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
-              >
-                + Создать бренд
-              </button>
+              {canCreateNewBrand && (
+                <button
+                  type="button"
+                  onClick={() => setCreatingBrandOpen(true)}
+                  className="h-8 px-3 rounded-[8px] bg-white hover:border-[#141413] border border-[#CECDC4] text-[12px] font-semibold text-[#141413] cursor-pointer"
+                >
+                  + Создать бренд
+                </button>
+              )}
             </div>
 
             {/* Поля 1–5 из таблицы на Стр. 3 ТЗ */}
@@ -1356,7 +1399,9 @@ export function ScenarioModelCardScreen({
                       {b}
                     </option>
                   ))}
-                  <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                  {canCreateNewBrand && (
+                    <option value="__CREATE_NEW__">+ Создать бренд...</option>
+                  )}
                 </select>
               </label>
 
@@ -1609,7 +1654,7 @@ export function ScenarioModelCardScreen({
                 className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover:scale-[1.02]"
               />
             </div>
-          ) : (
+          ) : canEdit ? (
             <label className="relative rounded-[14px] bg-[#F5F5F1] hover:bg-[#EFEFE9] border-[1.5px] border-dashed border-[#CECDC4] hover:border-[#141413] h-[310px] md:h-[360px] flex flex-col items-center justify-center gap-2.5 p-6 text-center cursor-pointer transition">
               <div className="h-11 w-11 rounded-full bg-white border border-[#CECDC4] flex items-center justify-center text-[#141413]">
                 <Plus className="h-5 w-5" />
@@ -1628,6 +1673,15 @@ export function ScenarioModelCardScreen({
                 className="hidden"
               />
             </label>
+          ) : (
+            <div className="relative rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-dashed border-[#CECDC4] h-[310px] md:h-[360px] flex flex-col items-center justify-center gap-2 p-6 text-center">
+              <div className="text-[14px] font-bold text-[#3F3E3A]">
+                Фото модели пока не загружено
+              </div>
+              <div className="text-[12px] text-[#686762]">
+                Режим чтения — загрузка фотографий недоступна для вашей роли
+              </div>
+            </div>
           )}
 
           {/* Горизонтальный ряд миниатюр + управление главным фото / порядком / удалением + кнопка «+ Загрузить фото» */}
@@ -1662,60 +1716,62 @@ export function ScenarioModelCardScreen({
                     </button>
 
                     {/* Панель действий над миниатюрой: Главное / Влево / Вправо / Удалить */}
-                    <div className="hidden group-hover/thumb:flex items-center gap-0.5 absolute -bottom-1 left-1/2 -translate-x-1/2 bg-[#141413]/90 text-white rounded-md px-1 py-0.5 shadow z-10">
-                      {idx > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSetMainGalleryPhoto(g.id);
-                          }}
-                          title="Сделать главным фото"
-                          className="p-0.5 hover:text-amber-300 cursor-pointer"
-                        >
-                          <Star className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                      {idx > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveGalleryPhoto(g.id, -1);
-                          }}
-                          title="Сдвинуть влево"
-                          className="p-0.5 hover:text-emerald-300 cursor-pointer"
-                        >
-                          <ArrowLeft className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                      {idx < filteredGallery.length - 1 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveGalleryPhoto(g.id, 1);
-                          }}
-                          title="Сдвинуть вправо"
-                          className="p-0.5 hover:text-emerald-300 cursor-pointer"
-                        >
-                          <ArrowRight className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                      {filteredGallery.length >= 1 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveGalleryPhoto(g.id);
-                          }}
-                          title="Удалить фото"
-                          className="p-0.5 hover:text-rose-300 cursor-pointer"
-                        >
-                          <Trash2 className="h-2.5 w-2.5" />
-                        </button>
-                      )}
-                    </div>
+                    {canEdit && (
+                      <div className="hidden group-hover/thumb:flex items-center gap-0.5 absolute -bottom-1 left-1/2 -translate-x-1/2 bg-[#141413]/90 text-white rounded-md px-1 py-0.5 shadow z-10">
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetMainGalleryPhoto(g.id);
+                            }}
+                            title="Сделать главным фото"
+                            className="p-0.5 hover:text-amber-300 cursor-pointer"
+                          >
+                            <Star className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveGalleryPhoto(g.id, -1);
+                            }}
+                            title="Сдвинуть влево"
+                            className="p-0.5 hover:text-emerald-300 cursor-pointer"
+                          >
+                            <ArrowLeft className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                        {idx < filteredGallery.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveGalleryPhoto(g.id, 1);
+                            }}
+                            title="Сдвинуть вправо"
+                            className="p-0.5 hover:text-emerald-300 cursor-pointer"
+                          >
+                            <ArrowRight className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                        {filteredGallery.length >= 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveGalleryPhoto(g.id);
+                            }}
+                            title="Удалить фото"
+                            className="p-0.5 hover:text-rose-300 cursor-pointer"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1731,16 +1787,17 @@ export function ScenarioModelCardScreen({
                   >
                     Во весь экран
                   </button>
-                  <button
-                    type="button"
-                    disabled={!canEdit}
-                    onClick={() => handleRemoveGalleryPhoto(activeGalleryItem?.id)}
-                    title="Удалить текущую фотографию из карточки"
-                    className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border-[1.5px] border-[#FECACA] text-[12px] font-semibold text-[#B42318] inline-flex items-center gap-1 cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Удалить фото</span>
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveGalleryPhoto(activeGalleryItem?.id)}
+                      title="Удалить текущую фотографию из карточки"
+                      className="h-8.5 px-3 rounded-[8px] bg-white hover:bg-[#FEF2F2] border-[1.5px] border-[#FECACA] text-[12px] font-semibold text-[#B42318] inline-flex items-center gap-1 cursor-pointer transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Удалить фото</span>
+                    </button>
+                  )}
                 </>
               )}
               {canEdit && (
@@ -1766,14 +1823,16 @@ export function ScenarioModelCardScreen({
             <div className="rounded-[16px] bg-white border-[1.5px] border-[#C8C7BE] p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-[#3F3E3A]">
-                  Выручка выбранного месяца
+                  {hasFinance ? 'Выручка выбранного месяца' : 'Выкупы выбранного месяца'}
                 </span>
                 <StatusPill status={selMonthStatus} />
               </div>
 
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
-                  {formatMln(selMonthRevRub)}
+                  {hasFinance
+                    ? formatMln(selMonthRevRub)
+                    : `${selMonthPacks.toLocaleString('ru-RU')} ${primaryUnitShort}`}
                 </div>
                 <select
                   aria-label="Месяц выручки"
@@ -1790,13 +1849,24 @@ export function ScenarioModelCardScreen({
               </div>
 
               <div className="text-[11.5px] text-[#5E5D58]">
-                {formatRub(selMonthRevRub)} · Выкупы:{' '}
-                <strong className="text-[#141413]">
-                  {selMonthPacks.toLocaleString('ru-RU')} {primaryUnitShort}
-                </strong>
-                {hasDistinctSecondary
-                  ? ` (${selMonthUnits.toLocaleString('ru-RU')} ${secondaryUnitShort})`
-                  : ''}
+                {hasFinance ? (
+                  <>
+                    {formatRub(selMonthRevRub)} · Выкупы:{' '}
+                    <strong className="text-[#141413]">
+                      {selMonthPacks.toLocaleString('ru-RU')} {primaryUnitShort}
+                    </strong>
+                    {hasDistinctSecondary
+                      ? ` (${selMonthUnits.toLocaleString('ru-RU')} ${secondaryUnitShort})`
+                      : ''}
+                  </>
+                ) : (
+                  <>
+                    Выручка: <strong className="text-[#686762]">Скрыто</strong>
+                    {hasDistinctSecondary
+                      ? ` · ${selMonthUnits.toLocaleString('ru-RU')} ${secondaryUnitShort}`
+                      : ''}
+                  </>
+                )}
               </div>
             </div>
 
@@ -2030,6 +2100,7 @@ export function ScenarioModelCardScreen({
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Состав материала:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.fabric.composition}
                       placeholder="Например: 100% полиэстер блэкаут / 92% модал"
                       onChange={(e) =>
@@ -2045,13 +2116,14 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Плотность / светозащита:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.fabric.density}
                       placeholder="Например: 280 г/м² или 190 г/м²"
                       onChange={(e) =>
@@ -2067,13 +2139,14 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Фактура / переплетение:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.fabric.knitType}
                       placeholder="Например: Рогожка матовая / Кулирная гладь"
                       onChange={(e) =>
@@ -2089,7 +2162,7 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                 </div>
@@ -2127,13 +2200,14 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Габариты / посадка:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.construction.fit}
                       placeholder="Например: Высота 270 см · ширина 300 см"
                       onChange={(e) =>
@@ -2149,13 +2223,14 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Детали и пошив:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.construction.seams}
                       placeholder="Например: Закрытые боковые швы евро-стандарта"
                       onChange={(e) =>
@@ -2171,7 +2246,7 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                 </div>
@@ -2187,6 +2262,7 @@ export function ScenarioModelCardScreen({
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Крепление / верх / пояс:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.waistband.width}
                       placeholder="Например: Шторная лента 6 см / Пояс 35 мм"
                       onChange={(e) =>
@@ -2202,13 +2278,14 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <label className="block space-y-0.5">
                     <span className="text-[11px] font-semibold text-[#5E5D58]">Упаковка и маркировка:</span>
                     <input
                       type="text"
+                      disabled={!canEdit}
                       value={model.waistband.logoRepeat}
                       placeholder="Например: Фирменный кофр на молнии + ярлык"
                       onChange={(e) =>
@@ -2224,7 +2301,7 @@ export function ScenarioModelCardScreen({
                           true
                         )
                       }
-                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413]"
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] focus:border-[#141413] bg-white px-2.5 text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </label>
                   <div className="pt-0.5">
@@ -2554,13 +2631,13 @@ export function ScenarioModelCardScreen({
                               )}
                             </td>
                             <td className="py-2 px-3 text-right font-mono text-[#5E5D58]">
-                              {ordRub.toLocaleString('ru-RU')} ₽
+                              {hasFinance ? `${ordRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                             <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
                               {buyPacks.toLocaleString('ru-RU')}
                             </td>
                             <td className="py-2 px-3 text-right font-mono font-bold text-[#157347]">
-                              {buyRub.toLocaleString('ru-RU')} ₽
+                              {hasFinance ? `${buyRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                           </tr>
                         );
@@ -2584,17 +2661,18 @@ export function ScenarioModelCardScreen({
                             .toLocaleString('ru-RU')}
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          {model.liskaniSizeVariants
-                            .reduce(
-                              (s, v) =>
-                                s +
-                                (liskaniSizeMonthFilter === 'ALL'
-                                  ? v.annualOrdersRub
-                                  : v.monthlyOrdersRub[liskaniSizeMonthFilter] || 0),
-                              0
-                            )
-                            .toLocaleString('ru-RU')}{' '}
-                          ₽
+                          {hasFinance
+                            ? `${model.liskaniSizeVariants
+                                .reduce(
+                                  (s, v) =>
+                                    s +
+                                    (liskaniSizeMonthFilter === 'ALL'
+                                      ? v.annualOrdersRub
+                                      : v.monthlyOrdersRub[liskaniSizeMonthFilter] || 0),
+                                  0
+                                )
+                                .toLocaleString('ru-RU')} ₽`
+                            : 'Скрыто'}
                         </td>
                         <td className="py-2.5 px-3 text-right text-[#157347]">
                           {model.liskaniSizeVariants
@@ -2609,11 +2687,12 @@ export function ScenarioModelCardScreen({
                             .toLocaleString('ru-RU')}
                         </td>
                         <td className="py-2.5 px-3 text-right text-[#157347]">
-                          {(liskaniSizeMonthFilter === 'ALL'
-                            ? baseMetrics.annualRevenueRub
-                            : baseMetrics.monthlyRevenuesRub[liskaniSizeMonthFilter] || 0
-                          ).toLocaleString('ru-RU')}{' '}
-                          ₽
+                          {hasFinance
+                            ? `${(liskaniSizeMonthFilter === 'ALL'
+                                ? baseMetrics.annualRevenueRub
+                                : baseMetrics.monthlyRevenuesRub[liskaniSizeMonthFilter] || 0
+                              ).toLocaleString('ru-RU')} ₽`
+                            : 'Скрыто'}
                         </td>
                       </tr>
                     </tfoot>
@@ -2636,47 +2715,50 @@ export function ScenarioModelCardScreen({
                     Все названия палитр, оттенки, HEX-цвета и артикулы редактируются прямо в карточке
                   </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={!canEdit}
-                  onClick={() => {
-                    if (!canEdit) return;
-                    const newPal = {
-                      id: `pal-${Date.now()}`,
-                      title: `Палитра — ${model.title}`,
-                      subtitle: hasDistinctSecondary
-                        ? `${model.unitsInPack} ${secondaryUnitShort} · ${brandPortfolioLabel}`
-                        : `${primaryUnitShort} · ${brandPortfolioLabel}`,
-                      statusLabel: 'В плане',
-                      colors: [
-                        {
-                          nameRu: 'Основной цвет #1',
-                          hex: '#334155',
-                          bandHex: '#1E293B',
-                          textHex: '#FFFFFF',
-                          pantone: `${model.code} · #1`,
-                        },
-                      ],
-                    };
-                    commitWithAudit(
-                      { ...model, palettes: [...model.palettes, newPal] },
-                      'product',
-                      `Добавлена цветовая палитра «${newPal.title}»`,
-                      undefined,
-                      newPal.title,
-                      true
-                    );
-                  }}
-                  className="h-8 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Добавить палитру / вариант</span>
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canEdit) return;
+                      const newPal = {
+                        id: `pal-${Date.now()}`,
+                        title: `Палитра — ${model.title}`,
+                        subtitle: hasDistinctSecondary
+                          ? `${model.unitsInPack} ${secondaryUnitShort} · ${brandPortfolioLabel}`
+                          : `${primaryUnitShort} · ${brandPortfolioLabel}`,
+                        statusLabel: 'В плане',
+                        colors: [
+                          {
+                            nameRu: 'Основной цвет #1',
+                            hex: '#334155',
+                            bandHex: '#1E293B',
+                            textHex: '#FFFFFF',
+                            pantone: `${model.code} · #1`,
+                          },
+                        ],
+                      };
+                      commitWithAudit(
+                        { ...model, palettes: [...model.palettes, newPal] },
+                        'product',
+                        `Добавлена цветовая палитра «${newPal.title}»`,
+                        undefined,
+                        newPal.title,
+                        true
+                      );
+                    }}
+                    className="h-8 px-3 rounded-[8px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Добавить палитру / вариант</span>
+                  </button>
+                )}
               </div>
 
               {model.palettes.length === 0 ? (
                 <div className="rounded-[14px] border border-dashed border-[#CECDC4] bg-[#F7F7F4] p-5 text-center text-[13px] text-[#5E5D58]">
-                  Цветовые палитры пока не добавлены. Нажмите «+ Добавить палитру / вариант», чтобы задать цвета модели.
+                  {canEdit
+                    ? 'Цветовые палитры пока не добавлены. Нажмите «+ Добавить палитру / вариант», чтобы задать цвета модели.'
+                    : 'Цветовые палитры пока не добавлены.'}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -2689,6 +2771,7 @@ export function ScenarioModelCardScreen({
                         <div className="flex-1 space-y-1.5 min-w-0">
                           <input
                             type="text"
+                            disabled={!canEdit}
                             value={pal.title}
                             placeholder="Название палитры / карточки"
                             onChange={(e) => {
@@ -2704,10 +2787,11 @@ export function ScenarioModelCardScreen({
                                 true
                               );
                             }}
-                            className="h-7.5 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[13px] font-bold text-[#141413]"
+                            className="h-7.5 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[13px] font-bold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                           />
                           <input
                             type="text"
+                            disabled={!canEdit}
                             value={pal.subtitle}
                             placeholder="Описание комплектации и размеров"
                             onChange={(e) => {
@@ -2723,13 +2807,14 @@ export function ScenarioModelCardScreen({
                                 true
                               );
                             }}
-                            className="h-7 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[11.5px] text-[#5E5D58]"
+                            className="h-7 w-full rounded-[6px] border border-[#DFDED6] focus:border-[#141413] bg-[#F7F7F4] focus:bg-white px-2 text-[11.5px] text-[#5E5D58] disabled:opacity-60 disabled:cursor-not-allowed"
                           />
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
                           <input
                             type="text"
+                            disabled={!canEdit}
                             value={pal.statusLabel}
                             onChange={(e) => {
                               const nextPalettes = model.palettes.map((p) =>
@@ -2743,25 +2828,27 @@ export function ScenarioModelCardScreen({
                                 e.target.value
                               );
                             }}
-                            className="h-7 w-28 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] px-2 text-[10.5px] font-semibold text-[#3F3E3A] text-center"
+                            className="h-7 w-28 rounded-[6px] bg-[#F4F4F0] border border-[#CECDC4] px-2 text-[10.5px] font-semibold text-[#3F3E3A] text-center disabled:opacity-60 disabled:cursor-not-allowed"
                           />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextPalettes = model.palettes.filter(
-                                (p) => p.id !== pal.id
-                              );
-                              commitWithAudit(
-                                { ...model, palettes: nextPalettes },
-                                'product',
-                                `Удалена палитра «${pal.title}»`
-                              );
-                            }}
-                            title="Удалить эту палитру"
-                            className="h-7 w-7 rounded-[6px] border border-[#FECACA] bg-white hover:bg-[#FEF2F2] text-[#B42318] flex items-center justify-center cursor-pointer transition"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextPalettes = model.palettes.filter(
+                                  (p) => p.id !== pal.id
+                                );
+                                commitWithAudit(
+                                  { ...model, palettes: nextPalettes },
+                                  'product',
+                                  `Удалена палитра «${pal.title}»`
+                                );
+                              }}
+                              title="Удалить эту палитру"
+                              className="h-7 w-7 rounded-[6px] border border-[#FECACA] bg-white hover:bg-[#FEF2F2] text-[#B42318] flex items-center justify-center cursor-pointer transition"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -2773,14 +2860,18 @@ export function ScenarioModelCardScreen({
                           >
                             <div className="flex items-center gap-1.5">
                               <label
-                                title="Нажмите, чтобы выбрать цвет"
-                                className="relative h-7 flex-1 rounded-[6px] border border-black/15 overflow-hidden cursor-pointer block"
+                                title={canEdit ? 'Нажмите, чтобы выбрать цвет' : c.nameRu}
+                                className={`relative h-7 flex-1 rounded-[6px] border border-black/15 overflow-hidden block ${
+                                  canEdit ? 'cursor-pointer' : 'cursor-default'
+                                }`}
                                 style={{ backgroundColor: c.hex }}
                               >
                                 <input
                                   type="color"
+                                  disabled={!canEdit}
                                   value={/^#[0-9A-Fa-f]{6}$/.test(c.hex) ? c.hex : '#334155'}
                                   onChange={(e) => {
+                                    if (!canEdit) return;
                                     const nextHex = e.target.value;
                                     const nextPalettes = model.palettes.map((p) =>
                                       p.id !== pal.id
@@ -2802,10 +2893,10 @@ export function ScenarioModelCardScreen({
                                       nextHex
                                     );
                                   }}
-                                  className="opacity-0 inset-0 w-full h-full cursor-pointer"
+                                  className="opacity-0 inset-0 w-full h-full cursor-pointer disabled:cursor-default"
                                 />
                               </label>
-                              {pal.colors.length > 1 && (
+                              {canEdit && pal.colors.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2833,6 +2924,7 @@ export function ScenarioModelCardScreen({
 
                             <input
                               type="text"
+                              disabled={!canEdit}
                               value={c.nameRu}
                               placeholder="Название цвета"
                               onChange={(e) => {
@@ -2857,11 +2949,12 @@ export function ScenarioModelCardScreen({
                                   true
                                 );
                               }}
-                              className="w-full h-6.5 px-1.5 rounded border border-[#DED8CC] focus:border-[#141413] bg-white text-[11px] font-semibold text-[#141413]"
+                              className="w-full h-6.5 px-1.5 rounded border border-[#DED8CC] focus:border-[#141413] bg-white text-[11px] font-semibold text-[#141413] disabled:opacity-60 disabled:cursor-not-allowed"
                             />
 
                             <input
                               type="text"
+                              disabled={!canEdit}
                               value={c.pantone}
                               placeholder="Код / артикул"
                               onChange={(e) => {
@@ -2885,43 +2978,45 @@ export function ScenarioModelCardScreen({
                                   e.target.value
                                 );
                               }}
-                              className="w-full h-6 px-1.5 rounded border border-[#DFDED6] focus:border-[#141413] bg-white text-[10px] font-mono text-[#5E5D58]"
+                              className="w-full h-6 px-1.5 rounded border border-[#DFDED6] focus:border-[#141413] bg-white text-[10px] font-mono text-[#5E5D58] disabled:opacity-60 disabled:cursor-not-allowed"
                             />
                           </div>
                         ))}
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const nextIdx = pal.colors.length + 1;
-                            const nextPalettes = model.palettes.map((p) =>
-                              p.id !== pal.id
-                                ? p
-                                : {
-                                    ...p,
-                                    colors: [
-                                      ...p.colors,
-                                      {
-                                        nameRu: `Цвет #${nextIdx}`,
-                                        hex: '#64748B',
-                                        bandHex: '#475569',
-                                        textHex: '#FFFFFF',
-                                        pantone: `${model.code} · #${nextIdx}`,
-                                      },
-                                    ],
-                                  }
-                            );
-                            commitWithAudit(
-                              { ...model, palettes: nextPalettes },
-                              'product',
-                              `Добавлен цвет #${nextIdx} в палитру «${pal.title}»`
-                            );
-                          }}
-                          className="rounded-[10px] border border-dashed border-[#CECDC4] hover:border-[#141413] bg-white hover:bg-[#F7F7F4] p-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-[#3F3E3A] hover:text-[#141413] min-h-[86px] cursor-pointer transition"
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span>+ Цвет</span>
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextIdx = pal.colors.length + 1;
+                              const nextPalettes = model.palettes.map((p) =>
+                                p.id !== pal.id
+                                  ? p
+                                  : {
+                                      ...p,
+                                      colors: [
+                                        ...p.colors,
+                                        {
+                                          nameRu: `Цвет #${nextIdx}`,
+                                          hex: '#64748B',
+                                          bandHex: '#475569',
+                                          textHex: '#FFFFFF',
+                                          pantone: `${model.code} · #${nextIdx}`,
+                                        },
+                                      ],
+                                    }
+                              );
+                              commitWithAudit(
+                                { ...model, palettes: nextPalettes },
+                                'product',
+                                `Добавлен цвет #${nextIdx} в палитру «${pal.title}»`
+                              );
+                            }}
+                            className="rounded-[10px] border border-dashed border-[#CECDC4] hover:border-[#141413] bg-white hover:bg-[#F7F7F4] p-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-[#3F3E3A] hover:text-[#141413] min-h-[86px] cursor-pointer transition"
+                          >
+                            <Plus className="h-4 w-4" />
+                            <span>+ Цвет</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -3159,7 +3254,8 @@ export function ScenarioModelCardScreen({
                   </div>
                   <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
                     {baseMetrics.annualPacks.toLocaleString('ru-RU')}{' '}
-                    {primaryUnitShort} · {formatMln(baseMetrics.annualRevenueRub)}
+                    {primaryUnitShort}
+                    {hasFinance ? ` · ${formatMln(baseMetrics.annualRevenueRub)}` : ''}
                   </div>
                 </div>
 
@@ -3169,7 +3265,8 @@ export function ScenarioModelCardScreen({
                   </div>
                   <div className="font-mono text-[15px] font-extrabold text-emerald-700 mt-0.5">
                     {baseMetrics.annualOrdersPacks.toLocaleString('ru-RU')}{' '}
-                    {primaryUnitShort} · {formatMln(baseMetrics.annualOrdersRub)}
+                    {primaryUnitShort}
+                    {hasFinance ? ` · ${formatMln(baseMetrics.annualOrdersRub)}` : ''}
                   </div>
                 </div>
 
@@ -3245,22 +3342,26 @@ export function ScenarioModelCardScreen({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleExportSkuPlan('csv')}
-                    className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Экспорт CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExportSkuPlan('json')}
-                    className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Экспорт JSON</span>
-                  </button>
+                  {hasFinance && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleExportSkuPlan('csv')}
+                        className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Экспорт CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportSkuPlan('json')}
+                        className="h-7.5 px-2.5 rounded-[8px] bg-white hover:bg-[#EFECE4] border border-[#DED8CC] text-[11.5px] font-semibold text-[#1D1D1F] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Экспорт JSON</span>
+                      </button>
+                    </>
+                  )}
                   {canEdit && (
                     <>
                       <button
@@ -3288,27 +3389,47 @@ export function ScenarioModelCardScreen({
               <div className="rounded-[16px] bg-[#FAF8F4] border border-[#E6E0D4] p-5 space-y-4">
                 <div className="flex items-center justify-between text-[12.5px] text-[#5A564F]">
                   <span>
-                    Помесячная динамика выручки и выкупов ({scenario.title} · {scenario.year})
+                    {hasFinance
+                      ? `Помесячная динамика выручки и выкупов (${scenario.title} · ${scenario.year})`
+                      : `Помесячная динамика выкупов (${scenario.title} · ${scenario.year})`}
                   </span>
-                  <strong>Итоги за год: {formatMln(pnl.annualRevenueRub)}</strong>
+                  <strong>
+                    Итоги за год:{' '}
+                    {hasFinance
+                      ? formatMln(pnl.annualRevenueRub)
+                      : `${baseMetrics.annualPacks.toLocaleString('ru-RU')} ${primaryUnitShort}`}
+                  </strong>
                 </div>
                 <div className="grid grid-cols-12 gap-2 items-end h-52 pt-4">
                   {MONTHS_SHORT_RU.map((mLabel, mIdx) => {
                     const rev = baseMetrics.monthlyRevenuesRub[mIdx] || 0;
                     const packs = plan.monthlyPacks[mIdx] || 0;
-                    const hPct = Math.max(4, Math.round((rev / maxSalesBarRub) * 100));
+                    const hPct = Math.max(
+                      4,
+                      Math.round(
+                        ((hasFinance ? rev : packs) /
+                          (hasFinance ? maxSalesBarRub : maxSalesBarPacks)) *
+                          100
+                      )
+                    );
                     return (
                       <div
                         key={mLabel}
                         className="flex flex-col items-center justify-end h-full gap-1.5"
                       >
                         <span className="text-[10px] font-semibold text-[#4E4A42]">
-                          {(rev / 1_000_000).toFixed(1)}м
+                          {hasFinance
+                            ? `${(rev / 1_000_000).toFixed(1)}м`
+                            : packs.toLocaleString('ru-RU')}
                         </span>
                         <div
                           style={{ height: `${hPct}%` }}
                           className="w-full max-w-[34px] rounded-t-[8px] bg-emerald-600/85 transition-all"
-                          title={`${mLabel}: ${packs.toLocaleString('ru-RU')} ${primaryUnitShort} = ${formatRub(rev)}`}
+                          title={
+                            hasFinance
+                              ? `${mLabel}: ${packs.toLocaleString('ru-RU')} ${primaryUnitShort} = ${formatRub(rev)}`
+                              : `${mLabel}: ${packs.toLocaleString('ru-RU')} ${primaryUnitShort}`
+                          }
                         />
                         <span className="text-[11px] font-semibold text-[#1D1D1F]">
                           {mLabel}
@@ -3437,10 +3558,10 @@ export function ScenarioModelCardScreen({
                             </div>
                           </td>
                           <td className="py-2 px-4 font-mono font-semibold text-[#475569]">
-                            {formatRub(planOrdersRub)}
+                            {hasFinance ? formatRub(planOrdersRub) : 'Скрыто'}
                           </td>
                           <td className="py-2 px-4 font-mono font-bold text-[#141413]">
-                            {formatRub(planRev)}
+                            {hasFinance ? formatRub(planRev) : 'Скрыто'}
                           </td>
                           {showSalesExtraTools && (
                             <>
@@ -3484,10 +3605,14 @@ export function ScenarioModelCardScreen({
                         {primaryUnitShort} (×{baseMetrics.orderMultiplier.toFixed(2).replace('.', ',')})
                       </td>
                       <td className="py-3 px-4 font-mono text-[#334155]">
-                        {formatRub(baseMetrics.annualOrdersRub)} ({formatMln(baseMetrics.annualOrdersRub)})
+                        {hasFinance
+                          ? `${formatRub(baseMetrics.annualOrdersRub)} (${formatMln(baseMetrics.annualOrdersRub)})`
+                          : 'Скрыто'}
                       </td>
                       <td className="py-3 px-4 font-mono text-[14px]">
-                        {formatRub(baseMetrics.annualRevenueRub)} ({formatMln(baseMetrics.annualRevenueRub)})
+                        {hasFinance
+                          ? `${formatRub(baseMetrics.annualRevenueRub)} (${formatMln(baseMetrics.annualRevenueRub)})`
+                          : 'Скрыто'}
                       </td>
                       {showSalesExtraTools && <td className="py-3 px-4" colSpan={2} />}
                     </tr>
@@ -4505,9 +4630,11 @@ export function ScenarioModelCardScreen({
                           );
                           return (
                             <td key={cf.monthLabel} className="py-2 px-2.5 font-mono text-[#157347]">
-                              {netInflow > 0
-                                ? `+${(netInflow / 1_000_000).toFixed(2).replace('.', ',')}м`
-                                : '0'}
+                              {!hasFinance
+                                ? 'Скрыто'
+                                : netInflow > 0
+                                  ? `+${(netInflow / 1_000_000).toFixed(2).replace('.', ',')}м`
+                                  : '0'}
                             </td>
                           );
                         })}
@@ -4518,14 +4645,14 @@ export function ScenarioModelCardScreen({
                           <td
                             key={cf.monthLabel}
                             className={`py-2 px-2.5 font-mono ${
-                              !hasCost
+                              !hasCost || !hasFinance
                                 ? 'text-[#64748B]'
                                 : cf.netCashFlowRub >= 0
                                   ? 'text-[#157347]'
                                   : 'text-[#B42318]'
                             }`}
                           >
-                            {!hasCost
+                            {!hasCost || !hasFinance
                               ? 'Скрыто'
                               : `${cf.netCashFlowRub >= 0 ? '+' : ''}${(cf.netCashFlowRub / 1_000_000).toFixed(2).replace('.', ',')}м`}
                           </td>

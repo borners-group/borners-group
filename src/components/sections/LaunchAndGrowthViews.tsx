@@ -18,6 +18,7 @@ import {
 import {
   EXPERIMENT_STATUS_LABELS_RU,
   canUserEditBrand,
+  canUserViewBrandConcept,
   canUserViewFinance,
   detectLaunchDateConflicts,
   formatCompactRub,
@@ -25,7 +26,10 @@ import {
 } from '@/lib/finance';
 import { resolvePublicAssetUrl } from '@/lib/scenarioData';
 import { formatLabBrandLabel, normalizeLabBrandCode } from '@/lib/rndCatalogSync';
-import { normalizePortfolioBrandCode } from '@/lib/unifiedBusinessEngine';
+import {
+  type CanonicalBrandCode,
+  normalizePortfolioBrandCode,
+} from '@/lib/unifiedBusinessEngine';
 import { useLiveScenarioPortfolio } from '@/lib/useLiveScenarioPortfolio';
 
 interface SelectableCatalogSku {
@@ -44,6 +48,29 @@ const LAUNCH_STATUS_COLUMNS: Launch['status'][] = [
   'Готов к старту',
   'Запущен',
 ];
+
+const EDITABLE_BRAND_OPTIONS: { code: CanonicalBrandCode; label: string }[] = [
+  { code: 'BORNERS', label: 'BORNERS' },
+  { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
+  { code: 'AKUSHA', label: 'AKUSHA' },
+  { code: 'LISKANI', label: 'LISKANI' },
+  { code: 'FUKAI', label: 'FUKAI' },
+];
+
+const RU_MONTH_NAMES: Record<string, string> = {
+  '01': 'Январь',
+  '02': 'Февраль',
+  '03': 'Март',
+  '04': 'Апрель',
+  '05': 'Май',
+  '06': 'Июнь',
+  '07': 'Июль',
+  '08': 'Август',
+  '09': 'Сентябрь',
+  '10': 'Октябрь',
+  '11': 'Ноябрь',
+  '12': 'Декабрь',
+};
 
 export function LaunchCalendarView() {
   const {
@@ -90,8 +117,14 @@ export function LaunchCalendarView() {
   const hasFinance = canUserViewFinance(currentUser);
   const livePortfolio = useLiveScenarioPortfolio();
 
+  const editableLaunchBrands = useMemo(
+    () => EDITABLE_BRAND_OPTIONS.filter((b) => canUserEditBrand(currentUser, b.code)),
+    [currentUser]
+  );
+
   const canCreateLaunch =
     !isStrategyMode &&
+    editableLaunchBrands.length > 0 &&
     (brandFilter === 'ALL'
       ? currentUser.role !== 'Viewer' && currentUser.role !== 'Partner'
       : canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter)));
@@ -102,6 +135,11 @@ export function LaunchCalendarView() {
     const merged: SelectableCatalogSku[] = [];
 
     for (const m of livePortfolio.models) {
+      if (m.launchStatus === 'В архиве') continue;
+      const mBrand = normalizePortfolioBrandCode(
+        m.customBrandLabel || m.brandId || 'BORNERS'
+      );
+      if (!canUserViewBrandConcept(currentUser, mBrand)) continue;
       const skuNorm = (m.code || '').trim().toUpperCase();
       seenIds.add(m.id);
       if (skuNorm) seenSkus.add(skuNorm);
@@ -109,9 +147,7 @@ export function LaunchCalendarView() {
         id: m.id,
         sku: m.code,
         name: m.title,
-        brandId: normalizePortfolioBrandCode(
-          m.customBrandLabel || m.brandId || 'BORNERS'
-        ),
+        brandId: mBrand,
         imageUrl: m.gallery?.[0]?.url || '',
         isScenarioModel: true,
       });
@@ -119,6 +155,8 @@ export function LaunchCalendarView() {
 
     for (const p of products) {
       if (p.isArchived) continue;
+      const pBrand = normalizeLabBrandCode(p.brandId);
+      if (!canUserViewBrandConcept(currentUser, pBrand)) continue;
       const skuNorm = (p.sku || '').trim().toUpperCase();
       if (seenIds.has(p.id) || (skuNorm && seenSkus.has(skuNorm))) continue;
       seenIds.add(p.id);
@@ -127,14 +165,14 @@ export function LaunchCalendarView() {
         id: p.id,
         sku: p.sku,
         name: p.name,
-        brandId: normalizeLabBrandCode(p.brandId),
+        brandId: pBrand,
         imageUrl: p.imageUrl,
         isScenarioModel: false,
       });
     }
 
     return merged;
-  }, [livePortfolio.models, products]);
+  }, [livePortfolio.models, products, currentUser]);
 
   const resolveLinkedSkus = useMemo(() => {
     return (productIds: string[]): SelectableCatalogSku[] => {
@@ -147,33 +185,39 @@ export function LaunchCalendarView() {
         }
         const fromLegacy = products.find((p) => p.id === pid);
         if (fromLegacy) {
-          resolved.push({
-            id: fromLegacy.id,
-            sku: fromLegacy.sku,
-            name: fromLegacy.name,
-            brandId: normalizeLabBrandCode(fromLegacy.brandId),
-            imageUrl: fromLegacy.imageUrl,
-            isScenarioModel: false,
-          });
+          const pBrand = normalizeLabBrandCode(fromLegacy.brandId);
+          if (canUserViewBrandConcept(currentUser, pBrand)) {
+            resolved.push({
+              id: fromLegacy.id,
+              sku: fromLegacy.sku,
+              name: fromLegacy.name,
+              brandId: pBrand,
+              imageUrl: fromLegacy.imageUrl,
+              isScenarioModel: false,
+            });
+          }
           continue;
         }
         const fromScenario = livePortfolio.models.find((m) => m.id === pid);
         if (fromScenario) {
-          resolved.push({
-            id: fromScenario.id,
-            sku: fromScenario.code,
-            name: fromScenario.title,
-            brandId: normalizePortfolioBrandCode(
-              fromScenario.customBrandLabel || fromScenario.brandId || 'BORNERS'
-            ),
-            imageUrl: fromScenario.gallery?.[0]?.url || '',
-            isScenarioModel: true,
-          });
+          const mBrand = normalizePortfolioBrandCode(
+            fromScenario.customBrandLabel || fromScenario.brandId || 'BORNERS'
+          );
+          if (canUserViewBrandConcept(currentUser, mBrand)) {
+            resolved.push({
+              id: fromScenario.id,
+              sku: fromScenario.code,
+              name: fromScenario.title,
+              brandId: mBrand,
+              imageUrl: fromScenario.gallery?.[0]?.url || '',
+              isScenarioModel: true,
+            });
+          }
         }
       }
       return resolved;
     };
-  }, [selectableCatalogSkus, products, livePortfolio.models]);
+  }, [selectableCatalogSkus, products, livePortfolio.models, currentUser]);
 
   const filteredLaunches = useMemo(
     () =>
@@ -181,17 +225,43 @@ export function LaunchCalendarView() {
         .filter(
           (l) =>
             !l.isArchived &&
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(l.brandId)) &&
             (brandFilter === 'ALL' ||
               normalizeLabBrandCode(l.brandId) === normalizeLabBrandCode(brandFilter))
         )
         .sort((a, b) => a.startDate.localeCompare(b.startDate)),
-    [launches, brandFilter]
+    [launches, brandFilter, currentUser]
   );
 
-  const activeLaunch: Launch | null = useMemo(
-    () => launches.find((l) => l.id === selectedLaunchId) || null,
-    [launches, selectedLaunchId]
-  );
+  const calendarMonths = useMemo(() => {
+    const keys = new Set<string>(['2027-02', '2027-03', '2027-04']);
+    for (const l of filteredLaunches) {
+      const mk = (l.startDate || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mk)) {
+        keys.add(mk);
+      }
+    }
+    return Array.from(keys)
+      .sort()
+      .map((monthKey) => {
+        const [yyyy, mm] = monthKey.split('-');
+        return {
+          monthKey,
+          label: `${RU_MONTH_NAMES[mm] || mm} ${yyyy}`,
+        };
+      });
+  }, [filteredLaunches]);
+
+  const activeLaunch: Launch | null = useMemo(() => {
+    const found = launches.find((l) => l.id === selectedLaunchId) || null;
+    if (
+      found &&
+      !canUserViewBrandConcept(currentUser, normalizeLabBrandCode(found.brandId))
+    ) {
+      return null;
+    }
+    return found;
+  }, [launches, selectedLaunchId, currentUser]);
 
   const openRescheduleModal = (launch: Launch) => {
     setRescheduleModalLaunch(launch);
@@ -301,7 +371,20 @@ export function LaunchCalendarView() {
 
           {canCreateLaunch && (
             <button
-              onClick={() => setCreateModalOpen(true)}
+              onClick={() => {
+                const defaultBrand =
+                  brandFilter !== 'ALL' &&
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter))
+                    ? normalizeLabBrandCode(brandFilter)
+                    : editableLaunchBrands[0]?.code || 'BORNERS';
+                setNewLaunchForm((prev) => ({
+                  ...prev,
+                  brandId: canUserEditBrand(currentUser, prev.brandId)
+                    ? prev.brandId
+                    : defaultBrand,
+                }));
+                setCreateModalOpen(true);
+              }}
               className="inline-flex items-center gap-2 h-11 rounded-xl bg-[#111111] text-white px-5 text-[15px] font-semibold hover:bg-neutral-800 transition cursor-pointer"
             >
               <Plus className="h-4 w-4" />
@@ -511,11 +594,7 @@ export function LaunchCalendarView() {
       {/* РЕЖИМ 2: ПО МЕСЯЦАМ */}
       {viewMode === 'calendar' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { monthKey: '2027-02', label: 'Февраль 2027' },
-            { monthKey: '2027-03', label: 'Март 2027' },
-            { monthKey: '2027-04', label: 'Апрель 2027' },
-          ].map((m) => {
+          {calendarMonths.map((m) => {
             const monthLaunches = filteredLaunches.filter((l) =>
               l.startDate.startsWith(m.monthKey)
             );
@@ -793,6 +872,36 @@ export function LaunchCalendarView() {
                   <h2 className="text-[28px] font-bold text-[#171717] mt-1">
                     {activeLaunch.name}
                   </h2>
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                    <span className="text-[12px] font-semibold uppercase tracking-wider text-[#737373]">
+                      Статус запуска:
+                    </span>
+                    <select
+                      aria-label="Статус запуска"
+                      disabled={!canEditActiveLaunch}
+                      value={activeLaunch.status}
+                      onChange={(e) => {
+                        if (!canEditActiveLaunch) return;
+                        const nextStatus = e.target.value as Launch['status'];
+                        updateLaunch(activeLaunch.id, {
+                          status: nextStatus,
+                          ...(nextStatus === 'Запущен' ? { readinessPct: 100 } : {}),
+                        });
+                      }}
+                      className="h-9 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 text-[13.5px] font-semibold text-[#171717] disabled:opacity-60 cursor-pointer"
+                    >
+                      {Array.from(
+                        new Set<Launch['status']>([
+                          ...LAUNCH_STATUS_COLUMNS,
+                          activeLaunch.status,
+                        ])
+                      ).map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <button
                   onClick={() => setSelectedLaunchId(null)}
@@ -1078,11 +1187,11 @@ export function LaunchCalendarView() {
                     }
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                   >
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
-                    <option value="FUKAI">FUKAI</option>
+                    {editableLaunchBrands.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1185,8 +1294,13 @@ export function MarketingGrowthView() {
   });
 
   const hasFinance = canUserViewFinance(currentUser);
+  const editableLaunchBrands = useMemo(
+    () => EDITABLE_BRAND_OPTIONS.filter((b) => canUserEditBrand(currentUser, b.code)),
+    [currentUser]
+  );
   const canCreateMarketing =
     !isStrategyMode &&
+    editableLaunchBrands.length > 0 &&
     (brandFilter === 'ALL'
       ? currentUser.role !== 'Viewer' && currentUser.role !== 'Partner'
       : canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter)));
@@ -1208,22 +1322,26 @@ export function MarketingGrowthView() {
       campaigns.filter(
         (c) =>
           !c.isArchived &&
+          (c.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(c.brandId))) &&
           (brandFilter === 'ALL' ||
             c.brandId === 'ALL' ||
             normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [campaigns, brandFilter]
+    [campaigns, brandFilter, currentUser]
   );
 
   const filteredExperiments = useMemo(
     () =>
       experiments.filter(
         (e) =>
-          brandFilter === 'ALL' ||
-          e.brandId === 'ALL' ||
-          normalizeLabBrandCode(e.brandId) === normalizeLabBrandCode(brandFilter)
+          (e.brandId === 'ALL' ||
+            canUserViewBrandConcept(currentUser, normalizeLabBrandCode(e.brandId))) &&
+          (brandFilter === 'ALL' ||
+            e.brandId === 'ALL' ||
+            normalizeLabBrandCode(e.brandId) === normalizeLabBrandCode(brandFilter))
       ),
-    [experiments, brandFilter]
+    [experiments, brandFilter, currentUser]
   );
 
   return (
@@ -1264,9 +1382,30 @@ export function MarketingGrowthView() {
 
           {canCreateMarketing && (
             <button
-              onClick={() =>
-                tab === 'campaigns' ? setCampModalOpen(true) : setExpModalOpen(true)
-              }
+              onClick={() => {
+                const defaultBrand =
+                  brandFilter !== 'ALL' &&
+                  canUserEditBrand(currentUser, normalizeLabBrandCode(brandFilter))
+                    ? normalizeLabBrandCode(brandFilter)
+                    : editableLaunchBrands[0]?.code || 'BORNERS';
+                if (tab === 'campaigns') {
+                  setCampForm((prev) => ({
+                    ...prev,
+                    brandId: canUserEditBrand(currentUser, prev.brandId)
+                      ? prev.brandId
+                      : defaultBrand,
+                  }));
+                  setCampModalOpen(true);
+                } else {
+                  setExpForm((prev) => ({
+                    ...prev,
+                    brandId: canUserEditBrand(currentUser, prev.brandId)
+                      ? prev.brandId
+                      : defaultBrand,
+                  }));
+                  setExpModalOpen(true);
+                }
+              }}
               className="h-11 px-5 rounded-xl bg-[#111111] text-white text-[15px] font-semibold cursor-pointer"
             >
               {tab === 'campaigns' ? '+ Новая кампания' : '+ Новая гипотеза'}
@@ -1451,13 +1590,13 @@ export function MarketingGrowthView() {
                       const spend = e.target.value === '' ? null : Number(e.target.value);
                       const rev = selectedCampaign.actualRevenueRub;
                       const roas =
-                        spend && rev && spend > 0
+                        spend !== null && rev !== null && spend > 0 && rev > 0
                           ? Number((rev / spend).toFixed(1))
-                          : selectedCampaign.metrics.roas;
+                          : null;
                       const drrPct =
-                        spend && rev && rev > 0
+                        spend !== null && rev !== null && spend > 0 && rev > 0
                           ? Number(((spend / rev) * 100).toFixed(1))
-                          : selectedCampaign.metrics.drrPct;
+                          : null;
                       updateCampaign(selectedCampaign.id, {
                         actualBudgetRub: spend,
                         metrics: {
@@ -1490,13 +1629,13 @@ export function MarketingGrowthView() {
                       const rev = e.target.value === '' ? null : Number(e.target.value);
                       const spend = selectedCampaign.actualBudgetRub;
                       const roas =
-                        spend && rev && spend > 0
+                        spend !== null && rev !== null && spend > 0 && rev > 0
                           ? Number((rev / spend).toFixed(1))
-                          : selectedCampaign.metrics.roas;
+                          : null;
                       const drrPct =
-                        spend && rev && rev > 0
+                        spend !== null && rev !== null && spend > 0 && rev > 0
                           ? Number(((spend / rev) * 100).toFixed(1))
-                          : selectedCampaign.metrics.drrPct;
+                          : null;
                       updateCampaign(selectedCampaign.id, {
                         actualRevenueRub: rev,
                         metrics: {
@@ -1713,11 +1852,11 @@ export function MarketingGrowthView() {
                     }
                     className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                   >
-                    <option value="BORNERS">BORNERS</option>
-                    <option value="NA_TELE">НА ТЕЛЕ</option>
-                    <option value="AKUSHA">AKUSHA</option>
-                    <option value="LISKANI">LISKANI</option>
-                    <option value="FUKAI">FUKAI</option>
+                    {editableLaunchBrands.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1795,11 +1934,11 @@ export function MarketingGrowthView() {
                   }
                   className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
                 >
-                  <option value="BORNERS">BORNERS</option>
-                  <option value="NA_TELE">НА ТЕЛЕ</option>
-                  <option value="AKUSHA">AKUSHA</option>
-                  <option value="LISKANI">LISKANI</option>
-                  <option value="FUKAI">FUKAI</option>
+                  {editableLaunchBrands.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>

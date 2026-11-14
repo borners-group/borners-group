@@ -62,7 +62,9 @@ import {
   pushPortfolioCoreToSupabase,
 } from '@/lib/supabaseCloudSync';
 import {
+  type DeletedScenarioModelSnapshot,
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
+  STORAGE_KEY_DELETED_MODEL_SNAPSHOTS,
   STORAGE_KEY_DELETED_MODELS,
   STORAGE_KEY_DELETED_SCENARIOS,
   STORAGE_KEY_MODELS,
@@ -71,9 +73,12 @@ import {
   STORAGE_KEY_SCENARIO_BY_BRAND,
   STORAGE_KEY_SCENARIOS,
   STORAGE_KEY_USER_PLANS_BACKUP,
+  applyPortfolioBackupSnapshotToStorage,
+  clearAllDeletedModelSnapshots,
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getDeletedModelSnapshots,
   getDeletedModelsRegistry,
   getDeletedScenariosRegistry,
   getPortfolioUpdatedAt,
@@ -84,16 +89,24 @@ import {
   markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
+  permanentlyDeleteModelFromTrash,
+  removeDeletedModelSnapshot,
+  resetPortfolioStorageToDemoDefaults,
   resolveEffectiveScenarioForModel,
+  restoreDeletedModelFromTrash,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
+  saveDeletedModelSnapshot,
   syncUserPlansBackup,
   touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
+  unmarkScenarioAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
 
+export type { DeletedScenarioModelSnapshot };
 export {
   STORAGE_KEY_ACTIVE_SCENARIO_ID,
+  STORAGE_KEY_DELETED_MODEL_SNAPSHOTS,
   STORAGE_KEY_DELETED_MODELS,
   STORAGE_KEY_DELETED_SCENARIOS,
   STORAGE_KEY_MODELS,
@@ -102,9 +115,12 @@ export {
   STORAGE_KEY_SCENARIO_BY_BRAND,
   STORAGE_KEY_SCENARIOS,
   STORAGE_KEY_USER_PLANS_BACKUP,
+  applyPortfolioBackupSnapshotToStorage,
+  clearAllDeletedModelSnapshots,
   clearDeletedModelsRegistry,
   deleteModelFromPortfolio,
   filterModelsForScenario,
+  getDeletedModelSnapshots,
   getDeletedModelsRegistry,
   getDeletedScenariosRegistry,
   getPortfolioUpdatedAt,
@@ -115,12 +131,18 @@ export {
   markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
   overlayBackupOntoModels,
+  permanentlyDeleteModelFromTrash,
+  removeDeletedModelSnapshot,
+  resetPortfolioStorageToDemoDefaults,
   resolveEffectiveScenarioForModel,
+  restoreDeletedModelFromTrash,
   runBornersSalesScenarioRepairMigrationV1,
   sanitizeSelectedScenarioByBrand,
+  saveDeletedModelSnapshot,
   syncUserPlansBackup,
   touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
+  unmarkScenarioAsDeletedInStorage,
 };
 
 const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
@@ -268,6 +290,13 @@ export function useLiveScenarioPortfolio() {
       effectiveScenList = nextScen;
       scenariosRef.current = nextScen;
       setScenarios(nextScen);
+    } else {
+      const defaultFiltered = DEFAULT_SCENARIOS_LIST.filter(
+        (s) => s && !deletedScenSet.has(s.id)
+      );
+      effectiveScenList = defaultFiltered;
+      scenariosRef.current = defaultFiltered;
+      setScenarios(defaultFiltered);
     }
 
     const savedByBrand = safeGetStorageJson<
@@ -290,6 +319,9 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedByBrand);
       }
       setSelectedScenarioByBrandState((prev) => ({ ...prev, ...sanitizedByBrand }));
+    } else {
+      selectedScenarioByBrandRef.current = sanitizedByBrand;
+      setSelectedScenarioByBrandState(sanitizedByBrand);
     }
 
     const savedScenId = safeGetStorageJson<number>(STORAGE_KEY_ACTIVE_SCENARIO_ID);
@@ -333,11 +365,16 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, syncedScenId);
       }
       setSelectedScenarioIdState(syncedScenId);
+    } else {
+      setSelectedScenarioIdState(effectiveBornersScen);
     }
 
     const savedGroupFlag = safeGetStorageJson<boolean>(STORAGE_KEY_S1_GROUP_PORTFOLIO);
     if (typeof savedGroupFlag === 'boolean') {
       setIncludeGroupState(savedGroupFlag);
+    } else {
+      includeGroupRef.current = false;
+      setIncludeGroupState(false);
     }
   }, []);
 
@@ -446,19 +483,6 @@ export function useLiveScenarioPortfolio() {
         return;
       }
 
-      if (Array.isArray(cloud.deletedModelIds) && cloud.deletedModelIds.length > 0) {
-        const unionDeleted = Array.from(
-          new Set([...getDeletedModelsRegistry(), ...cloud.deletedModelIds])
-        );
-        safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, unionDeleted);
-      }
-
-      if (Array.isArray(cloud.deletedScenarioIds) && cloud.deletedScenarioIds.length > 0) {
-        for (const delScenId of cloud.deletedScenarioIds) {
-          markScenarioAsDeletedInStorage(delScenId);
-        }
-      }
-
       const mutatedDuringCloud = localMutationSeqRef.current !== seqBeforeCloud;
       const latestLocalModels =
         localMutationSeqRef.current > 0
@@ -475,6 +499,45 @@ export function useLiveScenarioPortfolio() {
         !mutatedDuringCloud &&
         Number.isFinite(cloudTs) &&
         (!Number.isFinite(localTs) || cloudTs > localTs);
+
+      if (Array.isArray(cloud.deletedModelIds) && cloud.deletedModelIds.length > 0) {
+        const localModelKeys = new Set<string>();
+        if (!isCloudNewer) {
+          for (const lm of latestLocalModels) {
+            if (!lm) continue;
+            if (lm.id) localModelKeys.add(lm.id.trim().toUpperCase());
+            if (lm.code) localModelKeys.add(lm.code.trim().toUpperCase());
+          }
+        }
+        const safeCloudDeletedIds = isCloudNewer
+          ? cloud.deletedModelIds
+          : cloud.deletedModelIds.filter(
+              (id) => !localModelKeys.has(String(id || '').trim().toUpperCase())
+            );
+        if (safeCloudDeletedIds.length > 0) {
+          const unionDeleted = Array.from(
+            new Set([...getDeletedModelsRegistry(), ...safeCloudDeletedIds])
+          );
+          safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, unionDeleted);
+        }
+      }
+
+      if (Array.isArray(cloud.deletedScenarioIds) && cloud.deletedScenarioIds.length > 0) {
+        const activeLocalScenariosForGuard = mutatedDuringCloud
+          ? scenariosRef.current
+          : safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS) || [];
+        const localScenIdSet = new Set<number>(
+          !isCloudNewer
+            ? activeLocalScenariosForGuard
+                .filter((s): s is GrowthScenarioDef => Boolean(s && typeof s.id === 'number'))
+                .map((s) => s.id)
+            : []
+        );
+        for (const delScenId of cloud.deletedScenarioIds) {
+          if (!isCloudNewer && localScenIdSet.has(Number(delScenId))) continue;
+          markScenarioAsDeletedInStorage(delScenId);
+        }
+      }
 
       const mergeRes = mergeCloudPortfolioSnapshot({
         localModels: latestLocalModels,

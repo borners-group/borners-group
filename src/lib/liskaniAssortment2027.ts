@@ -43693,9 +43693,10 @@ export function updateLiskaniModelSizeVariant(
       : weightedPrice
   );
 
-  const scenarioIdsToSync = Array.from(
-    new Set([LISKANI_2027_SCENARIO_ID, activeScenarioId, 1, 2, 3])
-  );
+  const scenarioIdsToSync =
+    activeScenarioId === LISKANI_2027_SCENARIO_ID
+      ? Array.from(new Set([LISKANI_2027_SCENARIO_ID, 1, 2, 3]))
+      : [activeScenarioId];
   const nextPlansByScenario = { ...model.plansByScenario };
 
   for (const scId of scenarioIdsToSync) {

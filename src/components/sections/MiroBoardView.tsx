@@ -604,21 +604,90 @@ export function MiroBoardView() {
     notify('success', `Карточка ${c.code} закреплена в Студии идей`);
   };
 
-  // Нажатие на пустое место бесконечного холста -> панорамирование
-  const handleMouseDownViewport = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.canvasBg) {
-      return;
+  const activeInteractionModeRef = useRef<'pointer' | 'touch' | 'mouse' | null>(null);
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStateRef = useRef<{ dist: number; startZoom: number } | null>(null);
+
+  const isInteractiveBoardElement = (target: EventTarget | null): boolean => {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    const tag = el.tagName;
+    if (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'BUTTON' ||
+      tag === 'SELECT' ||
+      tag === 'A' ||
+      tag === 'LABEL' ||
+      tag === 'AUDIO'
+    ) {
+      return true;
     }
+    return Boolean(el.closest('button, input, textarea, select, a, label, audio'));
+  };
+
+  const startViewportPanAt = (clientX: number, clientY: number) => {
     if (connectingSourceId) {
       setConnectingSourceId(null);
     }
     setIsPanning(true);
     setPanStart({
-      clientX: e.clientX,
-      clientY: e.clientY,
+      clientX,
+      clientY,
       panX: pan.x,
       panY: pan.y,
     });
+  };
+
+  // Нажатие на пустое место бесконечного холста -> панорамирование (Мышь + Тач / Pointer)
+  const handlePointerDownViewport = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointersRef.current.size === 2) {
+      const pts = Array.from(activePointersRef.current.values());
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      pinchStateRef.current = { dist: Math.max(10, dist), startZoom: zoom };
+      setIsPanning(false);
+      setDraggingId(null);
+      return;
+    }
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.canvasBg) {
+      return;
+    }
+    activeInteractionModeRef.current = 'pointer';
+    startViewportPanAt(e.clientX, e.clientY);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore synthetic pointer events
+    }
+  };
+
+  const handleMouseDownViewport = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.canvasBg) {
+      return;
+    }
+    activeInteractionModeRef.current = 'mouse';
+    startViewportPanAt(e.clientX, e.clientY);
+  };
+
+  const handleTouchStartViewport = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY
+      );
+      pinchStateRef.current = { dist: Math.max(10, dist), startZoom: zoom };
+      setIsPanning(false);
+      setDraggingId(null);
+      return;
+    }
+    if (activeInteractionModeRef.current === 'pointer' || e.touches.length !== 1) return;
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.canvasBg) {
+      return;
+    }
+    activeInteractionModeRef.current = 'touch';
+    startViewportPanAt(e.touches[0].clientX, e.touches[0].clientY);
   };
 
   // Колесо мыши / тачпад: с Ctrl/Cmd масштабирует, без — свободно двигает бесконечный холст
@@ -652,46 +721,102 @@ export function MiroBoardView() {
     return () => el.removeEventListener('wheel', onNativeWheel);
   }, []);
 
-  // Нажатие на карточку: либо завершает проведение стрелки, либо начинает перетаскивание карточки
-  const handleMouseDownCard = (e: React.MouseEvent, item: MiroBoardItem) => {
-    e.stopPropagation();
-
-    // Если активен режим связывания стрелкой — клик по другой карточке соединяет их!
+  const startCardDragOrConnect = (
+    target: EventTarget | null,
+    clientX: number,
+    clientY: number,
+    item: MiroBoardItem
+  ): boolean => {
+    // Если активен режим связывания стрелкой — клик/тап по другой карточке соединяет их!
     if (connectingSourceId && connectingSourceId !== item.id) {
       toggleArrowConnection(connectingSourceId, item.id);
       setConnectingSourceId(null);
-      return;
+      return false;
     }
 
     if (!canEditItem(item)) {
-      return;
+      return false;
     }
 
-    const tag = (e.target as HTMLElement).tagName;
-    if (
-      tag === 'INPUT' ||
-      tag === 'TEXTAREA' ||
-      tag === 'BUTTON' ||
-      tag === 'AUDIO' ||
-      (e.target as HTMLElement).closest('button')
-    ) {
-      return;
+    if (isInteractiveBoardElement(target)) {
+      return false;
     }
 
-    const worldPos = screenToWorld(e.clientX, e.clientY);
+    const worldPos = screenToWorld(clientX, clientY);
     setDraggingId(item.id);
     setDragOffset({ dx: worldPos.x - item.x, dy: worldPos.y - item.y });
+    return true;
+  };
+
+  // Нажатие на карточку: либо завершает проведение стрелки, либо начинает перетаскивание карточки
+  const handlePointerDownCard = (e: React.PointerEvent, item: MiroBoardItem) => {
+    if (isInteractiveBoardElement(e.target)) {
+      return;
+    }
+    e.stopPropagation();
+    activeInteractionModeRef.current = 'pointer';
+    const started = startCardDragOrConnect(e.target, e.clientX, e.clientY, item);
+    if (started && viewportRef.current) {
+      try {
+        viewportRef.current.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore synthetic pointer events
+      }
+    }
+  };
+
+  const handleMouseDownCard = (e: React.MouseEvent, item: MiroBoardItem) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    if (isInteractiveBoardElement(e.target)) return;
+    e.stopPropagation();
+    activeInteractionModeRef.current = 'mouse';
+    startCardDragOrConnect(e.target, e.clientX, e.clientY, item);
+  };
+
+  const handleTouchStartCard = (e: React.TouchEvent, item: MiroBoardItem) => {
+    if (activeInteractionModeRef.current === 'pointer' || e.touches.length !== 1) return;
+    if (isInteractiveBoardElement(e.target)) return;
+    e.stopPropagation();
+    activeInteractionModeRef.current = 'touch';
+    startCardDragOrConnect(e.target, e.touches[0].clientX, e.touches[0].clientY, item);
   };
 
   // Начало перетаскивания стрелки от узловой точки карточки
-  const handleStartDragArrow = (e: React.MouseEvent, sourceId: string) => {
+  const startArrowDragAt = (clientX: number, clientY: number, sourceId: string): boolean => {
     const src = (miroItems || []).find((m) => m.id === sourceId);
-    if (!src || !canEditItem(src)) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const worldPos = screenToWorld(e.clientX, e.clientY);
+    if (!src || !canEditItem(src)) return false;
+    const worldPos = screenToWorld(clientX, clientY);
     setDraggingArrowFromId(sourceId);
     setArrowCursorWorld(worldPos);
+    return true;
+  };
+
+  const handlePointerDownArrow = (e: React.PointerEvent, sourceId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    activeInteractionModeRef.current = 'pointer';
+    if (startArrowDragAt(e.clientX, e.clientY, sourceId) && viewportRef.current) {
+      try {
+        viewportRef.current.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore synthetic pointer events
+      }
+    }
+  };
+
+  const handleStartDragArrow = (e: React.MouseEvent, sourceId: string) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    e.stopPropagation();
+    e.preventDefault();
+    activeInteractionModeRef.current = 'mouse';
+    startArrowDragAt(e.clientX, e.clientY, sourceId);
+  };
+
+  const handleTouchStartArrow = (e: React.TouchEvent, sourceId: string) => {
+    if (activeInteractionModeRef.current === 'pointer' || e.touches.length !== 1) return;
+    e.stopPropagation();
+    activeInteractionModeRef.current = 'touch';
+    startArrowDragAt(e.touches[0].clientX, e.touches[0].clientY, sourceId);
   };
 
   // Завершение перетаскивания стрелки на целевой карточке
@@ -701,13 +826,14 @@ export function MiroBoardView() {
       toggleArrowConnection(draggingArrowFromId, targetItem.id);
       setDraggingArrowFromId(null);
       setArrowCursorWorld(null);
+      activeInteractionModeRef.current = null;
     }
   };
 
-  const handleMouseMoveViewport = (e: React.MouseEvent<HTMLDivElement>) => {
+  const moveViewportInteractionAt = (clientX: number, clientY: number) => {
     if (isPanning) {
-      const dx = e.clientX - panStart.clientX;
-      const dy = e.clientY - panStart.clientY;
+      const dx = clientX - panStart.clientX;
+      const dy = clientY - panStart.clientY;
       setPan({
         x: Math.round(panStart.panX + dx),
         y: Math.round(panStart.panY + dy),
@@ -716,12 +842,12 @@ export function MiroBoardView() {
     }
 
     if (draggingArrowFromId) {
-      setArrowCursorWorld(screenToWorld(e.clientX, e.clientY));
+      setArrowCursorWorld(screenToWorld(clientX, clientY));
       return;
     }
 
     if (draggingId) {
-      const worldPos = screenToWorld(e.clientX, e.clientY);
+      const worldPos = screenToWorld(clientX, clientY);
       // Бесконечные координаты без жёстких границ
       const nextX = Math.round(worldPos.x - dragOffset.dx);
       const nextY = Math.round(worldPos.y - dragOffset.dy);
@@ -729,13 +855,86 @@ export function MiroBoardView() {
     }
   };
 
-  const handleMouseUpViewport = () => {
+  const handlePointerMoveViewport = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+    if (pinchStateRef.current && activePointersRef.current.size === 2) {
+      const pts = Array.from(activePointersRef.current.values());
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const scaleRatio = dist / Math.max(10, pinchStateRef.current.dist);
+      const nextZ = Math.max(0.5, Math.min(1.5, Number((pinchStateRef.current.startZoom * scaleRatio).toFixed(2))));
+      setZoom(nextZ);
+      return;
+    }
+    moveViewportInteractionAt(e.clientX, e.clientY);
+  };
+
+  const handleMouseMoveViewport = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    moveViewportInteractionAt(e.clientX, e.clientY);
+  };
+
+  const handleTouchMoveViewport = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2 && pinchStateRef.current) {
+      const dist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY
+      );
+      const scaleRatio = dist / Math.max(10, pinchStateRef.current.dist);
+      const nextZ = Math.max(0.5, Math.min(1.5, Number((pinchStateRef.current.startZoom * scaleRatio).toFixed(2))));
+      setZoom(nextZ);
+      return;
+    }
+    if (activeInteractionModeRef.current === 'pointer' || e.touches.length !== 1) return;
+    moveViewportInteractionAt(e.touches[0].clientX, e.touches[0].clientY);
+  };
+
+  const finishViewportInteractionAt = (clientX?: number, clientY?: number) => {
+    if (
+      draggingArrowFromId &&
+      typeof clientX === 'number' &&
+      typeof clientY === 'number' &&
+      typeof document !== 'undefined'
+    ) {
+      const hitEl = document.elementFromPoint(clientX, clientY);
+      const cardEl = hitEl?.closest?.('[data-miro-card-id]') as HTMLElement | null;
+      const targetCardId = cardEl?.dataset?.miroCardId;
+      if (targetCardId && targetCardId !== draggingArrowFromId) {
+        toggleArrowConnection(draggingArrowFromId, targetCardId);
+      }
+    }
     if (isPanning) setIsPanning(false);
     if (draggingId) setDraggingId(null);
     if (draggingArrowFromId) {
       setDraggingArrowFromId(null);
       setArrowCursorWorld(null);
     }
+    pinchStateRef.current = null;
+    activeInteractionModeRef.current = null;
+  };
+
+  const handlePointerUpViewport = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+    finishViewportInteractionAt(e.clientX, e.clientY);
+  };
+
+  const handleMouseUpViewport = (e?: React.MouseEvent<HTMLDivElement>) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    finishViewportInteractionAt(e?.clientX, e?.clientY);
+  };
+
+  const handleTouchEndViewport = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (activeInteractionModeRef.current === 'pointer') return;
+    const t = e.changedTouches?.[0];
+    finishViewportInteractionAt(t?.clientX, t?.clientY);
   };
 
   // Центрирование бесконечного холста по всем карточкам
@@ -967,17 +1166,25 @@ export function MiroBoardView() {
         ref={viewportRef}
         data-canvas-bg="true"
         data-no-swipe-nav="true"
+        onPointerDown={handlePointerDownViewport}
+        onPointerMove={handlePointerMoveViewport}
+        onPointerUp={handlePointerUpViewport}
+        onPointerCancel={handlePointerUpViewport}
         onMouseDown={handleMouseDownViewport}
         onMouseMove={handleMouseMoveViewport}
         onMouseUp={handleMouseUpViewport}
         onMouseLeave={handleMouseUpViewport}
+        onTouchStart={handleTouchStartViewport}
+        onTouchMove={handleTouchMoveViewport}
+        onTouchEnd={handleTouchEndViewport}
+        onTouchCancel={handleTouchEndViewport}
         style={{
           backgroundImage:
             'radial-gradient(circle, #BDB5A6 1.35px, transparent 1.35px)',
           backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
           backgroundPosition: `${pan.x}px ${pan.y}px`,
         }}
-        className={`relative w-full h-[680px] overflow-hidden overscroll-contain bg-[#F4F1EA] select-none ${
+        className={`relative w-full h-[680px] overflow-hidden overscroll-contain touch-none bg-[#F4F1EA] select-none ${
           isPanning
             ? 'cursor-grabbing'
             : connectingSourceId || draggingArrowFromId
@@ -1126,15 +1333,18 @@ export function MiroBoardView() {
             return (
               <div
                 key={item.id}
+                data-miro-card-id={item.id}
+                onPointerDown={(e) => handlePointerDownCard(e, item)}
                 onMouseDown={(e) => handleMouseDownCard(e, item)}
                 onMouseUp={(e) => handleMouseUpOnCard(e, item)}
+                onTouchStart={(e) => handleTouchStartCard(e, item)}
                 style={{
                   left: `${item.x}px`,
                   top: `${item.y}px`,
                   width: `${item.width || 290}px`,
                   backgroundColor: item.color || '#FFF8D6',
                 }}
-                className={`miro-pastel-card group/card pointer-events-auto absolute rounded-[14px] border-2 p-4 space-y-2.5 transition-shadow ${
+                className={`miro-pastel-card group/card pointer-events-auto touch-none absolute rounded-[14px] border-2 p-4 space-y-2.5 transition-shadow ${
                   draggingId === item.id
                     ? 'border-[#181715] shadow-2xl z-30 cursor-grabbing'
                     : isConnectSource
@@ -1151,33 +1361,41 @@ export function MiroBoardView() {
                   <>
                     <button
                       type="button"
+                      onPointerDown={(e) => handlePointerDownArrow(e, item.id)}
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className=" -top-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                      className=" -top-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
                     </button>
                     <button
                       type="button"
+                      onPointerDown={(e) => handlePointerDownArrow(e, item.id)}
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-right-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                      className="-right-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
                     </button>
                     <button
                       type="button"
+                      onPointerDown={(e) => handlePointerDownArrow(e, item.id)}
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-bottom-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                      className="-bottom-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
                     </button>
                     <button
                       type="button"
+                      onPointerDown={(e) => handlePointerDownArrow(e, item.id)}
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
+                      onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-left-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair"
+                      className="-left-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
                     </button>

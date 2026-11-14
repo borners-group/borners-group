@@ -164,11 +164,16 @@ export function DashboardView() {
     [launches, brandFilter]
   );
 
+  const normalizedBrandFilter =
+    brandFilter && brandFilter !== 'ALL' ? normalizeLabBrandCode(brandFilter) : 'ALL';
+
   const monthlyChartData = useMemo(() => {
     const scenarioRows = financialPlans.filter(
       (r) =>
         r.scenario === financialScenario &&
-        (brandFilter === 'ALL' || r.brandId === brandFilter)
+        (brandFilter === 'ALL' ||
+          normalizeLabBrandCode(r.brandId) === normalizedBrandFilter ||
+          r.brandId === brandFilter)
     );
     const byMonth = new Map<
       string,
@@ -227,7 +232,7 @@ export function DashboardView() {
     return Array.from(byMonth.values()).sort((a, b) =>
       a.periodMonth.localeCompare(b.periodMonth)
     );
-  }, [financialPlans, financialScenario, brandFilter]);
+  }, [financialPlans, financialScenario, brandFilter, normalizedBrandFilter]);
 
   const kpiTotals = useMemo(() => {
     const filledMonths = monthlyChartData.filter((m) => m.factRevenueRaw !== null);
@@ -271,7 +276,11 @@ export function DashboardView() {
   const activeBrands = brands.filter(
     (b) =>
       !b.isStrategyInDevelopment &&
-      (brandFilter === 'ALL' || b.code === brandFilter || b.id === brandFilter)
+      (brandFilter === 'ALL' ||
+        normalizeLabBrandCode(b.code) === normalizedBrandFilter ||
+        normalizeLabBrandCode(b.id) === normalizedBrandFilter ||
+        b.code === brandFilter ||
+        b.id === brandFilter)
   );
   const upcomingBrands = brands.filter((b) => b.isStrategyInDevelopment);
 
@@ -362,13 +371,19 @@ export function DashboardView() {
                 const isBorners = brand.code === 'BORNERS';
                 const accentColor = isBorners ? '#B85D35' : '#8C7A6B';
                 const brandProducts = products.filter(
-                  (p) => !p.isArchived && (p.brandId === brand.code || p.brandId === brand.id)
+                  (p) =>
+                    !p.isArchived &&
+                    (p.brandId === brand.code ||
+                      p.brandId === brand.id ||
+                      normalizeLabBrandCode(p.brandId) === normalizeLabBrandCode(brand.code))
                 );
                 const brandConcepts = concepts.filter(
                   (c) =>
                     !c.isArchived &&
                     !['REJECTED', 'CANCELLED', 'POSTPONED'].includes(c.stage) &&
-                    (c.brandId === brand.code || c.brandId === brand.id)
+                    (c.brandId === brand.code ||
+                      c.brandId === brand.id ||
+                      normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brand.code))
                 );
 
                 return (

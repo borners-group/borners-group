@@ -395,7 +395,7 @@ export function ProductCatalogView() {
       materials: preset.defaultComposition,
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
-      unitCostPrice: preset.defaultCost,
+      unitCostPrice: hasCost ? preset.defaultCost : '0',
       buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(initialModalBrand)),
       imageUrl: '',
     };
@@ -421,11 +421,11 @@ export function ProductCatalogView() {
             materials: preset.defaultComposition,
             unitsInPack: preset.defaultUnitsInPack,
             plannedRetailPrice: preset.defaultPrice,
-            unitCostPrice: preset.defaultCost,
+            unitCostPrice: hasCost ? preset.defaultCost : '0',
             buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
           }
     );
-  }, [brandFilter, createModalOpen, scenarioModels]);
+  }, [brandFilter, createModalOpen, scenarioModels, hasCost]);
 
   const editableBrandCodes = useMemo(
     () =>
@@ -455,7 +455,7 @@ export function ProductCatalogView() {
       materials: preset.defaultComposition,
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
-      unitCostPrice: preset.defaultCost,
+      unitCostPrice: hasCost ? preset.defaultCost : '0',
       buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
       imageUrl: '',
     });
@@ -476,7 +476,7 @@ export function ProductCatalogView() {
       materials: preset.defaultComposition,
       unitsInPack: preset.defaultUnitsInPack,
       plannedRetailPrice: preset.defaultPrice,
-      unitCostPrice: preset.defaultCost,
+      unitCostPrice: hasCost ? preset.defaultCost : '0',
       buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
     }));
   };
@@ -594,8 +594,12 @@ export function ProductCatalogView() {
     const parsedRetail = rawRetailStr !== '' ? Number(rawRetailStr) : NaN;
     const retail = Number.isFinite(parsedRetail) ? Math.max(0, parsedRetail) : 1990;
     const rawCostStr = newSkuForm.unitCostPrice.trim();
-    const parsedCost = rawCostStr !== '' ? Number(rawCostStr) : NaN;
-    const cost = Number.isFinite(parsedCost) ? Math.max(0, parsedCost) : 650;
+    const parsedCost = hasCost ? (rawCostStr !== '' ? Number(rawCostStr) : NaN) : 0;
+    const cost = hasCost
+      ? Number.isFinite(parsedCost)
+        ? Math.max(0, parsedCost)
+        : 650
+      : 0;
     const units = Math.max(
       1,
       Number(newSkuForm.unitsInPack) || unitCfg.secondaryPerPrimaryDefault
@@ -815,6 +819,12 @@ export function ProductCatalogView() {
           scenario={effectiveScenario}
           allScenarios={scenarios}
           onSelectScenario={(id) => {
+            if (id < 0) {
+              if (modBrandCode !== 'ALL') {
+                setSelectedScenarioForBrand(modBrandCode, null);
+              }
+              return;
+            }
             setSelectedScenarioId(id, modBrandCode);
             if (modBrandCode !== 'ALL') {
               setSelectedScenarioForBrand(modBrandCode, id);
@@ -991,9 +1001,9 @@ export function ProductCatalogView() {
             <button
               type="button"
               onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-              className="h-9.5 px-3.5 rounded-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[12.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+              className="h-9.5 px-3.5 rounded-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-300 dark:border-indigo-500/30 text-[12.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
             >
-              <FlaskConical className="h-4 w-4 text-indigo-600" />
+              <FlaskConical className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
               <span>Лаборатория R&D</span>
               {activeLabConceptsForFilter.length > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10.5px]">
@@ -1189,7 +1199,10 @@ export function ProductCatalogView() {
                   </span>
                 </div>
                 <p className="text-[12px] text-[#475569] mt-0.5">
-                  33 цветовые карточки Wildberries с реальными студийными фото · 269 размерных SKU (Блэкаут: 350 млн ₽ / 104 SKU · Мрамор: 75 млн ₽ / 80 SKU · Рогожка: 60 млн ₽ / 40 SKU · Тюль Вуаль: 15 млн ₽ / 45 SKU)
+                  33 цветовые карточки Wildberries с реальными студийными фото · 269 размерных SKU{' '}
+                  {hasFinance
+                    ? '(Блэкаут: 350 млн ₽ / 104 SKU · Мрамор: 75 млн ₽ / 80 SKU · Рогожка: 60 млн ₽ / 40 SKU · Тюль Вуаль: 15 млн ₽ / 45 SKU)'
+                    : '(Блэкаут: 104 SKU · Мрамор: 80 SKU · Рогожка: 40 SKU · Тюль Вуаль: 45 SKU)'}
                 </p>
               </div>
 

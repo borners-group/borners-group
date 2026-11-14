@@ -1644,7 +1644,8 @@ export function approveRecommendedBatch(
   const shared = model.sharedSupplyAndFact!;
   const nextSeq = shared.approvedOrders.length + 1;
   const codeClean = model.code.replace(/\s+/g, '');
-  const orderNumber = `PO-2027-${codeClean}-${String(nextSeq).padStart(2, '0')}`;
+  const batchYear = Number(batch.requiredArrivalDateIso?.slice(0, 4)) || 2027;
+  const orderNumber = `PO-${batchYear}-${codeClean}-${String(nextSeq).padStart(2, '0')}`;
   const lockedCost = Math.max(0, model.unitCostRub || batch.unitCostRub || 0);
   const totalOrderRub = batch.recommendedPacks * lockedCost;
   const prepaymentRub = Math.round(
@@ -1860,12 +1861,15 @@ export function updateApprovedPurchaseOrder(
     >
   >,
   author = 'Владелец',
-  year = 2027
+  year?: number
 ): ScenarioModelSpec {
   const model = ensureModelUnifiedV11(rawModel);
   const shared = model.sharedSupplyAndFact!;
+  const fp = shared.factoryParams;
   const target = shared.approvedOrders.find((p) => p.id === poId);
   if (!target) return model;
+
+  const effectiveYear = year ?? getPoArrivalYear(target);
 
   const unitsInPack = Math.max(1, model.unitsInPack || target.unitsInPack || 1);
   const nextPacks =
@@ -1891,15 +1895,27 @@ export function updateApprovedPurchaseOrder(
       ? patch.coverageMonthsLabel
       : patch.arrivalMonthIdx !== undefined || patch.coveredEndMonthIdx !== undefined
       ? nextArrivalMonthIdx === nextCoveredEndMonthIdx
-        ? `${MONTHS_SHORT[nextArrivalMonthIdx]} ${year}`
-        : `${MONTHS_SHORT[nextArrivalMonthIdx]}–${MONTHS_SHORT[nextCoveredEndMonthIdx]} ${year}`
+        ? `${MONTHS_SHORT[nextArrivalMonthIdx]} ${effectiveYear}`
+        : `${MONTHS_SHORT[nextArrivalMonthIdx]}–${MONTHS_SHORT[nextCoveredEndMonthIdx]} ${effectiveYear}`
       : target.coverageMonthsLabel;
   const nextRequiredArrivalIso =
     patch.requiredArrivalDateIso !== undefined
       ? patch.requiredArrivalDateIso
       : patch.arrivalMonthIdx !== undefined
-      ? `${year}-${String(nextArrivalMonthIdx + 1).padStart(2, '0')}-01`
+      ? `${effectiveYear}-${String(nextArrivalMonthIdx + 1).padStart(2, '0')}-01`
       : target.requiredArrivalDateIso;
+  const effectiveLeadDays =
+    target.leadTimeDaysAtApproval ??
+    Math.max(0, fp.productionLeadDays) +
+      Math.max(0, fp.qcDays) +
+      Math.max(0, fp.logisticsLeadDays) +
+      Math.max(0, fp.acceptanceDays);
+  const nextOrderPlacementIso =
+    patch.orderPlacementDateIso !== undefined
+      ? patch.orderPlacementDateIso
+      : patch.arrivalMonthIdx !== undefined
+      ? subtractDaysFromMonthStart(effectiveYear, nextArrivalMonthIdx, effectiveLeadDays)
+      : target.orderPlacementDateIso;
 
   const totalOrderRub = nextPacks * nextLockedCost;
   const prepaymentRub = Math.round(
@@ -1923,7 +1939,7 @@ export function updateApprovedPurchaseOrder(
     coveredEndMonthIdx: nextCoveredEndMonthIdx,
     coverageMonthsLabel: nextCoverageMonthsLabel,
     requiredArrivalDateIso: nextRequiredArrivalIso,
-    orderPlacementDateIso: patch.orderPlacementDateIso ?? target.orderPlacementDateIso,
+    orderPlacementDateIso: nextOrderPlacementIso,
     packsQty: nextPacks,
     unitsInPack,
     physicalUnitsQty: nextPacks * unitsInPack,
@@ -3700,8 +3716,10 @@ export function computeGroupBrandsInvestmentReport(
 export function serializeScenarioFactoryOrdersToCsv(
   rawModels: ScenarioModelSpec[],
   scenario: GrowthScenarioDef,
-  mode: 'all' | 'first_wave' | 'approved_only' = 'all'
+  mode: 'all' | 'first_wave' | 'approved_only' = 'all',
+  options?: { canViewCostPrice?: boolean }
 ): string {
+  const canSeeCost = options?.canViewCostPrice !== false;
   const scenYear = scenario.year || 2027;
   const activeModels: ScenarioModelSpec[] = [];
   const seenIds = new Set<string>();
@@ -3883,10 +3901,14 @@ export function serializeScenarioFactoryOrdersToCsv(
           po.packsQty,
           po.physicalUnitsQty,
           ...sizeCols,
-          po.lockedUnitCostRub,
-          po.totalOrderRub,
-          po.prepaymentRub,
-          po.balancePaymentRub,
+          ...(canSeeCost
+            ? [
+                po.lockedUnitCostRub,
+                po.totalOrderRub,
+                po.prepaymentRub,
+                po.balancePaymentRub,
+              ]
+            : ['Скрыто', 'Скрыто', 'Скрыто', 'Скрыто']),
         ].join(';')
       );
     }
@@ -3920,10 +3942,14 @@ export function serializeScenarioFactoryOrdersToCsv(
             rb.recommendedPacks,
             rb.physicalUnitsQty,
             ...sizeCols,
-            rb.unitCostRub,
-            rb.estimatedTotalRub,
-            rb.prepaymentRub,
-            rb.balancePaymentRub,
+            ...(canSeeCost
+              ? [
+                  rb.unitCostRub,
+                  rb.estimatedTotalRub,
+                  rb.prepaymentRub,
+                  rb.balancePaymentRub,
+                ]
+              : ['Скрыто', 'Скрыто', 'Скрыто', 'Скрыто']),
           ].join(';')
         );
       }
@@ -4155,13 +4181,33 @@ export function computeCarryOverStock2027To2028(
       (v, idx) => (v || 0) === (plan2027.monthlyPacks?.[idx] || 0)
     );
 
+  const buyoutRatePct = getEffectiveModelBuyoutRatePct(
+    model,
+    plan2027.scenarioId || scen2027Id
+  );
+  const procureByOrdersVolume = isModelProcurementByOrdersActive(model);
+
   for (let m = 0; m < 12; m++) {
     const extraManualReceipts =
       confirmed2027Orders.length > 0 && receiptsEqualToPacks
         ? 0
         : plan2027.monthlyReceiptsPacks?.[m] || 0;
     const receipts = (approvedByMonth[m] || 0) + extraManualReceipts;
-    const demand = Math.max(0, plan2027.monthlyPacks?.[m] || 0);
+    const buyouts = Math.max(0, Math.round(plan2027.monthlyPacks?.[m] || 0));
+    let demand = buyouts;
+    if (procureByOrdersVolume && buyoutRatePct > 0 && buyoutRatePct < 100) {
+      const storedOrd = plan2027.monthlyOrdersPacks?.[m];
+      if (
+        typeof storedOrd === 'number' &&
+        storedOrd >= 0 &&
+        (storedOrd === Math.ceil((buyouts * 100) / buyoutRatePct) ||
+          Math.round((storedOrd * buyoutRatePct) / 100) === buyouts)
+      ) {
+        demand = Math.round(storedOrd);
+      } else {
+        demand = Math.round((buyouts * 100) / buyoutRatePct);
+      }
+    }
     running = Math.max(0, running + receipts - demand);
   }
   return running;
@@ -5071,12 +5117,22 @@ export function computeMultiBrandPortfolioSummary(
     'ноября',
     'декабря',
   ];
+  const activeScenarioYears = brandRows
+    .map((b) =>
+      b.selectedScenarioId !== null
+        ? scenarios.find((s) => s.id === b.selectedScenarioId)?.year
+        : undefined
+    )
+    .filter((yr): yr is number => typeof yr === 'number' && Number.isFinite(yr));
+  const groupScenarioYear =
+    activeScenarioYears.length > 0 ? activeScenarioYears[0] : 2027;
+
   const groupPeakWindowHumanRu =
     groupNetOwnMoneyRub <= 0
       ? 'Собственные средства не требуются (покрывается стартовым остатком / выручкой WB)'
       : groupPeakWasIntraMonth
-      ? `1–15 ${monthsGen[peakMonthIdx] || 'января'} 2027 (оплата партий фабрикам до поступления выручки WB за ${MONTHS_SHORT[peakMonthIdx]})`
-      : `Конец ${monthsGen[peakMonthIdx] || 'января'} 2027 (накопленное превышение оплат фабрикам над приходами WB)`;
+      ? `1–15 ${monthsGen[peakMonthIdx] || 'января'} ${groupScenarioYear} (оплата партий фабрикам до поступления выручки WB за ${MONTHS_SHORT[peakMonthIdx]})`
+      : `Конец ${monthsGen[peakMonthIdx] || 'января'} ${groupScenarioYear} (накопленное превышение оплат фабрикам над приходами WB)`;
 
   const procurementBreakdownText =
     procurementBreakdownByUnit.length > 0
@@ -5146,8 +5202,10 @@ export function computeMultiBrandPortfolioSummary(
 export function serializeSingleBatchFactoryOrderDocumentCsv(
   rawModel: ScenarioModelSpec,
   batchOrPo: RecommendedProcurementBatch | ApprovedPurchaseOrder,
-  commentOverride?: string
+  commentOverride?: string,
+  options?: { canViewCostPrice?: boolean }
 ): string {
+  const canSeeCost = options?.canViewCostPrice !== false;
   const model = ensureModelUnifiedV11(rawModel);
   const unitCfg = getBrandUnitConfig(model);
   const rawPhoto =
@@ -5216,13 +5274,16 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   } else {
     const sizes =
       batchOrPo.sizeBreakdownPacks ||
-      allocatePacksBySizeLargestRemainder(qty, {
-        S: 12,
-        M: 26,
-        L: 30,
-        XL: 20,
-        XXL: 12,
-      });
+      allocatePacksBySizeLargestRemainder(
+        qty,
+        model.sharedSupplyAndFact?.factoryParams.sizeSharesPct || {
+          S: 12,
+          M: 26,
+          L: 30,
+          XL: 20,
+          XXL: 12,
+        }
+      );
     sizeHeaders = ['Размер S', 'Размер M', 'Размер L', 'Размер XL', 'Размер XXL'];
     sizeValues = [sizes.S, sizes.M, sizes.L, sizes.XL, sizes.XXL];
   }
@@ -5253,24 +5314,23 @@ export function serializeSingleBatchFactoryOrderDocumentCsv(
   ].join(';');
 
   const row = [
-    `"${String(orderTitle || '').replace(/"/g, '""')}"`,
-    `"${String(statusLabel || '').replace(/"/g, '""')}"`,
-    `"${String(unitCfg.displayCode || '').replace(/"/g, '""')}"`,
-    `"${String(model.code || '').replace(/"/g, '""')}"`,
-    `"${String(model.title || '').replace(/"/g, '""')}"`,
-    `"${String(mainPhoto || '').replace(/"/g, '""')}"`,
-    `"${String(colorsLabel || '').replace(/"/g, '""')}"`,
-    `"${String(factoryName || '').replace(/"/g, '""')}"`,
-    orderDate,
-    arrivalDate,
+    csvEscapeCell(orderTitle || '', ';'),
+    csvEscapeCell(statusLabel || '', ';'),
+    csvEscapeCell(unitCfg.displayCode || '', ';'),
+    csvEscapeCell(model.code || '', ';'),
+    csvEscapeCell(model.title || '', ';'),
+    csvEscapeCell(mainPhoto || '', ';', 'Фото в паспорте SKU'),
+    csvEscapeCell(colorsLabel || '', ';'),
+    csvEscapeCell(factoryName || '', ';'),
+    csvEscapeCell(orderDate || '', ';'),
+    csvEscapeCell(arrivalDate || '', ';'),
     qty,
     physicalQty,
     ...sizeValues,
-    unitCost,
-    totalRub,
-    prepayRub,
-    balanceRub,
-    `"${String(comment || '').replace(/"/g, '""')}"`,
+    ...(canSeeCost
+      ? [unitCost, totalRub, prepayRub, balanceRub]
+      : ['Скрыто', 'Скрыто', 'Скрыто', 'Скрыто']),
+    csvEscapeCell(comment || '', ';'),
   ].join(';');
 
   return `\uFEFF${header}\n${row}`;

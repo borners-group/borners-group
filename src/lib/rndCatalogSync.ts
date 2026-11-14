@@ -22,6 +22,7 @@ import {
 } from './brandProductionConfig.ts';
 import {
   type CanonicalBrandCode,
+  allocatePacksBySizeLargestRemainder,
   changeModelBrandWithAudit,
   createBrandProductModel,
   createCustomPurchaseOrder,
@@ -74,9 +75,7 @@ export function findLinkedScenarioModelForConcept(
 ): ScenarioModelSpec | null {
   if (!concept || !Array.isArray(models)) return null;
   if (concept.linkedScenarioModelId) {
-    const byId = models.find(
-      (m) => m.id === concept.linkedScenarioModelId && m.launchStatus !== 'В архиве'
-    );
+    const byId = models.find((m) => m.id === concept.linkedScenarioModelId);
     if (byId) return byId;
   }
 
@@ -87,7 +86,6 @@ export function findLinkedScenarioModelForConcept(
 
   return (
     models.find((m) => {
-      if (m.launchStatus === 'В архиве') return false;
       if (!matchesBrandFilter(m, targetBrand)) return false;
       const mCode = (m.code || '').trim().toUpperCase();
       const mTitle = (m.title || '').trim().toUpperCase();
@@ -145,13 +143,23 @@ function buildGalleryFromConcept(
   }));
 }
 
-function resolveConceptPrimaryUnitCostRub(
+export function resolveConceptPrimaryUnitCostRub(
   concept: Pick<
     ProductConcept,
     'plannedRetailPrice' | 'plannedUnitCost' | 'packUnitsCount' | 'productionOrders' | 'samples'
-  >
+  > &
+    Partial<Pick<ProductConcept, 'brandId' | 'name'>>,
+  fallbackPackUnits?: number
 ): number {
-  const packUnits = Math.max(1, Math.round(concept.packUnitsCount || 1));
+  const brandCode = normalizeLabBrandCode(concept.brandId);
+  const defaultPackUnits =
+    fallbackPackUnits && fallbackPackUnits > 0
+      ? fallbackPackUnits
+      : getBrandProductionProfile(brandCode, concept.name).defaultPackUnits || 1;
+  const packUnits =
+    concept.packUnitsCount && concept.packUnitsCount > 0
+      ? Math.max(1, Math.round(concept.packUnitsCount))
+      : Math.max(1, Math.round(defaultPackUnits));
   const retail = Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
   const po = concept.productionOrders?.[0];
   const poFx =
@@ -260,7 +268,8 @@ function buildInitialRampPacksFromBatch(totalPacks: number, startMonthIdx: numbe
 function buildPalettesFromConceptColors(
   concept: ProductConcept,
   existingPalettes: PalettePack[] = [],
-  coverUrl?: string
+  coverUrl?: string,
+  resolvedPackUnits?: number
 ): PalettePack[] {
   const rawPoComp = (concept.productionOrders?.[0]?.packColorComposition || '').trim();
   const poColors = rawPoComp
@@ -296,11 +305,22 @@ function buildPalettesFromConceptColors(
     };
   });
 
+  const effectivePackUnits = Math.max(
+    1,
+    Math.round(
+      resolvedPackUnits ||
+        (concept.packUnitsCount && concept.packUnitsCount > 0
+          ? concept.packUnitsCount
+          : getBrandProductionProfile(normalizeLabBrandCode(concept.brandId), concept.name)
+              .defaultPackUnits || 1)
+    )
+  );
+
   const firstExisting = existingPalettes[0];
   const updatedFirst: PalettePack = {
     id: firstExisting?.id || `pal-rnd-${concept.id}`,
     title: firstExisting?.title || concept.collectionName || 'Палитра R&D',
-    subtitle: `${colors.length} цв. · Комплект ${Math.max(1, concept.packUnitsCount || 1)} ед.`,
+    subtitle: `${colors.length} цв. · Комплект ${effectivePackUnits} ед.`,
     statusLabel: 'Из Лаборатории R&D',
     imageUrl: coverUrl || firstExisting?.imageUrl,
     colors,
@@ -327,6 +347,9 @@ function applyRndProductionOrderToModel(
 
   if (existingRndPoIdx >= 0) {
     const prevPo = shared.approvedOrders[existingRndPoIdx];
+    if ((prevPo.version || 1) > 1) {
+      return model;
+    }
     const unitsInPack = Math.max(1, model.unitsInPack || 1);
     const totalOrderRub = orderPacks * unitCostRub;
     const prepayPct = shared.factoryParams.prepaymentPct || 30;
@@ -336,6 +359,7 @@ function applyRndProductionOrderToModel(
       factoryName: factoryName || prevPo.factoryName,
       arrivalMonthIdx,
       coveredEndMonthIdx: arrivalMonthIdx,
+      requiredArrivalDateIso: readinessIso || prevPo.requiredArrivalDateIso,
       packsQty: orderPacks,
       unitsInPack,
       physicalUnitsQty: orderPacks * unitsInPack,
@@ -343,6 +367,10 @@ function applyRndProductionOrderToModel(
       totalOrderRub,
       prepaymentRub,
       balancePaymentRub: totalOrderRub - prepaymentRub,
+      sizeBreakdownPacks: allocatePacksBySizeLargestRemainder(
+        orderPacks,
+        shared.factoryParams.sizeSharesPct
+      ),
     };
     const nextOrders = [...shared.approvedOrders];
     nextOrders[existingRndPoIdx] = updatedPo;
@@ -433,9 +461,17 @@ export function syncConceptToScenarioPortfolio(
   ) {
     effectiveScenarios.push(LISKANI_2027_SCENARIO_DEF);
   }
-  const packUnits = Math.max(1, Math.round(concept.packUnitsCount || 1));
+  const existing = findLinkedScenarioModelForConcept(concept, existingModels);
+  const defaultPackUnits =
+    existing?.unitsInPack ||
+    getBrandProductionProfile(brandCode, concept.name).defaultPackUnits ||
+    1;
+  const packUnits =
+    concept.packUnitsCount && concept.packUnitsCount > 0
+      ? Math.max(1, Math.round(concept.packUnitsCount))
+      : Math.max(1, Math.round(defaultPackUnits));
   const retailPriceRub = Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
-  const unitCostRub = resolveConceptPrimaryUnitCostRub(concept);
+  const unitCostRub = resolveConceptPrimaryUnitCostRub(concept, packUnits);
   const launchStatus = mapConceptStageToLaunchStatus(concept.stage);
 
   const selectedSample =
@@ -455,8 +491,6 @@ export function syncConceptToScenarioPortfolio(
     concept.stage === 'LAUNCH' ||
     concept.stage === 'APPROVED';
 
-  const existing = findLinkedScenarioModelForConcept(concept, existingModels);
-
   if (existing) {
     let baseUpdated = ensureModelUnifiedV11(existing);
     const prevRetail = baseUpdated.retailPriceRub;
@@ -468,7 +502,8 @@ export function syncConceptToScenarioPortfolio(
     const mergedPalettes = buildPalettesFromConceptColors(
       concept,
       baseUpdated.palettes || [],
-      mergedGallery[0]?.url
+      mergedGallery[0]?.url,
+      packUnits
     );
 
     const nextPlans: Record<number, ScenarioCommercialPlan> = { ...baseUpdated.plansByScenario };
@@ -512,6 +547,7 @@ export function syncConceptToScenarioPortfolio(
       const updatedMonthlyPrices = (pl.monthlyPricesRub || Array<number>(12).fill(retailPriceRub)).map(
         (pr) => (!pr || pr === prevRetail ? retailPriceRub : pr)
       );
+      const hadExistingSales = Boolean(pl.monthlyPacks?.some((v) => v > 0));
       let updatedMonthlyPacks = pl.monthlyPacks || Array<number>(12).fill(0);
       let updatedReceipts = pl.monthlyReceiptsPacks || Array<number>(12).fill(0);
 
@@ -552,8 +588,10 @@ export function syncConceptToScenarioPortfolio(
         monthlyReceiptsPacks: updatedReceipts,
         monthlyOrdersRub: pl.monthlyOrdersRub ? updatedOrdersRub : pl.monthlyOrdersRub,
         firstOrderPacks: orderPacks > 0 ? orderPacks : pl.firstOrderPacks,
-        salesStartMonthIdx: orderPacks > 0 ? arrivalMonthIdx : pl.salesStartMonthIdx,
-        warehouseArrivalMonthIdx: orderPacks > 0 ? arrivalMonthIdx : pl.warehouseArrivalMonthIdx,
+        salesStartMonthIdx:
+          !hadExistingSales && orderPacks > 0 ? arrivalMonthIdx : pl.salesStartMonthIdx,
+        warehouseArrivalMonthIdx:
+          !hadExistingSales && orderPacks > 0 ? arrivalMonthIdx : pl.warehouseArrivalMonthIdx,
       };
     }
 

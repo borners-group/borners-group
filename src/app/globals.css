@@ -116,8 +116,10 @@ html.dark .bg-white\/95,
 html.dark .bg-white\/90,
 html.dark .bg-white\/80,
 html.dark .bg-\[\#FDFCFA\],
-html.dark .bg-\[\#FDFBF7\] {
-  background-color: #121620 !important;
+html.dark .bg-\[\#FDFBF7\],
+html.dark .bg-\[\#FAF9F7\],
+html.dark .bg-\[\#FCFBF9\] {
+  background-color: var(--bg-card) !important;
 }
 
 html.dark .bg-\[\#F8FAFC\],
@@ -505,6 +507,33 @@ html.dark .divide-\[\#D5CEC2\] > :not([hidden]) ~ :not([hidden]) {
 html.dark select option {
   background-color: #121620;
   color: #EDF0F7;
+}
+
+/* Контрастные тёмные кнопки, вкладки и бейджи в Obsidian Dark (.dark) без осветления полноэкранных модалок */
+html.dark :is(button, a, label, span, [role="tab"], [role="button"]):is(
+  .bg-\[\#1F1E1C\],
+  .bg-\[\#141413\],
+  .bg-\[\#181715\],
+  .bg-\[\#111111\],
+  .bg-\[\#1D1D1F\],
+  .bg-\[\#161615\]
+):not(.pdf-paper-preview *) {
+  background-color: #253046 !important;
+  border: 1px solid rgba(226, 232, 240, 0.24) !important;
+  color: #F8FAFC !important;
+}
+
+html.dark :is(button, a, label, [role="tab"], [role="button"]):is(
+  .bg-\[\#1F1E1C\],
+  .bg-\[\#141413\],
+  .bg-\[\#181715\],
+  .bg-\[\#111111\],
+  .bg-\[\#1D1D1F\],
+  .bg-\[\#161615\]
+):not(.pdf-paper-preview *):hover {
+  background-color: #303F5C !important;
+  border-color: rgba(248, 250, 252, 0.36) !important;
+  color: #FFFFFF !important;
 }
 
 /* Чёрные чернила на пастельных стикерах Студии идей (Miro) и печатном листе A4 в тёмной теме */

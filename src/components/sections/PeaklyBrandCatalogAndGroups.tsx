@@ -51,6 +51,7 @@ import {
   removeApprovedPurchaseOrder,
 } from '@/lib/unifiedBusinessEngine';
 import {
+  canUserAccessSection,
   canUserEditBrand,
   canUserViewCostPrice,
   canUserViewFinance,
@@ -201,12 +202,14 @@ export function BrandCabinetsMatrixTable({
                                   onSelectActiveScenarioId(b.selectedScenarioId, b.brandCode);
                                 }
                                 onSelectBrandFilter(b.brandCode);
-                                navigateTo('product-lab', {
-                                  brandId: b.brandCode as BrandFilter,
-                                });
+                                if (canUserAccessSection(currentUser, 'product-lab')) {
+                                  navigateTo('product-lab', {
+                                    brandId: b.brandCode as BrandFilter,
+                                  });
+                                }
                               }}
                               title={`Открыть Лабораторию R&D бренда ${b.displayCode}`}
-                              className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer"
+                              className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-300 dark:border-indigo-500/30 transition cursor-pointer"
                             >
                               R&D: {rndCount} в работе
                             </button>
@@ -253,7 +256,9 @@ export function BrandCabinetsMatrixTable({
                         <option value="">Нет активного сценария</option>
                         {brandScenarios.map((sc) => (
                           <option key={sc.id} value={sc.id}>
-                            {sc.title} ({sc.year || 2027} · {sc.monthlyTargetMln} млн/мес)
+                            {hasFinance
+                              ? `${sc.title} (${sc.year || 2027} · ${sc.monthlyTargetMln} млн/мес)`
+                              : `${sc.title} (${sc.year || 2027})`}
                           </option>
                         ))}
                       </select>
@@ -499,6 +504,8 @@ export function BrandCabinetsMatrixTable({
                     <div className="text-[10px] font-semibold text-amber-800">
                       {gt.verifiedOwnMoneyRequiredRub === null && wbLagUnspecified
                         ? 'график WB не указан'
+                        : gt.annualRevenueRub <= 0 && gt.totalProcurementBudgetRub <= 0
+                        ? 'нет активного плана'
                         : `пик: ${gt.peakMonthLabel || 'Янв'}${
                             gt.selfFundingMonthLabel ? ` → с ${gt.selfFundingMonthLabel}` : ''
                           }`}
@@ -622,6 +629,12 @@ export function PeaklyMasterCabinetsSummary({
   const { currentUser, concepts, navigateTo } = usePlatform();
   const hasCost = canUserViewCostPrice(currentUser);
   const hasFinance = canUserViewFinance(currentUser);
+  const safeNavigateSection = (
+    target: 'product-catalog' | 'launch-calendar' | 'roadmap-tasks' | 'finance'
+  ) => {
+    if (!canUserAccessSection(currentUser, target)) return;
+    onNavigateSection(target);
+  };
   const canEditAllStarter = (['AKUSHA', 'LISKANI', 'NA_TELE'] as const).every((c) =>
     canUserEditBrand(currentUser, c)
   );
@@ -797,9 +810,12 @@ export function PeaklyMasterCabinetsSummary({
     [expenseCards]
   );
   const totalExpensesPct = useMemo(
-    () => Math.max(0, Math.min(100, 100 - groupMarginPct)),
-    [groupMarginPct]
+    () => (gt.annualRevenueRub > 0 ? Math.max(0, Math.min(100, 100 - groupMarginPct)) : 0),
+    [gt.annualRevenueRub, groupMarginPct]
   );
+
+  const hasPortfolioActivity =
+    gt.annualRevenueRub > 0 || gt.totalProcurementBudgetRub > 0;
 
   // Режим 2: Доли брендов в годовой выручке холдинга
   const brandSegments = useMemo(() => {
@@ -816,18 +832,32 @@ export function PeaklyMasterCabinetsSummary({
       label: b.displayCode,
       subtitle:
         b.annualRevenueRub > 0
-          ? `${b.modelsCount} SKU · прибыль +${formatMln(b.annualEstimatedOperatingProfitRub)}`
+          ? hasFinance && hasCost
+            ? `${b.modelsCount} SKU · прибыль +${formatMln(b.annualEstimatedOperatingProfitRub)}`
+            : `${b.modelsCount} SKU · активный план`
           : `${b.modelsCount} SKU · план не запущен`,
       valueRub: b.annualRevenueRub,
       pct: holdingTotal.annualRevenueRub > 0 ? (b.annualRevenueRub / rev) * 100 : 0,
       color: palette[b.brandCode] || '#334155',
     }));
-  }, [multiBrandSummary.brands, holdingTotal.annualRevenueRub]);
+  }, [multiBrandSummary.brands, holdingTotal.annualRevenueRub, hasFinance, hasCost]);
 
   const [trendChartMode, setTrendChartMode] = useState<
     'payout' | 'monthlyProfit' | 'ownMoneyPeak'
   >('payout');
   const [selectedTrendMonthIdx, setSelectedTrendMonthIdx] = useState<number>(11);
+
+  useEffect(() => {
+    if (!hasCost && (trendChartMode === 'monthlyProfit' || trendChartMode === 'ownMoneyPeak')) {
+      setTrendChartMode('payout');
+    }
+  }, [hasCost, trendChartMode]);
+
+  useEffect(() => {
+    if (!hasCost && waterfallViewMode === 'pnl' && hasFinance) {
+      setWaterfallViewMode('brands');
+    }
+  }, [hasCost, hasFinance, waterfallViewMode]);
 
   const activeCards = waterfallViewMode === 'pnl' ? expenseCards : brandSegments;
   const activeBarSegments = waterfallViewMode === 'pnl' ? pnlWaterfallSegments : brandSegments;
@@ -936,22 +966,23 @@ export function PeaklyMasterCabinetsSummary({
 
   // Доля закупок из оборотной выручки WB
   const selfFundedProcurementPct = useMemo(() => {
+    if (gt.totalProcurementBudgetRub <= 0) return 0;
     if (
-      gt.totalProcurementBudgetRub > 0 &&
       gt.verifiedOwnMoneyRequiredRub !== null &&
       gt.verifiedOwnMoneyRequiredRub > 0
     ) {
       const fundedByWb = Math.max(0, gt.totalProcurementBudgetRub - gt.verifiedOwnMoneyRequiredRub);
       return Math.min(95, Math.max(0, Math.round((fundedByWb / gt.totalProcurementBudgetRub) * 100)));
     }
-    return 82;
+    if (gt.verifiedOwnMoneyRequiredRub === 0) return 100;
+    return 0;
   }, [gt.totalProcurementBudgetRub, gt.verifiedOwnMoneyRequiredRub]);
 
   const cogsPct = useMemo(() => {
     if (gt.annualRevenueRub > 0) {
       return Math.round((gt.annualSoldGoodsCostRub / gt.annualRevenueRub) * 1000) / 10;
     }
-    return 21.4;
+    return 0;
   }, [gt.annualRevenueRub, gt.annualSoldGoodsCostRub]);
 
   // 4 круговых индикатора KPIRing (2×2 сетка справа от графика)
@@ -964,15 +995,20 @@ export function PeaklyMasterCabinetsSummary({
         id: 'margin',
         label: 'МАРЖА ВЫРУЧКИ',
         valueText: canSeeProfit ? `${Math.round(groupMarginPct)}%` : 'Скрыто',
-        subText: canSeeProfit
-          ? `↑ +${groupMarginPct.toFixed(1).replace('.', ',')} ₽ со 100 ₽`
-          : 'Доступ по роли',
-        pctFill: canSeeProfit ? Math.min(100, Math.max(8, groupMarginPct * 1.6)) : 0,
+        subText: !canSeeProfit
+          ? 'Доступ по роли'
+          : gt.annualRevenueRub <= 0
+          ? 'План не запущен'
+          : `↑ +${groupMarginPct.toFixed(1).replace('.', ',')} ₽ со 100 ₽`,
+        pctFill:
+          canSeeProfit && gt.annualRevenueRub > 0
+            ? Math.min(100, Math.max(8, groupMarginPct * 1.6))
+            : 0,
         color: '#10B981',
         circ,
         r,
         onClick: () => {
-          if (hasFinance) onNavigateSection('finance');
+          if (hasFinance) safeNavigateSection('finance');
         },
       },
       {
@@ -980,31 +1016,40 @@ export function PeaklyMasterCabinetsSummary({
         label: 'ОТДАЧА КАПИТАЛА',
         valueText: !canSeeProfit
           ? 'Скрыто'
-          : wbLagUnspecified
+          : wbLagUnspecified || !ownCapitalRoiMult || ownCapitalRoiMult <= 0
           ? '—'
-          : ownCapitalRoiMult
-          ? `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
-          : '×3,2',
+          : `×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`,
         subText: !canSeeProfit
           ? 'Доступ по роли'
           : wbLagUnspecified
           ? 'Лаг WB не задан'
-          : ownCapitalRoiMult
+          : ownCapitalRoiMult && ownCapitalRoiMult > 0
           ? `↑ ${Math.round(ownCapitalRoiMult * 100)}% годовых`
-          : '↑ с оборота',
-        pctFill: !canSeeProfit || wbLagUnspecified ? 0 : 86,
+          : gt.annualRevenueRub <= 0
+          ? 'План не запущен'
+          : '↑ с оборота WB',
+        pctFill:
+          !canSeeProfit || wbLagUnspecified || !ownCapitalRoiMult || ownCapitalRoiMult <= 0
+            ? 0
+            : Math.min(100, Math.max(15, Math.round(ownCapitalRoiMult * 25))),
         color: '#10B981',
         circ,
         r,
         onClick: () => {
-          if (hasFinance) onNavigateSection('finance');
+          if (hasFinance) safeNavigateSection('finance');
         },
       },
       {
         id: 'reinvest',
         label: 'ПАРТИЙ С ОБОРОТА WB',
         valueText: !hasCost ? 'Скрыто' : wbLagUnspecified ? '—' : `${selfFundedProcurementPct}%`,
-        subText: !hasCost ? 'Доступ по роли' : wbLagUnspecified ? 'Лаг WB не задан' : '↑ без своих денег',
+        subText: !hasCost
+          ? 'Доступ по роли'
+          : wbLagUnspecified
+          ? 'Лаг WB не задан'
+          : gt.totalProcurementBudgetRub <= 0
+          ? 'План не запущен'
+          : '↑ без своих денег',
         pctFill: !hasCost || wbLagUnspecified ? 0 : selfFundedProcurementPct,
         color: '#10B981',
         circ,
@@ -1018,15 +1063,22 @@ export function PeaklyMasterCabinetsSummary({
               // ignore
             }
           }
-          onNavigateSection('roadmap-tasks');
+          safeNavigateSection('roadmap-tasks');
         },
       },
       {
         id: 'cogs',
         label: 'СЕБЕСТОИМОСТЬ',
         valueText: hasCost ? `${Math.round(cogsPct)}%` : 'Скрыто',
-        subText: hasCost ? '↓ норма ≤ 25% цены' : 'Доступ по роли',
-        pctFill: hasCost ? Math.min(100, Math.max(12, cogsPct * 2.2)) : 0,
+        subText: !hasCost
+          ? 'Доступ по роли'
+          : gt.annualRevenueRub <= 0
+          ? 'План не запущен'
+          : '↓ норма ≤ 25% цены',
+        pctFill:
+          hasCost && gt.annualRevenueRub > 0
+            ? Math.min(100, Math.max(12, cogsPct * 2.2))
+            : 0,
         color: '#0D9488',
         circ,
         r,
@@ -1039,7 +1091,7 @@ export function PeaklyMasterCabinetsSummary({
               // ignore
             }
           }
-          onNavigateSection('roadmap-tasks');
+          safeNavigateSection('roadmap-tasks');
         },
       },
     ];
@@ -1048,6 +1100,9 @@ export function PeaklyMasterCabinetsSummary({
     ownCapitalRoiMult,
     selfFundedProcurementPct,
     cogsPct,
+    gt.annualRevenueRub,
+    gt.totalProcurementBudgetRub,
+    currentUser,
     onNavigateSection,
     hasFinance,
     hasCost,
@@ -1376,8 +1431,10 @@ export function PeaklyMasterCabinetsSummary({
 
       {/* 1. ФЛАГМАНСКИЙ HERO-БЛОК №1 (КРУПНЫЙ, КОНТРАСТНЫЙ И МАКСИМАЛЬНО ПОНЯТНЫЙ): ЧИСТАЯ ПРИБЫЛЬ + 3 ОПОРЫ + БЛОК «НА 100 ₽ ВЫРУЧКИ» */}
       <div
-        onClick={() => onNavigateSection('finance')}
-        className="relative rounded-3xl border-2 border-emerald-500/35 dark:border-emerald-500/30 bg-gradient-to-br from-[#ECFDF5]/65 via-white to-[#F8FAFC] dark:from-[#0D1E1A] dark:via-[#121620] dark:to-[#151B28] p-6 sm:p-7 lg:p-8 overflow-hidden cursor-pointer hover-lift shadow-[0_14px_38px_-14px_rgba(16,185,129,0.18)]"
+        onClick={() => safeNavigateSection('finance')}
+        className={`relative rounded-3xl border-2 border-emerald-500/35 dark:border-emerald-500/30 bg-gradient-to-br from-[#ECFDF5]/65 via-white to-[#F8FAFC] dark:from-[#0D1E1A] dark:via-[#121620] dark:to-[#151B28] p-6 sm:p-7 lg:p-8 overflow-hidden hover-lift shadow-[0_14px_38px_-14px_rgba(16,185,129,0.18)] ${
+          canUserAccessSection(currentUser, 'finance') ? 'cursor-pointer' : ''
+        }`}
       >
         {/* Левая контрастная изумрудная полоса-маяк */}
         <div
@@ -1486,6 +1543,7 @@ export function PeaklyMasterCabinetsSummary({
               <div
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (!hasFinance || !hasCost) return;
                   setTrendChartMode('ownMoneyPeak');
                   setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
                 }}
@@ -1499,6 +1557,8 @@ export function PeaklyMasterCabinetsSummary({
                   <span className="font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                     {!hasFinance || !hasCost
                       ? 'Скрыто'
+                      : !hasPortfolioActivity
+                      ? '0 SKU'
                       : wbLagUnspecified
                       ? 'Лаг WB?'
                       : ownCapitalRoiMult
@@ -1509,6 +1569,8 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="mt-1 font-mono text-xl sm:text-[22px] font-extrabold tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
                   {!hasFinance || !hasCost
                     ? 'Скрыто'
+                    : !hasPortfolioActivity
+                    ? '0,00 млн ₽'
                     : gt.verifiedOwnMoneyRequiredRub !== null
                     ? gt.verifiedOwnMoneyRequiredRub > 0
                       ? formatMln(gt.verifiedOwnMoneyRequiredRub)
@@ -1520,13 +1582,18 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-300 font-semibold leading-snug">
                   {!hasFinance || !hasCost ? (
                     <span>Доступ к себестоимости и финансам ограничен</span>
+                  ) : !hasPortfolioActivity ? (
+                    <span className="text-[#64748B]">План продаж и закупок не запущен</span>
                   ) : wbLagUnspecified ? (
                     <span>Укажите лаг выплат WB в 04 · Финансы</span>
                   ) : (
                     <>
                       📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027{' '}
                       <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                        · {gt.selfFundingMonthLabel ? `с ${gt.selfFundingMonthLabel} — в плюс с WB` : `${selfFundedProcurementPct}% партий с WB`}
+                        ·{' '}
+                        {gt.selfFundingMonthLabel && (gt.verifiedOwnMoneyRequiredRub ?? 0) > 0
+                          ? `с ${gt.selfFundingMonthLabel} — в плюс с WB`
+                          : `${selfFundedProcurementPct}% партий с WB`}
                       </span>
                     </>
                   )}
@@ -1559,14 +1626,18 @@ export function PeaklyMasterCabinetsSummary({
                 {/* Наглядная двухцветная полоса 100 ₽ прямо внутри карточки */}
                 <div className="space-y-1.5">
                   <div className="h-3 w-full rounded-full bg-[#E2E8F0] dark:bg-white/10 overflow-hidden flex gap-0.5 p-0.5">
-                    <div
-                      style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
-                      className="h-full rounded-l-full bg-[#94A3B8]"
-                    />
-                    <div
-                      style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
-                      className="h-full rounded-r-full bg-emerald-500"
-                    />
+                    {gt.annualRevenueRub > 0 && (
+                      <>
+                        <div
+                          style={{ width: `${Math.max(15, Math.min(85, totalExpensesPct))}%` }}
+                          className="h-full rounded-l-full bg-[#94A3B8]"
+                        />
+                        <div
+                          style={{ width: `${Math.max(15, Math.min(85, groupMarginPct))}%` }}
+                          className="h-full rounded-r-full bg-emerald-500"
+                        />
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center justify-between text-[11.5px] font-mono">
                     <span className="text-[#475569] dark:text-[#CBD5E1]">
@@ -1579,7 +1650,17 @@ export function PeaklyMasterCabinetsSummary({
                 </div>
 
                 <p className="text-xs text-[#475569] dark:text-[#CBD5E1] leading-relaxed pt-1 border-t border-[#E2E8F0] dark:border-white/10">
-                  Собственный капитал запускает только 1-ю волну — дальше <strong className="text-[#0F172A] dark:text-white">{selfFundedProcurementPct}% годовых партий</strong> финансируются из поступлений WB.
+                  {gt.totalProcurementBudgetRub > 0 ? (
+                    <>
+                      Собственный капитал запускает только 1-ю волну — дальше{' '}
+                      <strong className="text-[#0F172A] dark:text-white">
+                        {selfFundedProcurementPct}% годовых партий
+                      </strong>{' '}
+                      финансируются из поступлений WB.
+                    </>
+                  ) : (
+                    <span>Активный план продаж и закупок в выбранном кабинете пока не запущен.</span>
+                  )}
                 </p>
               </>
             ) : (
@@ -1595,6 +1676,21 @@ export function PeaklyMasterCabinetsSummary({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Левая колонка (7/12): Плавная изумрудная кривая Безье с опорными подписями */}
         <div className="lg:col-span-7 rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between hover-lift">
+          {!hasFinance ||
+          (!hasCost && (trendChartMode === 'monthlyProfit' || trendChartMode === 'ownMoneyPeak')) ? (
+            <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-center px-4 py-8 space-y-2">
+              <span className="px-2.5 py-0.5 rounded-md bg-[#EEF2F6] dark:bg-[#181D2A] text-[#475569] dark:text-[#94A3B8] font-mono text-[11px] font-bold">
+                ДИНАМИКА 12 МЕС. · СКРЫТО ПО РОЛИ
+              </span>
+              <div className="text-[15px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                График денежных потоков и прибыли ограничен правами доступа
+              </div>
+              <p className="text-xs text-[#64748B] max-w-md">
+                Для просмотра помесячных выплат WB, операционной прибыли и графика собственных денег требуются права на финансовый контур и себестоимость.
+              </p>
+            </div>
+          ) : (
+            <>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -1615,21 +1711,25 @@ export function PeaklyMasterCabinetsSummary({
                     ? formatMln(trendChartData.totalPayoutYearRub)
                     : trendChartMode === 'monthlyProfit'
                     ? `+${formatMln(selectedMonthPoint?.profRub || 0)} в ${selectedMonthPoint?.monthLabel || 'дек'}`
+                    : !hasPortfolioActivity
+                    ? '0,00 млн ₽'
                     : gt.verifiedOwnMoneyRequiredRub
                     ? `Пик: ${formatMln(gt.verifiedOwnMoneyRequiredRub)}`
                     : 'Из оборота WB'}
                 </span>
                 {trendChartMode === 'ownMoneyPeak' ? (
-                  <>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                      📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027
-                    </span>
-                    {gt.selfFundingMonthLabel && (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                        ✓ В плюс с {gt.selfFundingMonthLabel}
+                  hasPortfolioActivity ? (
+                    <>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                        📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027
                       </span>
-                    )}
-                  </>
+                      {gt.selfFundingMonthLabel && (gt.verifiedOwnMoneyRequiredRub ?? 0) > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                          ✓ В плюс с {gt.selfFundingMonthLabel}
+                        </span>
+                      )}
+                    </>
+                  ) : null
                 ) : (
                   trendChartData.growthMult &&
                   trendChartData.growthMult > 1 && (
@@ -1666,31 +1766,35 @@ export function PeaklyMasterCabinetsSummary({
               >
                 К выплате WB
               </button>
-              <button
-                type="button"
-                onClick={() => setTrendChartMode('monthlyProfit')}
-                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                  trendChartMode === 'monthlyProfit'
-                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
-                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
-                }`}
-              >
-                Прибыль по мес.
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTrendChartMode('ownMoneyPeak');
-                  setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
-                }}
-                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                  trendChartMode === 'ownMoneyPeak'
-                    ? 'bg-white dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-400/60 dark:border-amber-500/35 shadow-2xs'
-                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
-                }`}
-              >
-                Пик своих денег
-              </button>
+              {hasCost && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setTrendChartMode('monthlyProfit')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                      trendChartMode === 'monthlyProfit'
+                        ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
+                        : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
+                    }`}
+                  >
+                    Прибыль по мес.
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrendChartMode('ownMoneyPeak');
+                      setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                      trendChartMode === 'ownMoneyPeak'
+                        ? 'bg-white dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-400/60 dark:border-amber-500/35 shadow-2xs'
+                        : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
+                    }`}
+                  >
+                    Пик своих денег
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1877,14 +1981,14 @@ export function PeaklyMasterCabinetsSummary({
                 );
               })}
             </div>
-            {trendChartMode === 'ownMoneyPeak' && (
+            {trendChartMode === 'ownMoneyPeak' && hasPortfolioActivity && (
               <div className="mt-2.5 pt-2 border-t border-[#EEF2F6] dark:border-[#222938] flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
                 <span className="text-[#475569] dark:text-[#94A3B8]">
                   Окно пика: <strong className="text-[#0F172A] dark:text-[#EDF0F7]">{gt.peakWindowHumanRu || `${gt.peakMonthLabel || 'Янв'} 2027 · до прихода выплат WB`}</strong>
                 </span>
                 <button
                   type="button"
-                  onClick={() => onNavigateSection('finance')}
+                  onClick={() => safeNavigateSection('finance')}
                   className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
                 >
                   Подробная анатомия и 2-слойный график в 04 · Финансы →
@@ -1892,6 +1996,8 @@ export function PeaklyMasterCabinetsSummary({
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
 
         {/* Правая колонка (5/12): Сетка 2×2 крупных контрастных датчиков KPIRing (90×90px) */}
@@ -1968,7 +2074,7 @@ export function PeaklyMasterCabinetsSummary({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           {/* Карточка 1: Выручка холдинга */}
           <div
-            onClick={() => onNavigateSection('launch-calendar')}
+            onClick={() => safeNavigateSection('launch-calendar')}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
@@ -1982,22 +2088,26 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shrink-0">
-                  {selectedBrandRow && brandShareOfHoldingPct !== null
+                  {hasFinance && selectedBrandRow && brandShareOfHoldingPct !== null
                     ? `${brandShareOfHoldingPct.toFixed(0)}% группы`
                     : `${gt.modelsCount} SKU`}
                 </span>
               </div>
               <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                <AnimatedMlnValue
-                  valueRub={gt.annualRevenueRub}
-                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
-                />
+                {hasFinance ? (
+                  <AnimatedMlnValue
+                    valueRub={gt.annualRevenueRub}
+                    unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
+                  />
+                ) : (
+                  <span className="text-lg text-[#64748B]">Скрыто по роли</span>
+                )}
               </div>
             </div>
             <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Пик декабря</span>
               <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                {formatMln(gt.decemberRevenueRub)}
+                {hasFinance ? formatMln(gt.decemberRevenueRub) : 'Скрыто'}
               </span>
             </div>
             <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-emerald-500" />
@@ -2014,7 +2124,7 @@ export function PeaklyMasterCabinetsSummary({
                   // ignore
                 }
               }
-              onNavigateSection('roadmap-tasks');
+              safeNavigateSection('roadmap-tasks');
             }}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
@@ -2033,16 +2143,20 @@ export function PeaklyMasterCabinetsSummary({
                 </span>
               </div>
               <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                <AnimatedMlnValue
-                  valueRub={gt.totalProcurementBudgetRub}
-                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
-                />
+                {hasCost ? (
+                  <AnimatedMlnValue
+                    valueRub={gt.totalProcurementBudgetRub}
+                    unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
+                  />
+                ) : (
+                  <span className="text-lg text-[#64748B]">Скрыто по роли</span>
+                )}
               </div>
             </div>
             <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Оплата с выручки WB</span>
               <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                {selfFundedProcurementPct}% партий
+                {hasCost ? `${selfFundedProcurementPct}% партий` : 'Скрыто'}
               </span>
             </div>
             <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-emerald-500/85" />
@@ -2059,7 +2173,7 @@ export function PeaklyMasterCabinetsSummary({
                   // ignore
                 }
               }
-              onNavigateSection('roadmap-tasks');
+              safeNavigateSection('roadmap-tasks');
             }}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
@@ -2074,24 +2188,32 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 shrink-0">
-                  аванс{' '}
-                  {gt.firstWaveStartBudgetRub > 0
-                    ? Math.round((gt.firstWavePrepaymentRub / gt.firstWaveStartBudgetRub) * 100)
-                    : 30}
-                  %
+                  {hasCost
+                    ? `аванс ${
+                        gt.firstWaveStartBudgetRub > 0
+                          ? Math.round(
+                              (gt.firstWavePrepaymentRub / gt.firstWaveStartBudgetRub) * 100
+                            )
+                          : 30
+                      }%`
+                    : 'Скрыто'}
                 </span>
               </div>
               <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                <AnimatedMlnValue
-                  valueRub={gt.firstWaveStartBudgetRub}
-                  unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
-                />
+                {hasCost ? (
+                  <AnimatedMlnValue
+                    valueRub={gt.firstWaveStartBudgetRub}
+                    unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
+                  />
+                ) : (
+                  <span className="text-lg text-[#64748B]">Скрыто по роли</span>
+                )}
               </div>
             </div>
             <div className="mt-3 pt-2.5 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between">
               <span>Предоплата фабрикам</span>
               <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                {formatMln(gt.firstWavePrepaymentRub)}
+                {hasCost ? formatMln(gt.firstWavePrepaymentRub) : 'Скрыто'}
               </span>
             </div>
             <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-teal-500" />
@@ -2099,7 +2221,7 @@ export function PeaklyMasterCabinetsSummary({
 
           {/* Карточка 4: Пик своих денег */}
           <div
-            onClick={() => onNavigateSection('finance')}
+            onClick={() => safeNavigateSection('finance')}
             className="relative overflow-hidden rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 cursor-pointer hover-lift flex flex-col justify-between"
           >
             <div>
@@ -2113,11 +2235,19 @@ export function PeaklyMasterCabinetsSummary({
                   </span>
                 </div>
                 <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shrink-0">
-                  {ownCapitalRoiMult ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}` : 'с WB'}
+                  {!hasFinance || !hasCost
+                    ? 'Скрыто'
+                    : !hasPortfolioActivity
+                    ? '0 SKU'
+                    : ownCapitalRoiMult
+                    ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
+                    : 'с WB'}
                 </span>
               </div>
               <div className="mt-3 font-mono text-[26px] font-extrabold tracking-tight tabular-nums text-[#0F172A] dark:text-[#EDF0F7]">
-                {gt.verifiedOwnMoneyRequiredRub !== null ? (
+                {!hasFinance || !hasCost ? (
+                  <span className="text-lg text-[#64748B]">Скрыто по роли</span>
+                ) : gt.verifiedOwnMoneyRequiredRub !== null ? (
                   <AnimatedMlnValue
                     valueRub={gt.verifiedOwnMoneyRequiredRub}
                     unitClassName="text-xs font-semibold text-[#475569] dark:text-[#94A3B8] font-sans ml-1"
@@ -2127,15 +2257,29 @@ export function PeaklyMasterCabinetsSummary({
                 )}
               </div>
               <div className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300 truncate">
-                📍 Пик в {gt.peakMonthLabel || 'Янв'} 2027 · {gt.peakPhaseLabelRu || 'до выплат WB'}
+                {!hasFinance || !hasCost
+                  ? 'Доступ к себестоимости и финансам ограничен'
+                  : !hasPortfolioActivity
+                  ? 'План продаж и закупок не запущен'
+                  : `📍 Пик в ${gt.peakMonthLabel || 'Янв'} 2027 · ${gt.peakPhaseLabelRu || 'до выплат WB'}`}
               </div>
             </div>
             <div className="mt-2.5 pt-2 border-t border-[#EEF2F6] dark:border-[#222938] text-xs text-[#475569] dark:text-[#94A3B8] flex items-center justify-between gap-2">
               <span className="truncate">
-                {gt.selfFundingMonthLabel ? `В плюс с ${gt.selfFundingMonthLabel}` : 'Доля от закупок'}
+                {!hasFinance || !hasCost
+                  ? 'Статус'
+                  : !hasPortfolioActivity
+                  ? 'Потребность'
+                  : gt.selfFundingMonthLabel && (gt.verifiedOwnMoneyRequiredRub ?? 0) > 0
+                  ? `В плюс с ${gt.selfFundingMonthLabel}`
+                  : 'Доля от закупок'}
               </span>
               <span className="font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] shrink-0">
-                {gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
+                {!hasFinance || !hasCost
+                  ? 'Скрыто'
+                  : !hasPortfolioActivity
+                  ? '—'
+                  : gt.totalProcurementBudgetRub > 0 && gt.verifiedOwnMoneyRequiredRub !== null
                   ? `доля ${Math.round((gt.verifiedOwnMoneyRequiredRub / gt.totalProcurementBudgetRub) * 100)}%`
                   : 'реинвест'}
               </span>
@@ -2161,34 +2305,48 @@ export function PeaklyMasterCabinetsSummary({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs">
-              <button
-                type="button"
-                onClick={() => setWaterfallViewMode('pnl')}
-                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                  waterfallViewMode === 'pnl'
-                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
-                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
-                }`}
-              >
-                Структура P&L
-              </button>
-              <button
-                type="button"
-                onClick={() => setWaterfallViewMode('brands')}
-                className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                  waterfallViewMode === 'brands'
-                    ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
-                    : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
-                }`}
-              >
-                Доли кабинетов
-              </button>
-            </div>
+            {hasFinance && (
+              <div className="inline-flex items-center rounded-xl bg-[#EEF2F6] dark:bg-[#181D2A] border border-[#CBD5E1] dark:border-[#222938] p-1 text-xs">
+                {hasCost && (
+                  <button
+                    type="button"
+                    onClick={() => setWaterfallViewMode('pnl')}
+                    className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                      waterfallViewMode === 'pnl'
+                        ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
+                        : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
+                    }`}
+                  >
+                    Структура P&L
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setWaterfallViewMode('brands')}
+                  className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                    waterfallViewMode === 'brands'
+                      ? 'bg-white dark:bg-emerald-500/20 text-[#0F172A] dark:text-emerald-300 border border-[#CBD5E1] dark:border-emerald-500/30 shadow-2xs'
+                      : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Доли кабинетов
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Сетка 8 + 4: слева 4 статьи расходов с внутренней шкалой доли и бар «Куда уходит выручка», справа сводное кольцо расходов и маржи */}
+        {!hasFinance || (!hasCost && waterfallViewMode === 'pnl') ? (
+          <div className="rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-6 text-center space-y-1.5">
+            <div className="text-[14.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+              Структура расходов, себестоимости и рентабельности скрыта по правам роли
+            </div>
+            <p className="text-xs text-[#64748B]">
+              Для просмотра P&amp;L-водопада и удельной маржи необходим доступ к финансовому контуру и себестоимости.
+            </p>
+          </div>
+        ) : (
+        /* Сетка 8 + 4: слева 4 статьи расходов с внутренней шкалой доли и бар «Куда уходит выручка», справа сводное кольцо расходов и маржи */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Левая часть (8 колонок) */}
           <div className="lg:col-span-8 flex flex-col justify-between gap-3.5">
@@ -2221,9 +2379,9 @@ export function PeaklyMasterCabinetsSummary({
                               // ignore
                             }
                           }
-                          onNavigateSection('roadmap-tasks');
+                              safeNavigateSection('roadmap-tasks');
                         } else {
-                          onNavigateSection('finance');
+                          safeNavigateSection('finance');
                         }
                       } else {
                         const clickedBrand = multiBrandSummary.brands.find(
@@ -2276,11 +2434,13 @@ export function PeaklyMasterCabinetsSummary({
                                       );
                                     }
                                     onSelectBrandFilter(seg.key);
-                                    navigateTo('product-lab', {
-                                      brandId: seg.key as BrandFilter,
-                                    });
+                                    if (canUserAccessSection(currentUser, 'product-lab')) {
+                                      navigateTo('product-lab', {
+                                        brandId: seg.key as BrandFilter,
+                                      });
+                                    }
                                   }}
-                                  className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer shrink-0"
+                                  className="px-1.5 py-0.5 rounded-[5px] font-mono text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-300 dark:border-indigo-500/30 transition cursor-pointer shrink-0"
                                 >
                                   R&D: {rndCount} в работе
                                 </button>
@@ -2391,7 +2551,7 @@ export function PeaklyMasterCabinetsSummary({
 
           {/* Правая часть (4 колонки): Карточка «БАЛАНС ЗАТРАТ И ПРИБЫЛИ» с просторным кольцом 148×148px */}
           <div
-            onClick={() => onNavigateSection('finance')}
+            onClick={() => safeNavigateSection('finance')}
             className="lg:col-span-4 rounded-2xl border border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-col justify-between cursor-pointer hover-lift"
           >
             <div className="flex items-center justify-between gap-2">
@@ -2403,70 +2563,85 @@ export function PeaklyMasterCabinetsSummary({
               </span>
             </div>
 
-            <div className="my-3 flex flex-col items-center justify-center">
-              <div className="relative w-36 h-36 flex items-center justify-center">
-                <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 144 144">
-                  <circle
-                    cx="72"
-                    cy="72"
-                    r="56"
-                    fill="none"
-                    stroke="currentColor"
-                    className="text-[#CBD5E1] dark:text-[#222938]"
-                    strokeWidth="10"
-                  />
-                  <circle
-                    cx="72"
-                    cy="72"
-                    r="56"
-                    fill="none"
-                    stroke="#10B981"
-                    strokeWidth="10"
-                    strokeLinecap="round"
-                    strokeDasharray={2 * Math.PI * 56}
-                    strokeDashoffset={
-                      2 * Math.PI * 56 * (1 - Math.min(100, Math.max(5, groupMarginPct)) / 100)
-                    }
-                    className="transition-all duration-1000 ease-out"
-                  />
-                </svg>
-                <div className="relative z-10 flex flex-col items-center justify-center text-center px-2">
-                  <span className="font-mono text-[23px] font-extrabold tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
-                    +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
-                  </span>
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8] mt-1">
-                    из 100 ₽ выр.
-                  </span>
+            {!hasCost || !hasFinance ? (
+              <div className="my-6 text-center space-y-1.5">
+                <div className="text-sm font-bold text-[#64748B]">Скрыто по роли</div>
+                <p className="text-xs text-[#64748B]">
+                  Рентабельность и себестоимость доступны ролям с полным финансовым доступом.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="my-3 flex flex-col items-center justify-center">
+                  <div className="relative w-36 h-36 flex items-center justify-center">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 144 144">
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="56"
+                        fill="none"
+                        stroke="currentColor"
+                        className="text-[#CBD5E1] dark:text-[#222938]"
+                        strokeWidth="10"
+                      />
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="56"
+                        fill="none"
+                        stroke="#10B981"
+                        strokeWidth="10"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 56}
+                        strokeDashoffset={
+                          gt.annualRevenueRub > 0
+                            ? 2 * Math.PI * 56 * (1 - Math.min(100, Math.max(5, groupMarginPct)) / 100)
+                            : 2 * Math.PI * 56
+                        }
+                        className="transition-all duration-1000 ease-out"
+                      />
+                    </svg>
+                    <div className="relative z-10 flex flex-col items-center justify-center text-center px-2">
+                      <span className="font-mono text-[23px] font-extrabold tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
+                        +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
+                      </span>
+                      <span className="text-[10.5px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#94A3B8] mt-1">
+                        из 100 ₽ выр.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 font-mono text-sm font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                    Все затраты: {formatMln(totalExpensesRub)} ({totalExpensesPct.toFixed(1).replace('.', ',')}%)
+                  </div>
                 </div>
-              </div>
-              <div className="mt-2.5 font-mono text-sm font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                Все затраты: {formatMln(totalExpensesRub)} ({totalExpensesPct.toFixed(1).replace('.', ',')}%)
-              </div>
-            </div>
 
-            <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] p-2.5">
-                <div className="font-mono text-base font-extrabold text-[#0F172A] dark:text-[#EDF0F7]">
-                  {totalExpensesPct.toFixed(1).replace('.', ',')} ₽
+                <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#222938] grid grid-cols-2 gap-3 text-center">
+                  <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] p-2.5">
+                    <div className="font-mono text-base font-extrabold text-[#0F172A] dark:text-[#EDF0F7]">
+                      {totalExpensesPct.toFixed(1).replace('.', ',')} ₽
+                    </div>
+                    <div className="text-[11px] font-medium text-[#475569] dark:text-[#94A3B8] mt-0.5">
+                      расходы со 100 ₽
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-emerald-500/10 p-2.5">
+                    <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
+                      +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
+                    </div>
+                    <div className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300/80 mt-0.5">
+                      чистыми со 100 ₽
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[11px] font-medium text-[#475569] dark:text-[#94A3B8] mt-0.5">
-                  расходы со 100 ₽
-                </div>
-              </div>
-              <div className="rounded-xl bg-emerald-500/10 p-2.5">
-                <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
-                  +{groupMarginPct.toFixed(1).replace('.', ',')} ₽
-                </div>
-                <div className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300/80 mt-0.5">
-                  чистыми со 100 ₽
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </div>
+        )}
       </div>
 
       {/* 4-B. ИНТЕРАКТИВНЫЙ СИМУЛЯТОР ЧУВСТВИТЕЛЬНОСТИ «ЧТО ЕСЛИ?» (ЦЕНА WB · СЕБЕСТОИМОСТЬ · КОМИССИЯ И ДРР) */}
+      {hasFinance && hasCost && (
       <div className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -2705,6 +2880,7 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         )}
       </div>
+      )}
 
       {/* 5. СЕКЦИЯ «| КАБИНЕТЫ, 4 ВОЛНЫ ЗАКУПОК И КЭШФЛОУ ХОЛДИНГА» ПРЯМО НА ХОЛСТЕ */}
       <div className="space-y-3">
@@ -2751,6 +2927,16 @@ export function PeaklyMasterCabinetsSummary({
 
         {/* ВИЗУАЛЬНЫЙ ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК (GANTT TIMELINE & CASH-GAP RADAR) */}
         {procurementWavesOpen && (
+          !hasCost ? (
+            <div className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 text-center space-y-1">
+              <div className="text-sm font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                Платёжный календарь и суммы закупок у фабрик скрыты по правам роли
+              </div>
+              <p className="text-xs text-[#64748B]">
+                Для просмотра бюджетов волн, авансов 30% и доплат 70% требуется доступ к себестоимости.
+              </p>
+            </div>
+          ) : (
           <div className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -2770,7 +2956,7 @@ export function PeaklyMasterCabinetsSummary({
                   } catch {
                     // ignore
                   }
-                  onNavigateSection('roadmap-tasks');
+                  safeNavigateSection('roadmap-tasks');
                 }}
                 className="h-7.5 px-3 rounded-lg bg-[#F1F5F9] dark:bg-[#181D2A] hover:bg-[#E2E8F0] text-xs font-medium text-[#0F172A] dark:text-[#EDF0F7] transition cursor-pointer"
               >
@@ -2791,7 +2977,7 @@ export function PeaklyMasterCabinetsSummary({
                       } catch {
                         // ignore
                       }
-                      onNavigateSection('roadmap-tasks');
+                      safeNavigateSection('roadmap-tasks');
                     }}
                     className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/70 dark:bg-[#181D2A] p-4 flex flex-col justify-between gap-3 cursor-pointer hover-lift"
                   >
@@ -2888,6 +3074,7 @@ export function PeaklyMasterCabinetsSummary({
               })}
             </div>
           </div>
+          )
         )}
 
         {cabinetsMatrixOpen && (
@@ -2903,10 +3090,21 @@ export function PeaklyMasterCabinetsSummary({
             onLaunchStarterCabinet={onLaunchStarterCabinet}
             onLaunchAllCabinets={onLaunchAllCabinets}
             onResetStarterCabinets={onResetStarterCabinets}
+            wbLagUnspecified={wbLagUnspecified}
           />
         )}
 
         {monthlyCashflowOpen && (
+          !hasFinance || !hasCost ? (
+            <div className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 text-center space-y-1">
+              <div className="text-sm font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                График денег 12 мес. (Cashflow) скрыт по правам роли
+              </div>
+              <p className="text-xs text-[#64748B]">
+                Для просмотра помесячных выплат WB, авансов/доплат фабрикам и накопленного баланса требуются права на финансы и себестоимость.
+              </p>
+            </div>
+          ) : (
           <div className="overflow-x-auto rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
               <div className="text-xs font-medium text-[#64748B]">
@@ -2916,7 +3114,7 @@ export function PeaklyMasterCabinetsSummary({
               </div>
               <button
                 type="button"
-                onClick={() => onNavigateSection('finance')}
+                onClick={() => safeNavigateSection('finance')}
                 className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
               >
                 Интерактивный 2-слойный график в 04 · Финансы →
@@ -3019,6 +3217,7 @@ export function PeaklyMasterCabinetsSummary({
               </tbody>
             </table>
           </div>
+          )
         )}
       </div>
 
@@ -3054,7 +3253,7 @@ export function PeaklyMasterCabinetsSummary({
 
             <button
               type="button"
-              onClick={() => onNavigateSection('product-catalog')}
+              onClick={() => safeNavigateSection('product-catalog')}
               className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 text-left cursor-pointer hover-lift flex flex-col justify-between gap-2 transition"
             >
               <div>
@@ -3065,13 +3264,15 @@ export function PeaklyMasterCabinetsSummary({
               </div>
               <div className="text-xs text-[#64748B] flex items-center justify-between">
                 <span className="font-mono">{gt.modelsCount} SKU</span>
-                <span className="text-emerald-600 dark:text-emerald-400">Перейти →</span>
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {canUserAccessSection(currentUser, 'product-catalog') ? 'Перейти →' : 'Закрыто'}
+                </span>
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => onNavigateSection('launch-calendar')}
+              onClick={() => safeNavigateSection('launch-calendar')}
               className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 text-left cursor-pointer hover-lift flex flex-col justify-between gap-2 transition"
             >
               <div>
@@ -3081,21 +3282,26 @@ export function PeaklyMasterCabinetsSummary({
                 </div>
               </div>
               <div className="text-xs text-[#64748B] flex items-center justify-between">
-                <span className="font-mono">{formatMln(gt.annualRevenueRub)}</span>
-                <span className="text-emerald-600 dark:text-emerald-400">Перейти →</span>
+                <span className="font-mono">
+                  {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто по роли'}
+                </span>
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {canUserAccessSection(currentUser, 'launch-calendar') ? 'Перейти →' : 'Закрыто'}
+                </span>
               </div>
             </button>
 
             <button
               type="button"
               onClick={() => {
+                if (!canUserAccessSection(currentUser, 'roadmap-tasks')) return;
                 try {
                   window.sessionStorage.setItem('borners_open_procurement_view_mode', 'summary');
                   window.dispatchEvent(new CustomEvent('borners-open-procurement-summary'));
                 } catch {
                   // ignore
                 }
-                onNavigateSection('roadmap-tasks');
+                safeNavigateSection('roadmap-tasks');
               }}
               className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 text-left cursor-pointer hover-lift flex flex-col justify-between gap-2 transition"
             >
@@ -3106,14 +3312,18 @@ export function PeaklyMasterCabinetsSummary({
                 </div>
               </div>
               <div className="text-xs text-[#64748B] flex items-center justify-between">
-                <span className="font-mono">{formatMln(gt.totalProcurementBudgetRub)}</span>
-                <span className="text-emerald-600 dark:text-emerald-400">Перейти →</span>
+                <span className="font-mono">
+                  {hasCost ? formatMln(gt.totalProcurementBudgetRub) : 'Скрыто по роли'}
+                </span>
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {canUserAccessSection(currentUser, 'roadmap-tasks') ? 'Перейти →' : 'Закрыто'}
+                </span>
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => onNavigateSection('finance')}
+              onClick={() => safeNavigateSection('finance')}
               className="rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 text-left cursor-pointer hover-lift flex flex-col justify-between gap-2 transition"
             >
               <div>
@@ -3124,9 +3334,13 @@ export function PeaklyMasterCabinetsSummary({
               </div>
               <div className="text-xs text-[#64748B] flex items-center justify-between">
                 <span className="font-mono text-emerald-600 dark:text-emerald-400">
-                  +{formatMln(gt.annualEstimatedOperatingProfitRub)}
+                  {hasFinance && hasCost
+                    ? `+${formatMln(gt.annualEstimatedOperatingProfitRub)}`
+                    : 'Скрыто по роли'}
                 </span>
-                <span className="text-emerald-600 dark:text-emerald-400">Перейти →</span>
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {canUserAccessSection(currentUser, 'finance') ? 'Перейти →' : 'Закрыто'}
+                </span>
               </div>
             </button>
           </div>
@@ -3191,6 +3405,31 @@ export function PeaklyCatalogGroupsAndBrandsView({
   onResetStarterCabinets,
   notify,
 }: PeaklyCatalogGroupsAndBrandsProps) {
+  const { currentUser } = usePlatform();
+  const hasFinance = canUserViewFinance(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
+  const allCanonicalCodes: CanonicalBrandCode[] = [
+    'BORNERS',
+    'NA_TELE',
+    'FUKAI',
+    'AKUSHA',
+    'LISKANI',
+  ];
+  const canEditBrand = (bCode: string) =>
+    bCode === 'ALL'
+      ? allCanonicalCodes.some((c) => canUserEditBrand(currentUser, c))
+      : canUserEditBrand(currentUser, normalizePortfolioBrandCode(bCode));
+  const canEditAllBrands = allCanonicalCodes.every((c) =>
+    canUserEditBrand(currentUser, c)
+  );
+  const canEditAnyBrand = allCanonicalCodes.some((c) =>
+    canUserEditBrand(currentUser, c)
+  );
+  const canEditGroup = (grp: ProductGroupDef) =>
+    grp.brandCode === 'ALL'
+      ? canEditAllBrands
+      : canUserEditBrand(currentUser, grp.brandCode);
+
   // Режим отображения:
   // 'groups' = Группы товаров (папки с раскрытием и настройками, как на 2-м скрине)
   // 'brands' = Раздельные каталоги по брендам (BORNERS / НА ТЕЛЕ / FUKAI / AKUSHA / LISCANI)
@@ -3241,10 +3480,24 @@ export function PeaklyCatalogGroupsAndBrandsView({
   };
 
   // Карта активных сценариев по каждому бренду (у каждого бренда — свой сценарий развития)
+  const zeroScenario = useMemo<GrowthScenarioDef>(
+    () => ({
+      ...currentScenario,
+      id: -1,
+      title: 'Нет сценария',
+      monthlyTargetMln: 0,
+    }),
+    [currentScenario]
+  );
+
   const scenarioByBrandMap = useMemo(() => {
     const map: Partial<Record<CanonicalBrandCode, GrowthScenarioDef>> = {};
     const codes: CanonicalBrandCode[] = ['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'];
     for (const bCode of codes) {
+      if (isBrandScenarioExplicitlyNone(bCode, selectedScenarioByBrand)) {
+        map[bCode] = zeroScenario;
+        continue;
+      }
       const selId = selectedScenarioByBrand?.[bCode];
       if (typeof selId === 'number') {
         const found = scenarios.find((s) => s.id === selId);
@@ -3253,10 +3506,15 @@ export function PeaklyCatalogGroupsAndBrandsView({
           continue;
         }
       }
-      map[bCode] = currentScenario;
+      map[bCode] = resolveEffectiveScenarioForModel(
+        { id: bCode, code: bCode, title: bCode, customBrandLabel: bCode } as ScenarioModelSpec,
+        scenarios,
+        selectedScenarioByBrand,
+        currentScenario
+      );
     }
     return map;
-  }, [selectedScenarioByBrand, scenarios, currentScenario]);
+  }, [selectedScenarioByBrand, scenarios, currentScenario, zeroScenario]);
 
   // Группы с фильтрацией по выбранному кабинету / бренду (с учётом сценария каждого бренда)
   const visibleGroupsWithMetrics = useMemo(() => {
@@ -3279,8 +3537,25 @@ export function PeaklyCatalogGroupsAndBrandsView({
           g.brandCode !== 'ALL'
             ? scenarioByBrandMap[g.brandCode] || currentScenario
             : currentScenario;
+        const computed = computeProductGroupMetrics(g, models, grpScen);
+        if (grpScen.id < 0) {
+          return {
+            ...computed,
+            decRevenueRub: 0,
+            annualRevenueRub: 0,
+            decPacks: 0,
+            annualPacks: 0,
+            procurementPacks: 0,
+            procurementUnits: 0,
+            procurementBudgetRub: 0,
+            firstWaveStartRub: 0,
+            firstWavePrepayRub: 0,
+            totalBatchesCount: 0,
+            activeScenario: grpScen,
+          };
+        }
         return {
-          ...computeProductGroupMetrics(g, models, grpScen),
+          ...computed,
           activeScenario: grpScen,
         };
       });
@@ -3288,19 +3563,32 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
   // Раздельные каталоги по каждому бренду (каждый бренд считает показатели по своему сценарию)
   const brandSections = useMemo(() => {
+    const sectionsScenarioMap: Partial<Record<CanonicalBrandCode, GrowthScenarioDef>> = {};
+    const codes: CanonicalBrandCode[] = ['BORNERS', 'NA_TELE', 'FUKAI', 'AKUSHA', 'LISKANI'];
+    for (const bCode of codes) {
+      const sc = scenarioByBrandMap[bCode];
+      sectionsScenarioMap[bCode] = sc && sc.id < 0 ? undefined : sc;
+    }
     const allSections = buildBrandCatalogSections(
       models,
-      scenarioByBrandMap,
+      sectionsScenarioMap,
       currentScenario
-    );
+    ).map((sec) => {
+      const mapped = scenarioByBrandMap[sec.brandCode];
+      return mapped && mapped.id < 0 ? { ...sec, activeScenario: mapped } : sec;
+    });
     if (brandFilter === 'ALL') return allSections;
     const norm = normalizePortfolioBrandCode(brandFilter);
     return allSections.filter((s) => s.brandCode === norm);
   }, [models, scenarioByBrandMap, currentScenario, brandFilter]);
 
   const openCreateGroupModal = () => {
-    const defaultBrand =
+    if (!canEditAnyBrand) return;
+    const candidateBrand =
       brandFilter === 'ALL' ? 'BORNERS' : normalizePortfolioBrandCode(brandFilter);
+    const defaultBrand = canUserEditBrand(currentUser, candidateBrand)
+      ? candidateBrand
+      : allCanonicalCodes.find((c) => canUserEditBrand(currentUser, c)) || 'BORNERS';
     setEditingGroup(null);
     setDraftGroupTitle('');
     setDraftGroupSubtitle('');
@@ -3311,6 +3599,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
   };
 
   const openEditGroupModal = (grp: ProductGroupDef) => {
+    if (!canEditGroup(grp)) return;
     setEditingGroup(grp);
     setDraftGroupTitle(grp.title);
     setDraftGroupSubtitle(grp.subtitle || '');
@@ -3329,6 +3618,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
   const handleSaveGroup = (e: React.FormEvent) => {
     e.preventDefault();
+    if (draftGroupBrand === 'ALL' ? !canEditAllBrands : !canEditBrand(draftGroupBrand)) {
+      return;
+    }
     const cleanTitle = draftGroupTitle.trim() || 'Новая группа товаров';
     const selectedModels = models.filter((m) => draftGroupModelIds.includes(m.id));
     const unitCfg =
@@ -3375,6 +3667,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
   };
 
   const handleDeleteGroup = (grp: ProductGroupDef) => {
+    if (!canEditGroup(grp)) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
@@ -3389,6 +3682,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
   };
 
   const handleResetDefaultGroups = () => {
+    if (!canEditAllBrands) return;
     const defaults = resetDefaultProductGroups(models);
     setGroups(defaults);
     notify?.('success', 'Восстановлены стандартные группы по брендам и линейкам');
@@ -3411,12 +3705,34 @@ export function PeaklyCatalogGroupsAndBrandsView({
     const modBrandCode = normalizePortfolioBrandCode(
       detectModelBrandPortfolioLabel(mod)
     );
+    const canEditMod = canEditBrand(modBrandCode);
     const activeScen =
       scenarioOverride ||
       (modBrandCode !== 'ALL' ? scenarioByBrandMap[modBrandCode] : undefined) ||
       currentScenario;
     const met = computeModelScenarioMetrics(mod, activeScen);
-    const proc = computeProcurementPlan(mod, activeScen);
+    const procSourceModel =
+      activeScen.id < 0
+        ? {
+            ...mod,
+            plansByScenario: {
+              ...mod.plansByScenario,
+              [activeScen.id]: {
+                scenarioId: activeScen.id,
+                monthlyPacks: Array(12).fill(0),
+                monthlyPricesRub: Array(12).fill(mod.retailPriceRub),
+                monthlyReceiptsPacks: Array(12).fill(0),
+                initialStockPacks: 0,
+                firstOrderPacks: 0,
+                nextOrderDateLabel: '',
+                salesStartMonthIdx: 0,
+                warehouseArrivalMonthIdx: 0,
+                warehouseArrivalDateLabel: '',
+              },
+            },
+          }
+        : mod;
+    const proc = computeProcurementPlan(procSourceModel, activeScen);
     const mainGallery = mod.gallery.find((g) => g.isMain) || mod.gallery[0];
     const colors = mod.palettes[0]?.colors || [];
     const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
@@ -3424,7 +3740,14 @@ export function PeaklyCatalogGroupsAndBrandsView({
     const displayBrand = detectModelBrandPortfolioLabel(mod);
     const accent = getModelBrandAccentStyles(displayBrand);
     const unitCfg = getBrandUnitConfig(mod);
+    const monthlySparkPacks =
+      activeScen.id < 0
+        ? Array(12).fill(0)
+        : mod.plansByScenario[activeScen.id]?.monthlyPacks ||
+          mod.plansByScenario[1]?.monthlyPacks ||
+          Array(12).fill(0);
     const maxModMonthRev = Math.max(1, ...met.monthlyRevenuesRub);
+    const maxModMonthPacks = Math.max(1, ...monthlySparkPacks);
 
     const confirmedPos = proc.approvedOrders.filter((o) => o.confirmedByFactory !== false);
     const totalBatches = confirmedPos.length + proc.recommendedBatches.length;
@@ -3463,7 +3786,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <span className="px-2 py-0.5 rounded-[5px] text-[10px] font-bold bg-[#F4F3EE] text-[#52514C] border border-[#DFDED7]">
                 {mod.modelStageStatus || mod.launchStatus}
               </span>
-              {onDeleteModel && (
+              {onDeleteModel && canEditMod && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -3490,9 +3813,15 @@ export function PeaklyCatalogGroupsAndBrandsView({
             <span className="absolute bottom-2 left-2 rounded-md bg-white/95 backdrop-blur-xs border border-[#DFDED7] px-2 py-0.5 font-mono text-[10px] font-bold text-[#1E293B]">
               {mod.unitsInPack} {unitCfg.secondaryUnit} · {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
             </span>
-            <span className="absolute bottom-2 right-2 rounded-md bg-[#ECFDF5]/95 border border-[#A7F3D0] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#065F46]">
-              маржа {met.unitMarginPct.toFixed(0)}%
-            </span>
+            {hasFinance && hasCost ? (
+              <span className="absolute bottom-2 right-2 rounded-md bg-[#ECFDF5]/95 border border-[#A7F3D0] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#065F46]">
+                маржа {met.unitMarginPct.toFixed(0)}%
+              </span>
+            ) : (
+              <span className="absolute bottom-2 right-2 rounded-md bg-white/90 border border-[#DFDED7] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#64748B]">
+                маржа скрыта
+              </span>
+            )}
           </div>
 
           <div className="text-[15px] font-extrabold text-[#141413] group-hover:underline leading-snug">
@@ -3500,7 +3829,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
           </div>
           <div className="mt-1 flex items-center justify-between gap-2">
             <span className="text-[11.5px] text-[#686760] truncate">{mod.subtitle}</span>
-            {onCyclePriority && !actingMeta ? (
+            {onCyclePriority && !actingMeta && canEditMod ? (
               <button
                 type="button"
                 onClick={(e) => onCyclePriority(mod, e)}
@@ -3518,12 +3847,24 @@ export function PeaklyCatalogGroupsAndBrandsView({
           {/* Мини-спарклайн 12 мес. */}
           <div className="mt-2.5 rounded-[8px] bg-[#FAF9F6] border border-[#ECEBE4] px-2.5 py-1.5 flex items-end justify-between gap-1 h-7">
             {met.monthlyRevenuesRub.map((mRev, mIdx) => {
-              const hPx = Math.max(3, Math.round((mRev / maxModMonthRev) * 16));
+              const mPacks = monthlySparkPacks[mIdx] || 0;
+              const hPx = Math.max(
+                3,
+                Math.round(
+                  ((hasFinance ? mRev : mPacks) /
+                    (hasFinance ? maxModMonthRev : maxModMonthPacks)) *
+                    16
+                )
+              );
               return (
                 <div
                   key={mIdx}
                   style={{ height: `${hPx}px` }}
-                  title={`${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽`}
+                  title={
+                    hasFinance
+                      ? `${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽`
+                      : `${MONTHS_SHORT_RU[mIdx]}: ${mPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+                  }
                   className={`flex-1 rounded-[2px] ${
                     mIdx === 11 ? 'bg-emerald-600' : 'bg-[#C8C7BE]'
                   }`}
@@ -3559,19 +3900,33 @@ export function PeaklyCatalogGroupsAndBrandsView({
           className="mt-3 pt-2.5 border-t border-[#EAE9E2] flex items-center justify-between gap-2"
         >
           <div>
-            <div className="font-mono text-[14.5px] font-extrabold text-[#141413] leading-tight">
-              {(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽{' '}
-              <span className="font-sans text-[10px] font-medium text-[#686760]">/ дек</span>
-            </div>
-            <div className="text-[11px] text-[#686760] mt-0.5">
-              Год:{' '}
-              <strong className="font-mono text-[#141413]">
-                {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
-              </strong>
-            </div>
+            {hasFinance ? (
+              <>
+                <div className="font-mono text-[14.5px] font-extrabold text-[#141413] leading-tight">
+                  {(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽{' '}
+                  <span className="font-sans text-[10px] font-medium text-[#686760]">/ дек</span>
+                </div>
+                <div className="text-[11px] text-[#686760] mt-0.5">
+                  Год:{' '}
+                  <strong className="font-mono text-[#141413]">
+                    {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
+                  </strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-mono text-[13.5px] font-extrabold text-[#141413] leading-tight">
+                  {met.targetMonthPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}{' '}
+                  <span className="font-sans text-[10px] font-medium text-[#686760]">/ дек</span>
+                </div>
+                <div className="text-[11px] text-[#686760] mt-0.5">
+                  Выручка: <strong className="font-mono text-[#64748B]">Скрыто</strong>
+                </div>
+              </>
+            )}
           </div>
 
-          {onQuickAdjustDecPacks && (
+          {onQuickAdjustDecPacks && canEditMod && (
             <div className="inline-flex items-center gap-0.5 bg-[#FAF9F6] border border-[#CFCEC6] rounded-[8px] px-1 py-0.5 shrink-0">
               <button
                 type="button"
@@ -3653,22 +4008,26 @@ export function PeaklyCatalogGroupsAndBrandsView({
         <div className="flex flex-wrap items-center gap-2">
           {displayMode === 'groups' && (
             <>
-              <button
-                type="button"
-                onClick={handleResetDefaultGroups}
-                className="h-8 px-3 rounded-[9px] border border-[#DCE2EC] bg-[#F8FAFC] hover:bg-white text-[11.5px] font-semibold text-[#475569] cursor-pointer"
-                title="Сбросить к авто-группировке по брендам и линейкам"
-              >
-                ↺ Авто-группы
-              </button>
-              <button
-                type="button"
-                onClick={openCreateGroupModal}
-                className="h-8 px-3.5 rounded-[9px] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Добавить группу</span>
-              </button>
+              {canEditAllBrands && (
+                <button
+                  type="button"
+                  onClick={handleResetDefaultGroups}
+                  className="h-8 px-3 rounded-[9px] border border-[#DCE2EC] bg-[#F8FAFC] hover:bg-white text-[11.5px] font-semibold text-[#475569] cursor-pointer"
+                  title="Сбросить к авто-группировке по брендам и линейкам"
+                >
+                  ↺ Авто-группы
+                </button>
+              )}
+              {canEditAnyBrand && (
+                <button
+                  type="button"
+                  onClick={openCreateGroupModal}
+                  className="h-8 px-3.5 rounded-[9px] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[12px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Добавить группу</span>
+                </button>
+              )}
             </>
           )}
         </div>
@@ -3720,11 +4079,13 @@ export function PeaklyCatalogGroupsAndBrandsView({
                           {group.cabinetLabel}
                         </span>
                       </div>
-                      {group.subtitle && (
-                        <p className="text-[12px] text-[#64748B] mt-0.5 truncate">
-                          {group.subtitle}
-                        </p>
-                      )}
+                      {group.subtitle &&
+                        (hasCost || !/себестоим/i.test(group.subtitle)) &&
+                        (hasFinance || !/млн\s*₽|выкуп.*₽|заказ.*₽/i.test(group.subtitle)) && (
+                          <p className="text-[12px] text-[#64748B] mt-0.5 truncate">
+                            {group.subtitle}
+                          </p>
+                        )}
                     </div>
                   </div>
 
@@ -3735,7 +4096,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                         Выручка за год
                       </div>
                       <div className="font-mono text-[14px] font-extrabold text-[#111827]">
-                        {formatMln(gm.annualRevenueRub)}
+                        {hasFinance ? formatMln(gm.annualRevenueRub) : 'Скрыто'}
                       </div>
                     </div>
 
@@ -3750,10 +4111,12 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
                     <div className="hidden sm:block">
                       <div className="text-[10.5px] font-medium text-[#64748B]">
-                        Старт Q1 (маржа {gm.avgMarginPct}%)
+                        {hasFinance && hasCost
+                          ? `Старт Q1 (маржа ${gm.avgMarginPct}%)`
+                          : 'Старт Q1'}
                       </div>
                       <div className="font-mono text-[14px] font-bold text-[#059669]">
-                        {formatMln(gm.firstWaveStartRub)}
+                        {hasCost ? formatMln(gm.firstWaveStartRub) : 'Скрыто'}
                       </div>
                     </div>
 
@@ -3762,23 +4125,27 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1.5 pl-3 border-l border-[#EAEEF4]"
                     >
-                      <button
-                        type="button"
-                        onClick={() => openEditGroupModal(group)}
-                        className="h-8.5 px-3 rounded-[9px] border border-[#DCE2EC] bg-white hover:bg-[#F4F6F9] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        <SlidersHorizontal className="h-3.5 w-3.5 text-[#64748B]" />
-                        <span>Настроить</span>
-                      </button>
+                      {canEditGroup(group) && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEditGroupModal(group)}
+                            className="h-8.5 px-3 rounded-[9px] border border-[#DCE2EC] bg-white hover:bg-[#F4F6F9] hover:border-[#94A3B8] text-[12px] font-semibold text-[#334155] transition cursor-pointer inline-flex items-center gap-1.5"
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5 text-[#64748B]" />
+                            <span>Настроить</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteGroup(group)}
-                        title="Удалить группу"
-                        className="h-8.5 w-8.5 rounded-[9px] border border-transparent hover:border-rose-200 hover:bg-rose-50 text-[#94A3B8] hover:text-rose-700 flex items-center justify-center transition cursor-pointer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGroup(group)}
+                            title="Удалить группу"
+                            className="h-8.5 w-8.5 rounded-[9px] border border-transparent hover:border-rose-200 hover:bg-rose-50 text-[#94A3B8] hover:text-rose-700 flex items-center justify-center transition cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
 
                       <button
                         type="button"
@@ -3808,26 +4175,28 @@ export function PeaklyCatalogGroupsAndBrandsView({
                         <span className="text-[12.5px] text-[#64748B]">
                           В группе «{group.title}» пока не выбрано артикулов.
                         </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditGroupModal(group)}
-                            className="h-8 px-3 rounded-[8px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[11.5px] font-semibold cursor-pointer"
-                          >
-                            Выбрать артикулы для группы
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onOpenCreateModel(
-                                group.brandCode === 'ALL' ? 'BORNERS' : group.brandCode
-                              )
-                            }
-                            className="h-8 px-3 rounded-[8px] border border-[#DCE2EC] bg-white text-[11.5px] font-semibold text-[#334155] cursor-pointer"
-                          >
-                            + Новый артикул
-                          </button>
-                        </div>
+                        {canEditGroup(group) && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditGroupModal(group)}
+                              className="h-8 px-3 rounded-[8px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[11.5px] font-semibold cursor-pointer"
+                            >
+                              Выбрать артикулы для группы
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenCreateModel(
+                                  group.brandCode === 'ALL' ? 'BORNERS' : group.brandCode
+                                )
+                              }
+                              className="h-8 px-3 rounded-[8px] border border-[#DCE2EC] bg-white text-[11.5px] font-semibold text-[#334155] cursor-pointer"
+                            >
+                              + Новый артикул
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -3891,6 +4260,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
           {brandSections.map((sec) => {
             const accent = getModelBrandAccentStyles(sec.brandCode);
+            const canEditSec = canEditBrand(sec.brandCode);
             return (
               <div
                 key={sec.brandCode}
@@ -3914,15 +4284,32 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       </div>
                       <div className="text-[11.5px] text-[#64748B] mt-0.5 flex flex-wrap items-center gap-3">
                         <span>
-                          Продажи год: <strong className="font-mono text-[#111827]">{formatMln(sec.annualRevenueRub)}</strong> (дек: {formatMln(sec.decRevenueRub)})
+                          Продажи год:{' '}
+                          {hasFinance ? (
+                            <>
+                              <strong className="font-mono text-[#111827]">
+                                {formatMln(sec.annualRevenueRub)}
+                              </strong>{' '}
+                              (дек: {formatMln(sec.decRevenueRub)})
+                            </>
+                          ) : (
+                            <strong className="font-mono text-[#64748B]">Скрыто</strong>
+                          )}
                         </span>
                         <span>·</span>
                         <span>
-                          Закупки: <strong className="font-mono text-[#111827]">{sec.procurementPacks.toLocaleString('ru-RU')} {sec.primaryUnit}</strong> ({formatMln(sec.procurementBudgetRub)})
+                          Закупки:{' '}
+                          <strong className="font-mono text-[#111827]">
+                            {sec.procurementPacks.toLocaleString('ru-RU')} {sec.primaryUnit}
+                          </strong>
+                          {hasCost ? ` (${formatMln(sec.procurementBudgetRub)})` : ' (бюджет скрыт)'}
                         </span>
                         <span>·</span>
                         <span>
-                          Старт Q1: <strong className="font-mono text-[#111827]">{formatMln(sec.firstWaveStartRub)}</strong>
+                          Старт Q1:{' '}
+                          <strong className="font-mono text-[#111827]">
+                            {hasCost ? formatMln(sec.firstWaveStartRub) : 'Скрыто'}
+                          </strong>
                         </span>
                       </div>
                     </div>
@@ -3933,11 +4320,18 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       <div className="inline-flex items-center gap-1.5 rounded-[9px] bg-white border border-[#CBD5E1] px-2.5 py-1 text-[11.5px]">
                         <span className="text-[#64748B] font-medium">Сценарий:</span>
                         <select
+                          disabled={!canEditSec}
                           value={
-                            selectedScenarioByBrand?.[sec.brandCode] ??
-                            sec.activeScenario.id
+                            isBrandScenarioExplicitlyNone(
+                              sec.brandCode,
+                              selectedScenarioByBrand
+                            ) || sec.activeScenario.id < 0
+                              ? ''
+                              : selectedScenarioByBrand?.[sec.brandCode] ??
+                                sec.activeScenario.id
                           }
                           onChange={(e) => {
+                            if (!canEditSec) return;
                             const raw = e.target.value;
                             const nextId = raw === '' ? null : Number(raw);
                             onSelectScenarioForBrand(sec.brandCode, nextId);
@@ -3949,8 +4343,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
                               onSelectActiveScenarioId(nextId, sec.brandCode);
                             }
                           }}
-                          className="font-bold text-[#111827] bg-transparent focus:outline-none cursor-pointer max-w-[190px]"
+                          className="font-bold text-[#111827] bg-transparent focus:outline-none cursor-pointer max-w-[190px] disabled:opacity-60 disabled:cursor-not-allowed"
                         >
+                          <option value="">Нет сценария</option>
                           {getScenariosForBrand(scenarios, sec.brandCode).map((sc) => (
                             <option key={sc.id} value={sc.id}>
                               {sc.id === ACTING_2027_SCENARIO_ID
@@ -3959,7 +4354,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
                             </option>
                           ))}
                         </select>
-                        {onOpenCreateScenarioForBrand && (
+                        {onOpenCreateScenarioForBrand && canEditSec && (
                           <button
                             type="button"
                             onClick={() =>
@@ -3977,13 +4372,15 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => onOpenCreateModel(sec.brandCode)}
-                      className="h-8.5 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shrink-0 shadow-2xs"
-                    >
-                      + Добавить товар в {sec.displayCode}
-                    </button>
+                    {canEditSec && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenCreateModel(sec.brandCode)}
+                        className="h-8.5 px-3.5 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold transition cursor-pointer shrink-0 shadow-2xs"
+                      >
+                        + Добавить товар в {sec.displayCode}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -3997,31 +4394,33 @@ export function PeaklyCatalogGroupsAndBrandsView({
                       <p className="text-[12px] text-[#64748B] max-w-md mx-auto">
                         Запустите готовую стартовую матрицу ({sec.categoryLabel}, 3 SKU) в 1 клик или создайте первую позицию вручную («{sec.primaryUnit}»).
                       </p>
-                      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-                        {onLaunchStarterCabinet &&
-                          (sec.brandCode === 'AKUSHA' ||
-                            sec.brandCode === 'LISKANI' ||
-                            sec.brandCode === 'NA_TELE') && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onLaunchStarterCabinet(
-                                  sec.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
-                                )
-                              }
-                              className="h-8.5 px-4 rounded-[9px] bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
-                            >
-                              🚀 Запустить матрицу {sec.displayCode} (3 SKU)
-                            </button>
-                          )}
-                        <button
-                          type="button"
-                          onClick={() => onOpenCreateModel(sec.brandCode)}
-                          className="h-8.5 px-4 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
-                        >
-                          + Создать первую карточку {sec.displayCode}
-                        </button>
-                      </div>
+                      {canEditSec && (
+                        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                          {onLaunchStarterCabinet &&
+                            (sec.brandCode === 'AKUSHA' ||
+                              sec.brandCode === 'LISKANI' ||
+                              sec.brandCode === 'NA_TELE') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onLaunchStarterCabinet(
+                                    sec.brandCode as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                                  )
+                                }
+                                className="h-8.5 px-4 rounded-[9px] bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                              >
+                                🚀 Запустить матрицу {sec.displayCode} (3 SKU)
+                              </button>
+                            )}
+                          <button
+                            type="button"
+                            onClick={() => onOpenCreateModel(sec.brandCode)}
+                            className="h-8.5 px-4 rounded-[9px] bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                          >
+                            + Создать первую карточку {sec.displayCode}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -4043,19 +4442,26 @@ export function PeaklyCatalogGroupsAndBrandsView({
       {displayMode === 'grid' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {filteredModels.map((mod, idx) => renderModelCard(mod, idx))}
-          <button
-            type="button"
-            onClick={() =>
-              onOpenCreateModel(brandFilter === 'ALL' ? 'BORNERS' : brandFilter)
-            }
-            className="rounded-[14px] border border-dashed border-[#C8C7BE] hover:border-[#141413] bg-[#FAF9F6] hover:bg-white p-6 flex flex-col items-center justify-center text-center gap-2 transition cursor-pointer min-h-[280px]"
-          >
-            <div className="text-[26px] font-light leading-none text-[#141413]">+</div>
-            <div className="text-[14.5px] font-bold text-[#141413]">Добавить модель</div>
-            <p className="text-[12px] text-[#686760] max-w-[200px]">
-              Новая товарная позиция в каталог выбранного бренда
-            </p>
-          </button>
+          {(brandFilter === 'ALL' ? canEditAnyBrand : canEditBrand(brandFilter)) && (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenCreateModel(
+                  brandFilter === 'ALL'
+                    ? allCanonicalCodes.find((c) => canUserEditBrand(currentUser, c)) ||
+                        'BORNERS'
+                    : brandFilter
+                )
+              }
+              className="rounded-[14px] border border-dashed border-[#C8C7BE] hover:border-[#141413] bg-[#FAF9F6] hover:bg-white p-6 flex flex-col items-center justify-center text-center gap-2 transition cursor-pointer min-h-[280px]"
+            >
+              <div className="text-[26px] font-light leading-none text-[#141413]">+</div>
+              <div className="text-[14.5px] font-bold text-[#141413]">Добавить модель</div>
+              <p className="text-[12px] text-[#686760] max-w-[200px]">
+                Новая товарная позиция в каталог выбранного бренда
+              </p>
+            </button>
+          )}
         </div>
       )}
 
@@ -4119,12 +4525,22 @@ export function PeaklyCatalogGroupsAndBrandsView({
                   }
                   className="w-full h-9 px-2.5 mt-1 rounded-[9px] border border-[#D8D7CE] text-[12.5px] font-bold"
                 >
-                  <option value="BORNERS">BORNERS · WB</option>
-                  <option value="NA_TELE">НА ТЕЛЕ · WB</option>
-                  <option value="FUKAI">FUKAI · WB</option>
-                  <option value="AKUSHA">AKUSHA · WB</option>
-                  <option value="LISKANI">LISKANI · WB</option>
-                  <option value="ALL">Все бренды</option>
+                  {canUserEditBrand(currentUser, 'BORNERS') && (
+                    <option value="BORNERS">BORNERS · WB</option>
+                  )}
+                  {canUserEditBrand(currentUser, 'NA_TELE') && (
+                    <option value="NA_TELE">НА ТЕЛЕ · WB</option>
+                  )}
+                  {canUserEditBrand(currentUser, 'FUKAI') && (
+                    <option value="FUKAI">FUKAI · WB</option>
+                  )}
+                  {canUserEditBrand(currentUser, 'AKUSHA') && (
+                    <option value="AKUSHA">AKUSHA · WB</option>
+                  )}
+                  {canUserEditBrand(currentUser, 'LISKANI') && (
+                    <option value="LISKANI">LISKANI · WB</option>
+                  )}
+                  {canEditAllBrands && <option value="ALL">Все бренды</option>}
                 </select>
               </div>
             </div>
@@ -4161,6 +4577,12 @@ export function PeaklyCatalogGroupsAndBrandsView({
                 {models
                   .filter((m) => {
                     if (m.launchStatus === 'В архиве') return false;
+                    if (
+                      !canEditAllBrands &&
+                      !canEditBrand(detectModelBrandPortfolioLabel(m))
+                    ) {
+                      return false;
+                    }
                     const q = groupSkuSearch.trim().toLowerCase();
                     if (!q) return true;
                     return (
@@ -4270,13 +4692,43 @@ function QuickModelBatchesAndDatesModal({
   onUpdateModel: (updated: ScenarioModelSpec) => void;
   notify?: (type: 'success' | 'warning' | 'error', title: string, desc?: string) => void;
 }) {
+  const { currentUser } = usePlatform();
+  const hasCost = canUserViewCostPrice(currentUser);
   const model = useMemo(() => ensureModelUnifiedV11(rawModel), [rawModel]);
+  const modBrandCode = normalizePortfolioBrandCode(
+    detectModelBrandPortfolioLabel(model)
+  );
+  const canEditModal = canUserEditBrand(currentUser, modBrandCode);
+  const authorLabel =
+    currentUser.fullName ||
+    (currentUser as { name?: string }).name ||
+    'Пользователь';
   const shared = model.sharedSupplyAndFact!;
   const fp = shared.factoryParams;
-  const proc = useMemo(
-    () => computeProcurementPlan(model, scenario),
-    [model, scenario]
-  );
+  const proc = useMemo(() => {
+    const src =
+      scenario.id < 0
+        ? {
+            ...model,
+            plansByScenario: {
+              ...model.plansByScenario,
+              [scenario.id]: {
+                scenarioId: scenario.id,
+                monthlyPacks: Array(12).fill(0),
+                monthlyPricesRub: Array(12).fill(model.retailPriceRub),
+                monthlyReceiptsPacks: Array(12).fill(0),
+                initialStockPacks: 0,
+                firstOrderPacks: 0,
+                nextOrderDateLabel: '',
+                salesStartMonthIdx: 0,
+                warehouseArrivalMonthIdx: 0,
+                warehouseArrivalDateLabel: '',
+              },
+            },
+          }
+        : model;
+    return computeProcurementPlan(src, scenario);
+  }, [model, scenario]);
   const unitCfg = getBrandUnitConfig(model);
 
   const activePeriods: CustomBatchPeriodDef[] = useMemo(() => {
@@ -4289,6 +4741,7 @@ function QuickModelBatchesAndDatesModal({
   }, [fp.customBatchPeriods]);
 
   const updatePeriods = (nextList: CustomBatchPeriodDef[]) => {
+    if (!canEditModal) return;
     onUpdateModel({
       ...model,
       sharedSupplyAndFact: {
@@ -4302,6 +4755,7 @@ function QuickModelBatchesAndDatesModal({
   };
 
   const handleSplitBatch = (periodId: string) => {
+    if (!canEditModal) return;
     const idx = activePeriods.findIndex((p) => p.id === periodId);
     if (idx < 0) return;
     const cur = activePeriods[idx];
@@ -4383,7 +4837,8 @@ function QuickModelBatchesAndDatesModal({
   };
 
   const handleApproveBatch = (batch: RecommendedProcurementBatch) => {
-    const updated = approveRecommendedBatch(model, batch, 'Владелец');
+    if (!canEditModal) return;
+    const updated = approveRecommendedBatch(model, batch, authorLabel);
     onUpdateModel(updated);
     notify?.(
       'success',
@@ -4393,6 +4848,7 @@ function QuickModelBatchesAndDatesModal({
   };
 
   const handleRevokeApprovedPo = (poId: string) => {
+    if (!canEditModal) return;
     const updated = removeApprovedPurchaseOrder(model, poId);
     onUpdateModel(updated);
     notify?.('warning', 'Заказ фабрике возвращён в черновик');
@@ -4417,21 +4873,25 @@ function QuickModelBatchesAndDatesModal({
             </h3>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleResetToQuarters}
-              className="h-8.5 px-3 rounded-[9px] border border-[#D8D7CE] bg-white hover:bg-[#FAF9F6] text-[11.5px] font-semibold text-[#52514C] cursor-pointer"
-            >
-              ↺ Сбросить к 4 кварталам
-            </button>
-            <button
-              type="button"
-              onClick={handleAddCustomBatch}
-              className="h-8.5 px-3 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Добавить партию</span>
-            </button>
+            {canEditModal && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleResetToQuarters}
+                  className="h-8.5 px-3 rounded-[9px] border border-[#D8D7CE] bg-white hover:bg-[#FAF9F6] text-[11.5px] font-semibold text-[#52514C] cursor-pointer"
+                >
+                  ↺ Сбросить к 4 кварталам
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddCustomBatch}
+                  className="h-8.5 px-3 rounded-[9px] bg-[#146C43] hover:bg-[#0F5132] text-white text-[12px] font-semibold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Добавить партию</span>
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -4474,21 +4934,31 @@ function QuickModelBatchesAndDatesModal({
                     {po.packsQty.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
                   </td>
                   <td className="py-3 px-3 text-right font-mono">
-                    <div className="text-[13.5px] font-extrabold text-[#0F5132]">
-                      {formatMln(po.totalOrderRub)}
-                    </div>
-                    <div className="text-[10.5px] text-[#146C43] font-semibold">
-                      Аванс: {formatMln(po.prepaymentRub)}
-                    </div>
+                    {hasCost ? (
+                      <>
+                        <div className="text-[13.5px] font-extrabold text-[#0F5132]">
+                          {formatMln(po.totalOrderRub)}
+                        </div>
+                        <div className="text-[10.5px] text-[#146C43] font-semibold">
+                          Аванс: {formatMln(po.prepaymentRub)}
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-[12px] text-[#64748B]">Скрыто</span>
+                    )}
                   </td>
                   <td className="py-3 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleRevokeApprovedPo(po.id)}
-                      className="h-8 px-2.5 rounded-[8px] border border-[#D8D7CE] bg-white hover:bg-rose-50 hover:text-rose-700 text-[11px] font-semibold text-[#52514C] cursor-pointer"
-                    >
-                      Вернуть в черновик
-                    </button>
+                    {canEditModal ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeApprovedPo(po.id)}
+                        className="h-8 px-2.5 rounded-[8px] border border-[#D8D7CE] bg-white hover:bg-rose-50 hover:text-rose-700 text-[11px] font-semibold text-[#52514C] cursor-pointer"
+                      >
+                        Вернуть в черновик
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-[#94A3B8]">Только чтение</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -4502,8 +4972,10 @@ function QuickModelBatchesAndDatesModal({
                       </div>
                       <div className="mt-1 flex items-center gap-1 text-[11px]">
                         <select
+                          disabled={!canEditModal}
                           value={batch.firstCoveredMonthIdx}
                           onChange={(e) => {
+                            if (!canEditModal) return;
                             const nextStart = Number(e.target.value);
                             handleUpdateBatchField(batch.periodId, (prev) => ({
                               ...prev,
@@ -4511,7 +4983,7 @@ function QuickModelBatchesAndDatesModal({
                               endMonthIdx: Math.max(nextStart, prev.endMonthIdx),
                             }));
                           }}
-                          className="rounded border border-[#D8D7CE] bg-white px-1.5 py-0.5 font-semibold"
+                          className="rounded border border-[#D8D7CE] bg-white px-1.5 py-0.5 font-semibold disabled:opacity-60"
                         >
                           {MONTHS_SHORT_RU.map((m, mIdx) => (
                             <option key={m} value={mIdx}>
@@ -4521,15 +4993,17 @@ function QuickModelBatchesAndDatesModal({
                         </select>
                         <span>—</span>
                         <select
+                          disabled={!canEditModal}
                           value={batch.endCoveredMonthIdx}
                           onChange={(e) => {
+                            if (!canEditModal) return;
                             const nextEnd = Number(e.target.value);
                             handleUpdateBatchField(batch.periodId, (prev) => ({
                               ...prev,
                               endMonthIdx: Math.max(prev.startMonthIdx, nextEnd),
                             }));
                           }}
-                          className="rounded border border-[#D8D7CE] bg-white px-1.5 py-0.5 font-semibold"
+                          className="rounded border border-[#D8D7CE] bg-white px-1.5 py-0.5 font-semibold disabled:opacity-60"
                         >
                           {MONTHS_SHORT_RU.map((m, mIdx) => (
                             <option
@@ -4547,15 +5021,16 @@ function QuickModelBatchesAndDatesModal({
                     <td className="py-3 px-3">
                       <input
                         type="date"
+                        disabled={!canEditModal}
                         value={batch.recommendedOrderDateIso}
                         onChange={(e) => {
-                          if (!e.target.value) return;
+                          if (!canEditModal || !e.target.value) return;
                           handleUpdateBatchField(batch.periodId, (prev) => ({
                             ...prev,
                             customOrderDateIso: e.target.value,
                           }));
                         }}
-                        className="h-8 rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 font-mono text-[12px] font-bold text-[#141413]"
+                        className="h-8 rounded-[8px] border border-[#CFCEC6] bg-white px-2.5 font-mono text-[12px] font-bold text-[#141413] disabled:opacity-60"
                       />
                       <div className="text-[10.5px] text-[#686760] mt-0.5">
                         Приход к 1 {MONTHS_SHORT_RU[batch.firstCoveredMonthIdx].toLowerCase()}{' '}
@@ -4568,12 +5043,14 @@ function QuickModelBatchesAndDatesModal({
                         type="number"
                         min={0}
                         step={50}
+                        disabled={!canEditModal}
                         value={batch.recommendedPacks}
                         onChange={(e) => {
+                          if (!canEditModal) return;
                           const val = Math.max(0, Number(e.target.value) || 0);
                           handleUpdateBatchQtyAndRebalance(batch.periodId, val);
                         }}
-                        className="h-8 w-24 rounded-[8px] border border-[#CFCEC6] bg-white px-2 text-right font-mono text-[13px] font-bold text-[#141413]"
+                        className="h-8 w-24 rounded-[8px] border border-[#CFCEC6] bg-white px-2 text-right font-mono text-[13px] font-bold text-[#141413] disabled:opacity-60"
                       />
                       <div className="font-mono text-[10.5px] text-[#686760] mt-0.5">
                         {batch.physicalUnitsQty.toLocaleString('ru-RU')} {unitCfg.secondaryUnit}
@@ -4581,35 +5058,45 @@ function QuickModelBatchesAndDatesModal({
                     </td>
 
                     <td className="py-3 px-3 text-right font-mono">
-                      <div className="text-[13.5px] font-extrabold text-[#141413]">
-                        {formatMln(batch.estimatedTotalRub)}
-                      </div>
-                      <div className="text-[10.5px] text-[#146C43] font-semibold">
-                        Аванс 30%: {formatMln(batch.prepaymentRub)}
-                      </div>
+                      {hasCost ? (
+                        <>
+                          <div className="text-[13.5px] font-extrabold text-[#141413]">
+                            {formatMln(batch.estimatedTotalRub)}
+                          </div>
+                          <div className="text-[10.5px] text-[#146C43] font-semibold">
+                            Аванс 30%: {formatMln(batch.prepaymentRub)}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-[12px] text-[#64748B]">Скрыто</span>
+                      )}
                     </td>
 
                     <td className="py-3 px-3 text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        {canSplit && (
+                      {canEditModal ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          {canSplit && (
+                            <button
+                              type="button"
+                              onClick={() => handleSplitBatch(batch.periodId)}
+                              title="Разбить эту партию на 2 отдельные партии с разными датами"
+                              className="h-8 px-2.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] hover:bg-[#EFEFE9] text-[11px] font-semibold text-[#141413] cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Scissors className="h-3 w-3" />
+                              <span>Разбить</span>
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleSplitBatch(batch.periodId)}
-                            title="Разбить эту партию на 2 отдельные партии с разными датами"
-                            className="h-8 px-2.5 rounded-[8px] border border-[#D8D7CE] bg-[#FAF9F6] hover:bg-[#EFEFE9] text-[11px] font-semibold text-[#141413] cursor-pointer inline-flex items-center gap-1"
+                            onClick={() => handleApproveBatch(batch)}
+                            className="h-8 px-2.5 rounded-[8px] bg-[#EAF6F0] border border-[#BCE3CF] hover:bg-[#157347] hover:text-white text-[11px] font-bold text-[#146C43] transition cursor-pointer"
                           >
-                            <Scissors className="h-3 w-3" />
-                            <span>Разбить</span>
+                            ✓ Утвердить
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleApproveBatch(batch)}
-                          className="h-8 px-2.5 rounded-[8px] bg-[#EAF6F0] border border-[#BCE3CF] hover:bg-[#157347] hover:text-white text-[11px] font-bold text-[#146C43] transition cursor-pointer"
-                        >
-                          ✓ Утвердить
-                        </button>
-                      </div>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-[#94A3B8]">Только чтение</span>
+                      )}
                     </td>
                   </tr>
                 );

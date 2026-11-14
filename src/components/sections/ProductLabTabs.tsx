@@ -89,6 +89,12 @@ export const MATERIAL_DIRECTORY: {
   { ru: 'Бамбук', en: 'Bamboo Fiber', zh: '竹纤维 (Bamboo)' },
   { ru: 'Вискоза', en: 'Viscose', zh: '粘胶纤维 (Viscose)' },
   { ru: 'Микрофибра', en: 'Microfiber', zh: '超细纤维 (Microfiber)' },
+  { ru: 'Натуральная кожа', en: 'Genuine Leather', zh: '头层真皮 (Genuine Leather)' },
+  { ru: 'Нубук', en: 'Nubuck Leather', zh: '磨砂真皮 (Nubuck)' },
+  { ru: 'Мембрана / ЭВА', en: 'Membrane / EVA Sole', zh: '防水透气膜 / EVA大底 (Membrane/EVA)' },
+  { ru: 'Блэкаут димаут', en: 'Blackout / Dimout Fabric', zh: '高精密遮光布 (Blackout/Dimout)' },
+  { ru: 'Лён портьерный', en: 'Drapery Linen', zh: '亚麻窗帘面料 (Drapery Linen)' },
+  { ru: 'Бархат интерьерный', en: 'Interior Velvet', zh: '高定绒布窗帘面料 (Interior Velvet)' },
 ];
 
 export const PRODUCTION_INTERNAL_STATUSES: {
@@ -122,6 +128,7 @@ export interface ProductLabCardBodyProps {
   linkedScenarioModelCode?: string | null;
   onSyncToScenarioCatalog?: (concept: ProductConcept) => void;
   onSyncConcept?: (nextConcept: ProductConcept) => void;
+  onRegisterDraftFlusher?: (flushFn: () => Partial<ProductConcept> | null) => void;
   onCreateTaskForConcept: (title: string, assigneeId: string, deadline: string) => void;
   onNavigateToSection: (
     section:
@@ -148,6 +155,7 @@ export function ProductLabCardBody({
   linkedScenarioModelCode,
   onSyncToScenarioCatalog,
   onSyncConcept,
+  onRegisterDraftFlusher,
   onNavigateToSection,
   notify,
 }: ProductLabCardBodyProps) {
@@ -158,8 +166,34 @@ export function ProductLabCardBody({
   );
   const prodProfile = getBrandProductionProfile(concept.brandId, concept.name);
 
+  const singleItemNominativeRu =
+    prodProfile.brandCode === 'AKUSHA'
+      ? 'пара'
+      : prodProfile.brandCode === 'LISKANI'
+      ? 'компл.'
+      : prodProfile.brandCode === 'NA_TELE'
+      ? 'изд.'
+      : 'шт.';
+  const singleItemAccusativeRu =
+    prodProfile.brandCode === 'AKUSHA'
+      ? 'пару'
+      : prodProfile.brandCode === 'LISKANI'
+      ? 'компл.'
+      : prodProfile.brandCode === 'NA_TELE'
+      ? 'изд.'
+      : 'шт.';
+  const itemsGenitivePluralRu =
+    prodProfile.brandCode === 'AKUSHA'
+      ? 'пар'
+      : prodProfile.brandCode === 'LISKANI'
+      ? 'компл.'
+      : prodProfile.brandCode === 'NA_TELE'
+      ? 'изд.'
+      : 'шт.';
+
   const defaultBrandFactoryName =
     concept.supplierName?.trim() ||
+    (prodProfile as { defaultFactoryNameEn?: string }).defaultFactoryNameEn ||
     (prodProfile.brandCode === 'NA_TELE'
       ? 'Shantou Seamless Intimate Co.'
       : prodProfile.brandCode === 'AKUSHA'
@@ -167,6 +201,32 @@ export function ProductLabCardBody({
       : prodProfile.brandCode === 'LISKANI'
       ? 'Shaoxing Keqiao Home Textile'
       : 'Guangdong Apex Intimate');
+
+  const defaultDensityGsm =
+    prodProfile.brandCode === 'NA_TELE'
+      ? 145
+      : prodProfile.brandCode === 'AKUSHA'
+      ? 0
+      : prodProfile.brandCode === 'LISKANI'
+      ? 260
+      : 180;
+
+  const defaultSizeTested = prodProfile.sizes.slice(0, 2).join(' / ') || 'M';
+
+  const getDefaultCompRowsForBrand = () =>
+    prodProfile.brandCode === 'NA_TELE'
+      ? [
+          { material: 'Полиамид', pct: '78' },
+          { material: 'Эластан', pct: '22' },
+        ]
+      : prodProfile.brandCode === 'AKUSHA'
+      ? [{ material: 'Натуральная кожа', pct: '100' }]
+      : prodProfile.brandCode === 'LISKANI'
+      ? [{ material: 'Блэкаут димаут', pct: '100' }]
+      : [
+          { material: 'Хлопок', pct: '95' },
+          { material: 'Эластан', pct: '5' },
+        ];
 
   const [newRefLink, setNewRefLink] = useState('');
   const [showExtraAnalysis, setShowExtraAnalysis] = useState(false);
@@ -176,22 +236,23 @@ export function ProductLabCardBody({
     competitorBrand: '',
     articleSku: '',
     priceRub: '',
-    packQty: '4 шт.',
+    packQty: `${prodProfile.defaultPackUnits} ${singleItemNominativeRu}`,
     estimatedRevenueRub: '',
     sourceName: 'WB / MPStats',
   });
 
   // Состав материала из справочника (03 Образец — сумма = 100%)
-  const [compRows, setCompRows] = useState<{ material: string; pct: string }[]>([
-    { material: 'Хлопок', pct: '95' },
-    { material: 'Эластан', pct: '5' },
-  ]);
+  const [compRows, setCompRows] = useState<{ material: string; pct: string }[]>(() =>
+    getDefaultCompRowsForBrand()
+  );
 
   const [isUploadingSamplePhotos, setIsUploadingSamplePhotos] = useState(false);
   const [sampleForm, setSampleForm] = useState({
     factoryName: defaultBrandFactoryName,
     customFactory: '',
     receivedAt: new Date().toISOString().slice(0, 10),
+    densityGsm: String(defaultDensityGsm),
+    sizeTested: defaultSizeTested,
     sampleCostRub: '3500',
     deliveryCostRub: '0',
     estimatedUnitProductionPrice: concept.plannedUnitCost ? String(concept.plannedUnitCost) : '340',
@@ -199,17 +260,41 @@ export function ProductLabCardBody({
     photos: [] as string[],
   });
 
+  const [orderUnitPriceDraft, setOrderUnitPriceDraft] = useState<string | null>(null);
+
   useEffect(() => {
+    const latestSampleRows =
+      concept.samples && concept.samples.length > 0
+        ? concept.samples[concept.samples.length - 1].compositionRows
+        : undefined;
+    setCompRows(
+      latestSampleRows && latestSampleRows.length > 0
+        ? latestSampleRows.map((r) => ({ material: r.material, pct: String(r.pct) }))
+        : getDefaultCompRowsForBrand()
+    );
+    setEvForm((prev) => ({
+      ...prev,
+      competitorBrand: '',
+      articleSku: '',
+      priceRub: '',
+      packQty: `${prodProfile.defaultPackUnits} ${singleItemNominativeRu}`,
+      estimatedRevenueRub: '',
+    }));
     setSampleForm((prev) => ({
       ...prev,
       factoryName: defaultBrandFactoryName,
+      densityGsm: String(defaultDensityGsm),
+      sizeTested: defaultSizeTested,
       estimatedUnitProductionPrice: concept.plannedUnitCost
         ? String(concept.plannedUnitCost)
         : prev.estimatedUnitProductionPrice,
       photos: [],
       comments: '',
     }));
-  }, [concept.id, defaultBrandFactoryName, concept.plannedUnitCost]);
+    setNewRefLink('');
+    setOrderUnitPriceDraft(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [concept.id, concept.brandId]);
 
   // 05 Решение — комментарий и возврат на этап
   const [decisionReason, setDecisionReason] = useState('');
@@ -230,6 +315,15 @@ export function ProductLabCardBody({
     const cleaned = raw.replace(/[^\d]/g, '');
     if (!cleaned) return null;
     return parseInt(cleaned, 10);
+  };
+
+  const parseCleanFloat = (raw: string): number => {
+    const normalized = raw.replace(',', '.').replace(/[^\d.]/g, '');
+    if (!normalized) return 0;
+    const parts = normalized.split('.');
+    const safe = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : normalized;
+    const num = parseFloat(safe);
+    return Number.isFinite(num) ? num : 0;
   };
 
   const currentAnalysis: RnDAnalysisReport = concept.analysisReport || {
@@ -308,6 +402,108 @@ export function ProductLabCardBody({
       fourChecksTest: next,
     });
   };
+
+  // Автосброс (flush) локальных черновиков перед «Сохранить карточку» и переходами этапов
+  const flushUncommittedDrafts = (): Partial<ProductConcept> | null => {
+    if (!canEdit) return null;
+    const patch: Partial<ProductConcept> = {};
+    let hasChanges = false;
+
+    if (newRefLink.trim()) {
+      patch.referenceLinks = [...(concept.referenceLinks || []), newRefLink.trim()];
+      setNewRefLink('');
+      hasChanges = true;
+    }
+
+    if (evForm.competitorBrand.trim()) {
+      const evItem: RnDMarketEvidence = {
+        id: `ev-${Date.now()}`,
+        competitorBrand: evForm.competitorBrand.trim(),
+        articleSku: evForm.articleSku.trim() || '—',
+        productTitle: concept.name,
+        priceRub: parseCleanNumber(evForm.priceRub) || packRetailPrice,
+        packQty: evForm.packQty.trim() || `${prodProfile.defaultPackUnits} ${singleItemNominativeRu}`,
+        estimatedRevenueRub: parseCleanNumber(evForm.estimatedRevenueRub) || 1500000,
+        observationPeriod: '30 дней',
+        sourceName: evForm.sourceName || 'WB / MPStats',
+        confidenceStatus: 'verified',
+        comparisonNote: '',
+      };
+      patch.analysisReport = {
+        ...currentAnalysis,
+        marketEvidences: [...currentAnalysis.marketEvidences, evItem],
+      };
+      setEvForm({
+        competitorBrand: '',
+        articleSku: '',
+        priceRub: '',
+        packQty: `${prodProfile.defaultPackUnits} ${singleItemNominativeRu}`,
+        estimatedRevenueRub: '',
+        sourceName: 'WB / MPStats',
+      });
+      hasChanges = true;
+    }
+
+    if (sampleForm.photos.length > 0 || sampleForm.comments.trim()) {
+      const existingSamples = concept.samples || [];
+      const rowTotalPct = compRows.reduce((sum, r) => sum + (parseCleanNumber(r.pct) || 0), 0);
+      const compLabel =
+        rowTotalPct === 100
+          ? compRows
+              .filter((r) => (parseCleanNumber(r.pct) || 0) > 0)
+              .map((r) => `${r.material} ${parseCleanNumber(r.pct) || 0}%`)
+              .join(' + ')
+          : prodProfile.defaultMaterialRu;
+      const autoSample: RnDSampleItem = {
+        id: `smp-${Date.now()}`,
+        versionCode: `Версия ${existingSamples.length + 1}`,
+        factoryName: sampleForm.factoryName || defaultBrandFactoryName,
+        country: 'Справочник',
+        orderedAt: sampleForm.receivedAt,
+        receivedAt: sampleForm.receivedAt,
+        status: 'testing',
+        photos: sampleForm.photos,
+        materialAndComposition: compLabel,
+        compositionRows:
+          rowTotalPct === 100
+            ? compRows.map((r) => ({
+                material: r.material,
+                pct: parseCleanNumber(r.pct) || 0,
+              }))
+            : undefined,
+        densityGsm: parseCleanNumber(sampleForm.densityGsm) ?? defaultDensityGsm,
+        sizeTested: sampleForm.sizeTested || defaultSizeTested,
+        color: 'Базовый',
+        measurementsNote: 'По спецификации',
+        sampleCostRub: parseCleanNumber(sampleForm.sampleCostRub) || 0,
+        deliveryCostRub: parseCleanNumber(sampleForm.deliveryCostRub) || 0,
+        estimatedUnitProductionPrice:
+          parseCleanNumber(sampleForm.estimatedUnitProductionPrice) ||
+          concept.plannedUnitCost ||
+          340,
+        currency: 'RUB',
+        preliminaryScore: 5,
+        comments: sampleForm.comments.trim() || 'Образец принят на тестирование',
+        isSelectedForProduction: true,
+      };
+      patch.samples = [
+        ...existingSamples.map((s) => ({ ...s, isSelectedForProduction: false })),
+        autoSample,
+      ];
+      patch.supplierName = autoSample.factoryName;
+      patch.plannedUnitCost = autoSample.estimatedUnitProductionPrice;
+      setSampleForm((prev) => ({ ...prev, photos: [], comments: '' }));
+      hasChanges = true;
+    }
+
+    return hasChanges ? patch : null;
+  };
+
+  useEffect(() => {
+    if (!onRegisterDraftFlusher) return;
+    onRegisterDraftFlusher(flushUncommittedDrafts);
+    return () => onRegisterDraftFlusher(() => null);
+  });
 
   // ===========================================================================
   // ЭТАП 01: ИДЕЯ (Стр. 5 PDF — Ссылки и Выход в Анализ)
@@ -416,7 +612,12 @@ export function ProductLabCardBody({
           {canEdit && (
             <button
               type="button"
-              onClick={() => onChangeStageWithGate(concept, 'ANALYSIS')}
+              onClick={() => {
+                const flushed = flushUncommittedDrafts();
+                const merged = flushed ? { ...concept, ...flushed } : concept;
+                if (flushed) onUpdateConcept(concept.id, flushed);
+                onChangeStageWithGate(merged, 'ANALYSIS');
+              }}
               className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer shrink-0"
             >
               На анализ (02 Анализ) →
@@ -578,7 +779,7 @@ export function ProductLabCardBody({
                           competitorBrand: '',
                           articleSku: '',
                           priceRub: '',
-                          packQty: '4 шт.',
+                          packQty: `${prodProfile.defaultPackUnits} ${singleItemNominativeRu}`,
                           estimatedRevenueRub: '',
                           sourceName: 'WB / MPStats',
                         });
@@ -643,7 +844,7 @@ export function ProductLabCardBody({
             </div>
           </div>
 
-          {/* 3. ЭКОНОМИКА (Важное правило расчёта со Стр. 5 PDF: комплект + число пар -> цена за пару) */}
+          {/* 3. ЭКОНОМИКА (Важное правило расчёта со Стр. 5 PDF: комплект + число единиц -> цена за 1 ед.) */}
           <div className="rounded-2xl bg-[#F7F7F5]/70 border border-[#E8E8E5] p-5">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               <div className="md:col-span-3">
@@ -651,7 +852,7 @@ export function ProductLabCardBody({
                   3. ЭКОНОМИКА
                 </div>
                 <div className="text-[12px] text-[#737373] mt-1">
-                  Цена комплекта + число пар → цена за пару. Экономика считается на одинаковой базе: и на комплект, и на пару.
+                  Цена комплекта + число {itemsGenitivePluralRu} → цена за 1 {singleItemAccusativeRu}. Экономика считается на одинаковой базе: и на комплект, и на 1 {singleItemAccusativeRu}.
                 </div>
               </div>
 
@@ -666,11 +867,15 @@ export function ProductLabCardBody({
                       inputMode="numeric"
                       disabled={!canEdit}
                       value={concept.plannedRetailPrice ? String(concept.plannedRetailPrice) : ''}
-                      onChange={(e) =>
-                        onUpdateConcept(concept.id, {
+                      onChange={(e) => {
+                        const patch: Partial<ProductConcept> = {
                           plannedRetailPrice: parseCleanNumber(e.target.value) ?? 0,
-                        })
-                      }
+                        };
+                        onUpdateConcept(concept.id, patch);
+                        if (linkedScenarioModelCode || concept.linkedScenarioModelId) {
+                          onSyncConcept?.({ ...concept, ...patch });
+                        }
+                      }}
                       placeholder="2600"
                       className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
                     />
@@ -678,7 +883,7 @@ export function ProductLabCardBody({
 
                   <div>
                     <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                      Число пар в наборе (шт.)
+                      Число {itemsGenitivePluralRu} в наборе ({singleItemNominativeRu})
                     </label>
                     <input
                       type="text"
@@ -687,27 +892,31 @@ export function ProductLabCardBody({
                       value={String(packUnits)}
                       onChange={(e) => {
                         const val = parseCleanNumber(e.target.value);
-                        onUpdateConcept(concept.id, {
+                        const patch: Partial<ProductConcept> = {
                           packUnitsCount: val && val > 0 ? val : 1,
-                        });
+                        };
+                        onUpdateConcept(concept.id, patch);
+                        if (linkedScenarioModelCode || concept.linkedScenarioModelId) {
+                          onSyncConcept?.({ ...concept, ...patch });
+                        }
                       }}
-                      placeholder="4"
+                      placeholder={String(prodProfile.defaultPackUnits)}
                       className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[12px] font-semibold text-[#D97745] mb-1">
-                      Цена за 1 пару (авторасчёт)
+                      Цена за 1 {singleItemAccusativeRu} (авторасчёт)
                     </label>
                     <div className="h-11 rounded-xl border border-[#D97745]/40 bg-[#FDF3EB] px-3.5 flex items-center font-bold text-[#D97745] text-[16px]">
-                      {formatCurrencyRub(unitRetailPrice)} / пара
+                      {formatCurrencyRub(unitRetailPrice)} / {singleItemNominativeRu}
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                      Себестоимость 1 пары (₽)
+                      Себестоимость за 1 {singleItemAccusativeRu} (₽)
                     </label>
                     <input
                       type="text"
@@ -718,11 +927,15 @@ export function ProductLabCardBody({
                           ? String(concept.plannedUnitCost)
                           : ''
                       }
-                      onChange={(e) =>
-                        onUpdateConcept(concept.id, {
+                      onChange={(e) => {
+                        const patch: Partial<ProductConcept> = {
                           plannedUnitCost: parseCleanNumber(e.target.value) ?? 0,
-                        })
-                      }
+                        };
+                        onUpdateConcept(concept.id, patch);
+                        if (linkedScenarioModelCode || concept.linkedScenarioModelId) {
+                          onSyncConcept?.({ ...concept, ...patch });
+                        }
+                      }}
                       placeholder={hasCostAccess ? '320' : 'Скрыто'}
                       className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
                     />
@@ -736,11 +949,11 @@ export function ProductLabCardBody({
                       Расчёт на единой базе:
                     </span>{' '}
                     Цена <b>{formatCurrencyRub(packRetailPrice)}</b> за комплект из{' '}
-                    <b>{packUnits} шт.</b> = <b>{formatCurrencyRub(unitRetailPrice)}</b> за пару.
+                    <b>{packUnits} {singleItemNominativeRu}</b> = <b>{formatCurrencyRub(unitRetailPrice)}</b> за 1 {singleItemAccusativeRu}.
                   </div>
                   {hasCostAccess && (
                     <div className="text-[#737373]">
-                      Себестоимость набора: <b className="text-[#171717]">{formatCurrencyRub(packCostPrice)}</b> · За 1 пару:{' '}
+                      Себестоимость набора: <b className="text-[#171717]">{formatCurrencyRub(packCostPrice)}</b> · За 1 {singleItemAccusativeRu}:{' '}
                       <b className="text-[#171717]">{formatCurrencyRub(unitCostPrice)}</b>
                     </div>
                   )}
@@ -824,15 +1037,21 @@ export function ProductLabCardBody({
                 <button
                   type="button"
                   onClick={() => {
+                    const flushed = flushUncommittedDrafts();
+                    const baseAnalysis = flushed?.analysisReport || currentAnalysis;
                     const nextReport: RnDAnalysisReport = {
-                      ...currentAnalysis,
+                      ...baseAnalysis,
                       recommendation: 'continue',
+                    };
+                    const analysisPatch: Partial<ProductConcept> = {
+                      ...(flushed || {}),
+                      analysisReport: nextReport,
                     };
                     const updatedConcept: ProductConcept = {
                       ...concept,
-                      analysisReport: nextReport,
+                      ...analysisPatch,
                     };
-                    onUpdateConcept(concept.id, { analysisReport: nextReport });
+                    onUpdateConcept(concept.id, analysisPatch);
                     onChangeStageWithGate(updatedConcept, 'SAMPLE');
                   }}
                   className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#126b4d] text-white text-[13px] font-bold cursor-pointer transition"
@@ -1354,8 +1573,8 @@ export function ProductLabCardBody({
                         material: r.material,
                         pct: parseCleanNumber(r.pct) || 0,
                       })),
-                      densityGsm: 180,
-                      sizeTested: prodProfile.sizes[Math.floor(prodProfile.sizes.length / 2)] || 'M',
+                      densityGsm: parseCleanNumber(sampleForm.densityGsm) ?? defaultDensityGsm,
+                      sizeTested: sampleForm.sizeTested || defaultSizeTested,
                       color: 'Базовый',
                       measurementsNote: 'По спецификации',
                       sampleCostRub: parseCleanNumber(sampleForm.sampleCostRub) || 0,
@@ -1400,7 +1619,17 @@ export function ProductLabCardBody({
           {canEdit && (
             <button
               type="button"
-              onClick={() => onChangeStageWithGate(concept, 'TEST')}
+              onClick={() => {
+                const flushed = flushUncommittedDrafts();
+                const merged = flushed ? { ...concept, ...flushed } : concept;
+                if (flushed) {
+                  onUpdateConcept(concept.id, flushed);
+                  if (linkedScenarioModelCode || concept.linkedScenarioModelId) {
+                    onSyncConcept?.(merged);
+                  }
+                }
+                onChangeStageWithGate(merged, 'TEST');
+              }}
               className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
             >
               На тест (04 Тест) →
@@ -1673,42 +1902,50 @@ export function ProductLabCardBody({
         selectedSample?.factoryName ||
         defaultBrandFactoryName;
 
+      const decisionEntry = {
+        id: `dec-${Date.now()}`,
+        decision: outcome,
+        authorName: currentUser.fullName,
+        authorRole: currentUser.role,
+        decidedAt: nowStr,
+        approvedSampleLabel: selectedSample?.versionCode || 'Основной образец',
+        justification: reasonText,
+        conditions: '',
+      };
+
+      if (outcome === 'reject') {
+        const rejectPatch: Partial<ProductConcept> = {
+          stage: 'REJECTED',
+          isArchived: true,
+          approvalDecisions: [decisionEntry, ...(concept.approvalDecisions || [])],
+          stageHistory: [
+            {
+              id: `sh-dec-${Date.now()}`,
+              timestamp: nowStr,
+              authorName: currentUser.fullName,
+              authorRole: currentUser.role,
+              actionType: 'decision',
+              fromStage: concept.stage,
+              toStage: 'REJECTED',
+              reason: `[Решение: ОТКЛОНИТЬ] ${reasonText}`,
+            },
+            ...(concept.stageHistory || []),
+          ],
+        };
+        const rejectedConcept: ProductConcept = {
+          ...concept,
+          ...rejectPatch,
+        };
+        onUpdateConcept(concept.id, rejectPatch);
+        onSyncConcept?.(rejectedConcept);
+        notify('warning', 'Карточка отклонена и перенесена в архив');
+        return;
+      }
+
       const decisionPatch: Partial<ProductConcept> = {
-        stage: targetStage,
-        isArchived: outcome === 'reject',
+        isArchived: false,
         ...(outcome === 'approve' ? { supplierName: resolvedSupplier } : {}),
-        approvalDecisions: [
-          {
-            id: `dec-${Date.now()}`,
-            decision: outcome,
-            authorName: currentUser.fullName,
-            authorRole: currentUser.role,
-            decidedAt: nowStr,
-            approvedSampleLabel: selectedSample?.versionCode || 'Основной образец',
-            justification: reasonText,
-            conditions: '',
-          },
-          ...(concept.approvalDecisions || []),
-        ],
-        stageHistory: [
-          {
-            id: `sh-dec-${Date.now()}`,
-            timestamp: nowStr,
-            authorName: currentUser.fullName,
-            authorRole: currentUser.role,
-            actionType: outcome === 'rework' ? 'rollback' : 'decision',
-            fromStage: concept.stage,
-            toStage: targetStage,
-            reason: `[Решение: ${
-              outcome === 'approve'
-                ? 'УТВЕРДИТЬ'
-                : outcome === 'rework'
-                ? 'ДОРАБОТАТЬ'
-                : 'ОТКЛОНИТЬ'
-            }] ${reasonText}`,
-          },
-          ...(concept.stageHistory || []),
-        ],
+        approvalDecisions: [decisionEntry, ...(concept.approvalDecisions || [])],
       };
 
       const updatedConcept: ProductConcept = {
@@ -1716,15 +1953,6 @@ export function ProductLabCardBody({
         ...decisionPatch,
       };
       onUpdateConcept(concept.id, decisionPatch);
-      if (outcome === 'approve') {
-        onSyncToScenarioCatalog?.(updatedConcept);
-        onSyncConcept?.(updatedConcept);
-      }
-      if (outcome === 'reject') {
-        onSyncConcept?.({ ...updatedConcept, stage: 'REJECTED' });
-        notify('warning', 'Карточка отклонена и перенесена в архив');
-        return;
-      }
       onChangeStageWithGate(updatedConcept, targetStage);
     };
 
@@ -1750,7 +1978,7 @@ export function ProductLabCardBody({
                 1. АНАЛИЗ И ЦЕНА
               </div>
               <div className="font-bold text-[15px] text-[#171717]">
-                Набор {packUnits} шт.: {formatCurrencyRub(packRetailPrice)} ({formatCurrencyRub(unitRetailPrice)} / пара)
+                Набор {packUnits} {singleItemNominativeRu}: {formatCurrencyRub(packRetailPrice)} ({formatCurrencyRub(unitRetailPrice)} / {singleItemNominativeRu})
               </div>
               <div className="text-[#737373]">
                 {currentAnalysis.summaryAndPros ||
@@ -1769,11 +1997,11 @@ export function ProductLabCardBody({
                   : concept.supplierName || 'Образец №1'}
               </div>
               <div className="text-[#D97745] font-semibold">
-                {selectedSample?.materialAndComposition || 'Хлопок 95% + Эластан 5%'}
+                {selectedSample?.materialAndComposition || prodProfile.defaultMaterialRu}
               </div>
               {hasCostAccess && (
                 <div className="text-[#737373]">
-                  Себестоимость: <b>{formatCurrencyRub(unitCostPrice)} / шт.</b>
+                  Себестоимость: <b>{formatCurrencyRub(unitCostPrice)} / {singleItemNominativeRu}</b>
                 </div>
               )}
             </div>
@@ -2096,18 +2324,19 @@ export function ProductLabCardBody({
         return;
       }
       const ver = currentOrder.orderVersion || 1;
-      exportConceptProductionExcel(concept, {
+      (exportConceptProductionExcel as any)(concept, {
         factoryName: currentOrder.factoryName,
         approvedSampleVersion: currentOrder.approvedSampleVersion,
         materialAndColors: currentOrder.materialAndColors,
         packColorComposition: currentOrder.packColorComposition || defaultColorComp,
         unitsPerPack: unitsInOnePack,
         packsBySize: packsMap,
-        unitPrice: currentOrder.unitPrice || 320,
+        unitPrice: hasCostAccess ? currentOrder.unitPrice || 320 : 0,
         currency: currentOrder.currency || 'RUB',
         plannedReadyDate: currentOrder.plannedReadyDate || '2027-02-15',
         paymentTerms: currentOrder.paymentTerms || '30% депозит / 70% перед отгрузкой',
         orderVersion: ver,
+        canViewCostPrice: hasCostAccess,
       });
       notify(
         'success',
@@ -2206,24 +2435,51 @@ export function ProductLabCardBody({
                 <div className="flex gap-1.5">
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     disabled={!canEdit}
-                    value={currentOrder.unitPrice ? String(currentOrder.unitPrice) : ''}
-                    onChange={(e) =>
-                      saveOrderPatch({
-                        unitPrice: parseCleanNumber(e.target.value) ?? 0,
-                      })
+                    value={
+                      orderUnitPriceDraft !== null
+                        ? orderUnitPriceDraft
+                        : currentOrder.unitPrice
+                        ? String(currentOrder.unitPrice)
+                        : ''
                     }
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setOrderUnitPriceDraft(raw);
+                      saveOrderPatch({
+                        unitPrice: parseCleanFloat(raw),
+                      });
+                    }}
+                    onBlur={() => setOrderUnitPriceDraft(null)}
                     className="flex-1 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
                   />
                   <select
                     disabled={!canEdit}
                     value={currentOrder.currency}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const FX_TO_RUB: Record<'RUB' | 'CNY' | 'USD', number> = {
+                        RUB: 1,
+                        CNY: 13.4,
+                        USD: 92.5,
+                      };
+                      const oldCur = (currentOrder.currency || 'RUB') as
+                        | 'RUB'
+                        | 'CNY'
+                        | 'USD';
+                      const nextCur = e.target.value as 'RUB' | 'CNY' | 'USD';
+                      const curPrice = currentOrder.unitPrice || 0;
+                      const inRub = curPrice * (FX_TO_RUB[oldCur] || 1);
+                      const converted =
+                        nextCur === 'RUB'
+                          ? Math.round(inRub)
+                          : Number((inRub / (FX_TO_RUB[nextCur] || 1)).toFixed(2));
+                      setOrderUnitPriceDraft(null);
                       saveOrderPatch({
-                        currency: e.target.value as 'RUB' | 'USD' | 'CNY',
-                      })
-                    }
+                        currency: nextCur,
+                        unitPrice: converted,
+                      });
+                    }}
                     className="w-20 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-2 font-bold"
                   >
                     <option value="RUB">RUB</option>
@@ -2565,7 +2821,12 @@ export function ProductLabCardBody({
             concept={concept}
             initialBlocksConfig={{
               ...pdfBlocksConfig,
+              bilingualSpecs:
+                pdfBlocksConfig.zhSection ||
+                pdfBlocksConfig.ruSection ||
+                pdfBlocksConfig.enSection,
               multiCurrency: pdfBlocksConfig.multiCurrency && hasCostAccess,
+              unitAndTotalPrice: pdfBlocksConfig.multiCurrency && hasCostAccess,
             }}
             onClose={() => setInlinePdfConstructorOpen(false)}
             onSaveToConcept={(patch) => {
@@ -2590,6 +2851,7 @@ export function ProductLabCardBody({
   // ===========================================================================
   if (activeTab === 'launch') {
     const isInSale = concept.launchSalesStatus === 'in_sale';
+    const isSyncedToCatalog = Boolean(linkedScenarioModelCode || linkedProduct);
 
     return (
       <div className="space-y-6 text-[15px]">
@@ -2614,8 +2876,8 @@ export function ProductLabCardBody({
               <input
                 disabled={!canEdit}
                 value={
-                  concept.marketplaceProductUrl ||
-                  concept.referenceLinks?.[0] ||
+                  concept.marketplaceProductUrl ??
+                  concept.referenceLinks?.[0] ??
                   ''
                 }
                 onChange={(e) =>
@@ -2635,7 +2897,7 @@ export function ProductLabCardBody({
               <input
                 type="date"
                 disabled={!canEdit}
-                value={concept.actualLaunchDate || concept.targetLaunchDate || '2027-03-01'}
+                value={concept.actualLaunchDate ?? concept.targetLaunchDate ?? '2027-03-01'}
                 onChange={(e) =>
                   onUpdateConcept(concept.id, {
                     actualLaunchDate: e.target.value,
@@ -2711,8 +2973,10 @@ export function ProductLabCardBody({
                 Результаты продаж — не здесь. После старта модель связывается с каталогом.
               </div>
               <div className="text-[13px] text-[#525252]">
-                {linkedProduct
-                  ? `✓ Модель связана с карточкой в Каталоге SKU (${linkedProduct.sku} · ${linkedProduct.name})`
+                {isSyncedToCatalog
+                  ? `✓ Синхронизировано с каталогом (${linkedScenarioModelCode || linkedProduct?.sku}${
+                      linkedProduct?.name ? ` · ${linkedProduct.name}` : ` · ${concept.name}`
+                    })`
                   : 'Нажмите кнопку справа, чтобы зафиксировать старт продаж и связать модель с Каталогом.'}
               </div>
             </div>

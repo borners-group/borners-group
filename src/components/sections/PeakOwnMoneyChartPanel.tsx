@@ -1,9 +1,16 @@
 'use client';
 
 import React, { useEffect, useId, useMemo, useState } from 'react';
+import { usePlatform } from '@/context/PlatformContext';
+import {
+  canUserEditBrand,
+  canUserViewCostPrice,
+  canUserViewFinance,
+} from '@/lib/finance';
 import {
   PortfolioProcurementWavesSummary,
   ScenarioInvestmentSummary,
+  normalizePortfolioBrandCode,
 } from '@/lib/unifiedBusinessEngine';
 
 const MONTHS_FULL_NOMINATIVE = [
@@ -105,6 +112,21 @@ export function PeakOwnMoneyChartPanel({
   onToggleWbScheduleSpecified,
   compact = false,
 }: PeakOwnMoneyChartPanelProps) {
+  const { currentUser, brandFilter } = usePlatform();
+  const hasFinance = canUserViewFinance(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
+  const activeScopeBrand =
+    brandFilter && brandFilter !== 'ALL'
+      ? normalizePortfolioBrandCode(brandFilter)
+      : 'BORNERS';
+  const canEditFinanceParams =
+    hasFinance &&
+    hasCost &&
+    canUserEditBrand(
+      currentUser,
+      activeScopeBrand === 'ALL' ? 'BORNERS' : activeScopeBrand
+    );
+
   const rawUid = useId();
   const uid = useMemo(() => rawUid.replace(/[^a-zA-Z0-9_-]/g, ''), [rawUid]);
 
@@ -167,6 +189,9 @@ export function PeakOwnMoneyChartPanel({
     rows.filter((r) => Math.min(r.intraMonthLowBalanceRub, r.cumulativeCashBalanceRub) < 0).length;
 
   const totalProcRub = investmentSummary.totalProcurementBudgetRub || 0;
+  const hasAnyActivity =
+    totalProcRub > 0 ||
+    rows.some((r) => r.grossSalesRub > 0 || r.factoryTotalOutflowRub > 0);
   const wbFundedSharePct =
     totalProcRub > 0
       ? Math.min(
@@ -289,6 +314,24 @@ export function PeakOwnMoneyChartPanel({
   const positiveZoneGradId = `positiveZoneBg-${uid}`;
   const negativeZoneGradId = `negativeZoneBg-${uid}`;
 
+  if (!hasFinance || !hasCost) {
+    return (
+      <div
+        id={id}
+        className="bg-white dark:bg-[#121620] border border-slate-200/90 dark:border-[#222938] rounded-2xl p-5 shadow-xs scroll-mt-24"
+      >
+        <div className="rounded-xl border border-dashed border-slate-300 dark:border-[#2D384D] bg-slate-50/70 dark:bg-[#181D2A] p-6 text-center space-y-1.5">
+          <div className="text-[14px] font-bold text-slate-800 dark:text-[#EDF0F7]">
+            График «Пик своих денег» и помесячные выплаты фабрикам скрыты по роли
+          </div>
+          <p className="text-[12px] text-slate-500 dark:text-slate-400">
+            Детализация себестоимости партий, авансов, доплат фабрикам и чистого денежного потока WB доступна пользователям с доступом к финансам и закупочным ценам.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       id={id}
@@ -321,8 +364,12 @@ export function PeakOwnMoneyChartPanel({
             {onToggleWbScheduleSpecified && (
               <button
                 type="button"
-                onClick={onToggleWbScheduleSpecified}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                disabled={!canEditFinanceParams}
+                onClick={() => {
+                  if (!canEditFinanceParams) return;
+                  onToggleWbScheduleSpecified();
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                   effectiveWbSpecified
                     ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
                     : 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
@@ -336,8 +383,12 @@ export function PeakOwnMoneyChartPanel({
                 <span>Лаг выплат WB:</span>
                 <select
                   value={wbLagMonths}
-                  onChange={(e) => onChangeWbLagMonths(Number(e.target.value) || 0)}
-                  className="px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-slate-900 dark:text-[#EDF0F7] font-bold text-[11px]"
+                  disabled={!canEditFinanceParams}
+                  onChange={(e) => {
+                    if (!canEditFinanceParams) return;
+                    onChangeWbLagMonths(Number(e.target.value) || 0);
+                  }}
+                  className="px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-slate-900 dark:text-[#EDF0F7] font-bold text-[11px] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value={0}>В том же мес. (0 мес.)</option>
                   <option value={1}>Через +1 мес.</option>
@@ -352,12 +403,14 @@ export function PeakOwnMoneyChartPanel({
                   type="number"
                   min={0}
                   step={1}
+                  disabled={!canEditFinanceParams}
                   aria-label="Кэш на старте (млн ₽)"
                   value={initialCashMln}
-                  onChange={(e) =>
-                    onChangeInitialCashMln(Math.max(0, Number(e.target.value) || 0))
-                  }
-                  className="w-16 px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-right font-bold text-slate-900 dark:text-[#EDF0F7] text-[11px] tabular-nums"
+                  onChange={(e) => {
+                    if (!canEditFinanceParams) return;
+                    onChangeInitialCashMln(Math.max(0, Number(e.target.value) || 0));
+                  }}
+                  className="w-16 px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-right font-bold text-slate-900 dark:text-[#EDF0F7] text-[11px] tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <span className="text-slate-500 dark:text-slate-400">млн ₽</span>
               </label>
@@ -366,7 +419,7 @@ export function PeakOwnMoneyChartPanel({
         )}
       </div>
 
-      {rows.length === 0 ? (
+      {rows.length === 0 || !hasAnyActivity ? (
         <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/70 dark:bg-[#181D2A] p-6 text-center space-y-1.5">
           <div className="text-[14px] font-bold text-slate-800 dark:text-[#EDF0F7]">
             Нет активного помесячного графика для расчёта «Пика своих денег»
@@ -494,6 +547,8 @@ export function PeakOwnMoneyChartPanel({
                 <div className="text-[22px] font-black text-emerald-900 dark:text-emerald-300 mt-1 leading-tight">
                   {!effectiveWbSpecified
                     ? 'Ожидает лаг WB'
+                    : ownMoneyPeakRub <= 0
+                    ? 'Без просадки с 1-го мес.'
                     : selfFundingGenitive
                     ? `С ${selfFundingGenitive} ${year}`
                     : investmentSummary.yearEndCashBalanceRub >= 0
@@ -830,6 +885,8 @@ export function PeakOwnMoneyChartPanel({
 
                   {chartGeom.pointsEnd.map((pt) => {
                     const isCrossover =
+                      ownMoneyPeakRub > 0 &&
+                      effectiveWbSpecified &&
                       selfFundingIdx !== null &&
                       selfFundingIdx !== undefined &&
                       pt.idx === selfFundingIdx;
@@ -886,7 +943,8 @@ export function PeakOwnMoneyChartPanel({
                   })()}
 
                   {/* Пин «В ПЛЮС ИЗ ОБОРОТА WB» на месяце самоокупаемости */}
-                  {effectiveWbSpecified &&
+                  {ownMoneyPeakRub > 0 &&
+                    effectiveWbSpecified &&
                     selfFundingIdx !== null &&
                     selfFundingIdx !== undefined &&
                     chartGeom.pointsEnd[selfFundingIdx] && (() => {
@@ -995,6 +1053,7 @@ export function PeakOwnMoneyChartPanel({
                     const isSel = idx === selectedMonthIdx;
                     const isPk = idx === peakIdx && ownMoneyPeakRub > 0;
                     const isCross =
+                      ownMoneyPeakRub > 0 &&
                       effectiveWbSpecified &&
                       selfFundingIdx !== null &&
                       selfFundingIdx !== undefined &&
@@ -1245,6 +1304,7 @@ export function PeakOwnMoneyChartPanel({
                       {rows.map((r, idx) => {
                         const val = r.cumulativeCashBalanceRub;
                         const isCross =
+                          ownMoneyPeakRub > 0 &&
                           effectiveWbSpecified &&
                           selfFundingIdx !== null &&
                           selfFundingIdx !== undefined &&
