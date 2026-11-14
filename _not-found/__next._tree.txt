@@ -1,0 +1,5 @@
+:HL["/borners-group/_next/static/chunks/3v7wj5x_t60yz.css","style"]
+:HL["/borners-group/_next/static/chunks/024tulhxcyl1f.css","style"]
+2:[["children",{"s":"__PAGE__","h":160}]]
+1:[["children",{"s":"/_not-found","h":96,"c":"$Q2"}]]
+0:{"b":"TxoXh1r37DDBTo_mYV6sc","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
