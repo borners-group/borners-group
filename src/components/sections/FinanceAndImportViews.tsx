@@ -543,12 +543,12 @@ export function FinanceView() {
 
   if (!hasFinance) {
     return (
-      <div className="bg-white rounded-2xl border border-[#E8E8E5] p-12 text-center space-y-4">
-        <Lock className="h-8 w-8 text-[#171717] mx-auto" />
-        <h2 className="text-[28px] font-bold text-[#171717]">
+      <div className="bg-white rounded-xl border border-[#E4E1DA] p-12 text-center space-y-4">
+        <Lock className="h-7 w-7 stroke-[1.5] text-[#141413] mx-auto" />
+        <h2 className="text-[24px] font-semibold text-[#141413] tracking-[-0.02em]">
           Финансовый контур закрыт для роли «{ROLE_LABELS_RU[currentUser.role]}»
         </h2>
-        <p className="text-[15px] text-[#737373] max-w-lg mx-auto">
+        <p className="text-[14px] text-[#5C5953] max-w-lg mx-auto leading-relaxed">
           В соответствии с регламентом безопасности BORNERS GROUP (п. 5, 15 ТЗ), доступ к P&L, себестоимости (COGS) и маржинальности открыт только Владельцу и Администратору.
         </p>
       </div>
@@ -556,28 +556,28 @@ export function FinanceView() {
   }
 
   return (
-    <div className="space-y-10 pb-20">
-      {/* Заголовок страницы (32–40px по ТЗ) */}
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E8E8E5] pb-6">
+    <div className="space-y-8 pb-20">
+      {/* Заголовок страницы */}
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E4E1DA] pb-6">
         <div>
-          <div className="text-[13px] font-medium uppercase tracking-widest text-[#737373] mb-1.5">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#5C5953] mb-1.5">
             Управленческий учёт, юнит-экономика и сценарии
           </div>
-          <h1 className="text-[34px] md:text-[40px] font-bold tracking-[-0.03em] text-[#171717] dark:text-white">
+          <h1 className="text-[32px] md:text-[36px] font-semibold tracking-[-0.03em] text-[#141413]">
             Финансы и P&L
           </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-[#F7F7F5] p-1 rounded-xl border border-[#E8E8E5]">
+          <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#E4E1DA]">
             {(['Conservative', 'Base', 'Optimistic'] as FinancialScenario[]).map((sc) => (
               <button
                 key={sc}
                 onClick={() => setFinancialScenario(sc)}
-                className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+                className={`px-4 py-2 rounded-lg text-[13px] font-medium transition cursor-pointer ${
                   financialScenario === sc
-                    ? 'bg-white text-[#171717] shadow-2xs'
-                    : 'text-[#737373] hover:text-[#171717]'
+                    ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                    : 'text-[#5C5953] hover:text-[#141413]'
                 }`}
               >
                 {SCENARIO_LABELS_RU[sc]}
@@ -588,9 +588,9 @@ export function FinanceView() {
           {!isStrategyMode && !isReadOnlyRole && (
             <button
               onClick={() => setImportModalOpen(true)}
-              className="inline-flex items-center gap-2 h-11 rounded-xl bg-[#111111] text-white px-5 text-[15px] font-semibold hover:bg-neutral-800 transition cursor-pointer"
+              className="inline-flex items-center gap-2 h-10 rounded-xl bg-[#141413] text-white px-5 text-[14px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
             >
-              <Upload className="h-4 w-4" />
+              <Upload className="h-4 w-4 stroke-[1.5]" />
               <span>Импорт CSV</span>
             </button>
           )}
@@ -598,35 +598,35 @@ export function FinanceView() {
       </div>
 
       {/* 4 крупные финансовые карточки */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-6">
-          <div className="text-[14px] font-medium text-[#737373]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6">
+          <div className="text-[13px] font-medium text-[#5C5953]">
             {uniqueMonthsCount >= 12 ? 'Годовой план выручки' : 'План выручки периода'}
           </div>
-          <div className="text-[34px] font-bold text-[#171717] mt-3">
+          <div className="text-[30px] font-mono font-semibold text-[#141413] mt-3 tracking-[-0.02em]">
             {formatCompactRub(summary.planYearRev)}
           </div>
-          <div className="text-[13px] text-[#737373] mt-2">
+          <div className="text-[12px] text-[#5C5953] mt-2">
             Сценарий: {SCENARIO_LABELS_RU[financialScenario]}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-6">
-          <div className="text-[14px] font-medium text-[#737373]">Факт выручки (закрытые мес.)</div>
-          <div className="text-[34px] font-bold text-[#171717] mt-3">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6">
+          <div className="text-[13px] font-medium text-[#5C5953]">Факт выручки (закрытые мес.)</div>
+          <div className="text-[30px] font-mono font-semibold text-[#141413] mt-3 tracking-[-0.02em]">
             {summary.factClosedRev !== null
               ? formatCompactRub(summary.factClosedRev)
               : 'Нет данных'}
           </div>
-          <div className="text-[13px] text-[#737373] mt-2">
-            План закрытых мес.: {formatCompactRub(summary.planClosedRev)}
+          <div className="text-[12px] text-[#5C5953] mt-2">
+            План закрытых мес.: <span className="font-mono">{formatCompactRub(summary.planClosedRev)}</span>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-6">
-          <div className="text-[14px] font-medium text-[#737373]">Отклонение Факт / План</div>
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6">
+          <div className="text-[13px] font-medium text-[#5C5953]">Отклонение Факт / План</div>
           <div
-            className={`text-[34px] font-bold mt-3 ${
+            className={`text-[30px] font-mono font-semibold mt-3 tracking-[-0.02em] ${
               (summary.revVariance.diffPct ?? 0) >= 0
                 ? 'text-[#16805D]'
                 : 'text-[#C94B4B]'
@@ -636,23 +636,25 @@ export function FinanceView() {
               ? `${summary.revVariance.diffPct >= 0 ? '+' : ''}${summary.revVariance.diffPct}%`
               : 'Нет данных'}
           </div>
-          <div className="text-[13px] text-[#737373] mt-2">
+          <div className="text-[12px] font-mono text-[#5C5953] mt-2">
             {summary.revVariance.diffAbs !== null
               ? formatCurrencyRub(summary.revVariance.diffAbs)
               : '—'}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-6">
-          <div className="text-[14px] font-medium text-[#737373]">План операционной прибыли</div>
-          <div className="text-[34px] font-bold text-[#171717] mt-3">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6">
+          <div className="text-[13px] font-medium text-[#5C5953]">План операционной прибыли</div>
+          <div className="text-[30px] font-mono font-semibold text-[#141413] mt-3 tracking-[-0.02em]">
             {formatCompactRub(summary.planYearProfit)}
           </div>
-          <div className="text-[13px] text-[#737373] mt-2">
+          <div className="text-[12px] text-[#5C5953] mt-2">
             Факт:{' '}
-            {summary.factClosedProfit !== null
-              ? formatCompactRub(summary.factClosedProfit)
-              : 'Нет данных'}
+            <span className="font-mono">
+              {summary.factClosedProfit !== null
+                ? formatCompactRub(summary.factClosedProfit)
+                : 'Нет данных'}
+            </span>
           </div>
         </div>
       </div>
@@ -671,10 +673,10 @@ export function FinanceView() {
           <button
             key={t.id}
             onClick={() => setSubTab(t.id as typeof subTab)}
-            className={`px-4 py-2 rounded-xl text-[14px] font-semibold border transition cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
               subTab === t.id
-                ? 'bg-[#111111] text-white border-[#111111]'
-                : 'bg-white text-[#171717] border-[#E8E8E5] hover:border-[#171717]'
+                ? 'bg-[#141413] text-white border-[#141413]'
+                : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
             }`}
           >
             {t.label}
@@ -684,20 +686,20 @@ export function FinanceView() {
 
       {/* 1. Помесячный План / Факт */}
       {subTab === 'overview' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Период</th>
-                <th className="py-4 px-4">Бренд</th>
-                <th className="py-4 px-4 text-right">План выручки</th>
-                <th className="py-4 px-4 text-right">Факт выручки</th>
-                <th className="py-4 px-4 text-right">Отклонение</th>
-                <th className="py-4 px-4 text-right">План выкупов</th>
-                <th className="py-4 px-6 text-right">План прибыли</th>
+                <th className="py-3.5 px-6">Период</th>
+                <th className="py-3.5 px-4">Бренд</th>
+                <th className="py-3.5 px-4 text-right">План выручки</th>
+                <th className="py-3.5 px-4 text-right">Факт выручки</th>
+                <th className="py-3.5 px-4 text-right">Отклонение</th>
+                <th className="py-3.5 px-4 text-right">План выкупов</th>
+                <th className="py-3.5 px-6 text-right">План прибыли</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredPlans.map((row) => {
                 const v = calculatePlanFactVariance(
                   row.plannedRevenueRub,
@@ -713,19 +715,19 @@ export function FinanceView() {
                     ? String(row.actualRevenueRub)
                     : '';
                 return (
-                  <tr key={row.id} className="hover:bg-[#F7F7F5]/60 transition">
-                    <td className="py-4 px-6 font-semibold text-[#171717]">
+                  <tr key={row.id} className="hover:bg-[#FAF9F6] transition">
+                    <td className="py-3.5 px-6 font-medium text-[#141413]">
                       {row.periodLabel}
                     </td>
-                    <td className="py-4 px-4 font-semibold">
+                    <td className="py-3.5 px-4 font-medium text-[#141413]">
                       {formatLabBrandLabel(row.brandId)}
                     </td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                       {formatCurrencyRub(row.plannedRevenueRub)}
                     </td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right">
                       {!canEditRow ? (
-                        <span className="font-semibold text-[#171717]">
+                        <span className="font-mono font-medium text-[#141413]">
                           {row.actualRevenueRub !== null
                             ? formatCurrencyRub(row.actualRevenueRub)
                             : 'Нет данных'}
@@ -755,11 +757,11 @@ export function FinanceView() {
                               e.currentTarget.blur();
                             }
                           }}
-                          className="w-40 text-right h-10 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-[#F7F7F5]"
+                          className="w-40 text-right h-9 rounded-lg border border-[#E4E1DA] px-3 font-mono font-medium bg-[#FAF9F6] text-[#141413] focus:border-[#141413] focus:bg-white outline-none"
                         />
                       )}
                     </td>
-                    <td className="py-4 px-4 text-right font-semibold">
+                    <td className="py-3.5 px-4 text-right font-mono font-semibold">
                       {v.hasFact ? (
                         <span
                           className={
@@ -770,14 +772,14 @@ export function FinanceView() {
                           {v.diffPct}%
                         </span>
                       ) : (
-                        <span className="text-[#737373]">Нет данных</span>
+                        <span className="font-sans font-normal text-[#5C5953]">Нет данных</span>
                       )}
                     </td>
-                    <td className="py-4 px-4 text-right text-[#737373]">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#5C5953]">
                       {row.plannedBuyoutUnits.toLocaleString('ru-RU')}{' '}
-                      {getBrandUnitSuffix(row.brandId)}
+                      <span className="font-sans">{getBrandUnitSuffix(row.brandId)}</span>
                     </td>
-                    <td className="py-4 px-6 text-right font-semibold">
+                    <td className="py-3.5 px-6 text-right font-mono font-medium text-[#141413]">
                       {formatCurrencyRub(row.plannedOperatingProfitRub)}
                     </td>
                   </tr>
@@ -790,49 +792,49 @@ export function FinanceView() {
 
       {/* 2. Юнит-экономика по моделям */}
       {subTab === 'unit_economics' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Артикул и модель</th>
-                <th className="py-4 px-4 text-right">РРЦ</th>
-                <th className="py-4 px-4 text-right">Себестоимость</th>
-                <th className="py-4 px-4 text-right">Чистая выручка</th>
-                <th className="py-4 px-4 text-right">Переменные расх.</th>
-                <th className="py-4 px-4 text-right">Прибыль на 1 шт.</th>
-                <th className="py-4 px-6 text-right">Чистая маржа</th>
+                <th className="py-3.5 px-6">Артикул и модель</th>
+                <th className="py-3.5 px-4 text-right">РРЦ</th>
+                <th className="py-3.5 px-4 text-right">Себестоимость</th>
+                <th className="py-3.5 px-4 text-right">Чистая выручка</th>
+                <th className="py-3.5 px-4 text-right">Переменные расх.</th>
+                <th className="py-3.5 px-4 text-right">Прибыль на 1 шт.</th>
+                <th className="py-3.5 px-6 text-right">Чистая маржа</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {unitEconomicsProducts.map((p) => {
                 const u = p.economics;
                 const calc = calculateUnitEconomics(u);
                 return (
-                  <tr key={p.id} className="hover:bg-[#F7F7F5]/60 transition">
-                    <td className="py-4 px-6">
-                      <div className="text-[13px] font-semibold text-[#737373]">
-                        {p.sku} · {formatLabBrandLabel(p.brandId)}
+                  <tr key={p.id} className="hover:bg-[#FAF9F6] transition">
+                    <td className="py-3.5 px-6">
+                      <div className="text-[12px] font-mono text-[#5C5953]">
+                        {p.sku} · <span className="font-sans font-medium">{formatLabBrandLabel(p.brandId)}</span>
                       </div>
-                      <div className="font-semibold text-[16px] text-[#171717]">{p.name}</div>
+                      <div className="font-semibold text-[15px] text-[#141413]">{p.name}</div>
                     </td>
-                    <td className="py-4 px-4 text-right font-semibold">
+                    <td className="py-3.5 px-4 text-right font-mono font-medium text-[#141413]">
                       {formatCurrencyRub(u.actualRetailPrice)}
                     </td>
-                    <td className="py-4 px-4 text-right font-semibold">
+                    <td className="py-3.5 px-4 text-right font-mono font-medium text-[#141413]">
                       {hasCostAccess ? formatCurrencyRub(u.unitCostPrice) : 'Скрыто'}
                     </td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                       {formatCurrencyRub(calc.netRevenuePerUnit)}
                     </td>
-                    <td className="py-4 px-4 text-right text-[#737373]">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#5C5953]">
                       {hasCostAccess
                         ? formatCurrencyRub(calc.totalVariableCostsPerUnit)
                         : 'Скрыто'}
                     </td>
-                    <td className="py-4 px-4 text-right font-bold text-[#16805D]">
+                    <td className="py-3.5 px-4 text-right font-mono font-semibold text-[#16805D]">
                       {hasCostAccess ? formatCurrencyRub(calc.unitProfitRub) : 'Скрыто'}
                     </td>
-                    <td className="py-4 px-6 text-right font-bold text-[16px]">
+                    <td className="py-3.5 px-6 text-right font-mono font-semibold text-[15px] text-[#141413]">
                       {hasCostAccess ? `${calc.marginPct}%` : 'Скрыто'}
                     </td>
                   </tr>
@@ -845,14 +847,14 @@ export function FinanceView() {
 
       {/* 3. Формула выкупов */}
       {subTab === 'sales_plan' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-7 space-y-5">
-          <div className="border-b border-[#E8E8E5] pb-4">
-            <h3 className="text-[22px] font-bold">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-5">
+          <div className="border-b border-[#E4E1DA] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] tracking-[-0.02em]">
               Формула выручки: Выкупы × Средняя цена реализации (₽)
             </h3>
           </div>
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373]">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953]">
               <tr>
                 <th className="py-3 px-4">Период</th>
                 <th className="py-3 px-4">Бренд</th>
@@ -861,26 +863,26 @@ export function FinanceView() {
                 <th className="py-3 px-4 text-right">Расчётная выручка</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredPlans.map((r) => {
                 const calcRev = calculateRevenueFromBuyouts(
                   r.plannedBuyoutUnits,
                   r.avgSellingPriceRub
                 );
                 return (
-                  <tr key={r.id}>
-                    <td className="py-4 px-4 font-semibold">{r.periodLabel}</td>
-                    <td className="py-4 px-4 font-semibold">
+                  <tr key={r.id} className="hover:bg-[#FAF9F6] transition">
+                    <td className="py-3.5 px-4 font-medium text-[#141413]">{r.periodLabel}</td>
+                    <td className="py-3.5 px-4 font-medium text-[#141413]">
                       {formatLabBrandLabel(r.brandId)}
                     </td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                       {r.plannedBuyoutUnits.toLocaleString('ru-RU')}{' '}
-                      {getBrandUnitSuffix(r.brandId)}
+                      <span className="font-sans text-[#5C5953]">{getBrandUnitSuffix(r.brandId)}</span>
                     </td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                       {formatCurrencyRub(r.avgSellingPriceRub)}
                     </td>
-                    <td className="py-4 px-4 text-right font-bold">
+                    <td className="py-3.5 px-4 text-right font-mono font-semibold text-[#141413]">
                       {formatCurrencyRub(calcRev)}
                     </td>
                   </tr>
@@ -893,37 +895,37 @@ export function FinanceView() {
 
       {/* 4. Кампании */}
       {subTab === 'campaigns' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Кампания</th>
-                <th className="py-4 px-4">Бренд и канал</th>
-                <th className="py-4 px-4 text-right">План бюджета</th>
-                <th className="py-4 px-4 text-right">Факт расхода</th>
-                <th className="py-4 px-4 text-right">План выручки</th>
-                <th className="py-4 px-6 text-right">Факт выручки</th>
+                <th className="py-3.5 px-6">Кампания</th>
+                <th className="py-3.5 px-4">Бренд и канал</th>
+                <th className="py-3.5 px-4 text-right">План бюджета</th>
+                <th className="py-3.5 px-4 text-right">Факт расхода</th>
+                <th className="py-3.5 px-4 text-right">План выручки</th>
+                <th className="py-3.5 px-6 text-right">Факт выручки</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredCampaigns.map((c) => (
-                <tr key={c.id}>
-                  <td className="py-4 px-6 font-semibold text-[16px]">{c.name}</td>
-                  <td className="py-4 px-4 text-[#737373]">
+                <tr key={c.id} className="hover:bg-[#FAF9F6] transition">
+                  <td className="py-3.5 px-6 font-semibold text-[15px] text-[#141413]">{c.name}</td>
+                  <td className="py-3.5 px-4 text-[#5C5953]">
                     {c.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(c.brandId)} · {c.channel}
                   </td>
-                  <td className="py-4 px-4 text-right">
+                  <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                     {formatCurrencyRub(c.plannedBudgetRub)}
                   </td>
-                  <td className="py-4 px-4 text-right">
+                  <td className="py-3.5 px-4 text-right font-mono text-[#141413]">
                     {c.actualBudgetRub !== null
                       ? formatCurrencyRub(c.actualBudgetRub)
                       : 'Нет данных'}
                   </td>
-                  <td className="py-4 px-4 text-right font-semibold">
+                  <td className="py-3.5 px-4 text-right font-mono font-medium text-[#141413]">
                     {formatCurrencyRub(c.plannedRevenueRub)}
                   </td>
-                  <td className="py-4 px-6 text-right font-bold text-[#16805D]">
+                  <td className="py-3.5 px-6 text-right font-mono font-semibold text-[#16805D]">
                     {c.actualRevenueRub !== null
                       ? formatCurrencyRub(c.actualRevenueRub)
                       : 'Нет данных'}
@@ -937,24 +939,24 @@ export function FinanceView() {
 
       {/* 5. Экономика запусков */}
       {subTab === 'launches' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {filteredLaunches.map((l) => (
             <div
               key={l.id}
-              className="bg-white rounded-2xl border border-[#E8E8E5] p-7 space-y-4"
+              className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-4"
             >
-              <div className="text-[13px] font-semibold uppercase text-[#737373]">
-                {formatLabBrandLabel(l.brandId)} · {l.startDate}
+              <div className="text-[12px] font-medium uppercase tracking-wider text-[#5C5953]">
+                {formatLabBrandLabel(l.brandId)} · <span className="font-mono">{l.startDate}</span>
               </div>
-              <h3 className="text-[22px] font-bold">{l.name}</h3>
-              <div className="space-y-2 pt-3 border-t border-[#E8E8E5] text-[14px]">
+              <h3 className="text-[19px] font-semibold text-[#141413] tracking-[-0.01em]">{l.name}</h3>
+              <div className="space-y-2 pt-3 border-t border-[#E4E1DA] text-[13px]">
                 <div className="flex justify-between">
-                  <span className="text-[#737373]">Целевая выручка:</span>
-                  <b>{formatCurrencyRub(l.salesPlanRub)}</b>
+                  <span className="text-[#5C5953]">Целевая выручка:</span>
+                  <b className="font-mono font-semibold text-[#141413]">{formatCurrencyRub(l.salesPlanRub)}</b>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#737373]">Маркетинговый бюджет:</span>
-                  <b>{formatCurrencyRub(l.marketingBudgetRub)}</b>
+                  <span className="text-[#5C5953]">Маркетинговый бюджет:</span>
+                  <b className="font-mono font-semibold text-[#141413]">{formatCurrencyRub(l.marketingBudgetRub)}</b>
                 </div>
               </div>
             </div>
@@ -964,7 +966,7 @@ export function FinanceView() {
 
       {/* 6. Сравнение 3 сценариев */}
       {subTab === 'scenarios' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {(['Conservative', 'Base', 'Optimistic'] as FinancialScenario[]).map((sc) => {
             const rows = buildPlansForScenario(sc);
             const scMonths = new Set(rows.map((r) => r.periodMonth)).size;
@@ -977,39 +979,39 @@ export function FinanceView() {
               <div
                 key={sc}
                 onClick={() => setFinancialScenario(sc)}
-                className={`p-7 rounded-2xl border cursor-pointer transition space-y-5 ${
+                className={`p-6 rounded-xl border cursor-pointer transition space-y-5 ${
                   active
-                    ? 'bg-white border-2 border-[#111111] shadow-md'
-                    : 'bg-white border-[#E8E8E5] hover:border-[#171717]'
+                    ? 'bg-white border-[#141413] ring-1 ring-[#141413]'
+                    : 'bg-white border-[#E4E1DA] hover:border-[#141413]'
                 }`}
               >
-                <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
-                  <h3 className="text-[22px] font-bold">{SCENARIO_LABELS_RU[sc]}</h3>
+                <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3">
+                  <h3 className="text-[20px] font-semibold text-[#141413] tracking-[-0.02em]">{SCENARIO_LABELS_RU[sc]}</h3>
                   {active && (
-                    <span className="bg-[#111111] text-white px-3 py-1 rounded-lg text-[12px] font-semibold">
+                    <span className="bg-[#141413] text-white px-2.5 py-1 rounded-md text-[11px] font-medium uppercase tracking-wider">
                       Активен
                     </span>
                   )}
                 </div>
 
                 <div>
-                  <div className="text-[13px] text-[#737373]">
+                  <div className="text-[12px] text-[#5C5953]">
                     {scMonths >= 12 ? 'Годовая выручка' : 'Выручка периода'}
                   </div>
-                  <div className="text-[30px] font-bold mt-1">
+                  <div className="text-[28px] font-mono font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
                     {formatCompactRub(rev)}
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-3 border-t border-[#E8E8E5] text-[14px]">
+                <div className="space-y-2 pt-3 border-t border-[#E4E1DA] text-[13px]">
                   <div className="flex justify-between">
-                    <span className="text-[#737373]">Операционная прибыль:</span>
-                    <b className="text-[#16805D]">{formatCompactRub(prof)}</b>
+                    <span className="text-[#5C5953]">Операционная прибыль:</span>
+                    <b className="font-mono font-semibold text-[#16805D]">{formatCompactRub(prof)}</b>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#737373]">Объём реализации:</span>
-                    <b>
-                      {units.toLocaleString('ru-RU')} {getBrandUnitSuffix(brandFilter)}
+                    <span className="text-[#5C5953]">Объём реализации:</span>
+                    <b className="font-mono font-semibold text-[#141413]">
+                      {units.toLocaleString('ru-RU')} <span className="font-sans font-medium">{getBrandUnitSuffix(brandFilter)}</span>
                     </b>
                   </div>
                 </div>
@@ -1021,20 +1023,20 @@ export function FinanceView() {
 
       {/* 7. Шаблоны CSV */}
       {subTab === 'import' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E8E8E5] pb-5">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E4E1DA] pb-5">
             <div>
-              <h3 className="text-[22px] font-bold">
+              <h3 className="text-[20px] font-semibold text-[#141413] tracking-[-0.02em]">
                 Пакетная загрузка данных из CSV (3 контура ТЗ)
               </h3>
-              <p className="text-[15px] text-[#737373] mt-1">
+              <p className="text-[14px] text-[#5C5953] mt-1">
                 Проверка обязательных полей, маппинг колонок и защита от дубликатов артикулов перед записью в базу.
               </p>
             </div>
             {!isStrategyMode && !isReadOnlyRole && (
               <button
                 onClick={() => setImportModalOpen(true)}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Импорт CSV →
               </button>
@@ -1061,13 +1063,13 @@ export function FinanceView() {
             ].map((tpl) => (
               <div
                 key={tpl.file}
-                className="rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] p-5 flex flex-col justify-between space-y-4"
+                className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 flex flex-col justify-between space-y-4"
               >
                 <div>
-                  <div className="font-bold text-[#171717] text-[16px]">
+                  <div className="font-semibold text-[#141413] text-[15px]">
                     {tpl.title}
                   </div>
-                  <div className="text-[12px] text-[#737373] mt-1 font-mono">
+                  <div className="text-[12px] text-[#5C5953] mt-1 font-mono">
                     {tpl.file}
                   </div>
                 </div>
@@ -1087,9 +1089,9 @@ export function FinanceView() {
                     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
                     notify('success', `Шаблон ${tpl.file} выгружен`);
                   }}
-                  className="inline-flex items-center justify-center gap-2 h-10 rounded-lg bg-white border border-[#E8E8E5] text-[13px] font-semibold text-[#171717] hover:bg-[#111111] hover:text-white transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 h-9 rounded-lg bg-white border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white hover:border-[#141413] transition cursor-pointer"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-4 w-4 stroke-[1.5]" />
                   <span>Скачать шаблон .CSV</span>
                 </button>
               </div>
@@ -1470,32 +1472,32 @@ function CsvImportWizardModal({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-3xl bg-white rounded-xl border border-[#E4E1DA] p-8 space-y-6 shadow-xl max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
+        <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-4">
           <div>
-            <div className="text-[12px] font-semibold uppercase text-[#737373]">
-              Мастер импорта · Шаг {step} из 3
+            <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
+              Мастер импорта · Шаг <span className="font-mono">{step}</span> из <span className="font-mono">3</span>
             </div>
-            <h3 className="text-[22px] font-bold mt-1">
+            <h3 className="text-[20px] font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
               Импорт CSV
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
+            className="rounded-xl border border-[#E4E1DA] p-2 text-[#141413] hover:border-[#141413] transition cursor-pointer"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5 stroke-[1.5]" />
           </button>
         </div>
 
         {step === 1 && (
           <div className="space-y-5 text-[14px]">
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
                   setTargetType('products');
@@ -1503,10 +1505,10 @@ function CsvImportWizardModal({
                     `sku;name;brandId;retailPriceRub;costPriceRub;materials\nBRN-IMP-01;Футболка BORNERS Heavy Pima 240;BORNERS;3490;680;100% Пима-хлопок\nNTL-IMP-02;Боди НА ТЕЛЕ Invisible Skin;NA_TELE;3890;720;Микрофибра Free-cut`
                   );
                 }}
-                className={`px-4 py-2.5 rounded-xl font-semibold border cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
                   targetType === 'products'
-                    ? 'bg-[#111111] text-white border-[#111111]'
-                    : 'bg-white text-[#171717] border-[#E8E8E5]'
+                    ? 'bg-[#141413] text-white border-[#141413]'
+                    : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
                 }`}
               >
                 1. Модели каталога (SKU)
@@ -1518,10 +1520,10 @@ function CsvImportWizardModal({
                     `brandName;priceRangeRub;positioning\nSHU Underwear;1 990 – 2 990 ₽;Базовый городской трикотаж`
                   );
                 }}
-                className={`px-4 py-2.5 rounded-xl font-semibold border cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
                   targetType === 'competitors'
-                    ? 'bg-[#111111] text-white border-[#111111]'
-                    : 'bg-white text-[#171717] border-[#E8E8E5]'
+                    ? 'bg-[#141413] text-white border-[#141413]'
+                    : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
                 }`}
               >
                 2. Таблица конкурентов
@@ -1533,22 +1535,22 @@ function CsvImportWizardModal({
                     `periodMonth;periodLabel;brandId;plannedBuyoutUnits;avgSellingPriceRub;plannedRevenueRub;plannedOperatingProfitRub\n2027-04;Апрель 2027;BORNERS;5200;2190;11388000;3650000`
                   );
                 }}
-                className={`px-4 py-2.5 rounded-xl font-semibold border cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
                   targetType === 'finance'
-                    ? 'bg-[#111111] text-white border-[#111111]'
-                    : 'bg-white text-[#171717] border-[#E8E8E5]'
+                    ? 'bg-[#141413] text-white border-[#141413]'
+                    : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
                 }`}
               >
                 3. Финансовый план продаж
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] p-4">
-              <div className="text-[13px] text-[#737373]">
-                Вы можете загрузить готовый файл <b className="text-[#171717]">.CSV / .TXT</b> с компьютера или вставить строки из Excel ниже:
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4">
+              <div className="text-[13px] text-[#5C5953]">
+                Вы можете загрузить готовый файл <b className="text-[#141413] font-mono">.CSV / .TXT</b> с компьютера или вставить строки из Excel ниже:
               </div>
-              <label className="inline-flex items-center gap-2 h-10 rounded-lg bg-white border border-[#E8E8E5] px-4 text-[13px] font-semibold text-[#171717] hover:bg-[#111111] hover:text-white transition cursor-pointer">
-                <Upload className="h-4 w-4" />
+              <label className="inline-flex items-center gap-2 h-9 rounded-lg bg-white border border-[#E4E1DA] px-4 text-[13px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white hover:border-[#141413] transition cursor-pointer">
+                <Upload className="h-4 w-4 stroke-[1.5]" />
                 <span>Загрузить файл .CSV с диска</span>
                 <input
                   type="file"
@@ -1570,21 +1572,21 @@ function CsvImportWizardModal({
             </div>
 
             <div>
-              <label className="block font-semibold mb-2">
+              <label className="block text-[13px] font-medium text-[#5C5953] mb-2">
                 Содержимое CSV (разделитель «;» или «,»)
               </label>
               <textarea
                 rows={6}
                 value={rawCsv}
                 onChange={(e) => setRawCsv(e.target.value)}
-                className="w-full rounded-xl border border-[#E8E8E5] p-4 font-mono text-[14px]"
+                className="w-full rounded-xl border border-[#E4E1DA] p-4 font-mono text-[13px] text-[#141413] bg-[#FAF9F6] focus:bg-white focus:border-[#141413] outline-none"
               />
             </div>
 
             <div className="flex justify-end">
               <button
                 onClick={() => setStep(2)}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Проверить данные →
               </button>
@@ -1594,30 +1596,30 @@ function CsvImportWizardModal({
 
         {step === 2 && (
           <div className="space-y-5 text-[14px]">
-            <div className="rounded-xl border border-[#E8E8E5] overflow-x-auto">
-              <table className="w-full text-left text-[14px]">
-                <thead className="border-b border-[#E8E8E5] font-semibold bg-[#F7F7F5]">
+            <div className="rounded-xl border border-[#E4E1DA] overflow-x-auto">
+              <table className="w-full text-left text-[13px]">
+                <thead className="border-b border-[#E4E1DA] font-medium text-[#5C5953] bg-[#FAF9F6]">
                   <tr>
                     <th className="py-3 px-4">#</th>
                     <th className="py-3 px-4">Ключ / Название</th>
                     <th className="py-3 px-4">Статус проверки</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E8E8E5]">
+                <tbody className="divide-y divide-[#E4E1DA]">
                   {validatedRows.map((r) => (
                     <tr key={r.rowIndex}>
-                      <td className="py-3 px-4">{r.rowIndex}</td>
-                      <td className="py-3 px-4 font-semibold">
-                        {r.raw.sku || r.raw.brandName || r.raw.periodMonth} —{' '}
+                      <td className="py-3 px-4 font-mono text-[#5C5953]">{r.rowIndex}</td>
+                      <td className="py-3 px-4 font-medium text-[#141413]">
+                        <span className="font-mono">{r.raw.sku || r.raw.brandName || r.raw.periodMonth}</span> —{' '}
                         {r.raw.name || r.raw.positioning || r.raw.periodLabel}
                       </td>
-                      <td className="py-3 px-4 font-semibold">
+                      <td className="py-3 px-4 font-medium">
                         {r.errors.length > 0 ? (
                           <span className="text-[#C94B4B]">
                             Ошибка: {r.errors.join(', ')}
                           </span>
                         ) : r.isDuplicate ? (
-                          <span className="text-[#D99527]">Дубликат в базе</span>
+                          <span className="text-[#B45309]">Дубликат в базе</span>
                         ) : (
                           <span className="text-[#16805D]">Готово к записи</span>
                         )}
@@ -1628,16 +1630,16 @@ function CsvImportWizardModal({
               </table>
             </div>
 
-            <div className="flex justify-between pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-between pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setStep(1)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 ← Назад
               </button>
               <button
                 onClick={() => setStep(3)}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 К подтверждению →
               </button>
@@ -1647,30 +1649,32 @@ function CsvImportWizardModal({
 
         {step === 3 && (
           <div className="space-y-5 text-[14px]">
-            <div className="p-5 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] space-y-2">
-              <div className="font-semibold text-[16px]">Правило обработки дубликатов:</div>
-              <label className="flex items-center gap-2 cursor-pointer">
+            <div className="p-5 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] space-y-2.5">
+              <div className="font-semibold text-[15px] text-[#141413]">Правило обработки дубликатов:</div>
+              <label className="flex items-center gap-2.5 text-[13px] text-[#141413] cursor-pointer">
                 <input
                   type="radio"
                   checked={duplicateResolution === 'skip'}
                   onChange={() => setDuplicateResolution('skip')}
+                  className="accent-[#141413]"
                 />
                 <span>Пропускать существующие записи (без перезаписи)</span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2.5 text-[13px] text-[#141413] cursor-pointer">
                 <input
                   type="radio"
                   checked={duplicateResolution === 'import_all'}
                   onChange={() => setDuplicateResolution('import_all')}
+                  className="accent-[#141413]"
                 />
                 <span>Импортировать все валидные строки</span>
               </label>
             </div>
 
-            <div className="flex justify-between pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-between pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setStep(2)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 ← Назад
               </button>
@@ -1686,9 +1690,9 @@ function CsvImportWizardModal({
                     onImportFinance(committableRows);
                   }
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] disabled:opacity-40 disabled:cursor-not-allowed text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
-                Завершить импорт ({committableRows.length})
+                Завершить импорт (<span className="font-mono">{committableRows.length}</span>)
               </button>
             </div>
           </div>

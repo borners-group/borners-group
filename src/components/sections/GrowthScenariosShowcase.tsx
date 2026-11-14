@@ -6,7 +6,6 @@ import {
   Plus,
   Search,
   ChevronRight,
-  Sparkles,
   Calendar,
   Trash2,
   X,
@@ -1807,8 +1806,8 @@ export function GrowthScenariosShowcase({
     notify(
       'success',
       hasFinance
-        ? `⚡ Авто-расчёт по приоритету выполнен (цель: ${targetMln} млн ₽ / дек)`
-        : '⚡ Авто-расчёт по приоритету выполнен',
+        ? `Авто-расчёт по приоритету выполнен (цель: ${targetMln} млн ₽ / дек)`
+        : 'Авто-расчёт по приоритету выполнен',
       'Объёмы карточек распределены пропорционально приоритетам (Высший ×1.40, Высокий ×1.15, Средний ×0.90, Не указан ×0.75).'
     );
   };
@@ -2593,9 +2592,9 @@ export function GrowthScenariosShowcase({
                 </div>
 
                 <div className="flex items-center gap-2 text-[11.5px]">
-                  <span className="px-2.5 py-1 rounded-[8px] bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[#334155]">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[#5C5953] dark:text-[#9E9A92]">
                     Холдинг:{' '}
-                    <strong className="font-extrabold text-[#0F172A]">
+                    <strong className="font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {hasFinance
                         ? `${(
                             v11ScenarioSummary.multiBrandSummary.groupTotal.annualRevenueRub /
@@ -2606,9 +2605,9 @@ export function GrowthScenariosShowcase({
                         : 'Скрыто'}
                     </strong>
                   </span>
-                  <span className="px-2.5 py-1 rounded-[8px] bg-[#ECFDF5] border border-[#A7F3D0] font-mono text-[#047857]">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[#5C5953] dark:text-[#9E9A92]">
                     Прибыль:{' '}
-                    <strong className="font-extrabold text-[#064E3B]">
+                    <strong className="font-semibold text-[#15803D] dark:text-emerald-400">
                       {hasFinance && hasCost
                         ? `+${(
                             v11ScenarioSummary.multiBrandSummary.groupTotal
@@ -2625,28 +2624,28 @@ export function GrowthScenariosShowcase({
               {/* =====================================================================
                   РАЗДЕЛ 02 · СЦЕНАРИИ РАЗВИТИЯ И ПОМЕСЯЧНАЯ ТРАЕКТОРИЯ ВЫРУЧКИ
               ===================================================================== */}
-              <section className="rounded-[20px] bg-white border border-[#CFD6E0] overflow-hidden shadow-[0_6px_24px_-6px_rgba(15,23,42,0.07)]">
+              <section className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] overflow-hidden shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
             {/* ВЕРХНЯЯ ПАНЕЛЬ СЦЕНАРИЕВ */}
-            <div className="px-6 py-4 border-b border-[#DCE2EC] bg-white flex flex-wrap items-center justify-between gap-3">
+            <div className="px-6 py-4 border-b border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div>
-                  <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
+                  <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92]">
                     Сценарии и траектория · 2027–2028
                   </div>
-                  <h2 className="text-[19px] md:text-[21px] font-extrabold tracking-[-0.02em] text-[#111827] mt-0.5">
+                  <h2 className="text-[19px] md:text-[21px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                     Стратегия роста BORNERS GROUP
                   </h2>
                 </div>
 
                 {currentScenario.id === 1 && (
-                  <div className="inline-flex items-center rounded-[10px] bg-[#EEF1F6] border border-[#D8DEE8] p-1 text-[11.5px]">
+                  <div className="inline-flex items-center rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-1 text-[11.5px]">
                     <button
                       type="button"
                       onClick={() => setIncludeGroupPortfolioInS1(false)}
-                      className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                         !includeGroupPortfolioInS1
-                          ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#CBD5E1]'
-                          : 'text-[#64748B] hover:text-[#111827]'
+                          ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] shadow-2xs border border-[#E4E1DA] dark:border-[#282724]'
+                          : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                       }`}
                     >
                       Цель BORNERS · 21 SKU
@@ -2654,10 +2653,10 @@ export function GrowthScenariosShowcase({
                     <button
                       type="button"
                       onClick={() => setIncludeGroupPortfolioInS1(true)}
-                      className={`px-2.5 py-1 rounded-[7px] font-semibold transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                         includeGroupPortfolioInS1
-                          ? 'bg-white text-[#111827] shadow-[0_1px_2px_rgba(15,23,42,0.06)] border border-[#CBD5E1]'
-                          : 'text-[#64748B] hover:text-[#111827]'
+                          ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] shadow-2xs border border-[#E4E1DA] dark:border-[#282724]'
+                          : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                       }`}
                     >
                       С FUKAI · 23 SKU
@@ -2678,8 +2677,8 @@ export function GrowthScenariosShowcase({
                 {currentScenario.id !== ACTING_2027_SCENARIO_ID &&
                   canEditScenario(currentScenario) &&
                   hasFinance && (
-                  <div className="inline-flex items-center gap-1 rounded-[9px] bg-[#F4F6F9] border border-[#DCE2EC] p-0.5 pl-2.5">
-                    <span className="text-[11.5px] font-medium text-[#64748B]">Цель дек:</span>
+                  <div className="inline-flex items-center gap-1 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-0.5 pl-2.5">
+                    <span className="text-[11.5px] font-medium text-[#5C5953] dark:text-[#9E9A92]">Цель дек:</span>
                     <input
                       type="number"
                       min={10}
@@ -2689,13 +2688,13 @@ export function GrowthScenariosShowcase({
                       onChange={(e) =>
                         handleUpdateScenarioTargetMln(Number(e.target.value) || 100)
                       }
-                      className="w-12 text-right font-mono text-[12.5px] font-extrabold text-[#111827] bg-transparent focus:outline-none"
+                      className="w-12 text-right font-mono text-[12.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] bg-transparent focus:outline-none"
                     />
-                    <span className="text-[11px] font-medium text-[#64748B] mr-1">млн</span>
+                    <span className="text-[11px] font-medium text-[#5C5953] dark:text-[#9E9A92] mr-1">млн</span>
                     <button
                       type="button"
                       onClick={() => handleAutoCalculateByPriority()}
-                      className="h-7 px-2.5 rounded-[7px] bg-white hover:bg-[#E2E8F0] border border-[#CBD5E1] text-[#111827] text-[11.5px] font-semibold transition cursor-pointer"
+                      className="h-7 px-2.5 rounded-md bg-white dark:bg-[#151514] hover:bg-[#EFECE6] dark:hover:bg-[#282724] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[11.5px] font-medium transition-colors cursor-pointer"
                     >
                       Под цель
                     </button>
@@ -2706,17 +2705,18 @@ export function GrowthScenariosShowcase({
                   type="button"
                   onClick={() => setMathBreakdownOpen((v) => !v)}
                   aria-expanded={mathBreakdownOpen}
-                  className={`h-8 px-3 rounded-[9px] border text-[12px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  className={`h-8 px-3 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                     mathBreakdownOpen
-                      ? 'bg-[#2C3444] text-white border-[#2C3444]'
-                      : 'bg-white text-[#334155] border-[#DCE2EC] hover:bg-[#F8FAFC]'
+                      ? 'bg-[#141413] text-white border-[#141413]'
+                      : 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724] hover:bg-[#FAF9F6]'
                   }`}
                 >
                   <span>Детальный расчёт</span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 transition-transform ${
-                      mathBreakdownOpen ? 'rotate-180 text-white' : 'text-[#64748B]'
+                      mathBreakdownOpen ? 'rotate-180 text-white' : 'text-[#78746C]'
                     }`}
+                    strokeWidth={1.5}
                   />
                 </button>
 
@@ -2895,7 +2895,7 @@ export function GrowthScenariosShowcase({
             {/* РЯД 1: ПОРТФЕЛЬ СЦЕНАРИЕВ В ЛЁГКОМ ВОЗДУШНОМ СТИЛЕ */}
             <div
               data-tour="growth-scenarios"
-              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-[#F8FAFC]/60 dark:bg-[#121620] border-b border-[#E2E6EE] dark:border-[#222938]"
+              className="p-4 md:p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724]"
             >
               {(() => {
                 const visibleScenarios =
@@ -2913,12 +2913,12 @@ export function GrowthScenariosShowcase({
                   const canCreateForNb =
                     nb === 'ALL' ? canEditAnyBrand : canUserEditBrand(currentUser, nb);
                   return (
-                    <div className="col-span-full rounded-2xl border border-dashed border-[#CBD5E1] dark:border-[#222938] bg-white dark:bg-[#121620] p-5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="col-span-full rounded-xl border border-dashed border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-[13.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                        <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                           Нет сценария для выбранного бренда ({brandFilterLocal})
                         </div>
-                        <div className="text-[12px] text-[#64748B] mt-0.5">
+                        <div className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                           {canCreateForNb
                             ? 'Запустите готовую стартовую матрицу (3 флагманских SKU + сценарий 2027) в 1 клик или создайте пустой сценарий вручную.'
                             : 'Для выбранного бренда пока не активирован сценарий развития.'}
@@ -2931,9 +2931,10 @@ export function GrowthScenariosShowcase({
                               <button
                                 type="button"
                                 onClick={() => handleLaunchStarterCabinet(nb)}
-                                className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition"
+                                className="h-9 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                               >
-                                🚀 Запустить матрицу {nb === 'NA_TELE' ? 'НА ТЕЛЕ' : nb} (3 SKU)
+                                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                <span>Запустить матрицу {nb === 'NA_TELE' ? 'НА ТЕЛЕ' : nb} (3 SKU)</span>
                               </button>
                             )}
                           <button
@@ -2944,7 +2945,7 @@ export function GrowthScenariosShowcase({
                               );
                               setNewScenarioModalOpen(true);
                             }}
-                            className="h-9 px-4 rounded-xl bg-[#2C3444] hover:bg-[#1E2430] text-white text-[12px] font-semibold cursor-pointer shadow-2xs"
+                            className="h-9 px-4 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium cursor-pointer transition-colors"
                           >
                             + Создать сценарий бренда
                           </button>
@@ -3478,7 +3479,7 @@ export function GrowthScenariosShowcase({
                     </div>
 
                     {/* ЕДИНЫЙ КОМБИНИРОВАННЫЙ ГРАФИК 12 МЕСЯЦЕВ (БЕЗ ДВОЙНЫХ ЭТАЖЕЙ И БАТАРЕЕК) */}
-                    <div className="rounded-[14px] border border-[#E2E8F0] bg-gradient-to-b from-[#F8FAFC]/80 to-white px-3 pt-3.5 pb-2.5">
+                    <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] px-3 pt-3.5 pb-2.5">
                       {/* Ряд цифр над пиками месяцев */}
                       <div className="grid grid-cols-12 gap-1.5 mb-1.5">
                         {monthlySeries.map((pt, idx) => {
@@ -3494,10 +3495,10 @@ export function GrowthScenariosShowcase({
                               <span
                                 className={`font-mono text-[11px] sm:text-[11.5px] transition-colors ${
                                   isSel
-                                    ? 'font-extrabold text-[#111827] bg-[#EEF1F6] px-1.5 py-0.5 rounded-[5px]'
+                                    ? 'font-semibold text-[#141413] dark:text-[#F5F4F0] bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] px-1.5 py-0.5 rounded'
                                     : isDec
-                                    ? 'font-extrabold text-[#0D9488]'
-                                    : 'font-semibold text-[#475569] hover:text-[#111827]'
+                                    ? 'font-semibold text-[#15803D] dark:text-emerald-400'
+                                    : 'font-medium text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                                 }`}
                               >
                                 {effectiveChartMetric === 'packs'
@@ -4551,9 +4552,10 @@ export function GrowthScenariosShowcase({
                               brandFilterLocal as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
                             )
                           }
-                          className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
+                          className="h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                         >
-                          🚀 Запустить стартовую матрицу (3 SKU)
+                          <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          <span>Запустить стартовую матрицу (3 SKU)</span>
                         </button>
                         <button
                           type="button"

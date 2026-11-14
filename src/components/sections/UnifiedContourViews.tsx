@@ -1,6 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowUpRight,
+  Calendar,
+  FlaskConical,
+  Layers,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { usePlatform } from '@/context/PlatformContext';
 import {
   GrowthScenarioDef,
@@ -342,23 +349,23 @@ function ScenarioContourHeader({
   const hasFinance = canUserViewFinance(currentUser);
 
   return (
-    <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_12px_-3px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b border-[#EEF2F6] dark:border-[#222938]">
+    <section className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+      <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b border-[#E4E1DA] dark:border-[#282724]">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
+          <div className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92]">
             {stepCode}
           </div>
-          <h1 className="text-[21px] md:text-[24px] font-bold tracking-[-0.02em] text-[#0F172A] dark:text-[#EDF0F7] mt-0.5">
+          <h1 className="text-[21px] md:text-[24px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] mt-0.5">
             {title}
           </h1>
-          <p className="text-[12.5px] text-[#64748B] mt-0.5">{subtitle}</p>
+          <p className="text-[12.5px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">{subtitle}</p>
         </div>
         {rightSlot && <div className="flex flex-wrap items-center gap-2">{rightSlot}</div>}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11.5px] font-semibold text-[#64748B] mr-1">
+          <span className="text-[11.5px] font-medium text-[#78746C] dark:text-[#9E9A92] mr-1">
             Активный сценарий:
           </span>
           {orderedScenarios.map((sc) => {
@@ -389,10 +396,10 @@ function ScenarioContourHeader({
                     onSelectScenario(sc.id);
                   }
                 }}
-                className={`h-8.5 px-3 rounded-xl text-[12px] font-semibold border transition cursor-pointer ${
+                className={`h-8.5 px-3 rounded-lg text-[12px] font-medium border transition-colors cursor-pointer ${
                   isSel
-                    ? 'bg-[#E2E8F0] dark:bg-emerald-500/15 text-[#0F172A] dark:text-emerald-300 border-[#94A3B8] dark:border-emerald-500/30 shadow-2xs'
-                    : 'bg-[#F8FAFC] dark:bg-[#181D2A] hover:bg-white text-[#334155] dark:text-[#CBD5E1] border-[#E2E6EE] dark:border-[#222938]'
+                    ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
+                    : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-white dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
                 }`}
               >
                 {sc.id === ACTING_2027_SCENARIO_ID
@@ -407,7 +414,7 @@ function ScenarioContourHeader({
 
         <div className="flex flex-wrap items-center gap-2">
           {brandFilter !== 'ALL' && (
-            <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-xl bg-[#F8FAFC] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] text-[11.5px] font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
+            <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
               <span>
                 Бренд: {formatLabBrandLabel(brandFilter)} ({eligibleCount} SKU)
               </span>
@@ -426,7 +433,7 @@ function ScenarioContourHeader({
                     onSelectScenario(1, 'ALL');
                   }
                 }}
-                className="underline hover:opacity-75 cursor-pointer text-emerald-700 dark:text-emerald-300"
+                className="underline hover:opacity-75 cursor-pointer text-[#5C5953] dark:text-[#9E9A92]"
               >
                 Все бренды
               </button>
@@ -435,14 +442,14 @@ function ScenarioContourHeader({
 
           {selectedScenarioId === 1 &&
             (brandFilter === 'BORNERS' || brandFilter === 'FUKAI') && (
-              <div className="inline-flex items-center rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] border border-[#E2E6EE] dark:border-[#222938] p-1 text-[11.5px]">
+              <div className="inline-flex items-center rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-1 text-[11.5px]">
                 <button
                   type="button"
                   onClick={() => onToggleGroupPortfolio(false)}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                     !includeGroupPortfolioInS1
-                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
-                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
+                      ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] font-medium border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                      : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0] font-medium'
                   }`}
                 >
                   Цель BORNERS · 21 SKU
@@ -450,10 +457,10 @@ function ScenarioContourHeader({
                 <button
                   type="button"
                   onClick={() => onToggleGroupPortfolio(true)}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                     includeGroupPortfolioInS1
-                      ? 'bg-white dark:bg-[#121620] text-[#0F172A] dark:text-[#EDF0F7] font-semibold shadow-2xs'
-                      : 'text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#EDF0F7] font-medium'
+                      ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] font-medium border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                      : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0] font-medium'
                   }`}
                 >
                   С FUKAI · 23 SKU
@@ -946,16 +953,17 @@ export function SalesMatrixContourView() {
             <button
               type="button"
               onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
-              className="h-8.5 px-3.5 rounded-xl bg-[#0F172A] dark:bg-white hover:opacity-90 text-white dark:text-[#0F172A] text-[12px] font-semibold cursor-pointer transition"
+              className="h-8.5 px-3.5 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] hover:opacity-90 text-white dark:text-[#141413] text-[12px] font-medium cursor-pointer transition-colors"
             >
               + Добавить в Каталоге
             </button>
             <button
               type="button"
               onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-              className="h-8.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold cursor-pointer transition"
+              className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] dark:bg-[#1D1C1A] dark:text-[#F5F4F0] dark:border-[#282724] text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
             >
-              🧪 Из Лаборатории R&D
+              <FlaskConical className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.5} />
+              <span>Из Лаборатории R&D</span>
             </button>
             {(brandFilter === 'AKUSHA' ||
               brandFilter === 'LISKANI' ||
@@ -972,9 +980,10 @@ export function SalesMatrixContourView() {
                     `Кабинет ${formatLabBrandLabel(brandFilter)} запущен (${res.addedCount} SKU)`
                   );
                 }}
-                className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer transition"
+                className="h-8.5 px-3.5 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
               >
-                🚀 Запустить стартовую матрицу (3 SKU)
+                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <span>Запустить стартовую матрицу (3 SKU)</span>
               </button>
             )}
             {brandFilter === 'NA_TELE' && selectedScenarioId !== 2 && (
@@ -983,7 +992,7 @@ export function SalesMatrixContourView() {
                 onClick={() => {
                   setSelectedScenarioId(2, 'NA_TELE');
                 }}
-                className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
+                className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium cursor-pointer transition-colors"
               >
                 {hasFinance ? 'Переключить на Сценарий №2 · 150 млн' : 'Переключить на Сценарий №2'}
               </button>
@@ -992,7 +1001,7 @@ export function SalesMatrixContourView() {
               <button
                 type="button"
                 onClick={() => setIncludeGroupPortfolioInS1(true)}
-                className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
+                className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium cursor-pointer transition-colors"
               >
                 Подключить портфель группы (с FUKAI)
               </button>
@@ -1000,7 +1009,7 @@ export function SalesMatrixContourView() {
             <button
               type="button"
               onClick={() => setBrandFilter('ALL')}
-              className="h-8.5 px-3.5 rounded-[9px] bg-[#FAF9F6] hover:bg-white border border-[#CFCEC6] hover:border-[#141413] text-[#141413] text-[12px] font-semibold cursor-pointer transition"
+              className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-white border border-[#E4E1DA] hover:border-[#141413] text-[#141413] text-[12px] font-medium cursor-pointer transition-colors"
             >
               Показать все бренды
             </button>
@@ -1008,42 +1017,40 @@ export function SalesMatrixContourView() {
         </div>
       )}
 
-      {/* 4 ключевых показателя продаж в воздушном дизайн-коде с 3px акцентной полоской */}
+      {/* 4 ключевых показателя продаж в спокойной архитектурной подаче */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Годовая выручка 2027
           </div>
-          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {hasFinance ? formatMln(effectiveTotals.annualRevenueRub) : 'Скрыто'}
           </div>
-          <div className="text-[11.5px] text-[#64748B]">
+          <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
             {hasFinance
               ? `${effectiveTotals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.`
               : 'Скрыто по роли'}
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Выручка в декабре 2027
           </div>
-          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {hasFinance ? formatMln(effectiveTotals.decRevenueRub) : 'Скрыто'}
           </div>
-          <div className="text-[11.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+          <div className="text-[11.5px] text-[#15803D] dark:text-emerald-400 font-medium">
             {!hasFinance
               ? 'Скрыто по роли'
               : isHoldingAllBrandsActive
               ? 'Сводный план всех активных брендов группы'
               : `Цель сценария: ${currentScenario.monthlyTargetMln} млн ₽ / мес`}
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Выкупы и заказы за 2027 год
           </div>
           {(() => {
@@ -1066,12 +1073,12 @@ export function SalesMatrixContourView() {
                 );
             return (
               <>
-                <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7] leading-tight">
+                <div className="font-mono tabular-nums tracking-[-0.025em] text-xl font-semibold text-[#141413] dark:text-[#F5F4F0] leading-tight">
                   {buyoutsLabel}
                 </div>
-                <div className="text-[11.5px] text-[#64748B]">
+                <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                   Заказы (до выкупа):{' '}
-                  <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                  <strong className="font-mono text-[#15803D] dark:text-emerald-400">
                     {singleUnit
                       ? `${effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')} ${singleUnit}`
                       : hasFinance
@@ -1088,17 +1095,16 @@ export function SalesMatrixContourView() {
               </>
             );
           })()}
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/75" />
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Моделей в матрице
           </div>
-          <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {scopedEntries.length} SKU
           </div>
-          <div className="text-[11.5px] text-[#64748B]">
+          <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
             {(() => {
               if (!hasFinance) {
                 return 'Средний чек: скрыто по роли';
@@ -1116,7 +1122,6 @@ export function SalesMatrixContourView() {
               }`;
             })()}
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/75" />
         </div>
       </section>
 
@@ -2173,16 +2178,16 @@ export function ProcurementContourView() {
         <RoadmapTasksView />
       ) : scopedModelEntries.length === 0 ? (
         /* ПУСТОЕ СОСТОЯНИЕ, ЕСЛИ В ВЫБРАННОМ СЦЕНАРИИ НЕТ МОДЕЛЕЙ ТЕКУЩЕГО БРЕНДА (например, выбран НА ТЕЛЕ в Исходном плане) */
-        <div className="rounded-[16px] border border-[#D8D7CF] bg-white p-6 shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
           <div className="max-w-2xl space-y-3">
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-900">
+            <span className="inline-flex items-center rounded-md bg-[#FAF9F6] border border-[#E4E1DA] px-2.5 py-1 font-mono text-[10.5px] font-medium uppercase tracking-wider text-[#5C5953]">
               Фильтр бренда: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}
             </span>
-            <h3 className="text-[18px] font-bold text-[#141413]">
+            <h3 className="text-[18px] font-semibold text-[#141413]">
               В сценарии «{currentScenario.title}» нет моделей бренда «
               {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}»
             </h3>
-            <p className="text-[13.5px] leading-relaxed text-[#52514C]">
+            <p className="text-[13.5px] leading-relaxed text-[#5C5953]">
               {hasFinance
                 ? 'В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 (150 млн ₽/мес) и Сценария №3 (200 млн ₽/мес).'
                 : 'В «Исходном плане» (7 базовых артикулов WB) и базовом «Сценарии №1» рассчитывается основная линейка BORNERS. Модели женской и базовой линейки «НА ТЕЛЕ» включаются в расчёт начиная со Сценария №2 и Сценария №3.'}
@@ -2191,16 +2196,17 @@ export function ProcurementContourView() {
               <button
                 type="button"
                 onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
-                className="h-9.5 rounded-xl bg-[#0F172A] dark:bg-white px-4 text-[12.5px] font-semibold text-white dark:text-[#0F172A] hover:opacity-90 transition cursor-pointer"
+                className="h-9.5 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] px-4 text-[12.5px] font-medium text-white dark:text-[#141413] hover:opacity-90 transition-colors cursor-pointer"
               >
                 + Добавить в Каталоге
               </button>
               <button
                 type="button"
                 onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-                className="h-9.5 rounded-xl bg-indigo-600 px-4 text-[12.5px] font-semibold text-white hover:bg-indigo-700 transition cursor-pointer"
+                className="h-9.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] border border-[#E4E1DA] px-4 text-[12.5px] font-medium text-[#141413] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                🧪 Из Лаборатории R&D
+                <FlaskConical className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.5} />
+                <span>Из Лаборатории R&D</span>
               </button>
               {(brandFilter === 'AKUSHA' ||
                 brandFilter === 'LISKANI' ||
@@ -2217,15 +2223,16 @@ export function ProcurementContourView() {
                       `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
                     );
                   }}
-                  className="h-9.5 rounded-xl bg-emerald-600 px-4 text-[12.5px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
+                  className="h-9.5 rounded-lg bg-[#141413] hover:bg-[#282724] px-4 text-[12.5px] font-medium text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  🚀 Запустить стартовую матрицу (3 SKU)
+                  <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <span>Запустить стартовую матрицу (3 SKU)</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setBrandFilter('ALL')}
-                className="h-9.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] border border-[#CECDC4] px-4 text-[12.5px] font-semibold text-[#141413] transition cursor-pointer"
+                className="h-9.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] border border-[#E4E1DA] px-4 text-[12.5px] font-medium text-[#141413] transition-colors cursor-pointer"
               >
                 Показать все бренды ({currentScenario.title.split('·')[0].trim()})
               </button>
@@ -2235,7 +2242,7 @@ export function ProcurementContourView() {
                   onClick={() => {
                     setSelectedScenarioId(2, brandFilter !== 'ALL' ? brandFilter : undefined);
                   }}
-                  className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-white px-4 text-[12.5px] font-semibold text-[#141413] hover:bg-[#F4F3EE] transition cursor-pointer"
+                  className="h-9.5 rounded-lg border border-[#E4E1DA] bg-white px-4 text-[12.5px] font-medium text-[#141413] hover:bg-[#FAF9F6] transition-colors cursor-pointer"
                 >
                   {hasFinance
                     ? 'Переключить на Сценарий №2 · 150 млн (с линейкой НА ТЕЛЕ)'
@@ -2246,7 +2253,7 @@ export function ProcurementContourView() {
                 <button
                   type="button"
                   onClick={() => setIncludeGroupPortfolioInS1(true)}
-                  className="h-9.5 rounded-[9px] border border-[#CFCEC6] bg-[#FAF9F6] px-3.5 text-[12px] font-semibold text-[#141413] hover:bg-[#EFEFE9] transition cursor-pointer"
+                  className="h-9.5 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[12px] font-medium text-[#141413] hover:bg-[#EFECE6] transition-colors cursor-pointer"
                 >
                   Подключить портфель группы в Сценарии №1
                 </button>
@@ -2258,19 +2265,22 @@ export function ProcurementContourView() {
         <>
           {/* ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК 2027 (РЕАЛЬНЫЕ КВАРТАЛЬНЫЕ ПАРТИИ И PO БЕЗ УСЛОВНЫХ ПРОПОРЦИЙ) */}
           {wavesCalendarOpen && (
-            <section className="rounded-2xl border border-[#E2E6EE] dark:border-[#222938] bg-white dark:bg-[#121620] p-4 sm:p-5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+            <section className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-[13px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
-                    📦 Платёжный календарь 4 реальных волн закупок {currentScenario.year || 2027} · Авансы {wavesSummary.avgPrepaymentPct}%, доплаты {100 - wavesSummary.avgPrepaymentPct}% и реинвест с WB
+                  <div className="text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-[#5C5953] dark:text-[#9E9A92] shrink-0" strokeWidth={1.5} />
+                    <span>
+                      Платёжный календарь 4 реальных волн закупок {currentScenario.year || 2027} · Авансы {wavesSummary.avgPrepaymentPct}%, доплаты {100 - wavesSummary.avgPrepaymentPct}% и реинвест с WB
+                    </span>
                   </div>
-                  <p className="text-[11.5px] text-[#64748B]">
+                  <p className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                     Годовой бюджет закупок:{' '}
-                    <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                    <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
                       {formatCostMln(wavesSummary.totalBudgetRub)}
                     </strong>{' '}
                     ({wavesSummary.totalPacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit} · утв. PO: {wavesSummary.totalApprovedPosCount}, план: {wavesSummary.totalDraftBatchesCount}) · Пик своих денег:{' '}
-                    <strong className="font-mono text-amber-700 dark:text-amber-400">
+                    <strong className="font-mono text-[#B91C1C] dark:text-rose-400">
                       {!hasCost || !hasFinance
                         ? 'Скрыто'
                         : wbLagMonths < 0
@@ -2288,14 +2298,14 @@ export function ProcurementContourView() {
                   <button
                     type="button"
                     onClick={() => setScenarioDrawerTab('investment')}
-                    className="h-8 px-3 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11.5px] font-bold cursor-pointer transition"
+                    className="h-8 px-3 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[11.5px] font-medium cursor-pointer transition-colors"
                   >
-                    📍 Подробный график «Пик своих денег» →
+                    Подробный график «Пик своих денег» →
                   </button>
                   <button
                     type="button"
                     onClick={() => handleExportFactoryOrderCsv('first_wave')}
-                    className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11.5px] font-semibold cursor-pointer transition"
+                    className="h-8 px-3 rounded-lg bg-white hover:bg-[#FAF9F6] dark:bg-[#151514] dark:hover:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[11.5px] font-medium cursor-pointer transition-colors"
                   >
                     Скачать заказ 1-й волны Q1 (CSV)
                   </button>
@@ -2306,19 +2316,17 @@ export function ProcurementContourView() {
                 {wavesSummary.waves.map((w) => (
                   <div
                     key={w.id}
-                    className="relative overflow-hidden rounded-xl border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC]/80 dark:bg-[#181D2A] p-3.5 space-y-2"
+                    className="relative overflow-hidden rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 space-y-2"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      <span className="font-mono text-[11px] font-semibold text-[#5C5953] dark:text-[#9E9A92]">
                         {w.waveNum}
                       </span>
                       <span
-                        className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
+                        className={`text-[10.5px] font-medium px-2 py-0.5 rounded-md border ${
                           w.selfFunded
-                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                            : w.fundedFromWbPct > 0
-                            ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-500/30'
-                            : 'bg-amber-50 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300'
+                            ? 'bg-emerald-500/10 text-[#15803D] dark:text-emerald-400 border-emerald-500/25'
+                            : 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
                         }`}
                       >
                         {w.selfFunded
@@ -2921,28 +2929,34 @@ export function ProcurementContourView() {
                   </div>
 
                   {/* 1Б. ПОМЕСЯЧНАЯ ЛЕНТА ПЛАТЕЖЕЙ ФАБРИКАМ (12 МЕС.) + УПРАВЛЕНИЕ УСЛОВИЯМИ ОПЛАТЫ И ПИКОМ СВОИХ ДЕНЕГ */}
-                  <div className="rounded-xl border border-[#E2E6EE] bg-white p-4 space-y-3.5 shadow-2xs">
+                  <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 space-y-3.5 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[12.5px] font-bold text-[#0F172A]">
-                            📅 Платёжный график фабрикам по 12 месяцам (Авансы {wavesSummary.avgPrepaymentPct}% + Доплаты {100 - wavesSummary.avgPrepaymentPct}%)
+                          <span className="text-[12.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-[#5C5953] dark:text-[#9E9A92]" strokeWidth={1.5} />
+                            <span>
+                              Платёжный график фабрикам по 12 месяцам (Авансы {wavesSummary.avgPrepaymentPct}% + Доплаты {100 - wavesSummary.avgPrepaymentPct}%)
+                            </span>
                           </span>
-                          <span className="rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
-                            📍 Пик своих денег:{' '}
-                            {!hasCost || !hasFinance
-                              ? 'Скрыто'
-                              : wbLagMonths < 0
-                              ? 'Лаг WB не задан'
-                              : investmentSummary.verifiedOwnMoneyRequiredRub != null
-                              ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} в ${investmentSummary.peakMonthLabel}`
-                              : '—'}
-                            {hasCost && hasFinance && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
-                              ? ` · с ${investmentSummary.selfFundingMonthLabel} — в плюс с WB`
-                              : ''}
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] px-2.5 py-0.5 text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#B91C1C]" />
+                            <span>
+                              Пик своих денег:{' '}
+                              {!hasCost || !hasFinance
+                                ? 'Скрыто'
+                                : wbLagMonths < 0
+                                ? 'Лаг WB не задан'
+                                : investmentSummary.verifiedOwnMoneyRequiredRub != null
+                                ? `${formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)} в ${investmentSummary.peakMonthLabel}`
+                                : '—'}
+                              {hasCost && hasFinance && wbLagMonths >= 0 && investmentSummary.selfFundingMonthLabel
+                                ? ` · с ${investmentSummary.selfFundingMonthLabel} — в плюс с WB`
+                                : ''}
+                            </span>
                           </span>
                         </div>
-                        <p className="text-[11px] text-[#64748B] mt-0.5">
+                        <p className="text-[11px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                           Реальные квартальные партии: Q1 {formatCostMln(wavesSummary.waves[0]?.budgetRub || 0)} · Q2 {formatCostMln(wavesSummary.waves[1]?.budgetRub || 0)} · Q3 {formatCostMln(wavesSummary.waves[2]?.budgetRub || 0)} · Q4 {formatCostMln(wavesSummary.waves[3]?.budgetRub || 0)}
                         </p>
                       </div>
@@ -2951,18 +2965,21 @@ export function ProcurementContourView() {
                         <button
                           type="button"
                           onClick={() => setFactoryTermsPanelOpen((v) => !v)}
-                          className={`h-8 px-3 rounded-lg border text-[11.5px] font-semibold transition cursor-pointer ${
+                          className={`h-8 px-3 rounded-lg border text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                             factoryTermsPanelOpen
-                              ? 'bg-slate-900 dark:bg-emerald-500 text-white dark:text-slate-950 border-slate-900 dark:border-emerald-500'
-                              : 'bg-[#F8FAFC] dark:bg-[#181D2A] hover:bg-[#F1F5F9] dark:hover:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7] border-[#CBD5E1] dark:border-[#283246]'
+                              ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
+                              : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-[#EFECE6] dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
                           }`}
                         >
-                          ⚙️ Условия оплаты фабрикам ({wavesSummary.avgPrepaymentPct}/{100 - wavesSummary.avgPrepaymentPct}%) {factoryTermsPanelOpen ? '▴' : '▾'}
+                          <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          <span>
+                            Условия оплаты фабрикам ({wavesSummary.avgPrepaymentPct}/{100 - wavesSummary.avgPrepaymentPct}%) {factoryTermsPanelOpen ? '▴' : '▾'}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setScenarioDrawerTab('investment')}
-                          className="h-8 px-3 rounded-lg bg-amber-500/12 dark:bg-amber-500/15 hover:bg-amber-500/20 border border-amber-400/60 dark:border-amber-500/40 text-amber-950 dark:text-amber-200 text-[11.5px] font-bold cursor-pointer transition"
+                          className="h-8 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-[#EFECE6] dark:hover:bg-[#282724] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[11.5px] font-medium cursor-pointer transition-colors"
                         >
                           Подробный график «Пик своих денег» →
                         </button>
@@ -2998,17 +3015,19 @@ export function ProcurementContourView() {
                                     ? `${ms.monthLabel}: всего фабрикам ${formatMln(ms.totalOutflowRub)} (аванс ${formatMln(ms.prepayRub)} + доплата ${formatMln(ms.balanceRub)})${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`
                                     : `${ms.monthLabel}: суммы выплат фабрикам скрыты по роли${ms.waveTags.length ? ' · ' + ms.waveTags.join(', ') : ''}`
                                 }
-                                className={`rounded-lg border p-1.5 text-center transition cursor-pointer ${
+                                className={`rounded-lg border p-1.5 text-center transition-colors cursor-pointer ${
                                   isPeakM
-                                    ? 'border-amber-400 dark:border-amber-500/50 bg-amber-50/70 dark:bg-amber-500/15'
+                                    ? 'border-[#141413] dark:border-[#F5F4F0] bg-[#FAF9F6] dark:bg-[#1D1C1A]'
                                     : hasCost && ms.totalOutflowRub > 0
-                                    ? 'border-[#E2E8F0] dark:border-[#283246] bg-[#F8FAFC] dark:bg-[#181D2A] hover:border-[#94A3B8]'
-                                    : 'border-[#F1F5F9] dark:border-[#222938] bg-white dark:bg-[#121620] opacity-75'
+                                    ? 'border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6]/70 dark:bg-[#1D1C1A]/60 hover:border-[#78746C]'
+                                    : 'border-[#EFECE6] dark:border-[#282724] bg-white dark:bg-[#151514] opacity-75'
                                 }`}
                               >
-                                <div className="flex items-center justify-center gap-0.5 text-[10px] font-bold text-[#334155] dark:text-slate-300">
+                                <div className="flex items-center justify-center gap-1 text-[10px] font-semibold text-[#5C5953] dark:text-[#9E9A92]">
                                   <span>{ms.monthLabel}</span>
-                                  {isPeakM && <span>📍</span>}
+                                  {isPeakM && (
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#B91C1C]" />
+                                  )}
                                 </div>
                                 <div className="h-9 flex flex-col justify-end items-center my-1">
                                   {balH > 0 && (
@@ -3135,7 +3154,7 @@ export function ProcurementContourView() {
                                   `Режим закупки: под полный объём заказов ПВЗ (${editableScopedModelIds.length} SKU)`
                                 );
                               }}
-                              className="px-2.5 py-1 rounded-lg font-semibold border bg-indigo-50 dark:bg-indigo-500/15 text-indigo-900 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/35 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 cursor-pointer transition"
+                              className="px-2.5 py-1 rounded-lg font-medium border bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724] hover:bg-[#EFECE6] dark:hover:bg-[#282724] cursor-pointer transition-colors"
                             >
                               Под заказы ПВЗ
                             </button>
@@ -3442,10 +3461,10 @@ export function ProcurementContourView() {
                                     <div>
                                       {plan.annualBuyoutsPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                     </div>
-                                    <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-indigo-700 dark:text-indigo-300 font-semibold">
+                                    <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-[#5C5953] dark:text-[#9E9A92] font-medium">
                                       <span>Зак: {plan.annualOrdersPacks.toLocaleString('ru-RU')}</span>
                                       {canEditRow ? (
-                                        <span className="inline-flex items-center rounded border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/70 dark:bg-indigo-500/15 px-1 py-0.5">
+                                        <span className="inline-flex items-center rounded border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] px-1 py-0.5">
                                           <BufferedInlineNumberInput
                                             min={5}
                                             max={100}
@@ -3458,12 +3477,12 @@ export function ProcurementContourView() {
                                                 })
                                               );
                                             }}
-                                            className="w-8 bg-transparent text-right font-mono text-[10px] font-bold text-indigo-900 dark:text-indigo-200 focus:outline-none"
+                                            className="w-8 bg-transparent text-right font-mono text-[10px] font-semibold text-[#141413] dark:text-[#F5F4F0] focus:outline-none"
                                           />
                                           <span>%</span>
                                         </span>
                                       ) : (
-                                        <span className="font-mono text-[10px] font-bold text-indigo-900 dark:text-indigo-300">
+                                        <span className="font-mono text-[10px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                                           ({plan.buyoutRatePct}%)
                                         </span>
                                       )}
@@ -4473,16 +4492,17 @@ export function FinanceContourView() {
                 <button
                   type="button"
                   onClick={() => navigateTo('product-catalog', { brandId: brandFilter })}
-                  className="h-8.5 px-3.5 rounded-xl bg-[#0F172A] dark:bg-white hover:opacity-90 text-white dark:text-[#0F172A] text-[12px] font-semibold cursor-pointer transition"
+                  className="h-8.5 px-3.5 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] hover:opacity-90 text-white dark:text-[#141413] text-[12px] font-medium cursor-pointer transition-colors"
                 >
                   + Добавить в Каталоге
                 </button>
                 <button
                   type="button"
                   onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-                  className="h-8.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-semibold cursor-pointer transition"
+                  className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] border border-[#E4E1DA] text-[#141413] text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  🧪 Из Лаборатории R&D
+                  <FlaskConical className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.5} />
+                  <span>Из Лаборатории R&D</span>
                 </button>
                 {(brandFilter === 'AKUSHA' ||
                   brandFilter === 'LISKANI' ||
@@ -4498,9 +4518,10 @@ export function FinanceContourView() {
                         `Кабинет ${brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter} запущен (${res.addedCount} SKU)`
                       );
                     }}
-                    className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer transition"
+                    className="h-8.5 px-3.5 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    🚀 Запустить стартовую матрицу (3 SKU)
+                    <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    <span>Запустить стартовую матрицу (3 SKU)</span>
                   </button>
                 )}
                 {brandFilter === 'NA_TELE' && selectedScenarioId !== 2 && (
@@ -4509,7 +4530,7 @@ export function FinanceContourView() {
                     onClick={() => {
                       setSelectedScenarioId(2, 'NA_TELE');
                     }}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
+                    className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium cursor-pointer transition-colors"
                   >
                     Переключить на Сценарий №2 · 150 млн
                   </button>
@@ -4518,7 +4539,7 @@ export function FinanceContourView() {
                   <button
                     type="button"
                     onClick={() => setIncludeGroupPortfolioInS1(true)}
-                    className="h-8.5 px-3.5 rounded-[9px] bg-[#F5F5F1] hover:bg-[#EAE9E2] text-[#141413] border border-[#CECDC4] text-[12px] font-semibold cursor-pointer transition"
+                    className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium cursor-pointer transition-colors"
                   >
                     Подключить портфель группы (с FUKAI)
                   </button>
@@ -4526,7 +4547,7 @@ export function FinanceContourView() {
                 <button
                   type="button"
                   onClick={() => setBrandFilter('ALL')}
-                  className="h-8.5 px-3.5 rounded-[9px] bg-[#FAF9F6] hover:bg-white border border-[#CFCEC6] hover:border-[#141413] text-[#141413] text-[12px] font-semibold cursor-pointer transition"
+                  className="h-8.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-white border border-[#E4E1DA] hover:border-[#141413] text-[#141413] text-[12px] font-medium cursor-pointer transition-colors"
                 >
                   Показать все бренды
                 </button>
@@ -4534,7 +4555,7 @@ export function FinanceContourView() {
             </div>
           )}
 
-          {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ (В ВОЗДУШНОМ ДИЗАЙН-КОДЕ С 3PX ПОЛОСКОЙ) */}
+          {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ */}
           {(() => {
             const distinctFinUnits = Array.from(
               new Set(scopedFinanceEntries.map((e) => getBrandUnitConfig(e.model).primaryUnit))
@@ -4548,21 +4569,20 @@ export function FinanceContourView() {
                 : 'ед.';
             return (
               <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     1. Вложить на старт (Партия №1 · Q1)
                   </div>
-                  <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто'}
                   </div>
-                  <div className="text-[11.5px] text-[#64748B]">
-                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                  <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
+                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
                       Аванс 30% сейчас:{' '}
                       {hasCost ? formatMln(investmentSummary.firstWavePrepaymentRub) : 'Скрыто'}
                     </strong>{' '}
                     ({investmentSummary.firstWavePacks.toLocaleString('ru-RU')} {finPrimaryUnit})
                   </div>
-                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-teal-500/85" />
                 </div>
 
                 <div
@@ -4570,34 +4590,34 @@ export function FinanceContourView() {
                     const el = document.getElementById('peak-own-money-chart-anchor');
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
-                  className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] hover:border-amber-400 p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)] cursor-pointer transition"
+                  className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)] cursor-pointer transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                       2. Пик своих денег (с оборотом WB)
                     </div>
-                    <span className="rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900">
+                    <span className="rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[#141413] dark:text-[#F5F4F0]">
                       {wbLagMonths < 0
                         ? 'Лаг WB не задан'
-                        : `📍 ${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`}
+                        : `Пик: ${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`}
                     </span>
                   </div>
                   {!hasCost ? (
-                    <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                    <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       Скрыто
                     </div>
                   ) : wbLagMonths < 0 ? (
-                    <div className="text-[13px] font-bold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
+                    <div className="text-[13px] font-semibold text-[#5C5953] dark:text-[#9E9A92] pt-1 leading-snug">
                       Лаг WB не задан
                     </div>
                   ) : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
                     investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
                     <>
-                      <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                      <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#B91C1C] dark:text-rose-400">
                         {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
                       </div>
-                      <div className="text-[11px] text-[#64748B] leading-snug">
-                        <strong className="text-amber-800 dark:text-amber-300">
+                      <div className="text-[11px] text-[#5C5953] dark:text-[#9E9A92] leading-snug">
+                        <strong className="text-[#141413] dark:text-[#F5F4F0]">
                           {investmentSummary.peakPhase === 'before_wb_inflow'
                             ? `1–15 ${investmentSummary.peakMonthLabel.toLowerCase()}. (до прихода WB)`
                             : `Конец ${investmentSummary.peakMonthLabel.toLowerCase()}.`}
@@ -4608,51 +4628,48 @@ export function FinanceContourView() {
                       </div>
                     </>
                   ) : (
-                    <div className="text-[12.5px] font-semibold text-amber-900 dark:text-amber-300 pt-1 leading-snug">
+                    <div className="text-[12.5px] font-medium text-[#5C5953] dark:text-[#9E9A92] pt-1 leading-snug">
                       {investmentSummary.ownMoneyStatusLabel}
                     </div>
                   )}
-                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/85" />
                 </div>
 
-                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     3. Закупки за год vs Себест. продаж
                   </div>
-                  <div className="font-mono text-2xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто'}
                   </div>
-                  <div className="text-[11.5px] text-[#64748B]">
+                  <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                     Себестоимость проданного товара:{' '}
-                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
                       {hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : 'Скрыто'}
                     </strong>
                   </div>
-                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-amber-500/80" />
                 </div>
 
-                <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-4 space-y-1 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#64748B]">
+                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     4. Ожидаемая прибыль 2027 (после WB и рекламы)
                   </div>
-                  <div className="font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#15803D] dark:text-emerald-400">
                     {hasCost
                       ? `+${formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}`
                       : 'Скрыто'}
                   </div>
-                  <div className="text-[11.5px] text-[#64748B]">
+                  <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                     Выручка:{' '}
-                    <strong className="text-[#0F172A] dark:text-[#EDF0F7]">
+                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
                       {formatMln(effectiveAnnualRevenueRub)}
                     </strong>{' '}
                     · Рентабельность:{' '}
-                    <strong className="text-emerald-600 dark:text-emerald-400">
+                    <strong className="text-[#15803D] dark:text-emerald-400">
                       {hasCost
                         ? `${investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%`
                         : '—'}
                     </strong>
                   </div>
-                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-emerald-500/85" />
                 </div>
               </section>
             );
@@ -4680,7 +4697,7 @@ export function FinanceContourView() {
               whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
 
             return (
-              <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-5 py-3.5 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+              <section className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] px-5 py-3.5 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <button
@@ -4688,10 +4705,11 @@ export function FinanceContourView() {
                       onClick={() => setWhatIfOpen((v) => !v)}
                       className="text-left cursor-pointer group"
                     >
-                      <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
-                        🎛️ Симулятор чувствительности · Что если?
+                      <div className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92] inline-flex items-center gap-1.5">
+                        <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        <span>Симулятор чувствительности · Что если?</span>
                       </div>
-                      <h2 className="text-[14.5px] font-bold text-[#0F172A] dark:text-[#EDF0F7] group-hover:text-emerald-600 transition">
+                      <h2 className="text-[14.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] group-hover:opacity-80 transition-opacity">
                         Стресс-тест и точки роста прибыли{' '}
                         {isHoldingAllBrands
                           ? 'всех 5 брендов холдинга'
@@ -4709,9 +4727,10 @@ export function FinanceContourView() {
                         setWhatIfCostDelta(-5);
                         setWhatIfMpAdsDelta(0);
                       }}
-                      className="h-8 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/25 text-emerald-700 font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] border border-[#E4E1DA] dark:border-[#282724] text-[#15803D] dark:text-emerald-400 font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      🔥 Цена +7% · Себест. −5%
+                      <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <span>Цена +7% · Себест. −5%</span>
                     </button>
                     <button
                       type="button"
@@ -4721,9 +4740,10 @@ export function FinanceContourView() {
                         setWhatIfCostDelta(10);
                         setWhatIfMpAdsDelta(4);
                       }}
-                      className="h-8 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/25 text-amber-700 font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] border border-[#E4E1DA] dark:border-[#282724] text-[#B91C1C] dark:text-rose-400 font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      ⚠️ Стресс-тест WB +4 п.п.
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                      <span>Стресс-тест WB +4 п.п.</span>
                     </button>
                     {isModified && (
                       <button
@@ -4733,7 +4753,7 @@ export function FinanceContourView() {
                           setWhatIfCostDelta(0);
                           setWhatIfMpAdsDelta(0);
                         }}
-                        className="h-8 px-3 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] font-semibold cursor-pointer"
+                        className="h-8 px-3 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] border border-[#E4E1DA] text-[#141413] font-medium cursor-pointer"
                       >
                         ↺ Сбросить
                       </button>
@@ -4741,7 +4761,7 @@ export function FinanceContourView() {
                     <button
                       type="button"
                       onClick={() => setWhatIfOpen((v) => !v)}
-                      className="h-8 px-3 rounded-lg border border-[#E2E6EE] dark:border-[#222938] bg-[#F8FAFC] dark:bg-[#181D2A] text-[#0F172A] dark:text-[#EDF0F7] font-semibold cursor-pointer"
+                      className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] font-medium cursor-pointer"
                     >
                       {whatIfOpen ? 'Свернуть ▴' : 'Ползунки ▾'}
                     </button>
@@ -4749,9 +4769,9 @@ export function FinanceContourView() {
                 </div>
 
                 {whatIfOpen && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-1 border-t border-[#E2E6EE] dark:border-[#222938]">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-1 border-t border-[#E4E1DA] dark:border-[#282724]">
                   <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                    <div className="rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-3 space-y-1.5 text-xs">
                       <div className="flex justify-between font-medium">
                         <span>Розничная цена WB</span>
                         <span className="font-mono font-bold">
@@ -4765,11 +4785,11 @@ export function FinanceContourView() {
                         step={1}
                         value={whatIfPriceDelta}
                         onChange={(e) => setWhatIfPriceDelta(Number(e.target.value))}
-                        className="w-full accent-emerald-600 cursor-pointer"
+                        className="w-full accent-[#141413] cursor-pointer"
                       />
                     </div>
 
-                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                    <div className="rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-3 space-y-1.5 text-xs">
                       <div className="flex justify-between font-medium">
                         <span>Себестоимость партий</span>
                         <span className="font-mono font-bold">
@@ -4783,11 +4803,11 @@ export function FinanceContourView() {
                         step={1}
                         value={whatIfCostDelta}
                         onChange={(e) => setWhatIfCostDelta(Number(e.target.value))}
-                        className="w-full accent-teal-600 cursor-pointer"
+                        className="w-full accent-[#141413] cursor-pointer"
                       />
                     </div>
 
-                    <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3 space-y-1.5 text-xs">
+                    <div className="rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-3 space-y-1.5 text-xs">
                       <div className="flex justify-between font-medium">
                         <span>Комиссия WB и ДРР</span>
                         <span className="font-mono font-bold">
@@ -5112,9 +5132,10 @@ export function FinanceContourView() {
                       'Комиссия, логистика, ДРР и себестоимость заполнены для 100% SKU'
                     );
                   }}
-                  className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer shadow-2xs transition"
+                  className="h-9 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  ⚡ Заполнить нормативы WB для всех SKU ({finSummary.unfilledOpCount})
+                  <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <span>Заполнить нормативы WB для всех SKU ({finSummary.unfilledOpCount})</span>
                 </button>
               )}
             </div>

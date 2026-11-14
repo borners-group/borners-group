@@ -305,19 +305,19 @@ export function DashboardView() {
     <div className="space-y-5 pb-16">
       {/* Если открыт режим Холста (Miro), показываем компактную полоску возврата в Сводку */}
       {dashboardMode === 'miro' && (
-        <div className="rounded-[14px] bg-white border border-[#D8D7CF] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
-          <div className="inline-flex rounded-[9px] border border-[#E2E1D9] bg-[#F4F3EE] p-0.5">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+          <div className="inline-flex rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-0.5">
             <button
               type="button"
               onClick={() => setDashboardMode('all')}
-              className="h-8 px-3.5 rounded-[7px] text-[12.5px] font-semibold text-[#5E5D58] hover:text-[#141413] transition cursor-pointer"
+              className="h-8 px-3.5 rounded-md text-[12.5px] font-medium text-[#5C5953] hover:text-[#141413] dark:text-[#9E9A92] dark:hover:text-[#F5F4F0] transition-colors cursor-pointer"
             >
               ← Вернуться в Сводку 2027
             </button>
             <button
               type="button"
               onClick={() => setDashboardMode('miro')}
-              className="h-8 px-3.5 rounded-[7px] bg-[#141413] text-white text-[12.5px] font-semibold shadow-2xs transition cursor-pointer"
+              className="h-8 px-3.5 rounded-md bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-[12.5px] font-medium transition-colors cursor-pointer"
             >
               Студия идей (Холст)
             </button>
@@ -327,10 +327,10 @@ export function DashboardView() {
             <button
               type="button"
               onClick={() => navigateTo('product-lab')}
-              className="h-8 px-3 rounded-[8px] bg-[#FAF9F6] hover:border-[#141413] border border-[#D8D7CF] text-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer transition"
+              className="h-8 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
             >
-              <span className="text-[#5E5D58]">R&amp;D Lab:</span>
-              <strong className="font-bold text-[#141413]">{filteredConcepts.length} обр.</strong>
+              <span className="text-[#5C5953] dark:text-[#9E9A92]">R&amp;D Lab:</span>
+              <strong className="font-semibold text-[#141413] dark:text-[#F5F4F0]">{filteredConcepts.length} обр.</strong>
             </button>
           </div>
         </div>
@@ -541,13 +541,13 @@ export function DashboardView() {
       {/* =====================================================================
           4. ОПЕРАЦИОННЫЙ БЛОК CRM · ЗАДАЧИ И ПОРУЧЕНИЯ КОМАНДЫ (НАГЛЯДНО И УДОБНО)
       ===================================================================== */}
-      <div className="rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] border-t-[3px] border-t-[#181715] p-6 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-[#181715] pb-4">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-6 space-y-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E4E1DA] pb-4">
           <div>
-            <div className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#B85D35]">
+            <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-[#78746C]">
               CRM · ОПЕРАЦИОННЫЙ КОНТРОЛЬ И ПОРУЧЕНИЯ
             </div>
-            <h2 className="font-serif-editorial text-[26px] font-medium text-[#181715] mt-0.5">
+            <h2 className="font-serif-editorial text-[26px] font-medium text-[#141413] mt-0.5">
               Задачи и проекты в работе ({activeTasksCount} активных из {filteredTasks.length})
             </h2>
           </div>
@@ -556,10 +556,10 @@ export function DashboardView() {
             <button
               type="button"
               onClick={() => navigateTo('roadmap-tasks')}
-              className="h-10 px-5 rounded-[8px] bg-[#181715] hover:bg-[#2C2B29] text-white text-[13px] font-medium transition cursor-pointer inline-flex items-center gap-2"
+              className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[13px] font-medium transition-colors cursor-pointer inline-flex items-center gap-2"
             >
               <span>Открыть Канбан-доску CRM</span>
-              <ArrowUpRight className="h-3.5 w-3.5" />
+              <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
           </div>
         </div>

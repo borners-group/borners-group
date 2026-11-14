@@ -506,7 +506,7 @@ export function ProductLabCardBody({
   });
 
   // ===========================================================================
-  // ЭТАП 01: ИДЕЯ (Стр. 5 PDF — Ссылки и Выход в Анализ)
+  // ЭТАП 01: ИДЕЯ (Ссылки и Выход в Анализ)
   // ===========================================================================
   if (activeTab === 'overview') {
     const hasRequiredForAnalysis =
@@ -516,15 +516,15 @@ export function ProductLabCardBody({
       Boolean((concept.whatAttracted || concept.ideaDescription || '').trim());
 
     return (
-      <div className="space-y-6 text-[15px]">
+      <div className="space-y-5 text-[14.5px]">
         {/* Ссылки на источники / референсы */}
-        <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-4">
+        <div className="rounded-2xl border border-[#E4E1DA] bg-white p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-[17px] font-bold text-[#171717]">
+              <h3 className="text-[16.5px] font-semibold text-[#141413]">
                 Ссылки на источники и референсы (WB / Ozon / соцсети)
               </h3>
-              <p className="text-[13px] text-[#737373]">
+              <p className="text-[12.5px] text-[#5C5953]">
                 Сохраняются внутри карточки и доступны на всех следующих этапах
               </p>
             </div>
@@ -535,15 +535,15 @@ export function ProductLabCardBody({
               {(concept.referenceLinks || []).map((link, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] text-[13px]"
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] text-[13px]"
                 >
                   <a
                     href={link}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[#171717] font-medium underline truncate inline-flex items-center gap-2"
+                    className="text-[#141413] font-medium underline truncate inline-flex items-center gap-2"
                   >
-                    <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#D97745]" />
+                    <ExternalLink className="h-3.5 w-3.5 stroke-[1.5] shrink-0 text-[#5C5953]" />
                     <span className="truncate">{link}</span>
                   </a>
                   {canEdit && (
@@ -556,7 +556,7 @@ export function ProductLabCardBody({
                           ),
                         })
                       }
-                      className="text-[#737373] hover:text-[#DC2626] font-semibold cursor-pointer px-2"
+                      className="text-[#5C5953] hover:text-[#DC2626] font-medium cursor-pointer px-2"
                     >
                       Удалить
                     </button>
@@ -565,7 +565,7 @@ export function ProductLabCardBody({
               ))}
             </div>
           ) : (
-            <div className="rounded-xl bg-[#F7F7F5] p-3.5 text-[13px] text-[#737373]">
+            <div className="rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] p-3.5 text-[13px] text-[#5C5953]">
               Ссылки пока не добавлены. Прикрепите ссылку на карточку конкурента или референс:
             </div>
           )}
@@ -576,7 +576,7 @@ export function ProductLabCardBody({
                 value={newRefLink}
                 onChange={(e) => setNewRefLink(e.target.value)}
                 placeholder="https://www.wildberries.ru/catalog/..."
-                className="flex-1 h-10 rounded-xl border border-[#E8E8E5] px-3.5 text-[13px] bg-[#F7F7F5]/60 focus:bg-white outline-none"
+                className="flex-1 h-10 rounded-lg border border-[#E4E1DA] px-3.5 text-[13px] bg-[#FAF9F6] focus:bg-white focus:border-[#141413] text-[#141413] outline-none transition-colors"
               />
               <button
                 type="button"
@@ -588,7 +588,7 @@ export function ProductLabCardBody({
                   setNewRefLink('');
                   notify('success', 'Ссылка сохранена в карточке');
                 }}
-                className="px-4 h-10 rounded-xl bg-[#111111] text-white text-[13px] font-semibold cursor-pointer"
+                className="px-4 h-10 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[12.5px] font-medium cursor-pointer transition-colors"
               >
                 + Добавить ссылку
               </button>
@@ -596,13 +596,13 @@ export function ProductLabCardBody({
           )}
         </div>
 
-        {/* Блок результата этапа 01 ИДЕЯ (Стр. 5 PDF) */}
-        <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5] p-5 flex flex-wrap items-center justify-between gap-4">
+        {/* Блок результата этапа 01 ИДЕЯ */}
+        <div className="rounded-2xl border border-[#E4E1DA] bg-[#FAF9F6] p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <div className="text-[14px] font-bold text-[#171717]">
+            <div className="text-[14px] font-semibold text-[#141413]">
               Выход: идея сохранена. Для перехода в анализ нужны название, бренд, ответственный и суть.
             </div>
-            <div className="text-[13px] text-[#737373]">
+            <div className="text-[12.5px] text-[#5C5953]">
               {hasRequiredForAnalysis
                 ? '✓ Все обязательные поля идеи заполнены — можно переводить в Анализ.'
                 : 'Заполните суть идеи и ответственного в паспорте выше для перевода в Анализ.'}
@@ -618,7 +618,7 @@ export function ProductLabCardBody({
                 if (flushed) onUpdateConcept(concept.id, flushed);
                 onChangeStageWithGate(merged, 'ANALYSIS');
               }}
-              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer shrink-0"
+              className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer shrink-0"
             >
               На анализ (02 Анализ) →
             </button>
@@ -629,32 +629,32 @@ export function ProductLabCardBody({
   }
 
   // ===========================================================================
-  // ЭТАП 02: АНАЛИЗ (Стр. 5 PDF — Всего 3 блока: РЫНОК, ПРОДУКТ, ЭКОНОМИКА)
+  // ЭТАП 02: АНАЛИЗ (Три блока: Рынок, Продукт, Экономика)
   // ===========================================================================
   if (activeTab === 'analysis') {
     return (
-      <div className="space-y-6 text-[15px]">
-        <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-6">
+      <div className="space-y-5 text-[14.5px]">
+        <div className="rounded-2xl border border-[#E4E1DA] bg-white p-6 space-y-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#FDF3EB] text-[#D97745] text-[12px] font-bold mb-2">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] font-mono text-[11px] font-semibold tracking-[0.04em] text-[#141413] mb-2">
               02 АНАЛИЗ
             </div>
-            <h3 className="text-[20px] font-bold text-[#171717]">
+            <h3 className="text-[19px] font-semibold text-[#141413]">
               Три блока доказательств перед заказом образца
             </h3>
-            <p className="text-[13px] text-[#737373]">
+            <p className="text-[12.5px] text-[#5C5953]">
               Всего три блока — дополнительные поля раскрываются по желанию
             </p>
           </div>
 
-          {/* 1. РЫНОК */}
-          <div className="rounded-2xl bg-[#F7F7F5]/70 border border-[#E8E8E5] p-5 space-y-4">
+          {/* 1. Рынок */}
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               <div className="md:col-span-3">
-                <div className="text-[14px] font-bold uppercase tracking-wider text-[#171717]">
-                  1. РЫНОК
+                <div className="font-mono text-[12px] font-semibold text-[#141413]">
+                  01 · Рынок
                 </div>
-                <div className="text-[12px] text-[#737373] mt-1">
+                <div className="text-[12px] text-[#5C5953] mt-1">
                   Конкуренты, ссылки, цена комплекта, комплектность, ориентировочный спрос и источник
                 </div>
               </div>
@@ -665,21 +665,21 @@ export function ProductLabCardBody({
                     {currentAnalysis.marketEvidences.map((ev) => (
                       <div
                         key={ev.id}
-                        className="rounded-xl bg-white border border-[#E8E8E5] p-3.5 flex flex-wrap items-center justify-between gap-3 text-[13px]"
+                        className="rounded-lg bg-white border border-[#E4E1DA] p-3.5 flex flex-wrap items-center justify-between gap-3 text-[13px]"
                       >
                         <div>
-                          <span className="font-bold text-[#171717]">
+                          <span className="font-semibold text-[#141413]">
                             {ev.competitorBrand}
                           </span>
-                          <span className="text-[#737373] ml-2">
-                            Арт: {ev.articleSku} · Комплект: <b>{ev.packQty || '4 шт.'}</b> · Источник: {ev.sourceName}
+                          <span className="text-[#5C5953] ml-2">
+                            Арт: <span className="font-mono">{ev.articleSku}</span> · Комплект: <b>{ev.packQty || '4 шт.'}</b> · Источник: {ev.sourceName}
                           </span>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span>
-                            Цена комплекта: <b>{formatCurrencyRub(ev.priceRub)}</b>
+                          <span className="text-[#5C5953]">
+                            Цена комплекта: <b className="font-mono text-[#141413]">{formatCurrencyRub(ev.priceRub)}</b>
                           </span>
-                          <span className="text-[#D97745] font-bold">
+                          <span className="font-mono text-[#141413] font-semibold">
                             Спрос: {formatCurrencyRub(ev.estimatedRevenueRub)}/мес.
                           </span>
                           {canEdit && (
@@ -691,9 +691,9 @@ export function ProductLabCardBody({
                                   currentAnalysis.marketEvidences.filter((x) => x.id !== ev.id)
                                 )
                               }
-                              className="text-[#737373] hover:text-[#DC2626] cursor-pointer"
+                              className="text-[#5C5953] hover:text-[#DC2626] cursor-pointer"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4 stroke-[1.5]" />
                             </button>
                           )}
                         </div>
@@ -710,13 +710,13 @@ export function ProductLabCardBody({
                         setEvForm({ ...evForm, competitorBrand: e.target.value })
                       }
                       placeholder="Конкурент (бренд)"
-                      className="h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                      className="h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 text-[#141413]"
                     />
                     <input
                       value={evForm.articleSku}
                       onChange={(e) => setEvForm({ ...evForm, articleSku: e.target.value })}
                       placeholder="Ссылка / Артикул"
-                      className="h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                      className="h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono text-[#141413]"
                     />
                     <input
                       type="text"
@@ -729,13 +729,13 @@ export function ProductLabCardBody({
                         })
                       }
                       placeholder="Цена набора (₽)"
-                      className="h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                      className="h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono text-[#141413]"
                     />
                     <input
                       value={evForm.packQty}
                       onChange={(e) => setEvForm({ ...evForm, packQty: e.target.value })}
                       placeholder="Комплект (4 шт.)"
-                      className="h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                      className="h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono text-[#141413]"
                     />
                     <input
                       type="text"
@@ -748,7 +748,7 @@ export function ProductLabCardBody({
                         })
                       }
                       placeholder="Спрос ₽/мес."
-                      className="h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                      className="h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono text-[#141413]"
                     />
                     <button
                       type="button"
@@ -784,7 +784,7 @@ export function ProductLabCardBody({
                           sourceName: 'WB / MPStats',
                         });
                       }}
-                      className="h-10 rounded-xl bg-[#111111] text-white font-semibold cursor-pointer px-3"
+                      className="h-10 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white font-medium cursor-pointer px-3 transition-colors"
                     >
                       + Конкурент
                     </button>
@@ -794,21 +794,21 @@ export function ProductLabCardBody({
             </div>
           </div>
 
-          {/* 2. ПРОДУКТ */}
-          <div className="rounded-2xl bg-[#F7F7F5]/70 border border-[#E8E8E5] p-5">
+          {/* 2. Продукт */}
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               <div className="md:col-span-3">
-                <div className="text-[14px] font-bold uppercase tracking-wider text-[#171717]">
-                  2. ПРОДУКТ
+                <div className="font-mono text-[12px] font-semibold text-[#141413]">
+                  02 · Продукт
                 </div>
-                <div className="text-[12px] text-[#737373] mt-1">
+                <div className="text-[12px] text-[#5C5953] mt-1">
                   Что берём за основу? Чем лучше/иначе? Какой риск или гипотезу проверяем?
                 </div>
               </div>
 
-              <div className="md:col-span-9 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[14px]">
+              <div className="md:col-span-9 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[13.5px]">
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Что берём за основу и чем лучше конкурентов?
                   </label>
                   <textarea
@@ -822,11 +822,11 @@ export function ProductLabCardBody({
                       });
                     }}
                     placeholder="Базовое лекало боксеров + более мягкая резинка без давления..."
-                    className="w-full rounded-xl border border-[#E8E8E5] bg-white p-3"
+                    className="w-full rounded-lg border border-[#E4E1DA] bg-white p-3 text-[#141413]"
                   />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Какой риск или гипотезу проверяем на образце?
                   </label>
                   <textarea
@@ -837,29 +837,29 @@ export function ProductLabCardBody({
                       updateAnalysisField('openQuestionsAndRisks', e.target.value)
                     }
                     placeholder="Проверить усадку полотна после 5 стирок и плотность краёв..."
-                    className="w-full rounded-xl border border-[#E8E8E5] bg-white p-3"
+                    className="w-full rounded-lg border border-[#E4E1DA] bg-white p-3 text-[#141413]"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 3. ЭКОНОМИКА (Важное правило расчёта со Стр. 5 PDF: комплект + число единиц -> цена за 1 ед.) */}
-          <div className="rounded-2xl bg-[#F7F7F5]/70 border border-[#E8E8E5] p-5">
+          {/* 3. Экономика */}
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               <div className="md:col-span-3">
-                <div className="text-[14px] font-bold uppercase tracking-wider text-[#171717]">
-                  3. ЭКОНОМИКА
+                <div className="font-mono text-[12px] font-semibold text-[#141413]">
+                  03 · Экономика
                 </div>
-                <div className="text-[12px] text-[#737373] mt-1">
+                <div className="text-[12px] text-[#5C5953] mt-1">
                   Цена комплекта + число {itemsGenitivePluralRu} → цена за 1 {singleItemAccusativeRu}. Экономика считается на одинаковой базе: и на комплект, и на 1 {singleItemAccusativeRu}.
                 </div>
               </div>
 
               <div className="md:col-span-9 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-[14px]">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-[13.5px]">
                   <div>
-                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                       Цена комплекта (₽)
                     </label>
                     <input
@@ -877,12 +877,12 @@ export function ProductLabCardBody({
                         }
                       }}
                       placeholder="2600"
-                      className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
+                      className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 font-mono font-semibold text-[#141413]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                       Число {itemsGenitivePluralRu} в наборе ({singleItemNominativeRu})
                     </label>
                     <input
@@ -901,21 +901,21 @@ export function ProductLabCardBody({
                         }
                       }}
                       placeholder={String(prodProfile.defaultPackUnits)}
-                      className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
+                      className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 font-mono font-semibold text-[#141413]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[12px] font-semibold text-[#D97745] mb-1">
+                    <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                       Цена за 1 {singleItemAccusativeRu} (авторасчёт)
                     </label>
-                    <div className="h-11 rounded-xl border border-[#D97745]/40 bg-[#FDF3EB] px-3.5 flex items-center font-bold text-[#D97745] text-[16px]">
+                    <div className="h-10 rounded-lg border border-[#D2CEC4] bg-[#EFEDE8] px-3.5 flex items-center font-mono font-semibold text-[#141413] text-[14.5px]">
                       {formatCurrencyRub(unitRetailPrice)} / {singleItemNominativeRu}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                    <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                       Себестоимость за 1 {singleItemAccusativeRu} (₽)
                     </label>
                     <input
@@ -937,24 +937,24 @@ export function ProductLabCardBody({
                         }
                       }}
                       placeholder={hasCostAccess ? '320' : 'Скрыто'}
-                      className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-3.5 font-bold"
+                      className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 font-mono font-semibold text-[#141413]"
                     />
                   </div>
                 </div>
 
-                {/* Наглядная плашка пересчёта на одинаковой базе (Стр. 5 PDF) */}
-                <div className="rounded-xl bg-white border border-[#E8E8E5] p-3.5 flex flex-wrap items-center justify-between gap-3 text-[13px]">
-                  <div>
-                    <span className="font-bold text-[#171717]">
+                {/* Наглядная плашка пересчёта на одинаковой базе */}
+                <div className="rounded-lg bg-white border border-[#E4E1DA] p-3.5 flex flex-wrap items-center justify-between gap-3 text-[13px]">
+                  <div className="text-[#5C5953]">
+                    <span className="font-semibold text-[#141413]">
                       Расчёт на единой базе:
                     </span>{' '}
-                    Цена <b>{formatCurrencyRub(packRetailPrice)}</b> за комплект из{' '}
-                    <b>{packUnits} {singleItemNominativeRu}</b> = <b>{formatCurrencyRub(unitRetailPrice)}</b> за 1 {singleItemAccusativeRu}.
+                    Цена <b className="font-mono text-[#141413]">{formatCurrencyRub(packRetailPrice)}</b> за комплект из{' '}
+                    <b className="font-mono text-[#141413]">{packUnits} {singleItemNominativeRu}</b> = <b className="font-mono text-[#141413]">{formatCurrencyRub(unitRetailPrice)}</b> за 1 {singleItemAccusativeRu}.
                   </div>
                   {hasCostAccess && (
-                    <div className="text-[#737373]">
-                      Себестоимость набора: <b className="text-[#171717]">{formatCurrencyRub(packCostPrice)}</b> · За 1 {singleItemAccusativeRu}:{' '}
-                      <b className="text-[#171717]">{formatCurrencyRub(unitCostPrice)}</b>
+                    <div className="text-[#5C5953]">
+                      Себестоимость набора: <b className="font-mono text-[#141413]">{formatCurrencyRub(packCostPrice)}</b> · За 1 {singleItemAccusativeRu}:{' '}
+                      <b className="font-mono text-[#141413]">{formatCurrencyRub(unitCostPrice)}</b>
                     </div>
                   )}
                 </div>
@@ -967,12 +967,12 @@ export function ProductLabCardBody({
             <button
               type="button"
               onClick={() => setShowExtraAnalysis((v) => !v)}
-              className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#737373] hover:text-[#171717] cursor-pointer"
+              className="inline-flex items-center gap-2 text-[12.5px] font-medium text-[#5C5953] hover:text-[#141413] cursor-pointer"
             >
               {showExtraAnalysis ? (
-                <ChevronUp className="h-4 w-4" />
+                <ChevronUp className="h-4 w-4 stroke-[1.5]" />
               ) : (
-                <ChevronDown className="h-4 w-4" />
+                <ChevronDown className="h-4 w-4 stroke-[1.5]" />
               )}
               <span>
                 {showExtraAnalysis
@@ -982,9 +982,9 @@ export function ProductLabCardBody({
             </button>
 
             {showExtraAnalysis && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pt-3 border-t border-[#E8E8E5] text-[13px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pt-3 border-t border-[#E4E1DA] text-[13px]">
                 <div>
-                  <label className="block font-semibold text-[#737373] mb-1">
+                  <label className="block font-medium text-[#5C5953] mb-1">
                     Плюсы и жалобы покупателей в отзывах конкурентов
                   </label>
                   <input
@@ -994,11 +994,11 @@ export function ProductLabCardBody({
                       updateAnalysisField('competitorProsAndComplaints', e.target.value)
                     }
                     placeholder="Жалуются на тугую резинку и катышки..."
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 text-[#141413]"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-[#737373] mb-1">
+                  <label className="block font-medium text-[#5C5953] mb-1">
                     Потенциальные фабрики и минимальная партия (MOQ)
                   </label>
                   <input
@@ -1008,7 +1008,7 @@ export function ProductLabCardBody({
                       updateAnalysisField('potentialFactories', e.target.value)
                     }
                     placeholder="Узбекистан / Китай, MOQ от 1 500 комплектов..."
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 text-[#141413]"
                   />
                 </div>
               </div>
@@ -1016,11 +1016,11 @@ export function ProductLabCardBody({
           </div>
         </div>
 
-        {/* Выход: короткий вывод и одно решение: «Заказывать образец» / «Доработать» / «Отложить» (Стр. 5 PDF) */}
-        <div className="rounded-2xl border border-[#16805D]/30 bg-[#E8F5E9]/60 p-6 space-y-4">
+        {/* Выход: короткий вывод и одно решение */}
+        <div className="rounded-2xl border border-[#E4E1DA] bg-[#FAF9F6] p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex-1 min-w-[260px]">
-              <label className="block text-[13px] font-bold text-[#171717] mb-1">
+              <label className="block text-[13px] font-semibold text-[#141413] mb-1.5">
                 Выход анализа: короткий вывод и решение по заказу образца
               </label>
               <input
@@ -1028,12 +1028,12 @@ export function ProductLabCardBody({
                 value={currentAnalysis.summaryAndPros}
                 onChange={(e) => updateAnalysisField('summaryAndPros', e.target.value)}
                 placeholder="Спрос подтверждён, целевая цена 650 ₽/пара проходит по марже — заказываем образец"
-                className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3.5 text-[14px]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 text-[13.5px] text-[#141413]"
               />
             </div>
 
             {canEdit && (
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1054,7 +1054,7 @@ export function ProductLabCardBody({
                     onUpdateConcept(concept.id, analysisPatch);
                     onChangeStageWithGate(updatedConcept, 'SAMPLE');
                   }}
-                  className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#126b4d] text-white text-[13px] font-bold cursor-pointer transition"
+                  className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer transition-colors"
                 >
                   Заказывать образец (03 Образец) →
                 </button>
@@ -1064,7 +1064,7 @@ export function ProductLabCardBody({
                     updateAnalysisField('recommendation', 'supplement');
                     notify('warning', 'Анализ отмечен на доработку');
                   }}
-                  className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[#171717] text-[13px] font-bold cursor-pointer transition"
+                  className="h-10 px-4 rounded-lg bg-white border border-[#E4E1DA] hover:border-[#141413] text-[#141413] text-[13px] font-medium cursor-pointer transition-colors"
                 >
                   Доработать
                 </button>
@@ -1074,7 +1074,7 @@ export function ProductLabCardBody({
                     updateAnalysisField('recommendation', 'postpone');
                     notify('warning', 'Карточка отложена по итогам анализа');
                   }}
-                  className="h-11 px-4 rounded-xl bg-white border border-[#E8E8E5] text-[#737373] hover:text-[#DC2626] text-[13px] font-bold cursor-pointer transition"
+                  className="h-10 px-4 rounded-lg bg-white border border-[#E4E1DA] text-[#5C5953] hover:text-[#DC2626] hover:border-[#DC2626] text-[13px] font-medium cursor-pointer transition-colors"
                 >
                   Отложить
                 </button>
@@ -1087,7 +1087,7 @@ export function ProductLabCardBody({
   }
 
   // ===========================================================================
-  // ЭТАП 03: ОБРАЗЕЦ (Стр. 6 PDF и Сценарий №5: Справочник фабрик + Состав = 100%)
+  // ЭТАП 03: ОБРАЗЕЦ (Справочник фабрик + Состав = 100%)
   // ===========================================================================
   if (activeTab === 'samples') {
     const samples = concept.samples || [];
@@ -1102,17 +1102,17 @@ export function ProductLabCardBody({
       .join(' + ');
 
     return (
-      <div className="space-y-6 text-[15px]">
-        <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-5">
+      <div className="space-y-5 text-[14.5px]">
+        <div className="rounded-2xl border border-[#E4E1DA] bg-white p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#FDF3EB] text-[#D97745] text-[12px] font-bold mb-2">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] font-mono text-[11px] font-semibold tracking-[0.04em] text-[#141413] mb-2">
                 03 ОБРАЗЕЦ
               </div>
-              <h3 className="text-[20px] font-bold text-[#171717]">
+              <h3 className="text-[19px] font-semibold text-[#141413]">
                 Фабрика, состав ткани (= 100%) и версии образца
               </h3>
-              <p className="text-[13px] text-[#737373]">
+              <p className="text-[12.5px] text-[#5C5953]">
                 Фабрика из справочника; дата получения; фотографии; ткань и состав; цена образца и доставки; предложение по серийному выпуску
               </p>
             </div>
@@ -1124,18 +1124,18 @@ export function ProductLabCardBody({
               {samples.map((s) => (
                 <div
                   key={s.id}
-                  className={`rounded-2xl border p-5 space-y-3 ${
+                  className={`rounded-xl border p-5 space-y-3 ${
                     s.isSelectedForProduction
-                      ? 'border-2 border-[#16805D] bg-[#E8F5E9]/30'
-                      : 'border-[#E8E8E5] bg-[#F7F7F5]/60'
+                      ? 'border-[#141413] bg-[#FAF9F6]'
+                      : 'border-[#E4E1DA] bg-[#FAF9F6]/60'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-bold text-[16px] text-[#171717]">
+                      <div className="font-semibold text-[15.5px] text-[#141413]">
                         {s.versionCode} · {s.factoryName}
                       </div>
-                      <div className="text-[13px] font-semibold text-[#D97745] mt-0.5">
+                      <div className="text-[12.5px] font-medium text-[#5C5953] mt-0.5">
                         Состав: {s.materialAndComposition}
                       </div>
                     </div>
@@ -1165,10 +1165,10 @@ export function ProductLabCardBody({
                           onUpdateConcept(concept.id, deletePatch);
                           onSyncConcept?.(updatedConcept);
                         }}
-                        className="text-[#737373] hover:text-[#DC2626] cursor-pointer p-1"
+                        className="text-[#5C5953] hover:text-[#DC2626] cursor-pointer p-1"
                         title="Удалить версию образца"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4 stroke-[1.5]" />
                       </button>
                     )}
                   </div>
@@ -1180,7 +1180,7 @@ export function ProductLabCardBody({
                           <img
                             src={resolvePublicAssetUrl(ph)}
                             alt={s.versionCode}
-                            className="h-full w-full rounded-xl object-cover border border-[#E8E8E5] bg-white"
+                            className="h-full w-full rounded-lg object-cover border border-[#E4E1DA] bg-white"
                           />
                           {canEdit && (
                             <button
@@ -1200,7 +1200,7 @@ export function ProductLabCardBody({
                                 }
                               }}
                               title="Удалить фото образца"
-                              className="opacity-0 group-hover:opacity-100 absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-black/80 hover:bg-[#DC2626] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer transition"
+                              className="opacity-0 group-hover:opacity-100 absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-[#141413]/85 hover:bg-[#DC2626] text-white text-[11px] font-medium flex items-center justify-center cursor-pointer transition"
                             >
                               ×
                             </button>
@@ -1210,13 +1210,13 @@ export function ProductLabCardBody({
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-4 text-[13px] pt-2 border-t border-[#E8E8E5]">
+                  <div className="flex flex-wrap items-center gap-4 text-[12.5px] text-[#5C5953] pt-2 border-t border-[#E4E1DA]">
                     <span>
-                      Дата получения: <b>{s.receivedAt}</b>
+                      Дата получения: <b className="font-mono text-[#141413]">{s.receivedAt}</b>
                     </span>
                     <span>
                       Образец + доставка:{' '}
-                      <b>
+                      <b className="font-mono text-[#141413]">
                         {hasCostAccess
                           ? formatCurrencyRub((s.sampleCostRub || 0) + (s.deliveryCostRub || 0))
                           : 'Скрыто'}
@@ -1224,7 +1224,7 @@ export function ProductLabCardBody({
                     </span>
                     <span>
                       Серийная цена:{' '}
-                      <b>
+                      <b className="font-mono text-[#141413]">
                         {!hasCostAccess
                           ? 'Скрыто'
                           : s.estimatedUnitProductionPrice
@@ -1255,10 +1255,10 @@ export function ProductLabCardBody({
                           onUpdateConcept(concept.id, selectPatch);
                           onSyncConcept?.(updatedConcept);
                         }}
-                        className={`px-3.5 py-1.5 rounded-xl text-[12px] font-bold cursor-pointer transition ${
+                        className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer transition-colors ${
                           s.isSelectedForProduction
-                            ? 'bg-[#16805D] text-white'
-                            : 'bg-white border border-[#E8E8E5] text-[#171717] hover:border-[#171717]'
+                            ? 'bg-[#141413] text-white'
+                            : 'bg-white border border-[#E4E1DA] text-[#141413] hover:border-[#141413]'
                         }`}
                       >
                         {s.isSelectedForProduction
@@ -1272,41 +1272,41 @@ export function ProductLabCardBody({
             </div>
           )}
 
-          {/* Конструктор новой версии образца (Стр. 6 PDF) */}
+          {/* Конструктор новой версии образца */}
           {canEdit && (
-            <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-5 space-y-4">
-              <div className="text-[15px] font-bold text-[#171717]">
+            <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 space-y-4">
+              <div className="text-[14.5px] font-semibold text-[#141413]">
                 + Добавить версию образца (Версия {samples.length + 1})
               </div>
 
-              {/* Конструктор состава ткани из справочника с проверкой 100% (Сценарий №5) */}
-              <div className="rounded-xl bg-white border border-[#E8E8E5] p-4 space-y-3">
+              {/* Конструктор состава ткани из справочника с проверкой 100% */}
+              <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-[14px] font-bold text-[#171717]">
-                      Материал ▾ {compositionLabel || 'Выберите состав'}
+                    <div className="text-[13.5px] font-semibold text-[#141413]">
+                      Материал · {compositionLabel || 'Выберите состав'}
                     </div>
-                    <div className="text-[12px] text-[#737373]">
+                    <div className="text-[12px] text-[#5C5953]">
                       Материалы добавляются строками из справочника, сумма должна быть ровно 100%
                     </div>
                   </div>
 
                   <div
-                    className={`px-3 py-1 rounded-lg text-[13px] font-bold ${
+                    className={`px-2.5 py-1 rounded-md font-mono text-[12px] font-semibold ${
                       isCompositionValid
-                        ? 'bg-[#E8F5E9] text-[#16805D]'
-                        : 'bg-[#DC2626]/10 text-[#DC2626]'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
                     }`}
                   >
-                    Сумма состава: {totalPct}% {isCompositionValid ? '✓' : '⚠️ (нужно 100%)'}
+                    Сумма состава: {totalPct}% {isCompositionValid ? '✓' : '— нужно 100%'}
                   </div>
                 </div>
 
                 {!isCompositionValid && (
-                  <div className="rounded-xl bg-[#DC2626]/10 border border-[#DC2626]/30 p-3 flex items-center gap-2 text-[13px] font-semibold text-[#DC2626]">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 flex items-center gap-2 text-[12.5px] font-medium text-rose-700">
+                    <AlertTriangle className="h-4 w-4 stroke-[1.5] shrink-0" />
                     <span>
-                      Предупреждение: сумма долей материалов сейчас составляет {totalPct}% (вместо 100%). Пожалуйста, проверьте проценты перед сохранением образца!
+                      Предупреждение: сумма долей материалов сейчас составляет {totalPct}% (вместо 100%). Пожалуйста, проверьте проценты перед сохранением образца.
                     </span>
                   </div>
                 )}
@@ -1323,7 +1323,7 @@ export function ProductLabCardBody({
                             )
                           )
                         }
-                        className="h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-semibold min-w-[180px]"
+                        className="h-9 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-medium text-[#141413] min-w-[180px]"
                       >
                         {MATERIAL_DIRECTORY.map((m) => (
                           <option key={m.ru} value={m.ru}>
@@ -1346,9 +1346,9 @@ export function ProductLabCardBody({
                               )
                             )
                           }
-                          className="w-full h-10 rounded-xl border border-[#E8E8E5] px-3 pr-7 font-bold"
+                          className="w-full h-9 rounded-lg border border-[#E4E1DA] bg-white px-3 pr-7 font-mono font-semibold text-[#141413]"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] font-bold">
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[#5C5953]">
                           %
                         </span>
                       </div>
@@ -1359,7 +1359,7 @@ export function ProductLabCardBody({
                           onClick={() =>
                             setCompRows((prev) => prev.filter((_, i) => i !== idx))
                           }
-                          className="text-[#737373] hover:text-[#DC2626] text-[12px] font-semibold cursor-pointer px-2"
+                          className="text-[#5C5953] hover:text-[#DC2626] text-[12px] font-medium cursor-pointer px-2"
                         >
                           Удалить
                         </button>
@@ -1373,7 +1373,7 @@ export function ProductLabCardBody({
                   onClick={() =>
                     setCompRows((prev) => [...prev, { material: 'Эластан', pct: '0' }])
                   }
-                  className="text-[13px] font-bold text-[#D97745] hover:underline cursor-pointer"
+                  className="text-[12.5px] font-medium text-[#141413] hover:underline cursor-pointer"
                 >
                   + Добавить материал из справочника
                 </button>
@@ -1382,7 +1382,7 @@ export function ProductLabCardBody({
               {/* Поля фабрики, даты, цены образца и серийного предложения */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-[13px]">
                 <div className="lg:col-span-2">
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Фабрика из справочника
                   </label>
                   <select
@@ -1390,7 +1390,7 @@ export function ProductLabCardBody({
                     onChange={(e) =>
                       setSampleForm({ ...sampleForm, factoryName: e.target.value })
                     }
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-semibold"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-medium text-[#141413]"
                   >
                     <option value={defaultBrandFactoryName}>{defaultBrandFactoryName}</option>
                     {FACTORY_DIRECTORY.map((f) => {
@@ -1415,7 +1415,7 @@ export function ProductLabCardBody({
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Дата получения
                   </label>
                   <input
@@ -1424,12 +1424,12 @@ export function ProductLabCardBody({
                     onChange={(e) =>
                       setSampleForm({ ...sampleForm, receivedAt: e.target.value })
                     }
-                    className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono text-[#141413]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Цена образца + доставка (₽)
                   </label>
                   {hasCostAccess ? (
@@ -1444,17 +1444,17 @@ export function ProductLabCardBody({
                         })
                       }
                       placeholder="3500"
-                      className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-semibold"
+                      className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono font-semibold text-[#141413]"
                     />
                   ) : (
-                    <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 flex items-center font-semibold text-[#737373]">
+                    <div className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 flex items-center font-medium text-[#5C5953]">
                       Скрыто
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1">
                     Предложение на серию (₽/шт.)
                   </label>
                   {hasCostAccess ? (
@@ -1469,10 +1469,10 @@ export function ProductLabCardBody({
                         })
                       }
                       placeholder="340"
-                      className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 font-bold"
+                      className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono font-semibold text-[#141413]"
                     />
                   ) : (
-                    <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-white px-3 flex items-center font-semibold text-[#737373]">
+                    <div className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3 flex items-center font-medium text-[#5C5953]">
                       Скрыто
                     </div>
                   )}
@@ -1486,7 +1486,7 @@ export function ProductLabCardBody({
                       <img
                         src={resolvePublicAssetUrl(ph)}
                         alt={`Фото образца ${idx + 1}`}
-                        className="h-full w-full rounded-xl object-cover border border-[#E8E8E5] bg-white"
+                        className="h-full w-full rounded-lg object-cover border border-[#E4E1DA] bg-white"
                       />
                       <button
                         type="button"
@@ -1497,7 +1497,7 @@ export function ProductLabCardBody({
                           }))
                         }
                         title="Убрать фото"
-                        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-black/80 hover:bg-[#DC2626] text-white text-[11px] font-bold flex items-center justify-center cursor-pointer transition"
+                        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-[#141413]/85 hover:bg-[#DC2626] text-white text-[11px] font-medium flex items-center justify-center cursor-pointer transition"
                       >
                         ×
                       </button>
@@ -1508,11 +1508,11 @@ export function ProductLabCardBody({
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <label
-                  className={`inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-white border border-[#E8E8E5] hover:border-[#171717] text-[13px] font-semibold transition ${
+                  className={`inline-flex items-center gap-2 px-4 h-10 rounded-lg bg-white border border-[#E4E1DA] hover:border-[#141413] text-[12.5px] font-medium text-[#141413] transition-colors ${
                     isUploadingSamplePhotos ? 'opacity-60 cursor-wait' : 'cursor-pointer'
                   }`}
                 >
-                  <Upload className="h-4 w-4 text-[#D97745]" />
+                  <Upload className="h-4 w-4 stroke-[1.5] text-[#5C5953]" />
                   <span>
                     {isUploadingSamplePhotos
                       ? 'Загрузка фото...'
@@ -1602,7 +1602,7 @@ export function ProductLabCardBody({
                     setSampleForm((prev) => ({ ...prev, photos: [], comments: '' }));
                     notify('success', `${newSample.versionCode} (${compositionLabel}) сохранена`);
                   }}
-                  className="h-10 px-6 rounded-xl bg-[#111111] disabled:opacity-50 text-white text-[13px] font-bold cursor-pointer"
+                  className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] disabled:opacity-50 text-white text-[13px] font-medium cursor-pointer transition-colors"
                 >
                   Сохранить версию образца
                 </button>
@@ -1612,8 +1612,8 @@ export function ProductLabCardBody({
         </div>
 
         {/* Выход этапа 03 ОБРАЗЕЦ */}
-        <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5] p-5 flex flex-wrap items-center justify-between gap-4">
-          <div className="text-[14px] font-bold text-[#171717]">
+        <div className="rounded-2xl border border-[#E4E1DA] bg-[#FAF9F6] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="text-[14px] font-semibold text-[#141413]">
             Итог этапа 03: Фабрика, фото, состав (= 100%) и цена образца зафиксированы.
           </div>
           {canEdit && (
@@ -1630,7 +1630,7 @@ export function ProductLabCardBody({
                 }
                 onChangeStageWithGate(merged, 'TEST');
               }}
-              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
+              className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
             >
               На тест (04 Тест) →
             </button>
@@ -1688,22 +1688,22 @@ export function ProductLabCardBody({
       {
         val: 'passed',
         label: 'Прошёл',
-        activeCls: 'bg-[#16805D] text-white border-[#16805D]',
+        activeCls: 'bg-emerald-700 text-white border-emerald-700',
       },
       {
         val: 'remarks',
         label: 'Замечания',
-        activeCls: 'bg-[#D97745] text-white border-[#D97745]',
+        activeCls: 'bg-amber-700 text-white border-amber-700',
       },
       {
         val: 'failed',
         label: 'Не прошёл',
-        activeCls: 'bg-[#DC2626] text-white border-[#DC2626]',
+        activeCls: 'bg-rose-700 text-white border-rose-700',
       },
       {
         val: 'untested',
         label: 'Не проверяли',
-        activeCls: 'bg-[#525252] text-white border-[#525252]',
+        activeCls: 'bg-[#141413] text-white border-[#141413]',
       },
     ];
 
@@ -1713,21 +1713,21 @@ export function ProductLabCardBody({
     );
 
     return (
-      <div className="space-y-6 text-[15px]">
-        <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-5">
+      <div className="space-y-5 text-[14px]">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 space-y-5">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#FDF3EB] text-[#D97745] text-[12px] font-bold mb-2">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] text-[#141413] font-mono text-[11px] font-medium mb-2">
               04 ТЕСТ
             </div>
-            <h3 className="text-[20px] font-bold text-[#171717]">
+            <h3 className="text-[19px] font-semibold tracking-tight text-[#141413]">
               Четыре понятные проверки, без длинной анкеты
             </h3>
-            <p className="text-[13px] text-[#737373]">
+            <p className="text-[13px] text-[#5C5953] mt-0.5">
               Никаких загадочных «5/5»: проверяем реальные характеристики и фиксируем вывод. Комментарий и фото к конкретному пункту — только если нужны.
             </p>
           </div>
 
-          <div className="divide-y divide-[#E8E8E5] border-t border-b border-[#E8E8E5]">
+          <div className="divide-y divide-[#E4E1DA] border-t border-b border-[#E4E1DA]">
             {checkItems.map((item) => {
               const currentVal = fourChecks[item.key];
               const currentComment = fourChecks[item.commentKey] || '';
@@ -1739,7 +1739,7 @@ export function ProductLabCardBody({
               return (
                 <div key={item.key} className="py-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="text-[16px] font-bold text-[#171717] min-w-[210px]">
+                    <div className="text-[15px] font-medium text-[#141413] min-w-[210px]">
                       {item.label}
                     </div>
 
@@ -1752,10 +1752,10 @@ export function ProductLabCardBody({
                             type="button"
                             disabled={!canEdit}
                             onClick={() => updateFourCheck({ [item.key]: opt.val })}
-                            className={`px-3.5 py-2 rounded-xl text-[13px] font-semibold border transition cursor-pointer ${
+                            className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer ${
                               isActive
                                 ? opt.activeCls
-                                : 'bg-[#F7F7F5] text-[#737373] border-[#E8E8E5] hover:text-[#171717]'
+                                : 'bg-[#FAF9F6] text-[#5C5953] border-[#E4E1DA] hover:text-[#141413] hover:border-[#D2CEC4]'
                             }`}
                           >
                             {opt.label}
@@ -1778,10 +1778,10 @@ export function ProductLabCardBody({
                           ? item.placeholder
                           : '+ Добавить комментарий к пункту (по желанию)...'
                       }
-                      className={`w-full h-10 rounded-xl border px-3.5 text-[13px] ${
+                      className={`w-full h-10 rounded-lg border px-3.5 text-[13px] focus:outline-none focus:border-[#141413] transition-colors ${
                         currentVal === 'failed' || currentVal === 'remarks'
-                          ? 'border-[#D97745] bg-[#FDF3EB]/50 font-medium text-[#171717]'
-                          : 'border-[#E8E8E5] bg-[#F7F7F5]/60 text-[#171717]'
+                          ? 'border-amber-300 bg-amber-50/50 font-medium text-[#141413]'
+                          : 'border-[#E4E1DA] bg-[#FAF9F6] text-[#141413]'
                       }`}
                     />
                   </div>
@@ -1791,12 +1791,12 @@ export function ProductLabCardBody({
           </div>
 
           {/* Итоговое резюме: все дефекты и все «Не проверяли» видны сразу */}
-          <div className="rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 space-y-2 text-[13px]">
-            <div className="font-bold text-[#171717]">
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 space-y-2 text-[13px]">
+            <div className="font-semibold text-[#141413]">
               Итоговое резюме тестирования (передаётся в этап «05 Решение»):
             </div>
             {defectsList.length > 0 ? (
-              <div className="text-[#D97745] font-semibold">
+              <div className="text-amber-700 font-medium">
                 • Обнаружены замечания / дефекты:{' '}
                 {defectsList
                   .map(
@@ -1809,13 +1809,13 @@ export function ProductLabCardBody({
                   .join('; ')}
               </div>
             ) : (
-              <div className="text-[#16805D] font-semibold">
+              <div className="text-emerald-700 font-medium">
                 • Дефектов и критических замечаний не отмечено.
               </div>
             )}
 
             {untestedList.length > 0 && (
-              <div className="text-[#525252] font-semibold">
+              <div className="text-[#5C5953] font-medium">
                 • Пункты со статусом «Не проверяли»:{' '}
                 {untestedList.map((u) => u.label).join(', ')}
               </div>
@@ -1824,8 +1824,8 @@ export function ProductLabCardBody({
         </div>
 
         {/* Выход этапа 04 ТЕСТ */}
-        <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5] p-5 flex flex-wrap items-center justify-between gap-4">
-          <div className="text-[14px] font-bold text-[#171717]">
+        <div className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="text-[13.5px] font-medium text-[#141413]">
             Итог этапа 04: Результаты 4 проверок сохранены и готовы для принятия решения.
           </div>
           {canEdit && (
@@ -1847,7 +1847,7 @@ export function ProductLabCardBody({
                 onUpdateConcept(concept.id, testPatch);
                 onChangeStageWithGate(updatedConcept, 'DECISION');
               }}
-              className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#D97745] text-white text-[14px] font-bold transition cursor-pointer"
+              className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
             >
               Перейти к решению (05 Решение) →
             </button>
@@ -1867,8 +1867,8 @@ export function ProductLabCardBody({
 
     const checkLabels: Record<string, string> = {
       passed: 'Прошёл ✓',
-      remarks: 'Замечания ⚠️',
-      failed: 'Не прошёл ❌',
+      remarks: 'Замечания',
+      failed: 'Не прошёл',
       untested: 'Не проверяли •',
     };
 
@@ -1957,75 +1957,75 @@ export function ProductLabCardBody({
     };
 
     return (
-      <div className="space-y-6 text-[15px]">
-        <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-6">
+      <div className="space-y-5 text-[14px]">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 space-y-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#FDF3EB] text-[#D97745] text-[12px] font-bold mb-2">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] text-[#141413] font-mono text-[11px] font-medium mb-2">
               05 РЕШЕНИЕ
             </div>
-            <h3 className="text-[20px] font-bold text-[#171717]">
+            <h3 className="text-[19px] font-semibold tracking-tight text-[#141413]">
               Сводка доказательств перед выбором решения
             </h3>
-            <p className="text-[13px] text-[#737373]">
+            <p className="text-[13px] text-[#5C5953] mt-0.5">
               Перед выбором система показывает сводку: анализ, цену, выбранный образец, тесты и замечания. Сохраняем кто, когда и почему.
             </p>
           </div>
 
           {/* Сводка в 3 симметричных карточках */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[13px]">
-            <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 space-y-2">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[#737373]">
-                1. АНАЛИЗ И ЦЕНА
+            <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 space-y-2">
+              <div className="font-mono text-[11px] text-[#5C5953]">
+                01 · Анализ и цена
               </div>
-              <div className="font-bold text-[15px] text-[#171717]">
+              <div className="font-semibold text-[14.5px] text-[#141413] font-mono">
                 Набор {packUnits} {singleItemNominativeRu}: {formatCurrencyRub(packRetailPrice)} ({formatCurrencyRub(unitRetailPrice)} / {singleItemNominativeRu})
               </div>
-              <div className="text-[#737373]">
+              <div className="text-[#5C5953]">
                 {currentAnalysis.summaryAndPros ||
                   currentAnalysis.whatWeCreate ||
                   'Гипотеза и спрос зафиксированы'}
               </div>
             </div>
 
-            <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 space-y-2">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[#737373]">
-                2. ВЫБРАННЫЙ ОБРАЗЕЦ
+            <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 space-y-2">
+              <div className="font-mono text-[11px] text-[#5C5953]">
+                02 · Выбранный образец
               </div>
-              <div className="font-bold text-[15px] text-[#171717]">
+              <div className="font-semibold text-[14.5px] text-[#141413]">
                 {selectedSample
                   ? `${selectedSample.versionCode} · ${selectedSample.factoryName}`
                   : concept.supplierName || 'Образец №1'}
               </div>
-              <div className="text-[#D97745] font-semibold">
+              <div className="text-[#141413] font-medium font-mono text-[12.5px]">
                 {selectedSample?.materialAndComposition || prodProfile.defaultMaterialRu}
               </div>
               {hasCostAccess && (
-                <div className="text-[#737373]">
-                  Себестоимость: <b>{formatCurrencyRub(unitCostPrice)} / {singleItemNominativeRu}</b>
+                <div className="text-[#5C5953]">
+                  Себестоимость: <b className="font-mono text-[#141413]">{formatCurrencyRub(unitCostPrice)} / {singleItemNominativeRu}</b>
                 </div>
               )}
             </div>
 
-            <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 space-y-1.5">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[#737373]">
-                3. ТЕСТЫ И ЗАМЕЧАНИЯ
+            <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 space-y-1.5">
+              <div className="font-mono text-[11px] text-[#5C5953]">
+                03 · Тесты и замечания
               </div>
-              <div>
-                Посадка: <b>{checkLabels[fourChecks.fitAndComfort]}</b>{' '}
+              <div className="text-[#5C5953]">
+                Посадка: <b className="text-[#141413]">{checkLabels[fourChecks.fitAndComfort]}</b>{' '}
                 {fourChecks.fitAndComfortComment ? `(${fourChecks.fitAndComfortComment})` : ''}
               </div>
-              <div>
-                Резинка и швы: <b>{checkLabels[fourChecks.waistbandAndSeams]}</b>{' '}
+              <div className="text-[#5C5953]">
+                Резинка и швы: <b className="text-[#141413]">{checkLabels[fourChecks.waistbandAndSeams]}</b>{' '}
                 {fourChecks.waistbandAndSeamsComment
                   ? `(${fourChecks.waistbandAndSeamsComment})`
                   : ''}
               </div>
-              <div>
-                Стирка / цвет: <b>{checkLabels[fourChecks.washShapeColor]}</b>{' '}
+              <div className="text-[#5C5953]">
+                Стирка / цвет: <b className="text-[#141413]">{checkLabels[fourChecks.washShapeColor]}</b>{' '}
                 {fourChecks.washShapeColorComment ? `(${fourChecks.washShapeColorComment})` : ''}
               </div>
-              <div>
-                Качество: <b>{checkLabels[fourChecks.manufacturingQuality]}</b>{' '}
+              <div className="text-[#5C5953]">
+                Качество: <b className="text-[#141413]">{checkLabels[fourChecks.manufacturingQuality]}</b>{' '}
                 {fourChecks.manufacturingQualityComment
                   ? `(${fourChecks.manufacturingQualityComment})`
                   : ''}
@@ -2038,25 +2038,25 @@ export function ProductLabCardBody({
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="md:col-span-2">
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                     Причина решения / комментарий (сохраняется в историю с именем и временем)
                   </label>
                   <input
                     value={decisionReason}
                     onChange={(e) => setDecisionReason(e.target.value)}
                     placeholder="Укажите причину утверждения, доработки или отказа..."
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[14px]"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 text-[13.5px] text-[#141413] focus:outline-none focus:border-[#141413]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#737373] mb-1">
-                    При «Доработать» вернуть в этап:
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
+                    При «Доработать» вернуть в этап
                   </label>
                   <select
                     value={reworkTargetStage}
                     onChange={(e) => setReworkTargetStage(e.target.value as ConceptStage)}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-semibold text-[13px]"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-medium text-[13px] text-[#141413] focus:outline-none focus:border-[#141413]"
                   >
                     <option value="SAMPLE">03 Образец (перешить образец)</option>
                     <option value="TEST">04 Тест (повторить проверку)</option>
@@ -2066,11 +2066,11 @@ export function ProductLabCardBody({
               </div>
 
               {/* ТРИ КРУПНЫЕ КНОПКИ СО СТР. 6 PDF: УТВЕРДИТЬ | ДОРАБОТАТЬ | ОТКЛОНИТЬ */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-2">
                 <button
                   type="button"
                   onClick={() => executeDecision('approve')}
-                  className="h-14 rounded-2xl bg-[#E8F5E9] hover:bg-[#16805D] text-[#16805D] hover:text-white border border-[#16805D]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                  className="h-12 rounded-xl bg-emerald-50 hover:bg-emerald-700 text-emerald-800 hover:text-white border border-emerald-200 font-semibold text-[13.5px] tracking-wider uppercase transition-colors cursor-pointer"
                 >
                   УТВЕРДИТЬ
                 </button>
@@ -2078,7 +2078,7 @@ export function ProductLabCardBody({
                 <button
                   type="button"
                   onClick={() => executeDecision('rework')}
-                  className="h-14 rounded-2xl bg-[#FDF3EB] hover:bg-[#D97745] text-[#D97745] hover:text-white border border-[#D97745]/30 font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                  className="h-12 rounded-xl bg-amber-50 hover:bg-amber-700 text-amber-800 hover:text-white border border-amber-200 font-semibold text-[13.5px] tracking-wider uppercase transition-colors cursor-pointer"
                 >
                   ДОРАБОТАТЬ
                 </button>
@@ -2086,7 +2086,7 @@ export function ProductLabCardBody({
                 <button
                   type="button"
                   onClick={() => executeDecision('reject')}
-                  className="h-14 rounded-2xl bg-[#F5F5F4] hover:bg-[#DC2626] text-[#171717] hover:text-white border border-[#E8E8E5] font-bold text-[15px] tracking-wider uppercase transition cursor-pointer"
+                  className="h-12 rounded-xl bg-[#FAF9F6] hover:bg-rose-700 text-[#141413] hover:text-white border border-[#E4E1DA] font-semibold text-[13.5px] tracking-wider uppercase transition-colors cursor-pointer"
                 >
                   ОТКЛОНИТЬ
                 </button>
@@ -2096,17 +2096,17 @@ export function ProductLabCardBody({
 
           {/* История принятых решений */}
           {(concept.approvalDecisions || []).length > 0 && (
-            <div className="pt-4 border-t border-[#E8E8E5] space-y-2 text-[13px]">
-              <div className="font-bold text-[#737373] uppercase text-[11px] tracking-wider">
-                Журнал решений по карточке:
+            <div className="pt-4 border-t border-[#E4E1DA] space-y-2 text-[13px]">
+              <div className="font-medium text-[#5C5953] text-[12px]">
+                Журнал решений по карточке
               </div>
               {(concept.approvalDecisions || []).map((d) => (
                 <div
                   key={d.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#F7F7F5] px-4 py-2.5 border border-[#E8E8E5]"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#FAF9F6] px-4 py-2.5 border border-[#E4E1DA]"
                 >
-                  <div>
-                    <b className="text-[#171717]">
+                  <div className="text-[#5C5953]">
+                    <b className="text-[#141413]">
                       {d.decision === 'approve'
                         ? '✓ Утверждено'
                         : d.decision === 'rework'
@@ -2115,7 +2115,7 @@ export function ProductLabCardBody({
                     </b>{' '}
                     · {d.justification}
                   </div>
-                  <div className="text-[12px] text-[#737373]">
+                  <div className="text-[12px] font-mono text-[#5C5953]">
                     {d.authorName} · {d.decidedAt}
                   </div>
                 </div>
@@ -2346,19 +2346,19 @@ export function ProductLabCardBody({
     };
 
     return (
-      <div className="space-y-6 text-[15px]">
+      <div className="space-y-5 text-[14px]">
         {/* БЛОК 1: PRODUCTION ORDER / НАСТОЯЩИЙ ЗАКАЗ ПО ЦВЕТАМ, РАЗМЕРАМ И ФАБРИКЕ (Стр. 7 PDF) */}
-        <div className="rounded-3xl border border-[#E8E8E5] bg-white p-6 md:p-8 space-y-6 shadow-xs">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E8E8E5] pb-5">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 md:p-7 space-y-6">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E4E1DA] pb-5">
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-widest text-[#737373]">
+              <div className="font-mono text-[11px] font-medium uppercase tracking-wider text-[#5C5953]">
                 PRODUCTION ORDER / {currentOrder.internalStatus === 'order_prep' ? 'ЧЕРНОВИК' : 'УТВЕРЖДЁН'} · ВЕРСИЯ v{currentOrder.orderVersion || 1} · {prodProfile.sizeGridLabelRu}
               </div>
-              <h3 className="text-[24px] font-bold text-[#171717] mt-1">
+              <h3 className="text-[21px] font-semibold tracking-tight text-[#141413] mt-1">
                 {formatLabBrandLabel(concept.brandId)} · {concept.name} ({unitsInOnePack} ед.)
               </h3>
-              <p className="text-[13px] text-[#737373] mt-0.5">
-                Образец: <b>{currentOrder.approvedSampleVersion}</b> · Состав: <b>{currentOrder.materialAndColors}</b> · Дата согласования: <b>{currentOrder.approvedAt || '—'}</b>
+              <p className="text-[13px] text-[#5C5953] mt-0.5">
+                Образец: <b className="font-mono text-[#141413]">{currentOrder.approvedSampleVersion}</b> · Состав: <b className="text-[#141413]">{currentOrder.materialAndColors}</b> · Дата согласования: <b className="font-mono text-[#141413]">{currentOrder.approvedAt || '—'}</b>
               </p>
             </div>
 
@@ -2367,7 +2367,7 @@ export function ProductLabCardBody({
                 <button
                   type="button"
                   onClick={handleConfirmProductionBatch}
-                  className="h-10 px-4 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold transition cursor-pointer shadow-2xs"
+                  className="h-10 px-4 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
                 >
                   ✓ Подтвердить партию в План 2027
                 </button>
@@ -2376,7 +2376,7 @@ export function ProductLabCardBody({
                 <img
                   src={resolvePublicAssetUrl(concept.imageUrl)}
                   alt={concept.name}
-                  className="h-16 w-16 rounded-2xl object-contain bg-[#F7F7F5] border border-[#E8E8E5] p-1.5"
+                  className="h-14 w-14 rounded-xl object-contain bg-[#F6F5F2] border border-[#E4E1DA] p-1.5"
                 />
               )}
             </div>
@@ -2385,14 +2385,14 @@ export function ProductLabCardBody({
           {/* Параметры фабрики, сроков, упаковки и цены */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-[13px]">
             <div>
-              <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Фабрика (из справочника)
               </label>
               <select
                 disabled={!canEdit}
                 value={currentOrder.factoryName}
                 onChange={(e) => saveOrderPatch({ factoryName: e.target.value })}
-                className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               >
                 <option value={defaultBrandFactoryName}>{defaultBrandFactoryName}</option>
                 {FACTORY_DIRECTORY.map((f) => {
@@ -2415,7 +2415,7 @@ export function ProductLabCardBody({
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 План готовности партии
               </label>
               <input
@@ -2423,12 +2423,12 @@ export function ProductLabCardBody({
                 disabled={!canEdit}
                 value={currentOrder.plannedReadyDate}
                 onChange={(e) => saveOrderPatch({ plannedReadyDate: e.target.value })}
-                className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-mono font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Цена фабрики за 1 ед. и валюта
               </label>
               {hasCostAccess ? (
@@ -2452,7 +2452,7 @@ export function ProductLabCardBody({
                       });
                     }}
                     onBlur={() => setOrderUnitPriceDraft(null)}
-                    className="flex-1 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-bold text-[#171717]"
+                    className="flex-1 h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-mono font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
                   />
                   <select
                     disabled={!canEdit}
@@ -2480,7 +2480,7 @@ export function ProductLabCardBody({
                         unitPrice: converted,
                       });
                     }}
-                    className="w-20 h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-2 font-bold"
+                    className="w-20 h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-2 font-mono font-medium text-[#141413]"
                   >
                     <option value="RUB">RUB</option>
                     <option value="USD">USD</option>
@@ -2488,29 +2488,29 @@ export function ProductLabCardBody({
                   </select>
                 </div>
               ) : (
-                <div className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-bold text-[#737373]">
+                <div className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 flex items-center font-medium text-[#5C5953]">
                   Скрыто
                 </div>
               )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold uppercase text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Условия оплаты и упаковка
               </label>
               <input
                 disabled={!canEdit}
                 value={currentOrder.paymentTerms || '30% депозит / 70% перед отгрузкой'}
                 onChange={(e) => saveOrderPatch({ paymentTerms: e.target.value })}
-                className="w-full h-10 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 font-medium text-[#171717]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
           </div>
 
           {/* Состав набора по цветам (Стр. 7 PDF) */}
-          <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
             <div className="md:col-span-9">
-              <label className="block text-[12px] font-bold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Состав комплекта по цветам
               </label>
               <input
@@ -2519,12 +2519,12 @@ export function ProductLabCardBody({
                 onChange={(e) =>
                   saveOrderPatch({ packColorComposition: e.target.value })
                 }
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-4 text-[15px] font-bold text-[#171717]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 text-[14px] font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
 
             <div className="md:col-span-3">
-              <label className="block text-[12px] font-bold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 {prodProfile.itemsUnitLabelRu} в 1 наборе
               </label>
               <input
@@ -2536,31 +2536,31 @@ export function ProductLabCardBody({
                   const v = parseCleanNumber(e.target.value);
                   saveOrderPatch({ unitsPerPack: v && v > 0 ? v : 1 });
                 }}
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-white px-4 text-[15px] font-bold text-[#171717]"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-white px-3.5 text-[14px] font-mono font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
           </div>
 
           {/* ТАБЛИЦА РАЗМЕРОВ БРЕНДА */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-[14px]">
+          <div className="overflow-x-auto rounded-xl border border-[#E4E1DA]">
+            <table className="w-full text-left border-collapse text-[13.5px]">
               <thead>
-                <tr className="border-b border-[#E8E8E5] text-[13px] font-bold text-[#171717]">
+                <tr className="border-b border-[#E4E1DA] bg-[#FAF9F6] text-[12px] font-medium text-[#5C5953]">
                   <th className="py-3 px-4">Размер ({prodProfile.sizeGridLabelRu})</th>
                   <th className="py-3 px-4">{prodProfile.packUnitLabelRu}</th>
                   <th className="py-3 px-4">{prodProfile.itemsUnitLabelRu} (× {unitsInOnePack})</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8E8E5]">
+              <tbody className="divide-y divide-[#E4E1DA]">
                 {effectiveSizes.map((sz, idx) => {
                   const packsCount = packsMap[sz] ?? 0;
                   const piecesCount = packsCount * unitsInOnePack;
                   return (
                     <tr
                       key={sz}
-                      className={idx % 2 === 0 ? 'bg-[#F7F7F5]/60' : 'bg-white'}
+                      className={idx % 2 === 0 ? 'bg-white' : 'bg-[#FAF9F6]/60'}
                     >
-                      <td className="py-2.5 px-4 font-bold text-[#171717] w-1/3">
+                      <td className="py-2.5 px-4 font-mono font-medium text-[#141413] w-1/3">
                         {sz}
                       </td>
                       <td className="py-2 px-4 w-1/3">
@@ -2579,10 +2579,10 @@ export function ProductLabCardBody({
                             });
                           }}
                           placeholder="0"
-                          className="w-32 h-9 rounded-lg border border-[#E8E8E5] bg-white px-3 font-semibold text-[#171717]"
+                          className="w-32 h-9 rounded-lg border border-[#E4E1DA] bg-white px-3 font-mono font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
                         />
                       </td>
-                      <td className="py-2.5 px-4 font-semibold text-[#171717] w-1/3">
+                      <td className="py-2.5 px-4 font-mono font-medium text-[#141413] w-1/3">
                         {piecesCount.toLocaleString('ru-RU')}
                       </td>
                     </tr>
@@ -2590,12 +2590,12 @@ export function ProductLabCardBody({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-[#171717] text-[15px] font-bold text-[#171717] bg-[#F7F7F5]">
-                  <td className="py-3.5 px-4">ИТОГО</td>
-                  <td className="py-3.5 px-4">
+                <tr className="border-t border-[#141413] text-[14px] font-semibold text-[#141413] bg-[#FAF9F6]">
+                  <td className="py-3 px-4">ИТОГО</td>
+                  <td className="py-3 px-4 font-mono">
                     {totalPacks.toLocaleString('ru-RU')} ({prodProfile.packUnitLabelRu.toLowerCase()})
                   </td>
-                  <td className="py-3.5 px-4 text-[#D97745]">
+                  <td className="py-3 px-4 font-mono text-[#141413]">
                     {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()}) · Сумма:{' '}
                     {hasCostAccess
                       ? `${totalOrderSum.toLocaleString('ru-RU')} ${currentOrder.currency}`
@@ -2608,42 +2608,42 @@ export function ProductLabCardBody({
         </div>
 
         {/* БЛОК 2: КОНСТРУКТОР И ПРЕДПРОСМОТР PDF ДЛЯ ФАБРИКИ ПЕРЕД СКАЧИВАНИЕМ */}
-        <div className="rounded-3xl border border-[#E8E8E5] bg-white p-6 md:p-8 space-y-5">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 md:p-7 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-widest text-[#B85D35]">
-                КОНСТРУКТОР PDF ДЛЯ ФАБРИКИ · НАСТРОЙТЕ СОСТАВ ДОКУМЕНТА ПЕРЕД СКАЧИВАНИЕМ
+              <div className="font-mono text-[11px] font-medium uppercase tracking-wider text-[#5C5953]">
+                КОНСТРУКТОР PDF ДЛЯ ФАБРИКИ · СОСТАВ ДОКУМЕНТА ПЕРЕД СКАЧИВАНИЕМ
               </div>
-              <h4 className="text-[19px] font-bold text-[#171717] mt-0.5">
+              <h4 className="text-[18px] font-semibold tracking-tight text-[#141413] mt-0.5">
                 Единый заказ на русском, английском и китайском (RU / EN / ZH)
               </h4>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setInlinePdfConstructorOpen(true)}
-                className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-[#1E3A5F] hover:bg-[#162C49] text-white text-[13px] font-bold transition cursor-pointer shadow-xs"
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
               >
-                <Printer className="h-4 w-4" />
+                <Printer className="h-4 w-4 stroke-[1.5]" />
                 <span>Настроить и скачать PDF (Конструктор PDF)</span>
               </button>
               <button
                 type="button"
                 onClick={handleExportFactoryPdf}
-                className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-[#D8D1C5] bg-white hover:bg-[#FAF8F5] text-[#171717] text-[13px] font-semibold transition cursor-pointer"
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-[#E4E1DA] bg-white hover:bg-[#FAF9F6] hover:border-[#141413] text-[#141413] text-[13px] font-medium transition-colors cursor-pointer"
                 title="Быстрое скачивание PDF со всеми выбранными блоками"
               >
-                <FileDown className="h-4 w-4 text-[#B85D35]" />
+                <FileDown className="h-4 w-4 stroke-[1.5] text-[#5C5953]" />
                 <span>Быстрый PDF</span>
               </button>
               {hasCostAccess && (
                 <button
                   type="button"
                   onClick={handleExportFactoryExcel}
-                  className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-[#EAE6DF] bg-[#FAF8F5] hover:border-[#181715] text-[#181715] text-[13px] font-semibold transition cursor-pointer"
+                  className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] hover:border-[#141413] text-[#141413] text-[13px] font-medium transition-colors cursor-pointer"
                 >
-                  <FileDown className="h-4 w-4 text-[#7A756D]" />
+                  <FileDown className="h-4 w-4 stroke-[1.5] text-[#5C5953]" />
                   <span>Скачать Excel (.xlsx)</span>
                 </button>
               )}
@@ -2651,15 +2651,15 @@ export function ProductLabCardBody({
           </div>
 
           {/* ИНТЕРАКТИВНЫЙ ВЫБОР ТОГО, ЧТО ОТОБРАЗИТЬ В PDF ПЕРЕД ВЫГРУЗКОЙ */}
-          <div className="rounded-2xl bg-[#FAF8F5] border border-[#E5E0D5] p-4 space-y-3">
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[12.5px] font-bold text-[#1D1D1F]">
+              <span className="text-[12.5px] font-medium text-[#141413]">
                 Выберите блоки, которые нужно отобразить в PDF:
               </span>
               <button
                 type="button"
                 onClick={() => setInlinePdfConstructorOpen(true)}
-                className="text-[12px] font-semibold text-[#1E3A5F] hover:underline cursor-pointer"
+                className="text-[12px] font-medium text-[#141413] underline underline-offset-4 hover:opacity-75 cursor-pointer"
               >
                 Открыть полный визуальный конструктор листа А4 →
               </button>
@@ -2680,10 +2680,10 @@ export function ProductLabCardBody({
               ].map((item) => (
                 <label
                   key={item.key}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[12px] font-semibold cursor-pointer transition ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[12px] font-medium cursor-pointer transition-colors ${
                     pdfBlocksConfig[item.key]
-                      ? 'bg-white border-[#C8A97E] text-[#1D1D1F] shadow-2xs'
-                      : 'bg-[#F2EFE9]/60 border-[#E5E0D5] text-[#7A756D]'
+                      ? 'bg-white border-[#141413] text-[#141413]'
+                      : 'bg-[#FAF9F6] border-[#E4E1DA] text-[#5C5953]'
                   }`}
                 >
                   <input
@@ -2695,7 +2695,7 @@ export function ProductLabCardBody({
                         [item.key]: e.target.checked,
                       }))
                     }
-                    className="h-3.5 w-3.5 accent-[#1E3A5F] rounded cursor-pointer"
+                    className="h-3.5 w-3.5 accent-[#141413] rounded cursor-pointer"
                   />
                   <span className="truncate">{item.label}</span>
                 </label>
@@ -2706,82 +2706,82 @@ export function ProductLabCardBody({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[12px]">
             {/* RU */}
             {pdfBlocksConfig.ruSection && (
-              <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5]/60 p-4 space-y-2.5">
-                <span className="inline-block px-2.5 py-1 rounded-md bg-[#FDF3EB] text-[#D97745] font-bold">
+              <div className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] p-4 space-y-2.5">
+                <span className="inline-block px-2 py-0.5 rounded bg-white border border-[#E4E1DA] font-mono text-[11px] font-medium text-[#141413]">
                   RU
                 </span>
-                <div className="font-bold text-[14px] text-[#171717]">
+                <div className="font-semibold text-[13.5px] text-[#141413]">
                   ЗАКАЗ НА ПРОИЗВОДСТВО
                 </div>
-                <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
-                  <div>Модель: <b>{concept.name}</b> ({currentOrder.approvedSampleVersion})</div>
-                  <div>Фабрика: <b>{currentOrder.factoryName}</b></div>
-                  <div>Состав: <b>{cleanTechPackText(currentOrder.materialAndColors, prodProfile.defaultMaterialRu)}</b></div>
-                  <div>Сетка: <b>{prodProfile.sizeGridLabelRu}</b></div>
-                  <div>Комплект: <b>{currentOrder.packColorComposition || defaultColorComp}</b></div>
+                <div className="space-y-1 text-[#5C5953] border-t border-[#E4E1DA] pt-2">
+                  <div>Модель: <b className="text-[#141413]">{concept.name}</b> ({currentOrder.approvedSampleVersion})</div>
+                  <div>Фабрика: <b className="text-[#141413]">{currentOrder.factoryName}</b></div>
+                  <div>Состав: <b className="text-[#141413]">{cleanTechPackText(currentOrder.materialAndColors, prodProfile.defaultMaterialRu)}</b></div>
+                  <div>Сетка: <b className="text-[#141413]">{prodProfile.sizeGridLabelRu}</b></div>
+                  <div>Комплект: <b className="text-[#141413]">{currentOrder.packColorComposition || defaultColorComp}</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div>Тираж: <b>{totalPacks.toLocaleString('ru-RU')} ({prodProfile.packUnitLabelRu.toLowerCase()}) / {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()})</b></div>
+                    <div>Тираж: <b className="font-mono text-[#141413]">{totalPacks.toLocaleString('ru-RU')} ({prodProfile.packUnitLabelRu.toLowerCase()}) / {totalPieces.toLocaleString('ru-RU')} ({prodProfile.itemsUnitLabelRu.toLowerCase()})</b></div>
                   )}
-                  <div>Готовность: <b>{currentOrder.plannedReadyDate}</b></div>
+                  <div>Готовность: <b className="font-mono text-[#141413]">{currentOrder.plannedReadyDate}</b></div>
                 </div>
               </div>
             )}
 
             {/* EN */}
             {pdfBlocksConfig.enSection && (
-              <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5]/60 p-4 space-y-2.5">
-                <span className="inline-block px-2.5 py-1 rounded-md bg-[#FDF3EB] text-[#D97745] font-bold">
+              <div className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] p-4 space-y-2.5">
+                <span className="inline-block px-2 py-0.5 rounded bg-white border border-[#E4E1DA] font-mono text-[11px] font-medium text-[#141413]">
                   EN
                 </span>
-                <div className="font-bold text-[14px] text-[#171717]">
+                <div className="font-semibold text-[13.5px] text-[#141413]">
                   PRODUCTION ORDER
                 </div>
-                <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
-                  <div>Style: <b>{concept.code} · {concept.name}</b></div>
-                  <div>Construction: <b>{enConstruction}</b></div>
-                  <div>Factory: <b>{currentOrder.factoryName}</b></div>
-                  <div>Fabric: <b>{enMaterial}</b></div>
-                  <div>Size Grid: <b>{prodProfile.sizeGridLabelEn} ({unitsInOnePack}-Pack)</b></div>
+                <div className="space-y-1 text-[#5C5953] border-t border-[#E4E1DA] pt-2">
+                  <div>Style: <b className="text-[#141413]">{concept.code} · {concept.name}</b></div>
+                  <div>Construction: <b className="text-[#141413]">{enConstruction}</b></div>
+                  <div>Factory: <b className="text-[#141413]">{currentOrder.factoryName}</b></div>
+                  <div>Fabric: <b className="text-[#141413]">{enMaterial}</b></div>
+                  <div>Size Grid: <b className="text-[#141413]">{prodProfile.sizeGridLabelEn} ({unitsInOnePack}-Pack)</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div>Total Qty: <b>{totalPacks.toLocaleString('en-US')} packs / {totalPieces.toLocaleString('en-US')} units</b></div>
+                    <div>Total Qty: <b className="font-mono text-[#141413]">{totalPacks.toLocaleString('en-US')} packs / {totalPieces.toLocaleString('en-US')} units</b></div>
                   )}
-                  <div>Ready Date: <b>{currentOrder.plannedReadyDate}</b></div>
+                  <div>Ready Date: <b className="font-mono text-[#141413]">{currentOrder.plannedReadyDate}</b></div>
                 </div>
               </div>
             )}
 
             {/* ZH */}
             {pdfBlocksConfig.zhSection && (
-              <div className="rounded-2xl border border-[#E8E8E5] bg-[#F7F7F5]/60 p-4 space-y-2.5">
-                <span className="inline-block px-2.5 py-1 rounded-md bg-[#FDF3EB] text-[#D97745] font-bold">
+              <div className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] p-4 space-y-2.5">
+                <span className="inline-block px-2 py-0.5 rounded bg-white border border-[#E4E1DA] font-mono text-[11px] font-medium text-[#141413]">
                   ZH · КРУПНЫЙ КИТАЙСКИЙ
                 </span>
-                <div className="font-bold text-[16px] text-[#171717]">
+                <div className="font-semibold text-[15px] text-[#141413]">
                   生产订单 (PRODUCTION ORDER)
                 </div>
-                <div className="space-y-1 text-[#525252] border-t border-[#E8E8E5] pt-2">
-                  <div className="text-[14px] font-bold text-[#171717]">款号: {concept.code} ({currentOrder.approvedSampleVersion})</div>
-                  <div>版型工艺: <b>{zhConstruction}</b></div>
-                  <div>工厂: <b>{currentOrder.factoryName}</b></div>
-                  <div className="text-[13.5px] font-bold text-[#171717]">面料成分: {zhMaterial}</div>
-                  <div>尺码及包装: <b>{prodProfile.sizeGridLabelZh} · 每组 {unitsInOnePack} 件</b></div>
+                <div className="space-y-1 text-[#5C5953] border-t border-[#E4E1DA] pt-2">
+                  <div className="text-[13.5px] font-semibold text-[#141413]">款号: {concept.code} ({currentOrder.approvedSampleVersion})</div>
+                  <div>版型工艺: <b className="text-[#141413]">{zhConstruction}</b></div>
+                  <div>工厂: <b className="text-[#141413]">{currentOrder.factoryName}</b></div>
+                  <div className="text-[13px] font-semibold text-[#141413]">面料成分: {zhMaterial}</div>
+                  <div>尺码及包装: <b className="text-[#141413]">{prodProfile.sizeGridLabelZh} · 每组 {unitsInOnePack} 件</b></div>
                   {pdfBlocksConfig.sizeMatrix && (
-                    <div className="text-[13.5px] font-bold text-[#B85D35]">订单总量: {totalPacks} 组 / 共 {totalPieces} 件</div>
+                    <div className="text-[13px] font-mono font-semibold text-[#141413]">订单总量: {totalPacks} 组 / 共 {totalPieces} 件</div>
                   )}
-                  <div>交货日期: <b>{currentOrder.plannedReadyDate}</b></div>
+                  <div>交货日期: <b className="font-mono text-[#141413]">{currentOrder.plannedReadyDate}</b></div>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E8E8E5] text-[13px]">
-            <label className="inline-flex items-center gap-2 font-semibold text-[#171717] cursor-pointer">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#E4E1DA] text-[13px]">
+            <label className="inline-flex items-center gap-2 font-medium text-[#141413] cursor-pointer">
               <input
                 type="checkbox"
                 disabled={!canEdit}
                 checked={currentOrder.chineseVerified ?? true}
                 onChange={(e) => saveOrderPatch({ chineseVerified: e.target.checked })}
-                className="h-4 w-4 accent-[#D97745]"
+                className="h-4 w-4 accent-[#141413]"
               />
               <span>
                 Китайские материалы и формулировки проверены перед отправкой. Числа и таблицы едины для всех трёх частей.
@@ -2807,7 +2807,7 @@ export function ProductLabCardBody({
                   onSyncConcept?.(updatedConcept);
                   onChangeStageWithGate(updatedConcept, 'LAUNCH');
                 }}
-                className="h-10 px-5 rounded-xl bg-[#111111] text-white font-bold cursor-pointer"
+                className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
               >
                 Перейти к Запуску (07 Запуск) →
               </button>
@@ -2854,23 +2854,23 @@ export function ProductLabCardBody({
     const isSyncedToCatalog = Boolean(linkedScenarioModelCode || linkedProduct);
 
     return (
-      <div className="space-y-6 text-[15px]">
-        <div className="rounded-3xl border border-[#E8E8E5] bg-white p-6 md:p-8 space-y-6">
+      <div className="space-y-5 text-[14px]">
+        <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 md:p-7 space-y-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#FDF3EB] text-[#D97745] text-[12px] font-bold mb-2">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] text-[#141413] font-mono text-[11px] font-medium mb-2">
               07 ЗАПУСК
             </div>
-            <h3 className="text-[22px] font-bold text-[#171717]">
+            <h3 className="text-[20px] font-semibold tracking-tight text-[#141413]">
               Завершение разработки и старт продаж
             </h3>
-            <p className="text-[14px] text-[#737373] mt-0.5">
+            <p className="text-[13px] text-[#5C5953] mt-0.5">
               Только ссылка на карточку товара, дата фактического старта и статус «В продаже». Дополнительный комментарий — по желанию.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[14px]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[13.5px]">
             <div className="md:col-span-2">
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Ссылка на карточку товара на маркетплейсе (Wildberries / Ozon)
               </label>
               <input
@@ -2886,12 +2886,12 @@ export function ProductLabCardBody({
                   })
                 }
                 placeholder="https://www.wildberries.ru/catalog/..."
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5]/60 px-3.5 font-medium"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 font-mono text-[13px] text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
 
             <div>
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Дата фактического старта продаж
               </label>
               <input
@@ -2903,23 +2903,23 @@ export function ProductLabCardBody({
                     actualLaunchDate: e.target.value,
                   })
                 }
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5]/60 px-3.5 font-bold"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 font-mono font-medium text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
 
             <div>
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Статус запуска
               </label>
-              <div className="flex h-11 rounded-xl bg-[#F7F7F5] p-1 border border-[#E8E8E5]">
+              <div className="flex h-10 rounded-lg bg-[#FAF9F6] p-1 border border-[#E4E1DA]">
                 <button
                   type="button"
                   disabled={!canEdit}
                   onClick={() =>
                     onUpdateConcept(concept.id, { launchSalesStatus: 'prep' })
                   }
-                  className={`flex-1 rounded-lg text-[13px] font-bold transition cursor-pointer ${
-                    !isInSale ? 'bg-white text-[#171717] shadow-2xs' : 'text-[#737373]'
+                  className={`flex-1 rounded-md text-[13px] font-medium transition-colors cursor-pointer ${
+                    !isInSale ? 'bg-white text-[#141413] border border-[#E4E1DA]' : 'text-[#5C5953]'
                   }`}
                 >
                   Подготовка
@@ -2939,10 +2939,10 @@ export function ProductLabCardBody({
                     });
                     onSyncToScenarioCatalog?.(launchedConcept);
                   }}
-                  className={`flex-1 rounded-lg text-[13px] font-bold transition cursor-pointer ${
+                  className={`flex-1 rounded-md text-[13px] font-medium transition-colors cursor-pointer ${
                     isInSale
-                      ? 'bg-[#16805D] text-white shadow-2xs'
-                      : 'text-[#737373]'
+                      ? 'bg-emerald-700 text-white'
+                      : 'text-[#5C5953]'
                   }`}
                 >
                   В продаже ✓
@@ -2951,7 +2951,7 @@ export function ProductLabCardBody({
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-[12px] font-semibold text-[#737373] mb-1">
+              <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                 Дополнительный комментарий (по желанию)
               </label>
               <input
@@ -2961,18 +2961,18 @@ export function ProductLabCardBody({
                   onUpdateConcept(concept.id, { launchNote: e.target.value })
                 }
                 placeholder="Первая партия принята на склад Коледино, карточка активна..."
-                className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5]/60 px-3.5"
+                className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[#141413] focus:outline-none focus:border-[#141413]"
               />
             </div>
           </div>
 
           {/* Зелёное правило со Стр. 8 PDF + Кнопка связи с Каталогом */}
-          <div className="rounded-2xl bg-[#E8F5E9]/70 border border-[#16805D]/30 p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="space-y-1">
-              <div className="text-[14px] font-bold text-[#16805D]">
+              <div className="text-[13.5px] font-semibold text-[#141413]">
                 Результаты продаж — не здесь. После старта модель связывается с каталогом.
               </div>
-              <div className="text-[13px] text-[#525252]">
+              <div className="text-[12.5px] text-[#5C5953]">
                 {isSyncedToCatalog
                   ? `✓ Синхронизировано с каталогом (${linkedScenarioModelCode || linkedProduct?.sku}${
                       linkedProduct?.name ? ` · ${linkedProduct.name}` : ` · ${concept.name}`
@@ -2981,7 +2981,7 @@ export function ProductLabCardBody({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
               {linkedScenarioModelCode || linkedProduct ? (
                 <>
                   {canEdit && (
@@ -2994,7 +2994,7 @@ export function ProductLabCardBody({
                           stage: 'LAUNCH',
                         });
                       }}
-                      className="h-11 px-4 rounded-xl bg-[#F3EFE8] hover:bg-[#E7E1D6] border border-[#D4CDC2] text-[#171717] text-[12.5px] font-bold cursor-pointer transition"
+                      className="h-10 px-4 rounded-lg bg-white hover:bg-[#EFEDE8] border border-[#E4E1DA] text-[#141413] text-[12.5px] font-medium cursor-pointer transition-colors"
                     >
                       Обновить в Каталоге ({linkedScenarioModelCode || linkedProduct?.sku})
                     </button>
@@ -3011,7 +3011,7 @@ export function ProductLabCardBody({
                         brandId: normalizeLabBrandCode(concept.brandId),
                       })
                     }
-                    className="h-11 px-5 rounded-xl bg-[#16805D] hover:bg-[#116649] text-white text-[13px] font-bold cursor-pointer transition"
+                    className="h-10 px-4 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-medium cursor-pointer transition-colors"
                   >
                     Открыть в 01 · Продукт →
                   </button>
@@ -3022,7 +3022,7 @@ export function ProductLabCardBody({
                         brandId: normalizeLabBrandCode(concept.brandId),
                       })
                     }
-                    className="h-11 px-5 rounded-xl bg-[#111111] hover:opacity-90 text-white text-[13px] font-bold cursor-pointer transition"
+                    className="h-10 px-4 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer transition-colors"
                   >
                     Открыть в 02 · Продажи →
                   </button>
@@ -3044,7 +3044,7 @@ export function ProductLabCardBody({
                       onSyncToScenarioCatalog?.(launchedConcept);
                       onCreateProductFromConcept(concept.id);
                     }}
-                    className="h-11 px-6 rounded-xl bg-[#111111] hover:bg-[#16805D] text-white text-[13px] font-bold transition cursor-pointer"
+                    className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium transition-colors cursor-pointer"
                   >
                     Зафиксировать старт продаж и связать с Каталогом →
                   </button>
@@ -3061,24 +3061,24 @@ export function ProductLabCardBody({
   // ИСТОРИЯ КЛЮЧЕВЫХ РЕШЕНИЙ И ИЗМЕНЕНИЙ
   // ===========================================================================
   return (
-    <div className="rounded-2xl border border-[#E8E8E5] bg-white p-6 space-y-4 text-[14px]">
+    <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 space-y-4 text-[13.5px]">
       <div>
-        <h3 className="text-[18px] font-bold text-[#171717]">
+        <h3 className="text-[17px] font-semibold tracking-tight text-[#141413]">
           История ключевых решений и переходов по этапам
         </h3>
-        <p className="text-[13px] text-[#737373]">
+        <p className="text-[12.5px] text-[#5C5953] mt-0.5">
           Сохраняется отдельно от текущего статуса — кто, когда и почему принял решение
         </p>
       </div>
 
-      <div className="divide-y divide-[#E8E8E5]">
+      <div className="divide-y divide-[#E4E1DA]">
         {(concept.stageHistory || []).map((h) => (
           <div key={h.id} className="py-3.5 flex items-center justify-between gap-4">
             <div>
-              <div className="font-semibold text-[#171717]">{h.reason}</div>
-              <div className="text-[12px] text-[#737373] mt-0.5">{h.authorName}</div>
+              <div className="font-medium text-[#141413]">{h.reason}</div>
+              <div className="text-[12px] text-[#5C5953] mt-0.5">{h.authorName}</div>
             </div>
-            <span className="text-[12px] text-[#737373] shrink-0">{h.timestamp}</span>
+            <span className="font-mono text-[12px] text-[#5C5953] shrink-0">{h.timestamp}</span>
           </div>
         ))}
       </div>

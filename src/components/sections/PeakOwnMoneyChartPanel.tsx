@@ -335,32 +335,32 @@ export function PeakOwnMoneyChartPanel({
   return (
     <div
       id={id}
-      className="bg-white dark:bg-[#121620] border border-slate-200/90 dark:border-[#222938] rounded-2xl p-5 shadow-xs space-y-5 scroll-mt-24"
+      className="bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] rounded-xl p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-5 scroll-mt-24"
     >
       {/* Шапка блока + интерактивные настройки оборотного капитала */}
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 dark:border-[#222938] pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E4E1DA] dark:border-[#282724] pb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+            <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] px-2.5 py-0.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724]">
               Детализация показателя «Пик своих денег»
             </span>
-            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-[#181D2A] text-slate-700 dark:text-slate-300">
+            <span className="font-mono text-[11px] font-medium px-2.5 py-0.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#5C5953] dark:text-[#9A968E] border border-[#E4E1DA] dark:border-[#282724]">
               {scenarioTitle} · 12 месяцев {year}
             </span>
           </div>
-          <h3 className="text-[17px] font-bold text-slate-900 dark:text-[#EDF0F7] mt-1.5">
+          <h3 className="text-[17px] font-semibold tracking-[-0.015em] text-[#141413] dark:text-[#F5F4F0] mt-1.5">
             Когда именно наступает пик вложений, из каких платежей складывается и когда закупки выходят в плюс из WB
           </h3>
-          <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-[12px] text-[#5C5953] dark:text-[#9A968E] mt-0.5">
             Разделены 2 точки каждого месяца:{' '}
-            <strong className="text-amber-700 dark:text-amber-300">нижняя точка внутри месяца</strong> (после оплаты авансов и доплат фабрикам, ДО прихода выручки WB) и{' '}
-            <strong className="text-emerald-700 dark:text-emerald-400">остаток на конец месяца</strong> (ПОСЛЕ зачисления выплат WB).
+            <strong className="text-[#141413] dark:text-[#F5F4F0] font-semibold">нижняя точка внутри месяца</strong> (после оплаты авансов и доплат фабрикам, ДО прихода выручки WB) и{' '}
+            <strong className="text-[#15803D] dark:text-emerald-400 font-semibold">остаток на конец месяца</strong> (ПОСЛЕ зачисления выплат WB).
           </p>
         </div>
 
         {/* Управление параметрами кэша и лага выплат WB */}
         {(onChangeInitialCashMln || onChangeWbLagMonths) && (
-          <div className="flex flex-wrap items-center gap-2.5 bg-slate-50 dark:bg-[#181D2A] border border-slate-200/80 dark:border-[#283246] rounded-xl px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2.5 bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] rounded-lg px-3 py-2">
             {onToggleWbScheduleSpecified && (
               <button
                 type="button"
@@ -369,17 +369,17 @@ export function PeakOwnMoneyChartPanel({
                   if (!canEditFinanceParams) return;
                   onToggleWbScheduleSpecified();
                 }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                   effectiveWbSpecified
-                    ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
-                    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
+                    ? 'bg-white dark:bg-[#151514] text-[#15803D] dark:text-emerald-400 border-[#E4E1DA] dark:border-[#282724]'
+                    : 'bg-white dark:bg-[#151514] text-rose-700 dark:text-rose-400 border-[#E4E1DA] dark:border-[#282724]'
                 }`}
               >
-                {effectiveWbSpecified ? '✓ График выплат WB учтён' : '⚠ Выплаты WB не заданы'}
+                {effectiveWbSpecified ? '✓ График выплат WB учтён' : 'Выплаты WB не заданы'}
               </button>
             )}
             {onChangeWbLagMonths && effectiveWbSpecified && (
-              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#5C5953] dark:text-[#9A968E]">
                 <span>Лаг выплат WB:</span>
                 <select
                   value={wbLagMonths}
@@ -388,7 +388,7 @@ export function PeakOwnMoneyChartPanel({
                     if (!canEditFinanceParams) return;
                     onChangeWbLagMonths(Number(e.target.value) || 0);
                   }}
-                  className="px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-slate-900 dark:text-[#EDF0F7] font-bold text-[11px] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="px-2 py-1 rounded-md border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] font-semibold text-[11px] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value={0}>В том же мес. (0 мес.)</option>
                   <option value={1}>Через +1 мес.</option>
@@ -397,7 +397,7 @@ export function PeakOwnMoneyChartPanel({
               </label>
             )}
             {onChangeInitialCashMln && (
-              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-[#5C5953] dark:text-[#9A968E]">
                 <span>Кэш на старте:</span>
                 <input
                   type="number"
@@ -410,9 +410,9 @@ export function PeakOwnMoneyChartPanel({
                     if (!canEditFinanceParams) return;
                     onChangeInitialCashMln(Math.max(0, Number(e.target.value) || 0));
                   }}
-                  className="w-16 px-2 py-1 rounded-lg border border-slate-300 dark:border-[#2D384D] bg-white dark:bg-[#121620] text-right font-bold text-slate-900 dark:text-[#EDF0F7] text-[11px] tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-16 px-2 py-1 rounded-md border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] text-right font-mono font-semibold text-[#141413] dark:text-[#F5F4F0] text-[11px] tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
                 />
-                <span className="text-slate-500 dark:text-slate-400">млн ₽</span>
+                <span className="text-[#5C5953] dark:text-[#9A968E]">млн ₽</span>
               </label>
             )}
           </div>
@@ -420,33 +420,33 @@ export function PeakOwnMoneyChartPanel({
       </div>
 
       {rows.length === 0 || !hasAnyActivity ? (
-        <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/70 dark:bg-[#181D2A] p-6 text-center space-y-1.5">
-          <div className="text-[14px] font-bold text-slate-800 dark:text-[#EDF0F7]">
+        <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-6 text-center space-y-1.5">
+          <div className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
             Нет активного помесячного графика для расчёта «Пика своих денег»
           </div>
-          <p className="text-[12px] text-slate-500 dark:text-slate-400">
+          <p className="text-[12px] text-[#5C5953] dark:text-[#9A968E]">
             Выберите активный сценарий для бренда или включите кабинет в матрице холдинга, чтобы увидеть 12-месячную кривую вложений и возврата с WB.
           </p>
         </div>
       ) : (
         <>
-          {/* 4 карточки «Анатомия Пика своих денег» */}
+          {/* 4 архитектурные карточки «Анатомия Пика своих денег» */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
             {/* 1. КОГДА НАСТУПАЕТ ПИК */}
-            <div className="rounded-xl border-2 border-amber-300 dark:border-amber-500/45 bg-amber-50/45 dark:bg-amber-500/10 p-3.5 flex flex-col justify-between">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
                     1 · Когда происходит пик денег
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/25 text-amber-900 dark:text-amber-200">
+                  <span className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0]">
                     {effectiveWbSpecified ? `Месяц №${peakIdx + 1}` : 'Лаг WB'}
                   </span>
                 </div>
-                <div className="text-[22px] font-black text-slate-900 dark:text-[#EDF0F7] mt-1 leading-tight">
+                <div className="text-[21px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] mt-1.5 leading-tight">
                   {effectiveWbSpecified ? `${peakMonthNominative} ${year}` : 'График WB не задан'}
                 </div>
-                <div className="text-[11px] font-semibold text-amber-900 dark:text-amber-200/90 mt-1">
+                <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E] mt-1 leading-snug">
                   {!effectiveWbSpecified
                     ? 'Включите «График выплат WB учтён», чтобы зафиксировать точную дату пика оборотного капитала'
                     : investmentSummary.peakWindowHumanRu ||
@@ -455,9 +455,9 @@ export function PeakOwnMoneyChartPanel({
                         : `Конец ${MONTHS_FULL_GENITIVE[peakIdx]} ${year} · после всех расчётов`)}
                 </div>
               </div>
-              <div className="mt-2.5 pt-2 border-t border-amber-200/70 dark:border-amber-500/25 text-[11px] text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <div className="mt-2.5 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] flex items-center justify-between">
                 <span>Месяцев в просадке:</span>
-                <strong className="font-bold text-slate-900 dark:text-[#EDF0F7] tabular-nums">
+                <strong className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0] tabular-nums">
                   {!effectiveWbSpecified
                     ? 'Не рассчитано'
                     : ownMoneyPeakRub > 0
@@ -468,65 +468,71 @@ export function PeakOwnMoneyChartPanel({
             </div>
 
             {/* 2. ФОРМУЛА ПИКА РУБЛЬ-В-РУБЛЬ */}
-            <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/70 dark:bg-[#181D2A] p-3.5 flex flex-col justify-between">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
                     2 · Расчёт пика в {peakMonthAblative}
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white dark:bg-[#121620] border border-slate-200 dark:border-[#2D384D] text-slate-700 dark:text-slate-200 tabular-nums">
+                  <span className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E] tabular-nums">
                     {effectiveWbSpecified ? fmtExactRub(ownMoneyPeakRub) : 'Лаг WB не задан'}
                   </span>
                 </div>
-                <div className="text-[22px] font-black text-amber-700 dark:text-amber-300 mt-1 tabular-nums leading-tight">
+                <div
+                  className={`font-mono text-[21px] font-semibold tracking-[-0.025em] mt-1.5 tabular-nums leading-tight ${
+                    ownMoneyPeakRub > 0
+                      ? 'text-rose-700 dark:text-rose-400'
+                      : 'text-[#141413] dark:text-[#F5F4F0]'
+                  }`}
+                >
                   {!effectiveWbSpecified
                     ? 'Укажите лаг WB'
                     : ownMoneyPeakRub > 0
                     ? fmtMlnRub(ownMoneyPeakRub)
                     : '0 млн ₽ (хватает старта)'}
                 </div>
-                <div className="mt-1.5 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                <div className="mt-1.5 space-y-0.5 text-[11px] text-[#5C5953] dark:text-[#9A968E] tabular-nums">
                   <div className="flex justify-between">
                     <span>
                       На 1-е число ({investmentSummary.peakMonthLabel}
                       {initialCashRub > 0 && peakIdx === 0 ? ', старт. кэш' : ''}):
                     </span>
-                    <span className="font-semibold text-slate-800 dark:text-[#EDF0F7]">
+                    <span className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {fmtSignedMlnRub(openingAtPeak, 2)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>− Авансы и доплаты фабрикам:</span>
-                    <span className="font-semibold text-rose-700 dark:text-rose-400">
+                    <span className="font-mono font-semibold text-rose-700 dark:text-rose-400">
                       −{fmtMlnRub(prepayAtPeak + balanceAtPeak, 2)}
                     </span>
                   </div>
                   {!isIntraMonthPeak && wbAtPeak > 0 && (
                     <div className="flex justify-between">
                       <span>+ Выплаты WB за месяц:</span>
-                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      <span className="font-mono font-semibold text-[#15803D] dark:text-emerald-400">
                         +{fmtMlnRub(wbAtPeak, 2)}
                       </span>
                     </div>
                   )}
                   {initialCashRub > 0 && peakIdx > 0 && (
-                    <div className="flex justify-between text-[10.5px] text-slate-500 dark:text-slate-400">
+                    <div className="flex justify-between text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
                       <span>в т.ч. стартовый кэш в балансе:</span>
-                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      <span className="font-mono font-semibold text-[#15803D] dark:text-emerald-400">
                         +{fmtMlnRub(initialCashRub, 2)}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-slate-200/80 dark:border-[#283246] text-[10px] text-slate-500 dark:text-slate-400 flex justify-between tabular-nums">
+              <div className="mt-2 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[10.5px] text-[#5C5953] dark:text-[#9A968E] flex justify-between tabular-nums">
                 <span>К концу {MONTHS_FULL_GENITIVE[peakIdx]} (после WB +{fmtMlnRub(wbAtPeak, 1)}):</span>
                 <strong
-                  className={
+                  className={`font-mono ${
                     endAtPeak < 0
                       ? 'text-rose-700 dark:text-rose-400'
-                      : 'text-emerald-700 dark:text-emerald-400'
-                  }
+                      : 'text-[#15803D] dark:text-emerald-400'
+                  }`}
                 >
                   {fmtSignedMlnRub(endAtPeak, 2)}
                 </strong>
@@ -534,17 +540,17 @@ export function PeakOwnMoneyChartPanel({
             </div>
 
             {/* 3. ВЫХОД В САМООКУПАЕМОСТЬ ИЗ ВЫРУЧКИ WB */}
-            <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/35 bg-emerald-50/40 dark:bg-emerald-500/10 p-3.5 flex flex-col justify-between">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
                     3 · Точка выхода в чистый плюс
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200">
+                  <span className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] text-[#15803D] dark:text-emerald-400">
                     Из оборота WB
                   </span>
                 </div>
-                <div className="text-[22px] font-black text-emerald-900 dark:text-emerald-300 mt-1 leading-tight">
+                <div className="text-[21px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] mt-1.5 leading-tight">
                   {!effectiveWbSpecified
                     ? 'Ожидает лаг WB'
                     : ownMoneyPeakRub <= 0
@@ -555,7 +561,7 @@ export function PeakOwnMoneyChartPanel({
                     ? `В декабре ${year}`
                     : `Переход на ${year + 1}`}
                 </div>
-                <div className="text-[11px] text-emerald-900/85 dark:text-emerald-200/85 mt-1 leading-snug">
+                <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E] mt-1 leading-snug">
                   {!effectiveWbSpecified
                     ? 'Укажите лаг зачисления выручки WB (0, +1 или +2 мес.), чтобы рассчитать месяц выхода в плюс.'
                     : selfFundingGenitive
@@ -563,33 +569,39 @@ export function PeakOwnMoneyChartPanel({
                     : 'Высокая доля закупа под заказы / конец года: возврат кэша завершается в следующем цикле продаж.'}
                 </div>
               </div>
-              <div className="mt-2.5 pt-2 border-t border-emerald-200/70 dark:border-emerald-500/25 text-[11px] text-emerald-950 dark:text-emerald-200 flex items-center justify-between tabular-nums">
+              <div className="mt-2.5 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] flex items-center justify-between tabular-nums">
                 <span>Баланс на 31 дек {year}:</span>
-                <strong className="font-bold">
+                <strong
+                  className={`font-mono font-semibold ${
+                    investmentSummary.yearEndCashBalanceRub >= 0
+                      ? 'text-[#15803D] dark:text-emerald-400'
+                      : 'text-rose-700 dark:text-rose-400'
+                  }`}
+                >
                   {fmtSignedMlnRub(investmentSummary.yearEndCashBalanceRub, 1)}
                 </strong>
               </div>
             </div>
 
             {/* 4. ОТДАЧА НА ВЛОЖЕННЫЙ КАПИТАЛ (CASH ROI) */}
-            <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/35 bg-indigo-50/35 dark:bg-indigo-500/10 p-3.5 flex flex-col justify-between">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
                     4 · Эффективность своего рубля
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/25 text-indigo-900 dark:text-indigo-200">
+                  <span className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]">
                     Cash ROI
                   </span>
                 </div>
-                <div className="text-[22px] font-black text-indigo-950 dark:text-indigo-200 mt-1 tabular-nums leading-tight">
+                <div className="font-mono text-[21px] font-semibold tracking-[-0.025em] text-[#15803D] dark:text-emerald-400 mt-1.5 tabular-nums leading-tight">
                   {!effectiveWbSpecified
                     ? '—'
                     : cashRoiMultiple !== null
                     ? `×${cashRoiMultiple.toFixed(1).replace('.', ',')}`
                     : 'Без доп. своих ₽'}
                 </div>
-                <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-snug">
+                <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E] mt-1 leading-snug">
                   {!effectiveWbSpecified ? (
                     'Для расчёта отдачи на капитал (ROI) включите учёт графика выплат WB.'
                   ) : (
@@ -600,9 +612,9 @@ export function PeakOwnMoneyChartPanel({
                   )}
                 </div>
               </div>
-              <div className="mt-2.5 pt-2 border-t border-indigo-200/70 dark:border-indigo-500/25 text-[11px] text-indigo-950 dark:text-indigo-200 flex items-center justify-between tabular-nums">
+              <div className="mt-2.5 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] flex items-center justify-between tabular-nums">
                 <span>Закупки за счёт оборота WB:</span>
-                <strong className="font-bold">
+                <strong className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
                   {effectiveWbSpecified ? `${wbFundedSharePct}% годового закупа` : '—'}
                 </strong>
               </div>
@@ -923,20 +935,20 @@ export function PeakOwnMoneyChartPanel({
                           y={badgeY}
                           width={badgeW}
                           height={badgeH}
-                          rx={7}
-                          fill="#7c2d12"
-                          stroke="#fbbf24"
-                          strokeWidth={1.4}
+                          rx={6}
+                          fill="#141413"
+                          stroke="#E4E1DA"
+                          strokeWidth={1}
                         />
                         <text
                           x={clampedX + badgeW / 2}
                           y={badgeY + 17}
                           textAnchor="middle"
                           fontSize="11"
-                          fontWeight="800"
-                          fill="#fef3c7"
+                          fontWeight="700"
+                          fill="#FAF9F6"
                         >
-                          {`📍 ПИК (${rows[peakIdx]?.monthLabel}): −${fmtMlnRub(ownMoneyPeakRub, 2)}`}
+                          {`ПИК (${rows[peakIdx]?.monthLabel}): −${fmtMlnRub(ownMoneyPeakRub, 2)}`}
                         </text>
                       </g>
                     );
@@ -1043,10 +1055,10 @@ export function PeakOwnMoneyChartPanel({
 
           {/* Интерактивный разбор выбранного месяца (по клику на любой из 12 месяцев) */}
           {selectedRow && (
-            <div className="rounded-xl border border-slate-200 dark:border-[#283246] bg-slate-50/70 dark:bg-[#181D2A] p-4 space-y-3">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">
+                  <span className="text-[11px] font-semibold text-[#5C5953] dark:text-[#9A968E] mr-1">
                     Выберите месяц для разбора:
                   </span>
                   {rows.map((r, idx) => {
@@ -1063,18 +1075,18 @@ export function PeakOwnMoneyChartPanel({
                         key={r.monthIdx}
                         type="button"
                         onClick={() => setSelectedMonthIdx(idx)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                           isSel
-                            ? 'bg-slate-900 dark:bg-emerald-500 text-white dark:text-slate-950 shadow-xs'
+                            ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
                             : isPk
-                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 hover:bg-amber-200'
+                            ? 'bg-white dark:bg-[#151514] text-rose-700 dark:text-rose-400 border border-[#E4E1DA] dark:border-[#282724]'
                             : isCross
-                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40 hover:bg-emerald-200'
-                            : 'bg-white dark:bg-[#121620] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#2D384D] hover:bg-slate-100 dark:hover:bg-[#1E2536]'
+                            ? 'bg-white dark:bg-[#151514] text-[#15803D] dark:text-emerald-400 border border-[#E4E1DA] dark:border-[#282724]'
+                            : 'bg-white dark:bg-[#151514] text-[#5C5953] dark:text-[#9A968E] border border-[#E4E1DA] dark:border-[#282724] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                         }`}
                       >
                         {r.monthLabel}
-                        {isPk ? ' 📍' : isCross ? ' ✓' : ''}
+                        {isPk ? ' •' : isCross ? ' ✓' : ''}
                       </button>
                     );
                   })}
@@ -1085,7 +1097,7 @@ export function PeakOwnMoneyChartPanel({
                     {selectedScheduleRow.waveTags.map((tag) => (
                       <span
                         key={tag}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30"
+                        className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724]"
                       >
                         {tag}
                       </span>
@@ -1095,77 +1107,65 @@ export function PeakOwnMoneyChartPanel({
               </div>
 
               {/* Пошаговая формула выбранного месяца */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-[11px] tabular-nums">
-                <div className="bg-white dark:bg-[#121620] rounded-lg border border-slate-200/90 dark:border-[#283246] p-2.5">
-                  <div className="text-slate-500 dark:text-slate-400 text-[10px]">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-[11px] font-mono tabular-nums">
+                <div className="bg-white dark:bg-[#151514] rounded-lg border border-[#E4E1DA] dark:border-[#282724] p-2.5">
+                  <div className="font-sans text-[#5C5953] dark:text-[#9A968E] text-[10px]">
                     1. На 1-е {MONTHS_FULL_GENITIVE[selectedMonthIdx]}
                   </div>
-                  <div className="text-[14px] font-bold text-slate-900 dark:text-[#EDF0F7] mt-0.5">
+                  <div className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                     {fmtSignedMlnRub(selectedRow.openingCashBalanceRub, 2)}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-[#121620] rounded-lg border border-amber-200/80 dark:border-amber-500/30 p-2.5">
-                  <div className="text-amber-800 dark:text-amber-300 text-[10px]">
+                <div className="bg-white dark:bg-[#151514] rounded-lg border border-[#E4E1DA] dark:border-[#282724] p-2.5">
+                  <div className="font-sans text-[#5C5953] dark:text-[#9A968E] text-[10px]">
                     2. − Авансы фабрикам
                   </div>
-                  <div className="text-[14px] font-bold text-amber-700 dark:text-amber-300 mt-0.5">
+                  <div className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                     {selectedRow.factoryPrepaymentOutflowRub > 0
                       ? `−${fmtMlnRub(selectedRow.factoryPrepaymentOutflowRub, 2)}`
                       : '0 млн ₽'}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-[#121620] rounded-lg border border-rose-200/80 dark:border-rose-500/30 p-2.5">
-                  <div className="text-rose-800 dark:text-rose-300 text-[10px]">
+                <div className="bg-white dark:bg-[#151514] rounded-lg border border-[#E4E1DA] dark:border-[#282724] p-2.5">
+                  <div className="font-sans text-[#5C5953] dark:text-[#9A968E] text-[10px]">
                     3. − Доплаты к приходу
                   </div>
-                  <div className="text-[14px] font-bold text-rose-700 dark:text-rose-400 mt-0.5">
+                  <div className="text-[14px] font-semibold text-rose-700 dark:text-rose-400 mt-0.5">
                     {selectedRow.factoryBalanceOutflowRub > 0
                       ? `−${fmtMlnRub(selectedRow.factoryBalanceOutflowRub, 2)}`
                       : '0 млн ₽'}
                   </div>
                 </div>
-                <div
-                  className={`rounded-lg border p-2.5 ${
-                    selectedRow.intraMonthLowBalanceRub < 0
-                      ? 'bg-amber-50/90 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/45'
-                      : 'bg-white dark:bg-[#121620] border-slate-200/90 dark:border-[#283246]'
-                  }`}
-                >
-                  <div className="text-amber-900 dark:text-amber-200 font-semibold text-[10px]">
-                    4. ⚡ Минимум внутри мес. (до WB)
+                <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                  <div className="font-sans text-[#141413] dark:text-[#F5F4F0] font-medium text-[10px]">
+                    4. Минимум внутри мес. (до WB)
                   </div>
                   <div
-                    className={`text-[14px] font-black mt-0.5 ${
+                    className={`text-[14px] font-semibold mt-0.5 ${
                       selectedRow.intraMonthLowBalanceRub < 0
                         ? 'text-rose-700 dark:text-rose-400'
-                        : 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-[#15803D] dark:text-emerald-400'
                     }`}
                   >
                     {fmtSignedMlnRub(selectedRow.intraMonthLowBalanceRub, 2)}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-[#121620] rounded-lg border border-emerald-200/80 dark:border-emerald-500/30 p-2.5">
-                  <div className="text-emerald-800 dark:text-emerald-300 text-[10px]">
+                <div className="bg-white dark:bg-[#151514] rounded-lg border border-[#E4E1DA] dark:border-[#282724] p-2.5">
+                  <div className="font-sans text-[#5C5953] dark:text-[#9A968E] text-[10px]">
                     5. + Выплаты с WB (чист.)
                   </div>
-                  <div className="text-[14px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  <div className="text-[14px] font-semibold text-[#15803D] dark:text-emerald-400 mt-0.5">
                     +{fmtMlnRub(selectedRow.wbNetInflowRub, 2)}
                   </div>
                 </div>
-                <div
-                  className={`rounded-lg border p-2.5 ${
-                    selectedRow.cumulativeCashBalanceRub >= 0
-                      ? 'bg-emerald-50/80 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-500/40'
-                      : 'bg-rose-50/70 dark:bg-rose-500/15 border-rose-200 dark:border-rose-500/40'
-                  }`}
-                >
-                  <div className="text-slate-700 dark:text-slate-200 font-semibold text-[10px]">
+                <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                  <div className="font-sans text-[#141413] dark:text-[#F5F4F0] font-medium text-[10px]">
                     6. = На конец {MONTHS_FULL_GENITIVE[selectedMonthIdx]}
                   </div>
                   <div
-                    className={`text-[14px] font-black mt-0.5 ${
+                    className={`text-[14px] font-semibold mt-0.5 ${
                       selectedRow.cumulativeCashBalanceRub >= 0
-                        ? 'text-emerald-800 dark:text-emerald-300'
+                        ? 'text-[#15803D] dark:text-emerald-400'
                         : 'text-rose-700 dark:text-rose-400'
                     }`}
                   >
@@ -1177,25 +1177,25 @@ export function PeakOwnMoneyChartPanel({
           )}
 
           {/* Помесячная сверка в таблице (с раздельными строками Авансов, Доплат и Внутримесячного Пика) */}
-          <div className="border-t border-slate-100 dark:border-[#222938] pt-3">
+          <div className="border-t border-[#E4E1DA] dark:border-[#282724] pt-3">
             <div className="flex items-center justify-between gap-2 mb-2.5">
-              <div className="text-[12px] font-bold text-slate-800 dark:text-[#EDF0F7]">
+              <div className="text-[12px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 Помесячная таблица движения денег и сверка «Пика своих денег» (млн ₽)
               </div>
               <button
                 type="button"
                 onClick={() => setTableExpanded((v) => !v)}
-                className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 px-2.5 py-1 rounded-lg bg-indigo-50/70 dark:bg-indigo-500/15 border border-indigo-200/70 dark:border-indigo-500/30 cursor-pointer"
+                className="text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0] hover:border-[#141413] dark:hover:border-[#5C5953] px-2.5 py-1 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] transition-colors cursor-pointer"
               >
                 {tableExpanded ? 'Свернуть таблицу ▴' : 'Показать полную таблицу 12 мес. ▾'}
               </button>
             </div>
 
             {tableExpanded && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-[#283246]">
+              <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
                 <table className="w-full text-[11px] text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-[#181D2A] border-b border-slate-200 dark:border-[#283246] text-slate-500 dark:text-slate-400">
+                    <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]">
                       <th className="py-2 px-3 font-semibold min-w-[230px]">
                         Статья движения денег
                       </th>
@@ -1203,16 +1203,16 @@ export function PeakOwnMoneyChartPanel({
                         <th
                           key={r.monthIdx}
                           onClick={() => setSelectedMonthIdx(idx)}
-                          className={`py-2 px-2 text-right font-bold cursor-pointer ${
+                          className={`py-2 px-2 text-right font-semibold cursor-pointer ${
                             idx === peakIdx && ownMoneyPeakRub > 0
-                              ? 'bg-amber-100/80 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200'
+                              ? 'text-rose-700 dark:text-rose-400'
                               : idx === selectedMonthIdx
-                              ? 'bg-slate-200/60 dark:bg-slate-700/50 text-slate-900 dark:text-white'
+                              ? 'bg-[#E4E1DA]/50 dark:bg-[#282724] text-[#141413] dark:text-[#F5F4F0]'
                               : ''
                           }`}
                         >
                           {r.monthLabel}
-                          {idx === peakIdx && ownMoneyPeakRub > 0 ? ' 📍' : ''}
+                          {idx === peakIdx && ownMoneyPeakRub > 0 ? ' •' : ''}
                         </th>
                       ))}
                     </tr>
@@ -1274,9 +1274,9 @@ export function PeakOwnMoneyChartPanel({
                         </td>
                       ))}
                     </tr>
-                    <tr className="bg-amber-50/65 dark:bg-amber-500/10 font-bold">
-                      <td className="py-2.5 px-3 text-amber-950 dark:text-amber-200">
-                        ⚡ Минимум внутри мес. до выплат WB (минус = пик своих ₽)
+                    <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] font-semibold">
+                      <td className="py-2.5 px-3 text-[#141413] dark:text-[#F5F4F0]">
+                        Минимум внутри мес. до выплат WB (минус = пик своих ₽)
                       </td>
                       {rows.map((r, idx) => {
                         const val = r.intraMonthLowBalanceRub;

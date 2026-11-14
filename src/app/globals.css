@@ -2,10 +2,45 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Дизайн-система с лёгким воздушным контрастом (Peakly Light & Obsidian Dark):
-   Светлая тема — чистый светлый холст (#F6F7F9) + белоснежные карточки (#FFFFFF) с деликатной 1px рамкой (#E2E6EE) и мягкой тенью.
-   Тёмная тема (.dark) — глубокий обсидиан (#0B0E14) + графитовые карточки (#121620) с тонкими границами (#222938) и изумрудным свечением. */
-:root {
+/* ─── Архитектурная дизайн-система BORNERS GROUP v10 (COS / Acne + Ramp) с мгновенным откатом к v9 ───
+   Режим по умолчанию (data-ui="editorial"):
+   • Светлая тема — тёплый архитектурный камень (#F6F5F2), белоснежные листы (#FFFFFF), глубокий антрацит (#141413) и тонкие линии 1px (#E4E1DA).
+   • Тёмная тема (.dark) — тёплый графит-обсидиан (#0E0E0D + #151514) без холодного синего оттенка.
+   Режим отката в 1 клик (data-ui="classic"):
+   • Полностью возвращает классическую холодную палитру v9 (#EEF2F6 / #0B0E14) и прежние радиусы/эффекты. */
+
+:root,
+html:not([data-ui="classic"]) {
+  --bg-page: #F6F5F2;
+  --bg-card: #FFFFFF;
+  --bg-subtle: #EFEDE8;
+  --bg-warm-tint: #FAF9F6;
+  --text-primary: #141413;
+  --text-secondary: #5C5953;
+  --border-color: #E4E1DA;
+  --border-strong: #D2CEC4;
+  --bg-dark-block: #141413;
+  --brand-borners: #141413;
+  --brand-natele: #5C5953;
+  --status-success: #15803D;
+  --status-warning: #B45309;
+  --status-error: #B91C1C;
+}
+
+html.dark:not([data-ui="classic"]) {
+  --bg-page: #0E0E0D;
+  --bg-card: #151514;
+  --bg-subtle: #1D1C1A;
+  --bg-warm-tint: #191816;
+  --text-primary: #F2F0EC;
+  --text-secondary: #9E9A91;
+  --border-color: #282724;
+  --border-strong: #383632;
+  --bg-dark-block: #22211E;
+}
+
+/* Мгновенный откат в 1 клик к классическому стилю v9 (Peakly Cool Slate & Obsidian) */
+html[data-ui="classic"] {
   --bg-page: #EEF2F6;
   --bg-card: #FFFFFF;
   --bg-subtle: #E6ECF2;
@@ -22,7 +57,7 @@
   --status-error: #EF4444;
 }
 
-html.dark {
+html.dark[data-ui="classic"] {
   --bg-page: #0B0E14;
   --bg-card: #121620;
   --bg-subtle: #181D2A;
@@ -48,31 +83,139 @@ body {
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.012em;
   line-height: 1.5;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-/* Единая спокойная типографика с выравниванием цифр в финансовых колонках */
+/* Основная редакционная и табличная типографика */
 .font-serif-editorial,
-.font-mono,
 .font-sans {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
   font-variant-numeric: tabular-nums;
 }
 
-.font-serif-editorial {
-  font-weight: 600;
-  letter-spacing: -0.022em;
-  line-height: 1.24;
+/* В архитектурном режиме (COS / Ramp) включаем настоящий технический моноширинный шрифт JetBrains Mono для SKU, партий PO и рублей */
+html:not([data-ui="classic"]) .font-mono,
+html:not([data-ui="classic"]) code,
+html:not([data-ui="classic"]) kbd {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+  letter-spacing: -0.02em;
 }
 
-.font-mono {
+html[data-ui="classic"] .font-mono {
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+.font-serif-editorial {
+  font-weight: 600;
+  letter-spacing: -0.024em;
+  line-height: 1.22;
 }
 
 h1.font-serif-editorial,
 h2.font-serif-editorial {
   font-size: clamp(1.25rem, 1.65vw, 1.55rem) !important;
-  line-height: 1.24 !important;
+  line-height: 1.22 !important;
+}
+
+/* ─── Архитектурная гармонизация палитры и радиусов (только в режиме editorial) ─── */
+html:not([data-ui="classic"]) :is(
+  .rounded-3xl,
+  .rounded-\[28px\],
+  .rounded-\[24px\],
+  .rounded-\[22px\],
+  .rounded-\[20px\],
+  .rounded-\[18px\],
+  .rounded-\[16px\],
+  .rounded-2xl
+) {
+  border-radius: 12px !important;
+}
+
+html:not([data-ui="classic"]) :is(
+  .rounded-\[15px\],
+  .rounded-\[14px\]
+) {
+  border-radius: 10px !important;
+}
+
+/* Замена больнично-синих фонов и рамок на тёплый архитектурный камень в светлой теме editorial */
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#EEF2F6\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F6F7F9\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#E4E8EE\] {
+  background-color: var(--bg-page) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F8FAFC\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F8FAFC\]\/80,
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F8FAFC\]\/70,
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F4F6F9\],
+html:not([data-ui="classic"]):not(.dark) .bg-slate-50,
+html:not([data-ui="classic"]):not(.dark) .bg-slate-50\/80,
+html:not([data-ui="classic"]):not(.dark) .bg-slate-50\/60 {
+  background-color: var(--bg-warm-tint) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#F1F5F9\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#EEF1F6\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#EEF0F5\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#E6ECF2\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#E2E8F0\],
+html:not([data-ui="classic"]):not(.dark) .bg-\[\#E9EDF4\],
+html:not([data-ui="classic"]):not(.dark) .bg-slate-100 {
+  background-color: var(--bg-subtle) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .hover\:bg-\[\#F8FAFC\]:hover,
+html:not([data-ui="classic"]):not(.dark) .hover\:bg-\[\#F1F5F9\]:hover,
+html:not([data-ui="classic"]):not(.dark) .hover\:bg-slate-50:hover,
+html:not([data-ui="classic"]):not(.dark) .hover\:bg-slate-100:hover {
+  background-color: var(--bg-subtle) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .border-\[\#D5DCE6\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#E2E8F0\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#E2E6EE\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#DCE2EC\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#DCE0E8\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#D8DEE8\],
+html:not([data-ui="classic"]):not(.dark) .border-\[\#EAEEF4\],
+html:not([data-ui="classic"]):not(.dark) .border-slate-200,
+html:not([data-ui="classic"]):not(.dark) .border-slate-100 {
+  border-color: var(--border-color) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .border-\[\#CBD5E1\],
+html:not([data-ui="classic"]):not(.dark) .border-slate-300 {
+  border-color: var(--border-strong) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .divide-\[\#E2E8F0\] > :not([hidden]) ~ :not([hidden]),
+html:not([data-ui="classic"]):not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+html:not([data-ui="classic"]):not(.dark) .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-color) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .text-\[\#0F172A\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#111827\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#0F141C\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#1E293B\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#1E2638\],
+html:not([data-ui="classic"]):not(.dark) .text-slate-900,
+html:not([data-ui="classic"]):not(.dark) .text-slate-800 {
+  color: var(--text-primary) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) .text-\[\#334155\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#475569\],
+html:not([data-ui="classic"]):not(.dark) .text-\[\#64748B\],
+html:not([data-ui="classic"]):not(.dark) .text-slate-700,
+html:not([data-ui="classic"]):not(.dark) .text-slate-600,
+html:not([data-ui="classic"]):not(.dark) .text-slate-500 {
+  color: var(--text-secondary) !important;
 }
 
 /* Тонкие и чистые структурные линии таблиц и секций */
@@ -84,7 +227,7 @@ table tbody tr + tr {
   border-top: 1px solid var(--border-color);
 }
 
-/* Мягкие деликатные 1px рамки вместо тяжёлых 1.5px границ */
+/* Мягкие деликатные 1px рамки вместо тяжёлых 1.5px/2px границ */
 .border-2.border-\[\#181715\],
 .border-\[\#E8E8E5\],
 .border-\[\#EAE6DF\],
@@ -105,14 +248,16 @@ table tbody tr + tr {
   border-color: var(--border-color) !important;
 }
 
-/* Адаптация карточек, таблиц, инпутов и секций под Obsidian Dark (.dark) */
+/* ─── Адаптация карточек, таблиц, инпутов и секций под Тёмную тему (.dark) ─── */
 html.dark .bg-\[\#E4E8EE\],
-html.dark .bg-\[\#F6F7F9\] {
-  background-color: #0B0E14 !important;
+html.dark .bg-\[\#F6F7F9\],
+html.dark .bg-\[\#F6F5F2\] {
+  background-color: var(--bg-page) !important;
 }
 
 html.dark .bg-white,
 html.dark .bg-white\/95,
+html.dark .bg-white\/92,
 html.dark .bg-white\/90,
 html.dark .bg-white\/80,
 html.dark .bg-\[\#FDFCFA\],
@@ -130,6 +275,7 @@ html.dark .bg-\[\#F1F5F9\],
 html.dark .bg-\[\#EEF1F6\],
 html.dark .bg-\[\#EEF2F6\],
 html.dark .bg-\[\#EEF0F5\],
+html.dark .bg-\[\#EFEDE8\],
 html.dark .bg-\[\#F5F5F1\],
 html.dark .bg-\[\#F5F5F4\],
 html.dark .bg-\[\#F7F7F3\],
@@ -161,8 +307,10 @@ html.dark .bg-\[\#EAE9E2\],
 html.dark .bg-\[\#E5E4DC\],
 html.dark .bg-\[\#E4E3DC\],
 html.dark .bg-\[\#E2E8F0\],
-html.dark .bg-\[\#E9EDF4\] {
-  background-color: #181D2A !important;
+html.dark .bg-\[\#E9EDF4\],
+html.dark .bg-slate-50,
+html.dark .bg-slate-100 {
+  background-color: var(--bg-subtle) !important;
 }
 
 html.dark .bg-\[\#EAF6F0\],
@@ -244,17 +392,17 @@ html.dark .bg-\[\#FDF3EB\],
 html.dark .bg-\[\#FDF3EB\]\/40,
 html.dark .bg-\[\#FDF3EB\]\/50,
 html.dark .bg-\[\#FDF5EF\] {
-  background-color: #181D2A !important;
+  background-color: var(--bg-subtle) !important;
 }
 
 html.dark .bg-\[\#EFECE6\],
 html.dark .bg-\[\#F6F3ED\],
 html.dark .bg-\[\#E5E0D8\],
 html.dark .bg-\[\#EAE6DF\] {
-  background-color: #1E2433 !important;
+  background-color: var(--bg-dark-block) !important;
 }
 
-/* Hover & Focus состояния в тёмной теме (.dark) — убираем белые/серые засветы и сохраняем 100% читаемость текста */
+/* Hover & Focus состояния в тёмной теме (.dark) */
 html.dark .hover\:bg-white:hover,
 html.dark .hover\:bg-white\/60:hover,
 html.dark .hover\:bg-white\/70:hover,
@@ -268,6 +416,7 @@ html.dark .hover\:bg-\[\#EEF1F6\]:hover,
 html.dark .hover\:bg-\[\#E9EDF4\]:hover,
 html.dark .hover\:bg-\[\#E2E8F0\]:hover,
 html.dark .hover\:bg-\[\#E2E8F0\]\/70:hover,
+html.dark .hover\:bg-\[\#EFEDE8\]:hover,
 html.dark .hover\:bg-\[\#FAF9F6\]:hover,
 html.dark .hover\:bg-\[\#FAF8F5\]:hover,
 html.dark .hover\:bg-\[\#FAF8F4\]:hover,
@@ -296,7 +445,7 @@ html.dark .hover\:bg-\[\#E5E0D5\]:hover,
 html.dark .hover\:bg-\[\#DFDED6\]:hover,
 html.dark .group:hover .group-hover\:bg-\[\#F8FAFC\],
 html.dark .group:hover .group-hover\:bg-\[\#EAE9E2\] {
-  background-color: #1E2536 !important;
+  background-color: var(--bg-dark-block) !important;
 }
 
 html.dark .hover\:bg-\[\#EAF6F0\]:hover,
@@ -331,7 +480,7 @@ html.dark .hover\:text-\[\#171717\]:hover,
 html.dark .hover\:text-\[\#181715\]:hover,
 html.dark .hover\:text-\[\#1D1D1F\]:hover,
 html.dark .group:hover .group-hover\:text-\[\#1D1D1F\] {
-  color: #F8FAFC !important;
+  color: var(--text-primary) !important;
 }
 
 html.dark .group:hover .group-hover\:text-emerald-700,
@@ -362,7 +511,7 @@ html.dark .hover\:border-\[\#1D1D1F\]:hover,
 html.dark .focus\:border-\[\#0F172A\]:focus,
 html.dark .focus\:border-\[\#141413\]:focus,
 html.dark .focus\:border-\[\#171717\]:focus {
-  border-color: #3B4761 !important;
+  border-color: var(--border-strong) !important;
 }
 
 html.dark .text-\[\#111827\],
@@ -377,7 +526,7 @@ html.dark .text-\[\#181715\],
 html.dark .text-\[\#1D1D1F\],
 html.dark .text-\[\#262624\],
 html.dark .text-\[\#263042\] {
-  color: #EDF0F7 !important;
+  color: var(--text-primary) !important;
 }
 
 html.dark .text-\[\#334155\],
@@ -394,6 +543,7 @@ html.dark .text-\[\#52514C\],
 html.dark .text-\[\#52524E\],
 html.dark .text-\[\#525252\],
 html.dark .text-\[\#5A564F\],
+html.dark .text-\[\#5C5953\],
 html.dark .text-\[\#5C5852\],
 html.dark .text-\[\#5C5B55\],
 html.dark .text-\[\#5E5D58\],
@@ -405,21 +555,23 @@ html.dark .text-\[\#6E6D66\],
 html.dark .text-\[\#6E6D68\],
 html.dark .text-\[\#6E6E73\],
 html.dark .text-\[\#737373\],
+html.dark .text-\[\#78746C\],
 html.dark .text-\[\#7A756C\],
 html.dark .text-\[\#7A756D\],
 html.dark .text-\[\#7E7D77\],
 html.dark .text-\[\#8A8983\],
+html.dark .text-\[\#8A867E\],
 html.dark .text-\[\#8E8880\],
 html.dark .text-\[\#8E8A82\],
 html.dark .text-\[\#8E8D85\] {
-  color: #94A3B8 !important;
+  color: var(--text-secondary) !important;
 }
 
 html.dark .text-\[\#A09F98\],
 html.dark .text-\[\#B5B4AD\],
 html.dark .text-\[\#C8C3B9\],
 html.dark .text-\[\#CBD5E1\] {
-  color: #64748B !important;
+  color: var(--text-secondary) !important;
 }
 
 html.dark .text-\[\#047857\],
@@ -441,6 +593,8 @@ html.dark .text-\[\#2E6B4E\] {
 
 html.dark .border-\[\#E2E8F0\],
 html.dark .border-\[\#E2E6EE\],
+html.dark .border-\[\#E4E1DA\],
+html.dark .border-\[\#D2CEC4\],
 html.dark .border-\[\#DCE2EC\],
 html.dark .border-\[\#DCE0E8\],
 html.dark .border-\[\#CBD5E1\],
@@ -490,9 +644,10 @@ html.dark .border-\[\#ECEBE4\],
 html.dark .border-\[\#ECEBE6\],
 html.dark .border-\[\#EFECE4\],
 html.dark .border-\[\#EFECE6\] {
-  border-color: #222938 !important;
+  border-color: var(--border-color) !important;
 }
 
+html.dark .divide-\[\#E4E1DA\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#E4E3DC\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#ECEBE4\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#EAE9E2\] > :not([hidden]) ~ :not([hidden]),
@@ -501,16 +656,42 @@ html.dark .divide-\[\#EEF2F6\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#DFD8CC\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#D4CDC2\] > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-\[\#D5CEC2\] > :not([hidden]) ~ :not([hidden]) {
-  border-color: #222938 !important;
+  border-color: var(--border-color) !important;
 }
 
 html.dark select option {
-  background-color: #121620;
-  color: #EDF0F7;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
 }
 
-/* Контрастные тёмные кнопки, вкладки и бейджи в Obsidian Dark (.dark) без осветления полноэкранных модалок */
-html.dark :is(button, a, label, span, [role="tab"], [role="button"]):is(
+/* Контрастные тёмные кнопки, вкладки и бейджи в тёмной теме (.dark) без осветления полноэкранных модалок */
+html.dark:not([data-ui="classic"]) :is(button, a, label, span, [role="tab"], [role="button"]):is(
+  .bg-\[\#1F1E1C\],
+  .bg-\[\#141413\],
+  .bg-\[\#181715\],
+  .bg-\[\#111111\],
+  .bg-\[\#1D1D1F\],
+  .bg-\[\#161615\]
+):not(.pdf-paper-preview *) {
+  background-color: #262522 !important;
+  border: 1px solid rgba(242, 240, 236, 0.22) !important;
+  color: #F2F0EC !important;
+}
+
+html.dark:not([data-ui="classic"]) :is(button, a, label, [role="tab"], [role="button"]):is(
+  .bg-\[\#1F1E1C\],
+  .bg-\[\#141413\],
+  .bg-\[\#181715\],
+  .bg-\[\#111111\],
+  .bg-\[\#1D1D1F\],
+  .bg-\[\#161615\]
+):not(.pdf-paper-preview *):hover {
+  background-color: #33312D !important;
+  border-color: rgba(242, 240, 236, 0.36) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark[data-ui="classic"] :is(button, a, label, span, [role="tab"], [role="button"]):is(
   .bg-\[\#1F1E1C\],
   .bg-\[\#141413\],
   .bg-\[\#181715\],
@@ -523,7 +704,7 @@ html.dark :is(button, a, label, span, [role="tab"], [role="button"]):is(
   color: #F8FAFC !important;
 }
 
-html.dark :is(button, a, label, [role="tab"], [role="button"]):is(
+html.dark[data-ui="classic"] :is(button, a, label, [role="tab"], [role="button"]):is(
   .bg-\[\#1F1E1C\],
   .bg-\[\#141413\],
   .bg-\[\#181715\],
@@ -606,7 +787,12 @@ textarea:focus-visible,
 }
 
 ::selection {
-  background-color: rgba(16, 185, 129, 0.18);
+  background-color: rgba(20, 20, 19, 0.14);
+  color: inherit;
+}
+
+html.dark ::selection {
+  background-color: rgba(242, 240, 236, 0.2);
   color: inherit;
 }
 
@@ -621,69 +807,12 @@ textarea:focus-visible,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: var(--border-strong);
   border-radius: 9999px;
 }
 
-html.dark ::-webkit-scrollbar-thumb {
-  background: #2E374B;
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
-}
-
-/* ─── Премиальные микро-анимации и эффекты глубины ─── */
-
-@keyframes shimmer-sweep {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes btn-shine {
-  0% { transform: translateX(-120%) skewX(-16deg); }
-  65%, 100% { transform: translateX(220%) skewX(-16deg); }
-}
-
-@keyframes glow-bloom {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-  35%  { box-shadow: 0 0 28px 6px rgba(16, 185, 129, 0.20); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-
-@keyframes pulse-orbit {
-  0%, 100% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(6deg) scale(1.03); }
-}
-
-.card-shimmer {
-  position: relative;
-  overflow: hidden;
-}
-
-.card-shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    110deg,
-    transparent 25%,
-    rgba(16, 185, 129, 0.03) 38%,
-    transparent 62%
-  );
-  background-size: 200% 100%;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.card-shimmer:hover::after {
-  opacity: 1;
-  animation: shimmer-sweep 1.6s ease-in-out infinite;
-}
-
-html.dark .card-shimmer::after {
-  display: none !important;
+  background: var(--text-secondary);
 }
 
 html.dark .border-\[\#A7F3D0\],
@@ -707,30 +836,102 @@ html.dark .border-amber-300 {
   border-color: rgba(245, 158, 11, 0.32) !important;
 }
 
-.hover-lift {
-  box-shadow: 0 2px 10px -3px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04);
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
+/* ─── Спокойная архитектурная глубина в editorial VS классические эффекты в classic ─── */
+html:not([data-ui="classic"]) .hover-lift {
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.04);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-html.dark .hover-lift {
-  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.45);
+html:not([data-ui="classic"]) .hover-lift:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 14px -4px rgba(20, 20, 19, 0.08);
 }
 
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.11), 0 4px 10px -2px rgba(15, 23, 42, 0.05);
+html.dark:not([data-ui="classic"]) .hover-lift {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
-html.dark .hover-lift:hover {
-  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.65);
+html.dark:not([data-ui="classic"]) .hover-lift:hover {
+  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.55);
 }
 
-.btn-shine-effect {
+html:not([data-ui="classic"]) .card-shimmer::after,
+html:not([data-ui="classic"]) .btn-shine-effect::after {
+  display: none !important;
+}
+
+html:not([data-ui="classic"]) .animate-orbit-slow {
+  animation: none !important;
+}
+
+/* Классический режим v9 (data-ui="classic") — сохраняет исходные эффекты */
+@keyframes shimmer-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes btn-shine {
+  0% { transform: translateX(-120%) skewX(-16deg); }
+  65%, 100% { transform: translateX(220%) skewX(-16deg); }
+}
+
+@keyframes glow-bloom {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  35%  { box-shadow: 0 0 28px 6px rgba(16, 185, 129, 0.20); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes pulse-orbit {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(6deg) scale(1.03); }
+}
+
+html[data-ui="classic"] .card-shimmer {
   position: relative;
   overflow: hidden;
 }
 
-.btn-shine-effect::after {
+html[data-ui="classic"] .card-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgba(16, 185, 129, 0.03) 38%,
+    transparent 62%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+html[data-ui="classic"] .card-shimmer:hover::after {
+  opacity: 1;
+  animation: shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+html.dark[data-ui="classic"] .card-shimmer::after {
+  display: none !important;
+}
+
+html[data-ui="classic"] .hover-lift {
+  box-shadow: 0 2px 10px -3px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
+}
+
+html[data-ui="classic"] .hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.11), 0 4px 10px -2px rgba(15, 23, 42, 0.05);
+}
+
+html[data-ui="classic"] .btn-shine-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-ui="classic"] .btn-shine-effect::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -747,10 +948,10 @@ html.dark .hover-lift:hover {
   pointer-events: none;
 }
 
-.glow-bloom-once {
+html[data-ui="classic"] .glow-bloom-once {
   animation: glow-bloom 1.4s ease-out 1 both;
 }
 
-.animate-orbit-slow {
+html[data-ui="classic"] .animate-orbit-slow {
   animation: pulse-orbit 14s ease-in-out infinite;
 }

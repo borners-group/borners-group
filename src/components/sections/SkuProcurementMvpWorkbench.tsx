@@ -1249,17 +1249,17 @@ export function SkuProcurementMvpWorkbench({
       {/* =====================================================================
           БЛОК 1 · ПАСПОРТ ЗАКУПКИ МОДЕЛИ В СТИЛЕ PEAKLY (Без вложенных цветных рамок и лишнего шума)
          ===================================================================== */}
-      <div className="rounded-[16px] border border-[#D8D7CE] bg-white overflow-hidden shadow-[0_1px_3px_rgba(20,20,19,0.03)]">
+      <div className="rounded-xl border border-[#E4E1DA] bg-white overflow-hidden shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
         {/* Шапка карточки: Выбор модели слева + Статус + Кнопка «Параметры и размеры ▾» справа */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE9E2] bg-[#FAF9F6] px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E4E1DA] bg-[#FAF9F6] px-5 py-3">
           {headerLeftSlot ? (
             <div className="flex-1 min-w-[280px]">{headerLeftSlot}</div>
           ) : (
             <div className="flex flex-wrap items-center gap-2.5">
-              <h3 className="text-[16px] font-bold text-[#141413]">
+              <h3 className="text-[16px] font-semibold text-[#141413]">
                 {model.title}
               </h3>
-              <span className="rounded-md border border-[#DFDED6] bg-white px-2.5 py-0.5 font-mono text-[11.5px] font-semibold text-[#52514C]">
+              <span className="rounded-md border border-[#E4E1DA] bg-white px-2.5 py-0.5 font-mono text-[11.5px] font-medium text-[#5C5953]">
                 {hasDistinctSecondaryUnit
                   ? `${model.code} · ${model.unitsInPack} ${unitLabels.secondaryShort}/${unitLabels.primaryShort}`
                   : `${model.code} · ${unitLabels.primaryShort}`}
@@ -1269,7 +1269,7 @@ export function SkuProcurementMvpWorkbench({
 
           <div className="flex flex-wrap items-center gap-2">
             <div
-              className="inline-flex items-center rounded-[9px] border border-[#E2E1D9] bg-[#F2F1EC] p-0.5"
+              className="inline-flex items-center rounded-lg border border-[#E4E1DA] bg-white p-0.5"
               title="Пока у модели статус «Гипотеза» или «Тест», к утверждению формируется только первая тестовая партия"
             >
               {(['hypothesis', 'test', 'scaling'] as ModelScalingStage[]).map((st) => {
@@ -1280,10 +1280,10 @@ export function SkuProcurementMvpWorkbench({
                     type="button"
                     disabled={!canEdit}
                     onClick={() => handleUpdateScalingStage(st)}
-                    className={`rounded-[7px] px-2.5 py-1 text-[11.5px] font-semibold transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                    className={`rounded-md px-2.5 py-1 text-[11.5px] font-medium transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                       active
-                        ? 'bg-white text-[#141413] shadow-[0_1px_2px_rgba(20,20,19,0.08)] border border-[#D4D3C9]'
-                        : 'text-[#686762] hover:text-[#141413] border border-transparent'
+                        ? 'bg-[#141413] text-white border border-[#141413]'
+                        : 'text-[#5C5953] hover:text-[#141413] border border-transparent'
                     }`}
                   >
                     {MODEL_SCALING_STAGE_LABELS_RU[st]}
@@ -1295,18 +1295,18 @@ export function SkuProcurementMvpWorkbench({
             <button
               type="button"
               onClick={() => setShowAdvancedSettings((v) => !v)}
-              className={`h-8 inline-flex items-center gap-1.5 rounded-[8px] border px-3 text-[11.5px] font-semibold transition cursor-pointer ${
+              className={`h-8 inline-flex items-center gap-1.5 rounded-lg border px-3 text-[11.5px] font-medium transition-colors cursor-pointer ${
                 showAdvancedSettings
-                  ? 'border-[#B8B7AE] bg-[#EFEFE9] text-[#141413]'
-                  : 'border-[#D8D7CE] bg-white text-[#141413] hover:bg-[#F4F3EE]'
+                  ? 'border-[#141413] bg-[#141413] text-white'
+                  : 'border-[#E4E1DA] bg-white text-[#141413] hover:bg-[#FAF9F6]'
               }`}
               title={`Открыть себестоимость, остаток на складе, аванс, цикл поставки и размерную сетку (${sizeRangeLabel})`}
             >
               <span>Параметры:</span>
-              <span className="font-mono font-bold">
+              <span className="font-mono font-semibold">
                 {hasCost ? `${model.unitCostRub || 0} ₽` : 'Скрыто'} · {proc.totalLeadDays} дн. · {sizeRangeLabel}
               </span>
-              <span className="text-[10px] text-[#686762]">
+              <span className="text-[10px] opacity-75">
                 {showAdvancedSettings ? '▴' : '▾'}
               </span>
             </button>

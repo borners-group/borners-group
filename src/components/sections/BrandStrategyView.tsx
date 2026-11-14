@@ -61,7 +61,7 @@ const HOLDING_BRAND_TABS = [
       '24 всесезонные карточки (31 цветомодель) детской обуви размеров 18–31: пинетки, сандалии, кроссовки, ботинки и дутики.',
     targetMarginPct: 65,
     heroImage: 'images/products/borners-editorial-hero.jpg',
-    accentColor: '#2563EB',
+    accentColor: '#5C5953',
   },
   {
     code: 'LISKANI' as const,
@@ -72,7 +72,7 @@ const HOLDING_BRAND_TABS = [
       '33 базовые карточки, развёрнутые в 269 размерных SKU по ширине и высоте под стандартные и панорамные потолки.',
     targetMarginPct: 62,
     heroImage: 'images/products/natele-editorial-hero.jpg',
-    accentColor: '#0F766E',
+    accentColor: '#6E6A63',
   },
   {
     code: 'FUKAI' as const,
@@ -83,7 +83,7 @@ const HOLDING_BRAND_TABS = [
       'Действующая линейка товаров для сна с высокой оборачиваемостью, высоким процентом выкупа (85%+) и компактной логистикой ФБО.',
     targetMarginPct: 68,
     heroImage: 'images/products/borners-editorial-hero.jpg',
-    accentColor: '#4F46E5',
+    accentColor: '#3A3835',
   },
 ] as const;
 
@@ -93,15 +93,15 @@ const HOLDING_BRAND_CODES: readonly HoldingBrandCode[] = HOLDING_BRAND_TABS.map(
 const STATUS_LABELS: Record<ApprovalStatus, { label: string; dotColor: string }> = {
   draft: {
     label: 'Черновик',
-    dotColor: 'bg-[#737373]',
+    dotColor: 'bg-[#8A857D]',
   },
   in_review: {
     label: 'На согласовании',
-    dotColor: 'bg-[#D99527]',
+    dotColor: 'bg-amber-600',
   },
   approved: {
     label: 'Утверждено',
-    dotColor: 'bg-[#16805D]',
+    dotColor: 'bg-emerald-600',
   },
 };
 
@@ -124,7 +124,7 @@ export function BrandPortfolioView() {
     name: '',
     tagline: '',
     segment: 'Премиум-капсула',
-    accentColor: '#D97745',
+    accentColor: '#141413',
   });
 
   const hasFinance = canUserViewFinance(currentUser);
@@ -190,7 +190,7 @@ export function BrandPortfolioView() {
         description: ctxBrand?.description || meta.description,
         targetMarginPct: ctxBrand?.targetMarginPct || meta.targetMarginPct,
         heroImage,
-        accentColor: ctxBrand?.accentColor || meta.accentColor,
+        accentColor: meta.accentColor,
         plannedRevenue2027Rub,
         skuCount,
         rndCount: bConcepts.length,
@@ -225,7 +225,7 @@ export function BrandPortfolioView() {
           description: b.description,
           targetMarginPct: b.targetMarginPct,
           heroImage: b.heroImage,
-          accentColor: b.accentColor || '#141413',
+          accentColor: '#141413',
           plannedRevenue2027Rub: b.plannedRevenue2027Rub,
           skuCount: bProducts.length,
           rndCount: bConcepts.length,
@@ -249,13 +249,13 @@ export function BrandPortfolioView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Архитектурная шапка портфеля брендов */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      <div className="rounded-2xl bg-white border border-[#E4E1DA] p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] uppercase tracking-wider text-[#5C5953]">
             Сводка и стратегия · {portfolioBrandCards.length} активных брендов холдинга · План 2027:{' '}
             {hasFinance ? formatCompactRub(multiBrandSummary.groupTotal.annualRevenueRub) : 'Скрыто'}
           </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[24px] font-semibold tracking-tight text-[#141413] mt-1">
             ДНК и стратегия брендов
           </h1>
         </div>
@@ -263,99 +263,101 @@ export function BrandPortfolioView() {
         {canCreateBrand && (
           <button
             onClick={() => setShowNewBrandModal(true)}
-            className="h-9 rounded-[9px] bg-[#141413] text-white px-4 text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-9 rounded-lg bg-[#141413] text-white px-4 text-[13px] font-medium hover:bg-[#2A2A28] transition-colors cursor-pointer"
           >
-            Добавить бренд
+            <Plus className="h-3.5 w-3.5 stroke-[1.5]" />
+            <span>Добавить бренд</span>
           </button>
         )}
       </div>
 
-      {/* Крупные карточки всех 5 активных брендов холдинга */}
+      {/* Крупные лукбук-карточки всех 5 активных брендов холдинга */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        {portfolioBrandCards.map((brand) => {
-          const isBorners = brand.code === 'BORNERS';
-          const accentColor = brand.accentColor || (isBorners ? '#141413' : '#52514C');
-
+        {portfolioBrandCards.map((brand, bIdx) => {
           return (
             <div
               key={brand.id}
-              className="bg-white rounded-[18px] border-[1.5px] border-[#C8C7BE] border-t-[3px] overflow-hidden flex flex-col justify-between h-full shadow-[0_2px_10px_rgba(20,20,19,0.03)]"
-              style={{ borderTopColor: accentColor }}
+              className="bg-white rounded-2xl border border-[#E4E1DA] hover:border-[#141413] transition-colors overflow-hidden flex flex-col justify-between h-full"
             >
               <div>
                 {/* Студийный кадр коллекции фиксированной высоты h-60 */}
-                <div className="relative h-60 w-full bg-[#F5F5F1] border-b-[1.5px] border-[#C8C7BE] overflow-hidden">
+                <div className="relative h-60 w-full bg-[#F6F5F2] border-b border-[#E4E1DA] overflow-hidden">
                   <img
                     src={resolvePublicAssetUrl(brand.heroImage)}
                     alt={brand.name}
                     className="h-full w-full object-cover object-center"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#141413]/70 via-[#141413]/15 to-transparent" />
+                  <div className="absolute top-4 left-5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-white/95 text-[#141413] font-mono text-[10.5px] font-medium">
+                      {String(bIdx + 1).padStart(2, '0')} · {brand.code}
+                    </span>
+                  </div>
                   <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between text-white">
                     <div>
-                      <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/80">
+                      <div className="text-[11px] font-mono uppercase tracking-wider text-white/80">
                         {brand.segment}
                       </div>
-                      <h2 className="font-serif-editorial text-[32px] font-medium tracking-tight leading-none mt-1">
+                      <h2 className="text-[28px] font-semibold tracking-tight leading-none mt-1">
                         {brand.name}
                       </h2>
                     </div>
-                    <span className="px-2.5 py-1 rounded-[4px] bg-black/55 backdrop-blur-xs text-[11px] font-mono uppercase tracking-[0.14em]">
+                    <span className="px-2.5 py-1 rounded-md bg-[#141413]/75 backdrop-blur-xs text-[11px] font-mono">
                       Маржа {hasFinance && hasCost ? `${brand.targetMarginPct}%` : 'Скрыто'}
                     </span>
                   </div>
                 </div>
 
                 <div className="p-6 space-y-5">
-                  <div className="min-h-[124px]">
-                    <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.16em] text-[#7A756D]">
+                  <div className="min-h-[116px]">
+                    <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-[#5C5953]">
                       <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: accentColor }}
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: brand.accentColor }}
                       />
                       <span>Позиционирование</span>
                     </div>
-                    <p className="text-[15px] text-[#161615] mt-1.5 font-semibold">
+                    <p className="text-[15px] text-[#141413] mt-1.5 font-medium leading-snug">
                       {brand.tagline}
                     </p>
-                    <p className="text-[13.5px] text-[#5C5852] mt-2 leading-relaxed">
+                    <p className="text-[13.5px] text-[#5C5953] mt-2 leading-relaxed">
                       {brand.description}
                     </p>
                   </div>
 
                   {/* Ключевые показатели бренда */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 divide-x-[1.5px] divide-[#DFD8CC] pt-4 border-t-[1.5px] border-[#CFC8BC]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-[#E4E1DA] pt-4 border-t border-[#E4E1DA]">
                     <div className="pr-3">
-                      <div className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#7A756D]">
+                      <div className="text-[11px] text-[#5C5953]">
                         План 2027
                       </div>
-                      <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
+                      <div className="font-mono text-[18px] font-semibold text-[#141413] mt-0.5 tabular-nums">
                         {hasFinance
                           ? formatCompactRub(brand.plannedRevenue2027Rub)
                           : 'Скрыто'}
                       </div>
                     </div>
                     <div className="px-3">
-                      <div className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#7A756D]">
+                      <div className="text-[11px] text-[#5C5953]">
                         Целевая маржа
                       </div>
-                      <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
+                      <div className="font-mono text-[18px] font-semibold text-[#141413] mt-0.5 tabular-nums">
                         {hasFinance && hasCost ? `${brand.targetMarginPct}%` : 'Скрыто'}
                       </div>
                     </div>
                     <div className="px-3">
-                      <div className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#7A756D]">
+                      <div className="text-[11px] text-[#5C5953]">
                         В каталоге
                       </div>
-                      <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
+                      <div className="font-mono text-[18px] font-semibold text-[#141413] mt-0.5 tabular-nums">
                         {brand.skuCount} SKU
                       </div>
                     </div>
                     <div className="pl-3">
-                      <div className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#7A756D]">
+                      <div className="text-[11px] text-[#5C5953]">
                         R&D / Запуски
                       </div>
-                      <div className="font-serif-editorial text-[22px] font-medium text-[#161615] mt-0.5 tabular-nums">
+                      <div className="font-mono text-[18px] font-semibold text-[#141413] mt-0.5 tabular-nums">
                         {brand.rndCount} / {brand.launchesCount}
                       </div>
                     </div>
@@ -364,7 +366,7 @@ export function BrandPortfolioView() {
               </div>
 
               {/* Действия — симметричная 3-кнопочная сетка */}
-              <div className="grid grid-cols-3 divide-x-[1.5px] divide-[#CFC8BC] bg-[#FAF8F5] border-t-[1.5px] border-[#CFC8BC]">
+              <div className="grid grid-cols-3 divide-x divide-[#E4E1DA] bg-[#FAF9F6] border-t border-[#E4E1DA]">
                 <button
                   onClick={() => {
                     try {
@@ -378,17 +380,17 @@ export function BrandPortfolioView() {
                     setBrandFilter(brand.code);
                     navigateTo('brand-strategy');
                   }}
-                  className="h-11 px-3 bg-[#161615] text-[#F8F6F2] text-[12px] font-medium hover:bg-[#2C2B29] transition cursor-pointer inline-flex items-center justify-center gap-1.5"
+                  className="h-11 px-3 bg-[#141413] text-white text-[12.5px] font-medium hover:bg-[#2A2A28] transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
                 >
                   <span>Паспорт (14)</span>
-                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5]" />
                 </button>
                 <button
                   onClick={() => {
                     setBrandFilter(brand.code);
                     navigateTo('product-catalog');
                   }}
-                  className="h-11 px-3 text-[#161615] text-[12.5px] font-semibold hover:bg-[#EFECE6] transition cursor-pointer"
+                  className="h-11 px-3 text-[#141413] text-[12.5px] font-medium hover:bg-[#EFEDE8] transition-colors cursor-pointer"
                 >
                   Каталог ({brand.skuCount})
                 </button>
@@ -397,7 +399,7 @@ export function BrandPortfolioView() {
                     setBrandFilter(brand.code);
                     navigateTo('product-lab');
                   }}
-                  className="h-11 px-3 text-[#161615] text-[12.5px] font-semibold hover:bg-[#EFECE6] transition cursor-pointer"
+                  className="h-11 px-3 text-[#141413] text-[12.5px] font-medium hover:bg-[#EFEDE8] transition-colors cursor-pointer"
                 >
                   R&D ({brand.rndCount})
                 </button>
@@ -408,46 +410,46 @@ export function BrandPortfolioView() {
       </div>
 
       {/* Сравнительная таблица разграничения брендов */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-        <div className="p-6 border-b border-[#E8E8E5]">
-          <h3 className="text-[22px] font-bold text-[#171717]">
-            Разграничение брендов в портфеле группы
+      <div className="bg-white rounded-2xl border border-[#E4E1DA] overflow-x-auto">
+        <div className="p-6 border-b border-[#E4E1DA]">
+          <h3 className="text-[18px] font-semibold tracking-tight text-[#141413]">
+            Разграничение ключевых капсул в портфеле группы
           </h3>
         </div>
-        <table className="w-full text-left text-[15px]">
-          <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <table className="w-full text-left text-[14px]">
+          <thead className="border-b border-[#E4E1DA] text-[12px] font-medium text-[#5C5953] bg-[#FAF9F6]">
             <tr>
-              <th className="py-4 px-6">Критерий</th>
-              <th className="py-4 px-6">BORNERS (Мужской и унисекс базовый)</th>
-              <th className="py-4 px-6">НА ТЕЛЕ (Женский вторая кожа)</th>
+              <th className="py-3.5 px-6">Критерий</th>
+              <th className="py-3.5 px-6">BORNERS (Мужской и унисекс базовый)</th>
+              <th className="py-3.5 px-6">НА ТЕЛЕ (Женский вторая кожа)</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E8E8E5]">
+          <tbody className="divide-y divide-[#E4E1DA]">
             <tr>
-              <td className="py-4 px-6 font-semibold text-[#171717]">Роль продукта</td>
-              <td className="py-4 px-6 text-[#737373]">
+              <td className="py-4 px-6 font-medium text-[#141413]">Роль продукта</td>
+              <td className="py-4 px-6 text-[#5C5953]">
                 Инженерная посадка, плотный модал 92% и пима-хлопок, долговечность 80+ стирок
               </td>
-              <td className="py-4 px-6 text-[#737373]">
+              <td className="py-4 px-6 text-[#5C5953]">
                 Бесшовная лазерная обработка края (Free-cut), тактильная невесомость, 6 телесных оттенков
               </td>
             </tr>
             <tr>
-              <td className="py-4 px-6 font-semibold text-[#171717]">Ценовой коридор и маржа</td>
-              <td className="py-4 px-6 font-semibold text-[#171717]">
+              <td className="py-4 px-6 font-medium text-[#141413]">Ценовой коридор и маржа</td>
+              <td className="py-4 px-6 font-mono font-medium text-[#141413]">
                 1 690 – 4 990 ₽{hasCost ? ' · 72%' : ''}
               </td>
-              <td className="py-4 px-6 font-semibold text-[#171717]">
+              <td className="py-4 px-6 font-mono font-medium text-[#141413]">
                 1 490 – 4 490 ₽{hasCost ? ' · 75%' : ''}
               </td>
             </tr>
             <tr>
-              <td className="py-4 px-6 font-semibold text-[#171717]">Визуальный код</td>
-              <td className="py-4 px-6 text-[#737373]">
-                Строгий графит и терракота (#D97745), матовые тубусы и плотные зип-пакеты 180 мкм
+              <td className="py-4 px-6 font-medium text-[#141413]">Визуальный код</td>
+              <td className="py-4 px-6 text-[#5C5953]">
+                Строгий антрацит и тёплый камень, матовые тубусы и плотные зип-пакеты 180 мкм
               </td>
-              <td className="py-4 px-6 text-[#737373]">
-                Тёплый беж (#8B8078), макро-фактура ткани и кожи, калька и пудровый софт-тач
+              <td className="py-4 px-6 text-[#5C5953]">
+                Тёплый беж, макро-фактура ткани и кожи, калька и пудровый софт-тач
               </td>
             </tr>
           </tbody>
@@ -458,18 +460,18 @@ export function BrandPortfolioView() {
       {showNewBrandModal && (
         <div
           onClick={() => setShowNewBrandModal(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] border-b border-[#E4E1DA] pb-4">
               Добавление нового бренда
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13.5px]">
               <div>
-                <label className="block font-semibold mb-1.5">Название бренда</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Название бренда</label>
                 <input
                   value={newBrandForm.name}
                   onChange={(e) =>
@@ -480,30 +482,30 @@ export function BrandPortfolioView() {
                     })
                   }
                   placeholder="Например: BORNERS SPORT"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Слоган и идея</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Слоган и идея</label>
                 <input
                   value={newBrandForm.tagline}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, tagline: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Ценовой сегмент</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Ценовой сегмент</label>
                 <input
                   value={newBrandForm.segment}
                   onChange={(e) => setNewBrandForm({ ...newBrandForm, segment: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setShowNewBrandModal(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-lg border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
               >
                 Отмена
               </button>
@@ -519,7 +521,7 @@ export function BrandPortfolioView() {
                   });
                   setShowNewBrandModal(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer"
               >
                 Создать бренд
               </button>
@@ -730,15 +732,15 @@ export function BrandStrategyView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Переключатель Сценариев роста и 14 блоков Паспорта бренда */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E0D5] pb-4">
-        <div className="inline-flex rounded-[12px] bg-[#EFECE6] p-1 border border-[#E5E0D5]">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E4E1DA] pb-4">
+        <div className="inline-flex rounded-xl bg-[#FAF9F6] p-1 border border-[#E4E1DA]">
           <button
             type="button"
             onClick={() => setStrategyTab('scenarios')}
-            className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
+            className={`h-9 px-4 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
               strategyTab === 'scenarios'
-                ? 'bg-white text-[#1D1D1F] shadow-xs'
-                : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+                ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                : 'text-[#5C5953] hover:text-[#141413]'
             }`}
           >
             Сценарии развития (100 / 150 / 200 млн ₽)
@@ -746,21 +748,21 @@ export function BrandStrategyView() {
           <button
             type="button"
             onClick={() => setStrategyTab('dna')}
-            className={`h-9 px-4 rounded-[9px] text-[13px] font-semibold transition cursor-pointer ${
+            className={`h-9 px-4 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
               strategyTab === 'dna'
-                ? 'bg-white text-[#1D1D1F] shadow-xs'
-                : 'text-[#6E6E73] hover:text-[#1D1D1F]'
+                ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                : 'text-[#5C5953] hover:text-[#141413]'
             }`}
           >
             Паспорт бренда (14 блоков)
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {draftModules.strategyPresentationCard && canAccessStrategyDeck && (
             <button
               onClick={() => setPlatformMode('strategy')}
-              className="h-9 px-4 rounded-[10px] bg-[#1E3A5F] text-white text-[12.5px] font-semibold hover:bg-[#162C49] transition cursor-pointer"
+              className="h-9 px-4 rounded-lg bg-[#141413] text-white text-[12.5px] font-medium hover:bg-[#2A2A28] transition-colors cursor-pointer"
             >
               Презентация стратегии (8 слайдов)
             </button>
@@ -768,7 +770,7 @@ export function BrandStrategyView() {
 
           <button
             onClick={() => navigateTo('product-catalog')}
-            className="h-9 px-3.5 rounded-[10px] border border-[#E5E0D5] bg-white text-[12.5px] font-semibold text-[#1D1D1F] hover:border-[#1D1D1F] transition cursor-pointer"
+            className="h-9 px-3.5 rounded-lg border border-[#E4E1DA] bg-white text-[12.5px] font-medium text-[#141413] hover:border-[#141413] transition-colors cursor-pointer"
           >
             Модели (SKU) →
           </button>
@@ -779,18 +781,21 @@ export function BrandStrategyView() {
         <GrowthScenariosShowcase />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[12px] bg-[#FDFCFA] border border-[#E5E0D8] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-white border border-[#E4E1DA] p-5">
             <div>
-              <h1 className="text-[24px] font-bold text-[#1D1D1F] tracking-tight">
+              <div className="font-mono text-[11px] uppercase tracking-wider text-[#5C5953]">
+                BRAND DNA ARCHITECTURE · 14 STRATEGIC BLOCKS
+              </div>
+              <h1 className="text-[22px] font-semibold text-[#141413] tracking-tight mt-0.5">
                 Стратегия бренда: {activeBrand.name} (14 блоков ДНК)
               </h1>
-              <p className="text-[13.5px] text-[#6E6E73] mt-1">
+              <p className="text-[13px] text-[#5C5953] mt-1">
                 {activeBrand.tagline}
                 {hasCost ? ` · целевая валовая маржа ${activeBrand.targetMarginPct}%` : ''}
               </p>
             </div>
 
-            <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] bg-[#F2EFE9] p-1 border border-[#E5E0D8]">
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-[#FAF9F6] p-1 border border-[#E4E1DA]">
               {visibleHoldingTabs.map((tab) => {
                 const isSelected = selectedBrand === tab.code;
                 return (
@@ -801,10 +806,10 @@ export function BrandStrategyView() {
                       setSelectedBrand(tab.code);
                       setBrandFilter(tab.code as BrandFilter);
                     }}
-                    className={`h-8 px-3.5 rounded-[6px] text-[12.5px] font-semibold transition cursor-pointer ${
+                    className={`h-8 px-3.5 rounded-md text-[12.5px] font-medium transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-[#161615] text-white shadow-2xs'
-                        : 'text-[#6E6A63] hover:text-[#161615]'
+                        ? 'bg-[#141413] text-white'
+                        : 'text-[#5C5953] hover:text-[#141413]'
                     }`}
                   >
                     {tab.label}
@@ -816,105 +821,105 @@ export function BrandStrategyView() {
 
           {/* Сетка 14 блоков стратегии */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {brandBlocks.map((block, index) => {
-          const st = STATUS_LABELS[block.status];
-          const isLockedForManager = block.status === 'approved' && !canEditApproved;
-          const canEditBlock = canEditThisBrand && !isLockedForManager;
-          const bulletLines = block.content
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean);
+            {brandBlocks.map((block, index) => {
+              const st = STATUS_LABELS[block.status];
+              const isLockedForManager = block.status === 'approved' && !canEditApproved;
+              const canEditBlock = canEditThisBrand && !isLockedForManager;
+              const bulletLines = block.content
+                .split('\n')
+                .map((s) => s.trim())
+                .filter(Boolean);
 
-          return (
-            <div
-              key={block.id}
-              className="bg-[#FDFCFA] rounded-[8px] border border-[#E5E0D8] p-6 flex flex-col justify-between space-y-5"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-2 border-b border-[#E5E0D8] pb-3.5">
-                  <div className="flex items-baseline gap-2.5">
-                    <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-[#8E8880]">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <h3 className="font-serif-editorial text-[24px] font-medium text-[#161615]">
-                      {block.titleRu}
-                    </h3>
+              return (
+                <div
+                  key={block.id}
+                  className="bg-white rounded-xl border border-[#E4E1DA] hover:border-[#D2CEC4] transition-colors p-6 flex flex-col justify-between space-y-5"
+                >
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E4E1DA] pb-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="inline-flex items-center justify-center h-6 px-2 rounded bg-[#FAF9F6] border border-[#E4E1DA] text-[11px] font-mono font-medium text-[#141413]">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <h3 className="text-[18px] font-semibold tracking-tight text-[#141413]">
+                          {block.titleRu}
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        {block.deadline && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#FAF9F6] border border-[#E4E1DA] text-[11px] font-mono text-[#5C5953]">
+                            <span>Срок: {block.deadline}</span>
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#FAF9F6] border border-[#E4E1DA] text-[11px] font-medium text-[#141413]">
+                          <span className={`h-1.5 w-1.5 rounded-full ${st.dotColor}`} />
+                          <span>{st.label}</span>
+                        </span>
+
+                        <button
+                          onClick={() => setHistoryBlock(block)}
+                          title="История версий"
+                          className="rounded bg-[#FAF9F6] border border-[#E4E1DA] hover:border-[#141413] px-2 py-0.5 text-[11px] font-mono text-[#5C5953] hover:text-[#141413] cursor-pointer"
+                        >
+                          v{block.version}
+                        </button>
+
+                        {canEditBlock ? (
+                          <button
+                            onClick={() => openEditor(block)}
+                            className="inline-flex items-center gap-1 rounded border border-[#E4E1DA] px-2.5 py-0.5 text-[11px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="h-3 w-3 stroke-[1.5]" />
+                            <span>Изменить</span>
+                          </button>
+                        ) : (
+                          isLockedForManager && (
+                            <span
+                              title="Утверждённый блок защищён от изменений"
+                              className="inline-flex items-center gap-1 text-[11px] text-[#5C5953]"
+                            >
+                              <Lock className="h-3 w-3 stroke-[1.5]" />
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ключевой тезис */}
+                    <p className="text-[14.5px] font-medium text-[#141413] leading-snug">
+                      {block.summary}
+                    </p>
+
+                    {/* Пункты содержания */}
+                    <ul className="space-y-2 text-[13px] text-[#5C5953]">
+                      {bulletLines.map((point, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
+                          <span className="text-[11px] font-mono text-[#8A857D] shrink-0 mt-0.5">
+                            —
+                          </span>
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    {block.deadline && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FAF8F5] border border-[#CFC8BC] text-[11px] font-mono font-semibold text-[#B85D35]">
-                        <span>Срок: {block.deadline}</span>
-                      </span>
-                    )}
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#F2EFE9] border border-[#E5E0D8] text-[11px] font-medium text-[#161615]">
-                      <span className={`h-1.5 w-1.5 rounded-full ${st.dotColor}`} />
-                      <span>{st.label}</span>
-                    </span>
-
-                    <button
-                      onClick={() => setHistoryBlock(block)}
-                      title="История версий"
-                      className="rounded-[4px] bg-[#F8F6F2] border border-[#E5E0D8] hover:border-[#161615] px-2 py-0.5 text-[11px] font-mono text-[#7A756D] hover:text-[#161615] cursor-pointer"
-                    >
-                      v{block.version}
-                    </button>
-
-                    {canEditBlock ? (
-                      <button
-                        onClick={() => openEditor(block)}
-                        className="inline-flex items-center gap-1 rounded-[4px] border border-[#E5E0D8] px-2.5 py-0.5 text-[11px] font-medium text-[#161615] hover:bg-[#161615] hover:text-[#F8F6F2] transition cursor-pointer"
-                      >
-                        <Edit3 className="h-3 w-3" />
-                        <span>Изменить</span>
-                      </button>
-                    ) : (
-                      isLockedForManager && (
-                        <span
-                          title="Утверждённый блок защищён от изменений"
-                          className="inline-flex items-center gap-1 text-[11px] text-[#7A756D]"
-                        >
-                          <Lock className="h-3 w-3" />
-                        </span>
-                      )
-                    )}
+                  {/* Опорные показатели блока */}
+                  <div className="pt-4 border-t border-[#E4E1DA] grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {block.kpiHighlights.map((m, idx) => (
+                      <div key={idx} className="rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] px-3.5 py-2.5">
+                        <div className="text-[11.5px] text-[#5C5953] leading-snug">
+                          {m.label}
+                        </div>
+                        <div className="font-mono text-[13.5px] font-semibold text-[#141413] mt-0.5 tabular-nums">
+                          {m.value.replace(/\s*\(ДЕМО\)/gi, '')}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                {/* Ключевой тезис */}
-                <p className="text-[15px] font-medium text-[#161615] leading-snug">
-                  {block.summary}
-                </p>
-
-                {/* Пункты содержания */}
-                <ul className="space-y-2 text-[13px] text-[#5C5852]">
-                  {bulletLines.map((point, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
-                      <span className="text-[11px] font-mono text-[#8E8880] shrink-0 mt-0.5">
-                        —
-                      </span>
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Опорные показатели блока — без обрезания слов и без технических рамок */}
-              <div className="pt-4 border-t border-[#EAE6DF] grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {block.kpiHighlights.map((m, idx) => (
-                  <div key={idx} className="rounded-[8px] bg-[#FAF8F5] border border-[#EAE6DF] px-3.5 py-2.5">
-                    <div className="text-[11.5px] text-[#7A756D] leading-snug">
-                      {m.label}
-                    </div>
-                    <div className="text-[14px] font-semibold text-[#181715] mt-0.5 tabular-nums">
-                      {m.value.replace(/\s*\(ДЕМО\)/gi, '')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
           </div>
         </>
       )}
@@ -923,39 +928,39 @@ export function BrandStrategyView() {
       {editingBlock && (
         <div
           onClick={() => setEditingBlock(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-2xl bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
+            <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-4">
               <div>
-                <div className="text-[12px] font-semibold uppercase text-[#737373]">
+                <div className="font-mono text-[11px] uppercase tracking-wider text-[#5C5953]">
                   Редактирование блока стратегии ({activeBrand.name})
                 </div>
-                <h3 className="text-[22px] font-bold text-[#171717] dark:text-white mt-1">
+                <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] mt-1">
                   {editingBlock.titleRu}
                 </h3>
               </div>
               <button
                 onClick={() => setEditingBlock(null)}
-                className="text-[13px] font-semibold text-[#737373] hover:text-[#171717] cursor-pointer"
+                className="text-[13px] font-medium text-[#5C5953] hover:text-[#141413] cursor-pointer"
               >
                 Закрыть
               </button>
             </div>
 
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13.5px]">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">Статус согласования</label>
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Статус согласования</label>
                   <select
                     value={formState.status}
                     onChange={(e) =>
                       setFormState({ ...formState, status: e.target.value as ApprovalStatus })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] px-3.5 text-[14px] bg-[#FAF9F6] font-medium text-[#141413]"
                   >
                     <option value="draft">Черновик</option>
                     <option value="in_review">На согласовании</option>
@@ -964,39 +969,39 @@ export function BrandStrategyView() {
                 </div>
 
                 <div>
-                  <label className="block font-semibold mb-1.5">Дедлайн контрольной точки</label>
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Дедлайн контрольной точки</label>
                   <input
                     type="date"
                     value={formState.deadline}
                     onChange={(e) => setFormState({ ...formState, deadline: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] font-mono bg-white"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] px-3.5 text-[14px] font-mono bg-[#FAF9F6] text-[#141413]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-semibold mb-1.5">Главный тезис</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Главный тезис</label>
                 <input
                   value={formState.summary}
                   onChange={(e) => setFormState({ ...formState, summary: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1.5">
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                   Положения стратегии (каждый пункт с новой строки)
                 </label>
                 <textarea
                   rows={5}
                   value={formState.content}
                   onChange={(e) => setFormState({ ...formState, content: e.target.value })}
-                  className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[15px]"
+                  className="w-full rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] p-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1.5">
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">
                   Показатели (формат «Показатель: Значение» с новой строки)
                 </label>
                 <textarea
@@ -1005,33 +1010,33 @@ export function BrandStrategyView() {
                   onChange={(e) =>
                     setFormState({ ...formState, metricsText: e.target.value })
                   }
-                  className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[14px]"
+                  className="w-full rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] p-3.5 text-[13.5px] font-mono text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1.5">Комментарий к версии</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Комментарий к версии</label>
                 <input
                   value={formState.changeSummary}
                   onChange={(e) =>
                     setFormState({ ...formState, changeSummary: e.target.value })
                   }
                   placeholder="Например: Уточнены ориентиры маржи на 2027 год"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413] focus:outline-none focus:border-[#141413]"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setEditingBlock(null)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-lg border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
               >
                 Отмена
               </button>
               <button
                 onClick={handleSaveBlock}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer"
               >
                 Сохранить изменения
               </button>
@@ -1044,37 +1049,37 @@ export function BrandStrategyView() {
       {historyBlock && (
         <div
           onClick={() => setHistoryBlock(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
+            <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-4">
               <div>
-                <div className="text-[12px] font-semibold uppercase text-[#737373]">
+                <div className="font-mono text-[11px] uppercase tracking-wider text-[#5C5953]">
                   История версий
                 </div>
-                <h3 className="text-[22px] font-bold mt-1">{historyBlock.titleRu}</h3>
+                <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] mt-1">{historyBlock.titleRu}</h3>
               </div>
               <button
                 onClick={() => setHistoryBlock(null)}
-                className="text-[13px] font-semibold text-[#737373] hover:text-[#171717] cursor-pointer"
+                className="text-[13px] font-medium text-[#5C5953] hover:text-[#141413] cursor-pointer"
               >
                 Закрыть
               </button>
             </div>
 
-            <div className="space-y-4 max-h-80 overflow-y-auto divide-y divide-[#E8E8E5]">
+            <div className="space-y-4 max-h-80 overflow-y-auto divide-y divide-[#E4E1DA]">
               {historyBlock.history.map((v, idx) => (
-                <div key={idx} className="pt-4 first:pt-0 text-[14px] space-y-1">
+                <div key={idx} className="pt-4 first:pt-0 text-[13.5px] space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[15px] text-[#171717]">
-                      v{v.version} · {v.authorName}
+                    <span className="font-medium text-[14px] text-[#141413]">
+                      <span className="font-mono">v{v.version}</span> · {v.authorName}
                     </span>
-                    <span className="text-[13px] text-[#737373]">{v.updatedAt}</span>
+                    <span className="font-mono text-[12px] text-[#5C5953]">{v.updatedAt}</span>
                   </div>
-                  <p className="text-[#737373]">{v.comment}</p>
+                  <p className="text-[#5C5953]">{v.comment}</p>
                 </div>
               ))}
             </div>

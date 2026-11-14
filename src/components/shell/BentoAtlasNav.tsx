@@ -321,15 +321,15 @@ export function BentoAtlasNav({
         className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity"
       />
 
-      {/* Выпадающий 4-колоночный Бенто-Атлас с чёткой архитектурной рамкой */}
+      {/* Выпадающий 4-колоночный Бенто-Атлас с тонкой архитектурной линией */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Бенто-атлас всех разделов BORNERS"
-        className="fixed inset-x-3 sm:inset-x-6 lg:inset-x-10 top-[66px] z-50 max-w-[1440px] mx-auto rounded-[18px] bg-white border-[1.5px] border-[#141413] shadow-[0_28px_70px_rgba(20,20,19,0.22)] overflow-hidden flex flex-col max-h-[calc(100vh-86px)]"
+        className="fixed inset-x-3 sm:inset-x-6 lg:inset-x-10 top-[64px] z-50 max-w-[1440px] mx-auto rounded-[12px] bg-white border border-[#D2CEC4] shadow-[0_24px_64px_rgba(20,20,19,0.16)] overflow-hidden flex flex-col max-h-[calc(100vh-84px)]"
       >
         {/* Верхняя панель Бенто-Атласа: быстрый фильтр + недавние переходы */}
-        <div className="px-5 py-3.5 border-b-[1.5px] border-[#D5D4CC] bg-[#F5F5F1] flex flex-wrap items-center justify-between gap-3">
+        <div className="px-5 py-3.5 border-b border-[#E4E1DA] bg-[#FAF9F6] flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[260px]">
             <div className="flex-1 max-w-sm">
               <input
@@ -432,18 +432,18 @@ export function BentoAtlasNav({
             return (
               <div
                 key={contour.key}
-                className="rounded-[14px] bg-[#F5F5F1] border-[1.5px] border-[#D2D1C8] p-3.5 flex flex-col gap-3"
+                className="rounded-[12px] bg-[#FAF9F6] border border-[#E4E1DA] p-3.5 flex flex-col gap-3"
               >
-                <div className="pb-2.5 border-b-[2px] border-[#141413] flex items-baseline justify-between gap-2">
+                <div className="pb-2.5 border-b border-[#D2CEC4] flex items-baseline justify-between gap-2">
                   <div>
-                    <div className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-[#141413]">
+                    <div className="text-[12px] font-semibold tracking-[-0.01em] text-[#141413]">
                       {contour.title}
                     </div>
-                    <div className="text-[11px] text-[#64635E] mt-0.5">
+                    <div className="text-[11px] text-[#5C5953] mt-0.5">
                       {contour.caption}
                     </div>
                   </div>
-                  <span className="font-mono text-[11px] font-bold text-[#141413] px-1.5 py-0.5 rounded bg-white border border-[#CECDC4]">
+                  <span className="font-mono text-[11px] font-medium text-[#141413] px-1.5 py-0.5 rounded-[5px] bg-white border border-[#E4E1DA]">
                     {contour.step}
                   </span>
                 </div>

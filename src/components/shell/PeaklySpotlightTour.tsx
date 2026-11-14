@@ -279,21 +279,17 @@ export function PeaklySpotlightTour({
         aria-label="Закрыть обучение"
       />
 
-      {/* ПОДСВЕЧЕННОЕ ОКНО-ВЫРЕЗ ПОВЕРХ РЕАЛЬНОГО ЭЛЕМЕНТА СТРАНИЦЫ (ТОЧНО КАК В PEAKLY) */}
+      {/* ПОДСВЕЧЕННОЕ ОКНО-ВЫРЕЗ ПОВЕРХ РЕАЛЬНОГО ЭЛЕМЕНТА СТРАНИЦЫ */}
       <div
         style={{
           top: `${boxTop}px`,
           left: `${boxLeft}px`,
           width: `${boxWidth}px`,
           height: `${boxHeight}px`,
-          boxShadow:
-            '0 0 0 9999px rgba(8, 10, 18, 0.78), 0 0 32px rgba(16, 185, 129, 0.55), inset 0 0 14px rgba(16, 185, 129, 0.22)',
+          boxShadow: '0 0 0 9999px rgba(14, 14, 13, 0.72)',
         }}
-        className="fixed rounded-[18px] border-2 border-[#10B981] pointer-events-none transition-all duration-300 ease-out"
-      >
-        {/* Светящаяся изумрудная точка в правом верхнем углу рамки */}
-        <span className="absolute -top-1.5 -right-1.5 h-3 w-3 rounded-full bg-[#10B981] shadow-[0_0_12px_#10B981] ring-2 ring-[#0F172A]" />
-      </div>
+        className="fixed rounded-[12px] border border-[#F6F5F2]/90 pointer-events-none transition-all duration-300 ease-out"
+      />
 
       {/* ВСПЛЫВАЮЩАЯ КАРТОЧКА ОБУЧЕНИЯ РЯДОМ С ПОДСВЕЧЕННЫМ ЭЛЕМЕНТОМ */}
       <div
@@ -303,20 +299,19 @@ export function PeaklySpotlightTour({
           left: `${cardLeft}px`,
           width: `${cardWidth}px`,
         }}
-        className="fixed z-[100] rounded-[22px] bg-[#141824] border border-white/12 p-5 text-white shadow-[0_24px_64px_rgba(0,0,0,0.7),0_0_42px_rgba(16,185,129,0.20)] transition-all duration-300 ease-out space-y-4"
+        className="fixed z-[100] rounded-[12px] bg-[#141413] border border-[#383632] p-5 text-[#F2F0EC] shadow-[0_24px_64px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out space-y-4"
       >
-        {/* Верхняя часть: Иконка в кружке + Изумрудный бейдж + Заголовок + Кнопка закрытия */}
+        {/* Верхняя часть: Иконка + Заголовок + Кнопка закрытия */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-full bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
-              <StepIcon className="h-4 w-4" />
+            <div className="h-9 w-9 rounded-[8px] bg-[#22211E] border border-[#383632] flex items-center justify-center text-[#F2F0EC] shrink-0 mt-0.5">
+              <StepIcon className="h-4 w-4 stroke-[1.5]" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-emerald-400">
-                <span>✦</span>
-                <span>{currentStep.eyebrow}</span>
+              <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-[#9E9A91]">
+                {currentStep.eyebrow}
               </div>
-              <h3 className="text-[16.5px] font-bold text-white leading-snug mt-0.5">
+              <h3 className="text-[16px] font-semibold text-[#F2F0EC] leading-snug mt-0.5">
                 {currentStep.title}
               </h3>
             </div>
@@ -325,7 +320,7 @@ export function PeaklySpotlightTour({
           <button
             type="button"
             onClick={onClose}
-            className="h-7 w-7 rounded-lg text-[#64748B] hover:text-white hover:bg-white/10 flex items-center justify-center transition cursor-pointer shrink-0"
+            className="h-7 w-7 rounded-[6px] text-[#9E9A91] hover:text-white hover:bg-white/10 flex items-center justify-center transition cursor-pointer shrink-0"
             title="Закрыть обучение"
           >
             <X className="h-4 w-4" />
@@ -333,11 +328,11 @@ export function PeaklySpotlightTour({
         </div>
 
         {/* Текст описания шага */}
-        <p className="text-[13.5px] text-[#94A3B8] leading-relaxed">
+        <p className="text-[13px] text-[#B5B1A8] leading-relaxed">
           {currentStep.description}
         </p>
 
-        {/* Сегментированная изумрудная полоса прогресса */}
+        {/* Сегментированная полоса прогресса */}
         <div className="flex items-center gap-1.5 pt-0.5">
           {SPOTLIGHT_STEPS.map((_, idx) => {
             const isActive = idx === stepIdx;
@@ -347,12 +342,12 @@ export function PeaklySpotlightTour({
                 key={idx}
                 type="button"
                 onClick={() => setStepIdx(idx)}
-                className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                className={`h-1 rounded-full transition-all cursor-pointer ${
                   isActive
-                    ? 'w-11 bg-[#10B981] shadow-[0_0_10px_rgba(16,185,129,0.7)]'
+                    ? 'w-10 bg-[#F2F0EC]'
                     : isPassed
-                    ? 'w-8 bg-[#10B981]/55'
-                    : 'w-8 bg-white/12 hover:bg-white/25'
+                    ? 'w-7 bg-[#F2F0EC]/50'
+                    : 'w-7 bg-white/14 hover:bg-white/25'
                 }`}
                 aria-label={`Шаг ${idx + 1}`}
               />
@@ -362,8 +357,8 @@ export function PeaklySpotlightTour({
 
         {/* Нижняя строка: Счётчик «1 из 5» + Кнопки «Назад» и «Далее →» */}
         <div className="flex items-center justify-between pt-1">
-          <span className="text-[12.5px] font-medium text-[#94A3B8]">
-            {stepIdx + 1} из {totalSteps}
+          <span className="font-mono text-[11.5px] text-[#9E9A91]">
+            {stepIdx + 1} / {totalSteps}
           </span>
 
           <div className="flex items-center gap-2">
@@ -371,7 +366,7 @@ export function PeaklySpotlightTour({
               <button
                 type="button"
                 onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
-                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full bg-[#1E2536] hover:bg-[#283147] border border-white/10 text-white text-[13px] font-semibold transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8.5 px-3.5 rounded-[8px] bg-[#22211E] hover:bg-[#2E2D29] border border-[#383632] text-[#F2F0EC] text-[12.5px] font-medium transition cursor-pointer"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>Назад</span>
@@ -387,7 +382,7 @@ export function PeaklySpotlightTour({
                   onClose();
                 }
               }}
-              className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-[13px] font-bold ring-2 ring-[#10B981] shadow-[0_0_18px_rgba(16,185,129,0.45)] transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-8.5 px-4 rounded-[8px] bg-[#F2F0EC] hover:bg-white text-[#141413] text-[12.5px] font-semibold transition cursor-pointer"
             >
               <span>{stepIdx < totalSteps - 1 ? 'Далее' : 'Готово'}</span>
               <ArrowRight className="h-3.5 w-3.5" />

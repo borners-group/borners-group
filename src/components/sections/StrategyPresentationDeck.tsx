@@ -66,7 +66,7 @@ const DECK_BRAND_PROFILES = [
       'Флагманский бренд мужского и унисекс базового белья, тканых поплиновых боксеров и подарочных наборов.',
     targetMarginPct: 72,
     heroImage: 'images/products/borners-editorial-hero.jpg',
-    topBorderClass: 'border-t-[#181715]',
+    topBorderClass: 'border-t-[#141413]',
   },
   {
     code: 'NA_TELE' as const,
@@ -88,7 +88,7 @@ const DECK_BRAND_PROFILES = [
       'Всесезонная матрица детской обуви (24 карточки / 31 цветомодель, размеры 18–31): от пинеток и сандалий до ботинок и дутиков.',
     targetMarginPct: 65,
     heroImage: 'images/products/borners-editorial-hero.jpg',
-    topBorderClass: 'border-t-[#2563EB]',
+    topBorderClass: 'border-t-[#5C5953]',
   },
   {
     code: 'LISKANI' as const,
@@ -99,7 +99,7 @@ const DECK_BRAND_PROFILES = [
       '33 базовые карточки, развёрнутые в 269 размерных SKU по ширине и высоте под стандартные и панорамные потолки.',
     targetMarginPct: 62,
     heroImage: 'images/products/natele-editorial-hero.jpg',
-    topBorderClass: 'border-t-[#0F766E]',
+    topBorderClass: 'border-t-[#6E6A63]',
   },
   {
     code: 'FUKAI' as const,
@@ -110,7 +110,7 @@ const DECK_BRAND_PROFILES = [
       'Высокомаржинальная линейка аксессуаров для сна с высоким процентом выкупа (85%+) и компактной логистикой ФБО.',
     targetMarginPct: 68,
     heroImage: 'images/products/borners-editorial-hero.jpg',
-    topBorderClass: 'border-t-[#4F46E5]',
+    topBorderClass: 'border-t-[#3A3835]',
   },
 ] as const;
 
@@ -1278,20 +1278,20 @@ export function StrategyPresentationDeck({
               </p>
             </div>
 
-            <div className="rounded-[10px] bg-[#FDFCFA] border-[1.5px] border-[#CFC8BC] border-t-[3px] border-t-[#B85D35] p-7 flex flex-col justify-between space-y-4 h-full">
-              <div className="flex items-center justify-between border-b-[1.5px] border-[#CFC8BC] pb-3.5">
-                <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#B85D35]">
+            <div className="rounded-xl bg-white border border-[#E4E1DA] p-7 flex flex-col justify-between space-y-4 h-full">
+              <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3.5">
+                <span className="font-mono text-[10.5px] font-medium uppercase tracking-wider text-[#5C5953]">
                   АКЦЕНТНЫЕ И СЕЗОННЫЕ КАПСУЛЫ
                 </span>
-                <span className="font-serif-editorial text-[34px] font-semibold text-[#161615] leading-none">
+                <span className="font-mono text-[30px] font-semibold text-[#141413] leading-none">
                   30% выручки
                 </span>
               </div>
-              <h3 className="font-serif-editorial text-[28px] font-normal text-[#161615] leading-tight">
+              <h3 className="text-[24px] font-semibold tracking-tight text-[#141413] leading-tight">
                 Лимитированные дропы и подарочные тубусы
               </h3>
-              <p className="text-[14px] text-[#5C5852] leading-relaxed">
-                Сезонная капсула <span className="font-medium text-[#161615]">BIG LOVE</span> (к 14
+              <p className="text-[14px] text-[#5C5953] leading-relaxed">
+                Сезонная капсула <span className="font-medium text-[#141413]">BIG LOVE</span> (к 14
                 февраля), подарочные наборы в жёстких матовых тубусах и новые цветовые паки.
                 Генерируют высокую добавленную стоимость (+400 ₽ к чеку при +65 ₽ на упаковку).
               </p>
@@ -1615,8 +1615,8 @@ export function StrategyPresentationDeck({
 
       return (
         <div className="space-y-5">
-          <div className="rounded-[8px] bg-[#FDFCFA] border border-[#E5E0D8] p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1 bg-[#F2EFE9] p-1 rounded-[6px] border border-[#E5E0D8]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1 bg-[#FAF9F6] p-1 rounded-lg border border-[#E4E1DA]">
               {(
                 [
                   { code: 'BORNERS', label: 'BORNERS' },
@@ -1630,10 +1630,10 @@ export function StrategyPresentationDeck({
                   key={tab.code}
                   type="button"
                   onClick={() => setStrategyBrandTab(tab.code)}
-                  className={`px-3.5 py-1.5 rounded-[4px] text-[12.5px] font-medium cursor-pointer transition ${
+                  className={`px-3.5 py-1.5 rounded-md text-[12.5px] font-medium cursor-pointer transition-colors ${
                     strategyBrandTab === tab.code
-                      ? 'bg-[#161615] text-white'
-                      : 'text-[#6E6A63] hover:text-[#161615]'
+                      ? 'bg-[#141413] text-white'
+                      : 'text-[#5C5953] hover:text-[#141413]'
                   }`}
                 >
                   {tab.label} (14)
@@ -1653,10 +1653,10 @@ export function StrategyPresentationDeck({
                   key={ch.id}
                   type="button"
                   onClick={() => setStrategyChapter(ch.id)}
-                  className={`px-3 py-1.5 rounded-[5px] text-[12px] font-medium cursor-pointer transition border ${
+                  className={`px-3 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer transition-colors border ${
                     strategyChapter === ch.id
-                      ? 'bg-[#161615] text-white border-[#161615]'
-                      : 'bg-white text-[#5C5852] border-[#E5E0D8] hover:border-[#161615]'
+                      ? 'bg-[#141413] text-white border-[#141413]'
+                      : 'bg-white text-[#5C5953] border-[#E4E1DA] hover:border-[#141413] hover:text-[#141413]'
                   }`}
                 >
                   {ch.label}
@@ -1674,15 +1674,15 @@ export function StrategyPresentationDeck({
               return (
                 <div
                   key={block.id}
-                  className="rounded-[8px] bg-[#FDFCFA] border border-[#E5E0D8] overflow-hidden flex flex-col justify-between"
+                  className="rounded-xl bg-white border border-[#E4E1DA] overflow-hidden flex flex-col justify-between"
                 >
                   <div className="p-6 space-y-3">
-                    <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 gap-2">
-                      <div className="flex items-baseline gap-2.5">
-                        <span className="font-mono text-[12px] text-[#8C867E]">
-                          {String(block.sectionOrder).padStart(2, '0')} /
+                    <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3 gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="inline-flex items-center justify-center h-6 px-2 rounded bg-[#FAF9F6] border border-[#E4E1DA] font-mono text-[11px] text-[#141413]">
+                          {String(block.sectionOrder).padStart(2, '0')}
                         </span>
-                        <h4 className="font-serif-editorial text-[22px] font-semibold text-[#161615] leading-none">
+                        <h4 className="text-[18px] font-semibold tracking-tight text-[#141413] leading-snug">
                           {block.titleRu}
                         </h4>
                       </div>
@@ -1694,16 +1694,16 @@ export function StrategyPresentationDeck({
                             onChange={(e) =>
                               updateStrategyBlock(block.id, { deadline: e.target.value })
                             }
-                            className="h-7 rounded-[4px] border border-[#B85D35] bg-white px-1.5 text-[11px] font-mono text-[#181715]"
+                            className="h-7 rounded border border-[#141413] bg-white px-1.5 text-[11px] font-mono text-[#141413]"
                           />
                         ) : (
                           block.deadline && (
-                            <span className="font-mono text-[10.5px] font-semibold text-[#B85D35] bg-[#FAF8F5] border border-[#CFC8BC] px-2 py-0.5 rounded-[4px]">
+                            <span className="font-mono text-[10.5px] font-medium text-[#5C5953] bg-[#FAF9F6] border border-[#E4E1DA] px-2 py-0.5 rounded">
                               Срок: {block.deadline}
                             </span>
                           )
                         )}
-                        <span className="font-mono text-[10px] uppercase text-[#1F6E50] bg-[#1F6E50]/10 px-2 py-0.5 rounded-[4px]">
+                        <span className="font-mono text-[10px] uppercase text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded">
                           v{block.version}
                         </span>
                       </div>
@@ -1715,28 +1715,28 @@ export function StrategyPresentationDeck({
                         onChange={(e) =>
                           updateStrategyBlock(block.id, { summary: e.target.value })
                         }
-                        className="w-full h-9 rounded-[5px] border-[1.5px] border-[#B85D35] bg-white px-2.5 text-[13.5px] font-medium text-[#161615]"
+                        className="w-full h-9 rounded-lg border border-[#141413] bg-white px-2.5 text-[13.5px] font-medium text-[#141413]"
                       />
                     ) : (
-                      <p className="text-[14px] font-medium text-[#161615] leading-snug">
+                      <p className="text-[14px] font-medium text-[#141413] leading-snug">
                         {block.summary}
                       </p>
                     )}
 
-                    <ul className="space-y-1.5 text-[13px] text-[#5C5852]">
+                    <ul className="space-y-1.5 text-[13px] text-[#5C5953]">
                       {points.map((pt, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="text-[#8C867E] font-mono text-[11px] mt-0.5">—</span>
+                          <span className="text-[#8A857D] font-mono text-[11px] mt-0.5">—</span>
                           <span>{pt}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 px-6 py-3.5 border-t border-[#E5E0D8] bg-[#F8F6F2]">
+                  <div className="grid grid-cols-3 gap-3 px-6 py-3.5 border-t border-[#E4E1DA] bg-[#FAF9F6]">
                     {block.kpiHighlights.map((k, idx) => (
                       <div key={idx}>
-                        <div className="font-mono text-[10px] uppercase text-[#8C867E]">
+                        <div className="text-[10.5px] text-[#5C5953]">
                           {k.label}
                         </div>
                         {effectiveEditMode ? (
@@ -1747,10 +1747,10 @@ export function StrategyPresentationDeck({
                               nextKpis[idx] = { ...k, value: e.target.value };
                               updateStrategyBlock(block.id, { kpiHighlights: nextKpis });
                             }}
-                            className="mt-0.5 w-full h-7 rounded-[4px] border border-[#B85D35] bg-white px-1.5 text-[12px] font-semibold text-[#161615]"
+                            className="mt-0.5 w-full h-7 rounded border border-[#141413] bg-white px-1.5 text-[12px] font-mono font-medium text-[#141413]"
                           />
                         ) : (
-                          <div className="text-[13px] font-semibold text-[#161615] mt-0.5">
+                          <div className="font-mono text-[13px] font-semibold text-[#141413] mt-0.5">
                             {k.value}
                           </div>
                         )}
@@ -2011,19 +2011,19 @@ export function StrategyPresentationDeck({
                       <Bar
                         dataKey="planRevenueM"
                         name="План выручки (млн ₽)"
-                        fill="#D8D2C7"
+                        fill="#D2CEC4"
                         radius={[3, 3, 0, 0]}
                       />
                       <Bar
                         dataKey="factRevenueM"
                         name="Факт выручки (млн ₽)"
-                        fill="#161615"
+                        fill="#141413"
                         radius={[3, 3, 0, 0]}
                       />
                       <Bar
                         dataKey="planProfitM"
                         name="План прибыли (млн ₽)"
-                        fill="#B85D35"
+                        fill="#5C5953"
                         radius={[3, 3, 0, 0]}
                       />
                     </BarChart>
@@ -2031,7 +2031,7 @@ export function StrategyPresentationDeck({
                 </div>
               </>
             ) : (
-              <div className="p-8 rounded-[6px] bg-[#F8F6F2] text-center text-[#6E6A63]">
+              <div className="p-8 rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] text-center text-[#5C5953]">
                 Финансовые показатели доступны пользователям с правом просмотра финансов.
               </div>
             )}
@@ -2045,12 +2045,12 @@ export function StrategyPresentationDeck({
     // =========================================================================
     return (
       <div className="space-y-6">
-        <div className="rounded-[8px] bg-[#FDFCFA] border border-[#E5E0D8] p-6 space-y-5">
-          <div className="border-b border-[#E5E0D8] pb-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#8C867E]">
+        <div className="rounded-xl bg-white border border-[#E4E1DA] p-6 space-y-5">
+          <div className="border-b border-[#E4E1DA] pb-4">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-[#5C5953]">
               КОНТРОЛЬНЫЕ ТОЧКИ ИСПОЛНЕНИЯ
             </div>
-            <h3 className="text-[20px] font-semibold text-[#161615] mt-0.5">
+            <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] mt-0.5">
               Стратегические цели группы 2026–2027
             </h3>
           </div>
@@ -2070,22 +2070,22 @@ export function StrategyPresentationDeck({
             })().map((g) => (
               <div
                 key={g.id}
-                className="rounded-[6px] border border-[#E5E0D8] bg-[#F8F6F2] p-5 space-y-2.5"
+                className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] p-5 space-y-2.5"
               >
                 <div className="flex items-center justify-between font-mono text-[10.5px] uppercase">
-                  <span className="text-[#7A756D]">
+                  <span className="text-[#5C5953]">
                     {g.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(g.brandId)} ·{' '}
                     {g.periodQuarter}
                   </span>
-                  <span className="text-[#1F6E50] font-semibold">{g.progressPct}% выполнено</span>
+                  <span className="text-emerald-700 font-semibold">{g.progressPct}% выполнено</span>
                 </div>
-                <h4 className="text-[16px] font-semibold text-[#161615]">{g.title}</h4>
-                <div className="text-[13px] text-[#6E6A63]">
-                  Целевой ориентир: <span className="font-medium text-[#161615]">{g.targetMetric}</span> ({g.status})
+                <h4 className="text-[16px] font-semibold text-[#141413]">{g.title}</h4>
+                <div className="text-[13px] text-[#5C5953]">
+                  Целевой ориентир: <span className="font-medium text-[#141413]">{g.targetMetric}</span> ({g.status})
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-[#E5E0D8] overflow-hidden">
+                <div className="h-1.5 w-full rounded-full bg-[#E4E1DA] overflow-hidden">
                   <div
-                    className="h-full bg-[#161615]"
+                    className="h-full bg-[#141413]"
                     style={{ width: `${g.progressPct}%` }}
                   />
                 </div>
@@ -2094,12 +2094,12 @@ export function StrategyPresentationDeck({
           </div>
         </div>
 
-        <div className="rounded-[8px] bg-[#161615] text-[#F8F6F2] p-7 md:p-9 space-y-6">
+        <div className="rounded-2xl bg-[#141413] text-[#F6F5F2] p-7 md:p-9 space-y-6">
           <div className="max-w-2xl space-y-2">
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#B89F86]">
+            <div className="font-mono text-[10.5px] uppercase tracking-wider text-[#A8A49C]">
               ОПЕРАЦИОННЫЙ КОНТУР
             </div>
-            <h3 className="font-serif-editorial text-[30px] md:text-[36px] font-normal text-white leading-tight">
+            <h3 className="text-[28px] md:text-[34px] font-semibold tracking-tight text-white leading-tight">
               Перейти от презентации к рабочим модулям системы
             </h3>
           </div>
@@ -2139,16 +2139,16 @@ export function StrategyPresentationDeck({
                 key={item.section}
                 type="button"
                 onClick={() => jumpToWorkingSection(item.section)}
-                className="rounded-[6px] bg-white/8 hover:bg-white/15 border border-white/15 p-5 text-left transition cursor-pointer group"
+                className="rounded-xl bg-white/8 hover:bg-white/14 border border-white/15 p-5 text-left transition-colors cursor-pointer group"
               >
-                <div className="font-mono text-[10px] uppercase tracking-wider text-[#B89F86]">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-[#A8A49C]">
                   {item.step}
                 </div>
-                <div className="text-[16px] font-semibold text-white mt-2 flex items-center justify-between">
+                <div className="text-[15.5px] font-semibold text-white mt-2 flex items-center justify-between">
                   <span>{item.title}</span>
-                  <ArrowUpRight className="h-4 w-4 text-[#B89F86] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition" />
+                  <ArrowUpRight className="h-4 w-4 stroke-[1.5] text-[#A8A49C] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </div>
-                <div className="text-[12.5px] text-[#9E988E] mt-1">{item.desc}</div>
+                <div className="text-[12.5px] text-[#A8A49C] mt-1">{item.desc}</div>
               </button>
             ))}
           </div>
@@ -2163,16 +2163,16 @@ export function StrategyPresentationDeck({
     <div
       className={
         isFullscreen
-          ? 'fixed inset-0 z-50 bg-[#F6F3ED] overflow-y-auto p-6 md:p-10 space-y-6'
+          ? 'fixed inset-0 z-50 bg-[#F6F5F2] overflow-y-auto p-6 md:p-10 space-y-6'
           : 'space-y-6 pb-20'
       }
     >
-      {/* АРХИТЕКТУРНАЯ ПАНЕЛЬ НАВИГАЦИИ ПО 8 ГЛАВАМ — СТРОГАЯ СИММЕТРИЯ БЕЗ ОДИНОЧНЫХ ПЕРЕНОСОВ И НАЕЗДА НА ТЕКСТ */}
-      <div className="rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] overflow-hidden shadow-2xs">
-        {/* Верхний ярус: статус документа слева, 3 кнопки режима справа */}
-        <div className="px-4 py-2.5 bg-[#FAF8F5] border-b-[1.5px] border-[#DFD8CC] flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[12px] font-mono uppercase tracking-[0.1em] text-[#5C5852]">
-            <span className="h-2 w-2 rounded-full bg-[#181715]" />
+      {/* АРХИТЕКТУРНАЯ ПАНЕЛЬ НАВИГАЦИИ ПО 8 ГЛАВАМ */}
+      <div className="rounded-2xl bg-white border border-[#E4E1DA] overflow-hidden shadow-xs">
+        {/* Верхний ярус: статус документа слева, кнопки режима справа */}
+        <div className="px-4 py-3 bg-[#FAF9F6] border-b border-[#E4E1DA] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[11.5px] font-mono uppercase tracking-wider text-[#5C5953]">
+            <span className="h-2 w-2 rounded-full bg-[#141413]" />
             <span>BORNERS GROUP · Оглавление стратегической презентации (01–08)</span>
           </div>
 
@@ -2181,9 +2181,9 @@ export function StrategyPresentationDeck({
               <button
                 type="button"
                 onClick={onExitPresentation}
-                className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-semibold text-[#181715] cursor-pointer transition"
+                className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-white border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium text-[#141413] cursor-pointer transition-colors"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
+                <ArrowLeft className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>К рабочим разделам</span>
               </button>
             )}
@@ -2191,13 +2191,13 @@ export function StrategyPresentationDeck({
               <button
                 type="button"
                 onClick={() => setIsEditMode((v) => !v)}
-                className={`inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] border-[1.5px] text-[12px] font-semibold cursor-pointer transition ${
+                className={`inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg border text-[12px] font-medium cursor-pointer transition-colors ${
                   effectiveEditMode
-                    ? 'bg-[#B85D35] border-[#B85D35] text-white'
-                    : 'bg-white border-[#CFC8BC] text-[#181715] hover:border-[#181715]'
+                    ? 'bg-[#141413] border-[#141413] text-white'
+                    : 'bg-white border-[#E4E1DA] text-[#141413] hover:border-[#141413]'
                 }`}
               >
-                <Edit3 className="h-3.5 w-3.5" />
+                <Edit3 className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>
                   {effectiveEditMode
                     ? 'Готово (Режим редактирования)'
@@ -2211,9 +2211,9 @@ export function StrategyPresentationDeck({
                 type="button"
                 onClick={resetPresentationOverrides}
                 title="Сбросить изменённые заголовки и KPI к исходным"
-                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-[6px] border-[1.5px] border-[#CFC8BC] bg-white hover:border-[#181715] text-[11.5px] font-medium text-[#5C5852] cursor-pointer"
+                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-[#E4E1DA] bg-white hover:border-[#141413] text-[11.5px] font-medium text-[#5C5953] cursor-pointer"
               >
-                <RotateCcw className="h-3 w-3" />
+                <RotateCcw className="h-3 w-3 stroke-[1.5]" />
                 <span>Сбросить</span>
               </button>
             )}
@@ -2221,10 +2221,10 @@ export function StrategyPresentationDeck({
             <button
               type="button"
               onClick={() => setViewLayout(viewLayout === 'slides' ? 'all' : 'slides')}
-              className={`h-8 px-3.5 rounded-[6px] border-[1.5px] text-[12px] font-medium cursor-pointer transition ${
+              className={`h-8 px-3.5 rounded-lg border text-[12px] font-medium cursor-pointer transition-colors ${
                 viewLayout === 'all'
-                  ? 'bg-[#181715] border-[#181715] text-white'
-                  : 'bg-white border-[#CFC8BC] text-[#181715] hover:border-[#181715]'
+                  ? 'bg-[#141413] border-[#141413] text-white'
+                  : 'bg-white border-[#E4E1DA] text-[#141413] hover:border-[#141413]'
               }`}
             >
               {viewLayout === 'all' ? 'По слайдам (1–8)' : 'Единый документ'}
@@ -2234,25 +2234,25 @@ export function StrategyPresentationDeck({
               type="button"
               onClick={() => window.print()}
               title="Печать или сохранение в PDF"
-              className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-medium text-[#181715] cursor-pointer transition"
+              className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-white border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium text-[#141413] cursor-pointer transition-colors"
             >
-              <Printer className="h-3.5 w-3.5" />
+              <Printer className="h-3.5 w-3.5 stroke-[1.5]" />
               <span>PDF</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-medium text-[#181715] cursor-pointer transition"
+              className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-white border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium text-[#141413] cursor-pointer transition-colors"
             >
               {isFullscreen ? (
                 <>
-                  <Minimize2 className="h-3.5 w-3.5" />
+                  <Minimize2 className="h-3.5 w-3.5 stroke-[1.5]" />
                   <span>Свернуть</span>
                 </>
               ) : (
                 <>
-                  <Expand className="h-3.5 w-3.5" />
+                  <Expand className="h-3.5 w-3.5 stroke-[1.5]" />
                   <span>На весь экран</span>
                 </>
               )}
@@ -2272,15 +2272,15 @@ export function StrategyPresentationDeck({
                   setViewLayout('slides');
                   setActiveSlideIdx(idx);
                 }}
-                className={`px-2.5 py-2 rounded-[8px] text-left text-[12px] cursor-pointer transition border ${
+                className={`px-2.5 py-2 rounded-lg text-left text-[12px] cursor-pointer transition-colors border ${
                   active
-                    ? 'bg-[#181715] text-white border-[#181715] font-medium'
-                    : 'bg-[#FAF8F5] text-[#4A4742] border-[#E5E0D8] hover:border-[#181715] hover:text-[#181715]'
+                    ? 'bg-[#141413] text-white border-[#141413] font-medium'
+                    : 'bg-[#FAF9F6] text-[#5C5953] border-[#E4E1DA] hover:border-[#141413] hover:text-[#141413]'
                 }`}
               >
                 <div
                   className={`font-mono text-[10px] ${
-                    active ? 'text-[#B89F86]' : 'text-[#8C867E]'
+                    active ? 'text-[#A8A49C]' : 'text-[#8A857D]'
                   }`}
                 >
                   Глава {s.num}
@@ -2295,10 +2295,10 @@ export function StrategyPresentationDeck({
       {/* СОДЕРЖИМОЕ ПРЕЗЕНТАЦИИ */}
       {viewLayout === 'slides' ? (
         <div className="space-y-6">
-          {/* Редакционный заголовок текущего слайда с чёткой жирной линией 2px */}
-          <div className="border-b-2 border-[#181715] pb-5 flex flex-wrap items-end justify-between gap-4">
+          {/* Редакционный заголовок текущего слайда */}
+          <div className="border-b border-[#141413] pb-5 flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-1.5 flex-1 min-w-[280px]">
-              <div className="font-mono text-[11.5px] font-medium uppercase tracking-[0.12em] text-[#7A756D]">
+              <div className="font-mono text-[11.5px] font-medium uppercase tracking-wider text-[#5C5953]">
                 Глава {currentSlide.num} из 08 · {currentSlide.kicker}
               </div>
               {effectiveEditMode ? (
@@ -2308,7 +2308,7 @@ export function StrategyPresentationDeck({
                     onChange={(e) =>
                       updatePresentationOverride(`slide_${currentSlide.id}_title`, e.target.value)
                     }
-                    className="w-full h-11 rounded-[8px] border-[1.5px] border-[#B85D35] bg-white px-3.5 font-serif-editorial text-[26px] font-medium text-[#181715]"
+                    className="w-full h-11 rounded-lg border border-[#141413] bg-white px-3.5 text-[24px] font-semibold text-[#141413]"
                   />
                   <input
                     value={getOverride(`slide_${currentSlide.id}_subtitle`, currentSlide.subtitle)}
@@ -2318,15 +2318,15 @@ export function StrategyPresentationDeck({
                         e.target.value
                       )
                     }
-                    className="w-full h-9 rounded-[8px] border-[1.5px] border-[#B85D35] bg-white px-3.5 text-[14px] text-[#5C5852]"
+                    className="w-full h-9 rounded-lg border border-[#E4E1DA] bg-white px-3.5 text-[14px] text-[#5C5953]"
                   />
                 </div>
               ) : (
                 <>
-                  <h2 className="font-serif-editorial text-[32px] md:text-[42px] font-medium tracking-[-0.01em] text-[#181715] leading-tight">
+                  <h2 className="text-[28px] md:text-[36px] font-semibold tracking-tight text-[#141413] leading-tight">
                     {getOverride(`slide_${currentSlide.id}_title`, currentSlide.title)}
                   </h2>
-                  <p className="text-[14.5px] text-[#5C5852] max-w-3xl">
+                  <p className="text-[14.5px] text-[#5C5953] max-w-3xl">
                     {getOverride(`slide_${currentSlide.id}_subtitle`, currentSlide.subtitle)}
                   </p>
                 </>
@@ -2338,9 +2338,9 @@ export function StrategyPresentationDeck({
                 type="button"
                 disabled={activeSlideIdx === 0}
                 onClick={() => setActiveSlideIdx((i) => Math.max(0, i - 1))}
-                className="h-9 px-4 rounded-[8px] border-[1.5px] border-[#CFC8BC] bg-white text-[12.5px] font-medium text-[#181715] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 hover:border-[#181715]"
+                className="h-9 px-4 rounded-lg border border-[#E4E1DA] bg-white text-[12.5px] font-medium text-[#141413] disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 hover:border-[#141413] transition-colors"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
+                <ArrowLeft className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>Назад</span>
               </button>
               <button
@@ -2349,10 +2349,10 @@ export function StrategyPresentationDeck({
                 onClick={() =>
                   setActiveSlideIdx((i) => Math.min(PRESENTATION_SLIDES.length - 1, i + 1))
                 }
-                className="h-9 px-4 rounded-[8px] bg-[#181715] text-white text-[12.5px] font-medium disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 hover:bg-[#2C2B29]"
+                className="h-9 px-4 rounded-lg bg-[#141413] text-white text-[12.5px] font-medium disabled:opacity-40 cursor-pointer inline-flex items-center gap-1.5 hover:bg-[#2A2A28] transition-colors"
               >
                 <span>Далее</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-3.5 w-3.5 stroke-[1.5]" />
               </button>
             </div>
           </div>
@@ -2360,18 +2360,18 @@ export function StrategyPresentationDeck({
           {renderSlideContent(activeSlideIdx)}
 
           {/* Нижняя навигация по слайдам */}
-          <div className="rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] px-5 py-3.5 flex items-center justify-between">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] px-5 py-3.5 flex items-center justify-between">
             <button
               type="button"
               disabled={activeSlideIdx === 0}
               onClick={() => setActiveSlideIdx((i) => Math.max(0, i - 1))}
-              className="h-9 px-4 rounded-[8px] border-[1.5px] border-[#CFC8BC] bg-white text-[13px] font-medium disabled:opacity-40 cursor-pointer inline-flex items-center gap-2 hover:border-[#181715]"
+              className="h-9 px-4 rounded-lg border border-[#E4E1DA] bg-white text-[13px] font-medium text-[#141413] disabled:opacity-40 cursor-pointer inline-flex items-center gap-2 hover:border-[#141413] transition-colors"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
+              <ArrowLeft className="h-3.5 w-3.5 stroke-[1.5]" />
               <span>Предыдущая глава</span>
             </button>
 
-            <div className="font-mono text-[12px] font-medium text-[#5C5852]">
+            <div className="font-mono text-[12px] font-medium text-[#5C5953]">
               Глава {activeSlideIdx + 1} из 8
             </div>
 
@@ -2381,10 +2381,10 @@ export function StrategyPresentationDeck({
               onClick={() =>
                 setActiveSlideIdx((i) => Math.min(PRESENTATION_SLIDES.length - 1, i + 1))
               }
-              className="h-9 px-5 rounded-[8px] bg-[#181715] text-white text-[13px] font-medium disabled:opacity-40 cursor-pointer inline-flex items-center gap-2 hover:bg-[#2C2B29]"
+              className="h-9 px-5 rounded-lg bg-[#141413] text-white text-[13px] font-medium disabled:opacity-40 cursor-pointer inline-flex items-center gap-2 hover:bg-[#2A2A28] transition-colors"
             >
               <span>Следующая глава</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              <ArrowRight className="h-3.5 w-3.5 stroke-[1.5]" />
             </button>
           </div>
         </div>
@@ -2394,16 +2394,16 @@ export function StrategyPresentationDeck({
           {PRESENTATION_SLIDES.map((s, idx) => (
             <section
               key={s.id}
-              className="space-y-5 pt-8 border-t-2 border-[#181715] first:border-t-0 first:pt-0"
+              className="space-y-5 pt-8 border-t border-[#E4E1DA] first:border-t-0 first:pt-0"
             >
               <div className="space-y-1">
-                <div className="font-mono text-[11.5px] font-medium uppercase tracking-[0.12em] text-[#7A756D]">
+                <div className="font-mono text-[11.5px] font-medium uppercase tracking-wider text-[#5C5953]">
                   Глава {s.num} из 08 · {s.kicker}
                 </div>
-                <h2 className="font-serif-editorial text-[32px] md:text-[38px] font-medium text-[#181715] leading-tight">
+                <h2 className="text-[28px] md:text-[34px] font-semibold tracking-tight text-[#141413] leading-tight">
                   {getOverride(`slide_${s.id}_title`, s.title)}
                 </h2>
-                <p className="text-[14.5px] text-[#5C5852] max-w-3xl">
+                <p className="text-[14.5px] text-[#5C5953] max-w-3xl">
                   {getOverride(`slide_${s.id}_subtitle`, s.subtitle)}
                 </p>
               </div>

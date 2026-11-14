@@ -313,56 +313,56 @@ export function LaunchCalendarView() {
   };
 
   return (
-    <div className="space-y-10 pb-20">
-      {/* Заголовок страницы (32–40px по ТЗ) */}
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E8E8E5] pb-6">
+    <div className="space-y-8 pb-20">
+      {/* Заголовок страницы */}
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E4E1DA] pb-5">
         <div>
-          <div className="text-[13px] font-medium uppercase tracking-widest text-[#737373] mb-1.5">
+          <div className="font-mono text-[11.5px] font-medium uppercase tracking-wider text-[#5C5953] mb-1">
             Релизы коллекций и подготовка партий · {filteredLaunches.length} запусков
           </div>
-          <h1 className="text-[34px] md:text-[40px] font-bold tracking-[-0.03em] text-[#171717] dark:text-white">
+          <h1 className="text-[28px] md:text-[34px] font-semibold tracking-tight text-[#141413]">
             Календарь запусков
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-[#F7F7F5] p-1 rounded-xl border border-[#E8E8E5]">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#E4E1DA]">
             <button
               onClick={() => setViewMode('timeline')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
                 viewMode === 'timeline'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               Дорожная карта
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
                 viewMode === 'calendar'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               По месяцам
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               Таблица
             </button>
             <button
               onClick={() => setViewMode('kanban')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer ${
                 viewMode === 'kanban'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               Доска
@@ -385,9 +385,9 @@ export function LaunchCalendarView() {
                 }));
                 setCreateModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 h-11 rounded-xl bg-[#111111] text-white px-5 text-[15px] font-semibold hover:bg-neutral-800 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-10 rounded-lg bg-[#141413] text-white px-4 text-[13.5px] font-medium hover:bg-[#2A2A28] transition-colors cursor-pointer"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 stroke-[1.5]" />
               <span>Новый запуск</span>
             </button>
           )}
@@ -396,9 +396,8 @@ export function LaunchCalendarView() {
 
       {/* РЕЖИМ 1: ДОРОЖНАЯ КАРТА РЕЛИЗОВ */}
       {viewMode === 'timeline' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {filteredLaunches.map((launch) => {
-            const isBorners = launch.brandId === 'BORNERS';
             const linkedProducts = resolveLinkedSkus(launch.productIds);
             const canEditThisLaunch =
               !isStrategyMode &&
@@ -407,12 +406,12 @@ export function LaunchCalendarView() {
             return (
               <div
                 key={launch.id}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 md:p-8 space-y-6"
+                className="bg-white rounded-2xl border border-[#E4E1DA] p-6 md:p-7 space-y-6"
               >
-                <div className="flex flex-wrap items-start justify-between gap-6 border-b border-[#E8E8E5] pb-6">
+                <div className="flex flex-wrap items-start justify-between gap-6 border-b border-[#E4E1DA] pb-5">
                   <div className="flex items-start gap-5 max-w-2xl">
                     {/* Чистое предметное превью запуска */}
-                    <div className="h-24 w-24 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] flex items-center justify-center p-2.5 shrink-0">
+                    <div className="h-24 w-24 rounded-xl bg-[#F6F5F2] border border-[#E4E1DA] flex items-center justify-center p-2.5 shrink-0">
                       <img
                         src={resolvePublicAssetUrl(launch.imageUrl)}
                         alt={launch.name}
@@ -420,22 +419,22 @@ export function LaunchCalendarView() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2.5 text-[13px] font-semibold">
-                        <span style={{ color: isBorners ? '#D97745' : '#8B8078' }}>
+                      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                        <span className="px-2 py-0.5 rounded bg-[#FAF9F6] border border-[#E4E1DA] font-mono text-[11px] font-medium text-[#141413]">
                           {formatLabBrandLabel(launch.brandId)}
                         </span>
-                        <span className="text-[#737373]">
-                          · Старт продаж: <b className="text-[#171717]">{launch.startDate}</b> ·{' '}
+                        <span className="text-[#5C5953]">
+                          Старт продаж: <b className="font-mono text-[#141413]">{launch.startDate}</b> ·{' '}
                           {launch.status}
                         </span>
                       </div>
                       <h3
                         onClick={() => setSelectedLaunchId(launch.id)}
-                        className="text-[24px] font-bold text-[#171717] dark:text-white hover:underline cursor-pointer"
+                        className="text-[21px] font-semibold tracking-tight text-[#141413] hover:underline cursor-pointer"
                       >
                         {launch.name} · {launch.collectionName}
                       </h3>
-                      <p className="text-[15px] text-[#737373]">
+                      <p className="text-[13.5px] text-[#5C5953]">
                         Статус партии: {launch.productionStatus}
                       </p>
                     </div>
@@ -443,29 +442,29 @@ export function LaunchCalendarView() {
 
                   <div className="flex flex-wrap items-center gap-6">
                     <div>
-                      <div className="text-[12px] text-[#737373]">План выручки</div>
-                      <div className="text-[22px] font-bold text-[#171717] mt-0.5">
+                      <div className="text-[11.5px] text-[#5C5953]">План выручки</div>
+                      <div className="font-mono text-[20px] font-semibold text-[#141413] mt-0.5">
                         {hasFinance ? formatCompactRub(launch.salesPlanRub) : 'Скрыто'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[12px] text-[#737373]">Готовность</div>
-                      <div className="text-[22px] font-bold text-[#16805D] mt-0.5">
+                      <div className="text-[11.5px] text-[#5C5953]">Готовность</div>
+                      <div className="font-mono text-[20px] font-semibold text-emerald-700 mt-0.5">
                         {launch.readinessPct}%
                       </div>
                     </div>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       {canEditThisLaunch && (
                         <button
                           onClick={() => openRescheduleModal(launch)}
-                          className="h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-4 text-[14px] font-semibold hover:border-[#171717] cursor-pointer"
+                          className="h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-4 text-[13px] font-medium text-[#141413] hover:border-[#141413] transition-colors cursor-pointer"
                         >
                           Сдвинуть дату
                         </button>
                       )}
                       <button
                         onClick={() => setSelectedLaunchId(launch.id)}
-                        className="h-11 rounded-xl bg-[#111111] text-white px-4 text-[14px] font-semibold hover:bg-neutral-800 cursor-pointer"
+                        className="h-10 rounded-lg bg-[#141413] text-white px-4 text-[13px] font-medium hover:bg-[#2A2A28] transition-colors cursor-pointer"
                       >
                         Этапы запуска →
                       </button>
@@ -485,24 +484,24 @@ export function LaunchCalendarView() {
 
                   return (
                     <div className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FAF8F5] border border-[#D4CDC2] px-4 py-2.5 text-[12.5px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] px-4 py-2.5 text-[12px]">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-[#E6F4EE] border border-[#1F6E50]/40 text-[#1F6E50] font-semibold">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium">
                             ✓ Завершено: {doneCount} из {launch.stages.length}
                           </span>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-[#FCE8DF] border border-[#B85D35]/40 text-[#9E4622] font-semibold">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-medium">
                             ● В работе: {inProgressCount}
                           </span>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[6px] bg-white border border-[#D4CDC2] text-[#5C5852] font-medium">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-white border border-[#E4E1DA] text-[#5C5953] font-medium">
                             ○ Осталось этапов: {remainingCount}
                           </span>
                         </div>
-                        <span className="font-mono text-[11.5px] font-semibold text-[#181715]">
+                        <span className="font-mono text-[11.5px] font-medium text-[#141413]">
                           Прогресс: {Math.round((doneCount / Math.max(1, launch.stages.length)) * 100)}%
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                         {launch.stages.map((st, stIdx) => {
                           const isLateAfterStart =
                             !['sales', 'analysis'].includes(st.code) &&
@@ -515,26 +514,26 @@ export function LaunchCalendarView() {
                             <div
                               key={st.code}
                               onClick={() => setSelectedLaunchId(launch.id)}
-                              className={`p-3.5 rounded-xl border-[1.5px] text-[14px] transition cursor-pointer ${
+                              className={`p-3 rounded-xl border text-[13px] transition-colors cursor-pointer ${
                                 isDone
-                                  ? 'border-[#1F6E50]/60 bg-[#EBF5F0] text-[#14533C]'
+                                  ? 'border-emerald-200 bg-emerald-50/50 text-[#141413]'
                                   : isDelayed
-                                  ? 'border-[#C94B4B] bg-[#FBEAEA] text-[#8E2820]'
+                                  ? 'border-rose-300 bg-rose-50/60 text-rose-900'
                                   : isInProg
-                                  ? 'border-[#B85D35] bg-[#FBF3EE] text-[#181715] shadow-2xs'
-                                  : 'border-dashed border-[#CFC8BC] bg-[#FAF8F5] text-[#6E6A63]'
+                                  ? 'border-[#141413] bg-white text-[#141413]'
+                                  : 'border-dashed border-[#D2CEC4] bg-[#FAF9F6] text-[#5C5953]'
                               }`}
                             >
-                              <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
+                              <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5">
                                 <span
-                                  className={`px-1.5 py-0.5 rounded font-bold uppercase ${
+                                  className={`px-1.5 py-0.5 rounded font-medium uppercase ${
                                     isDone
-                                      ? 'bg-[#1F6E50] text-white'
+                                      ? 'bg-emerald-700 text-white'
                                       : isDelayed
-                                      ? 'bg-[#C94B4B] text-white'
+                                      ? 'bg-rose-700 text-white'
                                       : isInProg
-                                      ? 'bg-[#B85D35] text-white'
-                                      : 'bg-[#EAE6DF] text-[#6E6A63]'
+                                      ? 'bg-[#141413] text-white'
+                                      : 'bg-[#EFEDE8] text-[#5C5953]'
                                   }`}
                                 >
                                   {isDone
@@ -545,10 +544,11 @@ export function LaunchCalendarView() {
                                     ? '● В работе'
                                     : '○ Осталось'}
                                 </span>
-                                <span className="text-[#6E6A63]">{st.deadline}</span>
+                                <span className="text-[#5C5953]">{st.deadline}</span>
                               </div>
-                              <div className="font-semibold text-[13.5px] text-[#181715] leading-snug">
-                                {stIdx + 1}. {st.label}
+                              <div className="font-medium text-[13px] text-[#141413] leading-snug">
+                                <span className="font-mono text-[#5C5953]">{String(stIdx + 1).padStart(2, '0')}</span>{' '}
+                                {st.label}
                               </div>
                             </div>
                           );
@@ -559,9 +559,9 @@ export function LaunchCalendarView() {
                 })()}
 
                 {/* Модели релиза */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#E8E8E5] text-[14px]">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#E4E1DA] text-[13px]">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-[#737373]">Модели в запуске:</span>
+                    <span className="font-medium text-[#5C5953]">Модели в запуске:</span>
                     {linkedProducts.map((p) => (
                       <button
                         key={p.id}
@@ -575,14 +575,14 @@ export function LaunchCalendarView() {
                           }
                           navigateTo('product-catalog', { productId: p.id });
                         }}
-                        className="rounded-lg bg-[#F7F7F5] border border-[#E8E8E5] px-3 py-1 text-[13px] font-semibold hover:border-[#171717] transition cursor-pointer"
+                        className="rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] px-2.5 py-1 text-[12.5px] font-medium text-[#141413] hover:border-[#141413] transition-colors cursor-pointer"
                       >
-                        {p.sku} · {p.name}
+                        <span className="font-mono">{p.sku}</span> · {p.name}
                       </button>
                     ))}
                   </div>
-                  <span className="text-[13px] text-[#737373]">
-                    План в штуках: <b className="text-[#171717]">{launch.salesPlanUnits.toLocaleString('ru-RU')} шт.</b>
+                  <span className="text-[12.5px] text-[#5C5953]">
+                    План в штуках: <b className="font-mono text-[#141413]">{launch.salesPlanUnits.toLocaleString('ru-RU')} шт.</b>
                   </span>
                 </div>
               </div>
@@ -593,7 +593,7 @@ export function LaunchCalendarView() {
 
       {/* РЕЖИМ 2: ПО МЕСЯЦАМ */}
       {viewMode === 'calendar' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {calendarMonths.map((m) => {
             const monthLaunches = filteredLaunches.filter((l) =>
               l.startDate.startsWith(m.monthKey)
@@ -601,38 +601,34 @@ export function LaunchCalendarView() {
             return (
               <div
                 key={m.monthKey}
-                className="bg-white rounded-2xl border border-[#E8E8E5] p-6 space-y-5"
+                className="bg-white rounded-2xl border border-[#E4E1DA] p-6 space-y-4"
               >
-                <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
-                  <h3 className="text-[20px] font-bold">{m.label}</h3>
-                  <span className="text-[13px] font-semibold text-[#737373] bg-[#F7F7F5] px-2.5 py-0.5 rounded-lg border border-[#E8E8E5]">
+                <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3">
+                  <h3 className="text-[18px] font-semibold tracking-tight text-[#141413]">{m.label}</h3>
+                  <span className="font-mono text-[12px] font-medium text-[#5C5953] bg-[#FAF9F6] px-2.5 py-0.5 rounded-md border border-[#E4E1DA]">
                     {monthLaunches.length}
                   </span>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {monthLaunches.map((l) => (
                     <div
                       key={l.id}
                       onClick={() => setSelectedLaunchId(l.id)}
-                      className="rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-5 cursor-pointer transition space-y-2"
+                      className="rounded-xl border border-[#E4E1DA] hover:border-[#141413] bg-[#FAF9F6]/60 p-4 cursor-pointer transition-colors space-y-1.5"
                     >
-                      <div className="flex items-center justify-between text-[13px] font-semibold">
-                        <span
-                          style={{
-                            color: l.brandId === 'BORNERS' ? '#D97745' : '#8B8078',
-                          }}
-                        >
+                      <div className="flex items-center justify-between text-[12px]">
+                        <span className="font-mono font-medium text-[#141413]">
                           {formatLabBrandLabel(l.brandId)}
                         </span>
-                        <span className="text-[#737373]">{l.startDate}</span>
+                        <span className="font-mono text-[#5C5953]">{l.startDate}</span>
                       </div>
-                      <div className="text-[18px] font-bold text-[#171717]">{l.name}</div>
-                      <div className="text-[14px] text-[#737373]">{l.collectionName}</div>
+                      <div className="text-[16px] font-semibold text-[#141413]">{l.name}</div>
+                      <div className="text-[13px] text-[#5C5953]">{l.collectionName}</div>
                     </div>
                   ))}
                   {monthLaunches.length === 0 && (
-                    <div className="py-10 text-center text-[14px] text-[#737373] rounded-xl border border-dashed border-[#E8E8E5]">
+                    <div className="py-10 text-center text-[13px] text-[#5C5953] rounded-xl border border-dashed border-[#E4E1DA]">
                       Запусков не запланировано
                     </div>
                   )}
@@ -645,39 +641,39 @@ export function LaunchCalendarView() {
 
       {/* РЕЖИМ 3: ТАБЛИЦА ЗАПУСКОВ */}
       {viewMode === 'list' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-2xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Релиз и коллекция</th>
-                <th className="py-4 px-4">Бренд</th>
-                <th className="py-4 px-4">Старт продаж</th>
-                <th className="py-4 px-4 text-right">Готовность</th>
-                <th className="py-4 px-4 text-right">План выручки</th>
-                <th className="py-4 px-6 text-right">Действие</th>
+                <th className="py-3.5 px-6">Релиз и коллекция</th>
+                <th className="py-3.5 px-4">Бренд</th>
+                <th className="py-3.5 px-4">Старт продаж</th>
+                <th className="py-3.5 px-4 text-right">Готовность</th>
+                <th className="py-3.5 px-4 text-right">План выручки</th>
+                <th className="py-3.5 px-6 text-right">Действие</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredLaunches.map((l) => (
-                <tr key={l.id} className="hover:bg-[#F7F7F5]/60 transition">
+                <tr key={l.id} className="hover:bg-[#FAF9F6] transition-colors">
                   <td className="py-4 px-6">
-                    <div className="font-semibold text-[16px] text-[#171717]">{l.name}</div>
-                    <div className="text-[13px] text-[#737373]">{l.collectionName}</div>
+                    <div className="font-semibold text-[15px] text-[#141413]">{l.name}</div>
+                    <div className="text-[12.5px] text-[#5C5953]">{l.collectionName}</div>
                   </td>
-                  <td className="py-4 px-4 font-semibold">
+                  <td className="py-4 px-4 font-mono text-[12.5px] font-medium text-[#141413]">
                     {formatLabBrandLabel(l.brandId)}
                   </td>
-                  <td className="py-4 px-4 font-semibold">{l.startDate}</td>
-                  <td className="py-4 px-4 text-right font-bold text-[#16805D]">
+                  <td className="py-4 px-4 font-mono text-[13px] text-[#141413]">{l.startDate}</td>
+                  <td className="py-4 px-4 text-right font-mono font-semibold text-emerald-700">
                     {l.readinessPct}%
                   </td>
-                  <td className="py-4 px-4 text-right font-semibold">
+                  <td className="py-4 px-4 text-right font-mono font-medium text-[#141413]">
                     {hasFinance ? formatCompactRub(l.salesPlanRub) : 'Скрыто'}
                   </td>
                   <td className="py-4 px-6 text-right">
                     <button
                       onClick={() => setSelectedLaunchId(l.id)}
-                      className="rounded-xl border border-[#E8E8E5] px-4 py-2 text-[14px] font-semibold hover:bg-[#111111] hover:text-white cursor-pointer"
+                      className="rounded-lg border border-[#E4E1DA] px-3.5 py-1.5 text-[13px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white transition-colors cursor-pointer"
                     >
                       Открыть →
                     </button>
@@ -691,7 +687,7 @@ export function LaunchCalendarView() {
 
       {/* РЕЖИМ 4: ДОСКА СТАТУСОВ С DRAG & DROP */}
       {viewMode === 'kanban' && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {LAUNCH_STATUS_COLUMNS.map((statusCol) => {
             const items = filteredLaunches.filter((l) => l.status === statusCol);
             const isDropTarget = dragOverStatus === statusCol;
@@ -705,22 +701,22 @@ export function LaunchCalendarView() {
                 }}
                 onDragLeave={() => setDragOverStatus(null)}
                 onDrop={(e) => handleLaunchDrop(e, statusCol)}
-                className={`p-4 rounded-2xl min-h-[440px] border transition-all ${
+                className={`p-4 rounded-xl min-h-[440px] border transition-colors ${
                   isDropTarget
-                    ? 'bg-white border-2 border-[#D97745] shadow-lg'
-                    : 'bg-white/70 border-[#E8E8E5]'
+                    ? 'bg-white border-[#141413] shadow-md'
+                    : 'bg-[#FAF9F6] border-[#E4E1DA]'
                 }`}
               >
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E8E8E5]">
-                  <span className="text-[14px] font-bold text-[#171717]">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E4E1DA]">
+                  <span className="text-[13.5px] font-semibold text-[#141413]">
                     {statusCol}
                   </span>
-                  <span className="text-[13px] font-semibold text-[#737373] bg-[#F7F7F5] px-2.5 py-0.5 rounded-lg border border-[#E8E8E5]">
+                  <span className="font-mono text-[12px] font-medium text-[#5C5953] bg-white px-2 py-0.5 rounded border border-[#E4E1DA]">
                     {items.length}
                   </span>
                 </div>
 
-                <div className="space-y-3.5">
+                <div className="space-y-3">
                   {items.map((l) => {
                     const canEdit = canUserEditBrand(
                       currentUser,
@@ -736,23 +732,23 @@ export function LaunchCalendarView() {
                           setDragOverStatus(null);
                         }}
                         onClick={() => setSelectedLaunchId(l.id)}
-                        className={`bg-white rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-2.5 transition ${
+                        className={`bg-white rounded-xl border border-[#E4E1DA] hover:border-[#141413] p-4 space-y-2 transition-colors ${
                           canEdit && !isStrategyMode
                             ? 'cursor-grab active:cursor-grabbing'
                             : 'cursor-pointer'
                         }`}
                       >
-                        <div className="flex items-center justify-between text-[13px] font-semibold">
-                          <span className="inline-flex items-center gap-1.5">
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="inline-flex items-center gap-1.5 font-mono font-medium text-[#141413]">
                             {canEdit && !isStrategyMode && (
-                              <GripVertical className="h-4 w-4 text-[#737373]" />
+                              <GripVertical className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                             )}
                             {formatLabBrandLabel(l.brandId)}
                           </span>
-                          <span className="text-[#737373]">{l.startDate}</span>
+                          <span className="font-mono text-[#5C5953]">{l.startDate}</span>
                         </div>
-                        <div className="text-[16px] font-bold text-[#171717]">{l.name}</div>
-                        <div className="text-[14px] text-[#737373]">{l.collectionName}</div>
+                        <div className="text-[14.5px] font-semibold text-[#141413]">{l.name}</div>
+                        <div className="text-[12.5px] text-[#5C5953]">{l.collectionName}</div>
                       </div>
                     );
                   })}
@@ -767,62 +763,62 @@ export function LaunchCalendarView() {
       {rescheduleModalLaunch && (
         <div
           onClick={() => setRescheduleModalLaunch(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] border-b border-[#E4E1DA] pb-4">
               Перенос даты: {rescheduleModalLaunch.name}
             </h3>
 
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13.5px]">
               <div>
-                <label className="block font-semibold mb-1.5">Новая дата старта продаж</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Новая дата старта продаж</label>
                 <input
                   type="date"
                   value={newStartDate}
                   onChange={(e) => setNewStartDate(e.target.value)}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 font-mono text-[14px] text-[#141413]"
                 />
               </div>
 
-              <label className="flex items-center gap-2.5 cursor-pointer pt-2">
+              <label className="flex items-center gap-2.5 cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={shiftDependents}
                   onChange={(e) => setShiftDependents(e.target.checked)}
-                  className="h-4 w-4 accent-[#111111]"
+                  className="h-4 w-4 accent-[#141413]"
                 />
-                <span className="font-medium text-[#171717]">
+                <span className="font-medium text-[#141413]">
                   Автоматически сдвинуть дедлайны этапов и связанных задач
                 </span>
               </label>
             </div>
 
             {previewConflicts && previewConflicts.conflicts.length > 0 && (
-              <div className="rounded-xl border border-[#C94B4B] bg-[#C94B4B]/5 p-4 space-y-2 text-[14px]">
-                <div className="font-semibold text-[#C94B4B] flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
+              <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 space-y-2 text-[13px]">
+                <div className="font-medium text-rose-800 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 stroke-[1.5]" />
                   <span>
                     Обнаружены затрагиваемые сроки ({previewConflicts.conflicts.length}):
                   </span>
                 </div>
-                <ul className="space-y-1 text-[#171717] max-h-40 overflow-y-auto">
+                <ul className="space-y-1 text-[#141413] max-h-40 overflow-y-auto">
                   {previewConflicts.conflicts.map((c, idx) => (
                     <li key={idx}>
-                      • {c.title}: {c.currentDeadline} → {c.suggestedDeadline} ({c.reason})
+                      • {c.title}: <span className="font-mono">{c.currentDeadline} → {c.suggestedDeadline}</span> ({c.reason})
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setRescheduleModalLaunch(null)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-lg border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
               >
                 Отмена
               </button>
@@ -835,7 +831,7 @@ export function LaunchCalendarView() {
                   );
                   setRescheduleModalLaunch(null);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer"
               >
                 Применить дату
               </button>
@@ -857,23 +853,23 @@ export function LaunchCalendarView() {
         return (
           <div
             onClick={() => setSelectedLaunchId(null)}
-            className="fixed inset-0 z-50 flex justify-end bg-black/40"
+            className="fixed inset-0 z-50 flex justify-end bg-[#141413]/40 backdrop-blur-[2px]"
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-3xl bg-white h-full overflow-y-auto p-8 md:p-10 space-y-8 shadow-2xl border-l border-[#E8E8E5]"
+              className="w-full max-w-3xl bg-white h-full overflow-y-auto p-7 md:p-9 space-y-7 shadow-2xl border-l border-[#E4E1DA]"
             >
-              <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-6">
+              <div className="flex items-start justify-between gap-4 border-b border-[#E4E1DA] pb-5">
                 <div>
-                  <div className="text-[13px] font-semibold uppercase text-[#737373]">
+                  <div className="font-mono text-[11.5px] uppercase tracking-wider text-[#5C5953]">
                     {formatLabBrandLabel(activeLaunch.brandId)} · Старт:{' '}
                     {activeLaunch.startDate}
                   </div>
-                  <h2 className="text-[28px] font-bold text-[#171717] mt-1">
+                  <h2 className="text-[24px] font-semibold tracking-tight text-[#141413] mt-1">
                     {activeLaunch.name}
                   </h2>
                   <div className="mt-3 flex flex-wrap items-center gap-2.5">
-                    <span className="text-[12px] font-semibold uppercase tracking-wider text-[#737373]">
+                    <span className="text-[12px] font-medium text-[#5C5953]">
                       Статус запуска:
                     </span>
                     <select
@@ -888,7 +884,7 @@ export function LaunchCalendarView() {
                           ...(nextStatus === 'Запущен' ? { readinessPct: 100 } : {}),
                         });
                       }}
-                      className="h-9 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 text-[13.5px] font-semibold text-[#171717] disabled:opacity-60 cursor-pointer"
+                      className="h-9 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3 text-[13px] font-medium text-[#141413] disabled:opacity-60 cursor-pointer"
                     >
                       {Array.from(
                         new Set<Launch['status']>([
@@ -905,20 +901,20 @@ export function LaunchCalendarView() {
                 </div>
                 <button
                   onClick={() => setSelectedLaunchId(null)}
-                  className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
+                  className="rounded-lg border border-[#E4E1DA] p-2 text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-4 w-4 stroke-[1.5]" />
                 </button>
               </div>
 
-              {/* Привязанные модели SKU — аккуратные карточки моделей + выпадающий список добавления */}
-              <div className="rounded-2xl bg-[#FAF8F5] border-[1.5px] border-[#CFC8BC] p-5 space-y-4">
+              {/* Привязанные модели SKU */}
+              <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-[#7A756D]">
+                    <div className="text-[11px] font-mono uppercase tracking-wider text-[#5C5953]">
                       СОСТАВ РЕЛИЗА · ПРИВЯЗАННЫЕ МОДЕЛИ
                     </div>
-                    <div className="text-[16px] font-bold text-[#181715]">
+                    <div className="text-[15px] font-semibold text-[#141413] mt-0.5">
                       Модели, входящие в этот запуск ({activeLinkedSkus.length})
                     </div>
                   </div>
@@ -935,7 +931,7 @@ export function LaunchCalendarView() {
                           });
                         }
                       }}
-                      className="h-9 rounded-[8px] border-[1.5px] border-[#181715] bg-white px-3 text-[12.5px] font-semibold text-[#181715] cursor-pointer"
+                      className="h-9 rounded-lg border border-[#E4E1DA] hover:border-[#141413] bg-white px-3 text-[12.5px] font-medium text-[#141413] cursor-pointer"
                     >
                       <option value="">+ Привязать модель из каталога...</option>
                       {selectableCatalogSkus
@@ -958,7 +954,7 @@ export function LaunchCalendarView() {
                     {activeLinkedSkus.map((p) => (
                       <div
                         key={p.id}
-                        className="rounded-xl bg-white border-[1.5px] border-[#D4CDC2] p-3 flex items-center justify-between gap-3"
+                        className="rounded-xl bg-white border border-[#E4E1DA] p-3 flex items-center justify-between gap-3"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {p.imageUrl ? (
@@ -967,18 +963,18 @@ export function LaunchCalendarView() {
                               alt={p.name}
                               loading="lazy"
                               decoding="async"
-                              className="h-12 w-12 rounded-lg object-contain bg-[#F3EFE8] border border-[#E5E0D8] p-1 shrink-0"
+                              className="h-12 w-12 rounded-lg object-contain bg-[#F6F5F2] border border-[#E4E1DA] p-1 shrink-0"
                             />
                           ) : (
-                            <div className="h-12 w-12 rounded-lg bg-[#F3EFE8] border border-[#E5E0D8] flex items-center justify-center font-mono text-[10px] font-bold text-[#7A756D] shrink-0">
+                            <div className="h-12 w-12 rounded-lg bg-[#F6F5F2] border border-[#E4E1DA] flex items-center justify-center font-mono text-[10px] font-medium text-[#5C5953] shrink-0">
                               SKU
                             </div>
                           )}
                           <div className="min-w-0">
-                            <div className="font-mono text-[11px] font-semibold text-[#B85D35]">
+                            <div className="font-mono text-[11px] font-medium text-[#5C5953]">
                               {p.sku}
                             </div>
-                            <div className="text-[13.5px] font-semibold text-[#181715] truncate">
+                            <div className="text-[13px] font-semibold text-[#141413] truncate">
                               {p.name}
                             </div>
                           </div>
@@ -992,7 +988,7 @@ export function LaunchCalendarView() {
                                 productIds: activeLaunch.productIds.filter((id) => id !== p.id),
                               })
                             }
-                            className="px-2.5 py-1 rounded-[6px] border border-[#D4CDC2] hover:border-[#B93829] hover:text-[#B93829] text-[11.5px] font-medium text-[#6E6A63] shrink-0 cursor-pointer transition"
+                            className="px-2.5 py-1 rounded-md border border-[#E4E1DA] hover:border-rose-600 hover:text-rose-700 text-[11.5px] font-medium text-[#5C5953] shrink-0 cursor-pointer transition-colors"
                           >
                             Убрать
                           </button>
@@ -1001,16 +997,16 @@ export function LaunchCalendarView() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-[#D4CDC2] bg-white p-4 text-center text-[13px] text-[#7A756D]">
+                  <div className="rounded-xl border border-dashed border-[#D2CEC4] bg-white p-4 text-center text-[13px] text-[#5C5953]">
                     К этому релизу пока не привязаны модели. Выберите артикул в списке «+ Привязать модель из каталога...» выше.
                   </div>
                 )}
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
-                  <h3 className="text-[20px] font-bold">
-                    10 этапов подготовки релиза (готовность: {activeLaunch.readinessPct}%)
+                <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3">
+                  <h3 className="text-[18px] font-semibold tracking-tight text-[#141413]">
+                    10 этапов подготовки релиза (готовность: <span className="font-mono">{activeLaunch.readinessPct}%</span>)
                   </h3>
                   {canEditActiveLaunch && (
                     <button
@@ -1026,20 +1022,20 @@ export function LaunchCalendarView() {
                           launchId: activeLaunch.id,
                         });
                       }}
-                      className="rounded-xl border border-[#E8E8E5] px-3.5 py-1.5 text-[13px] font-semibold hover:bg-[#111111] hover:text-white cursor-pointer"
+                      className="rounded-lg border border-[#E4E1DA] px-3.5 py-1.5 text-[12.5px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white transition-colors cursor-pointer"
                     >
                       + Создать задачу по запуску
                     </button>
                   )}
                 </div>
 
-                <div className="divide-y divide-[#E8E8E5] rounded-2xl border border-[#E8E8E5] overflow-hidden">
+                <div className="divide-y divide-[#E4E1DA] rounded-xl border border-[#E4E1DA] overflow-hidden">
                   {activeLaunch.stages.map((st) => (
                     <div
                       key={st.code}
-                      className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-[#F7F7F5]/60"
+                      className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-[#FAF9F6]"
                     >
-                      <label className="flex items-center gap-3 text-[15px] cursor-pointer min-w-[210px]">
+                      <label className="flex items-center gap-3 text-[14px] cursor-pointer min-w-[210px]">
                         <input
                           type="checkbox"
                           disabled={!canEditActiveLaunch}
@@ -1068,20 +1064,20 @@ export function LaunchCalendarView() {
                               readinessPct: pct,
                             });
                           }}
-                          className="h-5 w-5 accent-[#16805D]"
+                          className="h-4 w-4 accent-[#141413]"
                         />
                         <span
                           className={
                             st.status === 'Done'
-                              ? 'line-through text-[#737373]'
-                              : 'font-semibold text-[#171717]'
+                              ? 'line-through text-[#5C5953]'
+                              : 'font-medium text-[#141413]'
                           }
                         >
                           {st.label}
                         </span>
                       </label>
 
-                      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                      <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                         <select
                           disabled={!canEditActiveLaunch}
                           value={st.status}
@@ -1101,7 +1097,7 @@ export function LaunchCalendarView() {
                               readinessPct: pct,
                             });
                           }}
-                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-semibold"
+                          className="h-8 rounded-lg border border-[#E4E1DA] bg-white px-2.5 font-medium text-[#141413]"
                         >
                           <option value="Done">Готово</option>
                           <option value="In Progress">В работе</option>
@@ -1118,7 +1114,7 @@ export function LaunchCalendarView() {
                             );
                             updateLaunch(activeLaunch.id, { stages: updatedStages });
                           }}
-                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 text-[#737373]"
+                          className="h-8 rounded-lg border border-[#E4E1DA] bg-white px-2.5 text-[#5C5953]"
                         >
                           {users.map((u) => (
                             <option key={u.id} value={u.id}>
@@ -1137,7 +1133,7 @@ export function LaunchCalendarView() {
                             );
                             updateLaunch(activeLaunch.id, { stages: updatedStages });
                           }}
-                          className="h-9 rounded-lg border border-[#E8E8E5] bg-white px-2.5 font-medium"
+                          className="h-8 rounded-lg border border-[#E4E1DA] bg-white px-2.5 font-mono text-[#141413]"
                         />
                       </div>
                     </div>
@@ -1153,30 +1149,30 @@ export function LaunchCalendarView() {
       {createModalOpen && (
         <div
           onClick={() => setCreateModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] border-b border-[#E4E1DA] pb-4">
               Планирование нового релиза
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13.5px]">
               <div>
-                <label className="block font-semibold mb-1.5">Название запуска</label>
+                <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Название запуска</label>
                 <input
                   value={newLaunchForm.name}
                   onChange={(e) =>
                     setNewLaunchForm({ ...newLaunchForm, name: e.target.value })
                   }
                   placeholder="Например: DROP 04 · SUMMER SKIN"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">Бренд</label>
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Бренд</label>
                   <select
                     value={newLaunchForm.brandId}
                     onChange={(e) =>
@@ -1185,7 +1181,7 @@ export function LaunchCalendarView() {
                         brandId: normalizeLabBrandCode(e.target.value),
                       })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] px-3.5 text-[14px] bg-[#FAF9F6] font-medium text-[#141413]"
                   >
                     {editableLaunchBrands.map((b) => (
                       <option key={b.code} value={b.code}>
@@ -1195,22 +1191,22 @@ export function LaunchCalendarView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">Дата старта</label>
+                  <label className="block text-[12px] font-medium text-[#5C5953] mb-1.5">Дата старта</label>
                   <input
                     type="date"
                     value={newLaunchForm.startDate}
                     onChange={(e) =>
                       setNewLaunchForm({ ...newLaunchForm, startDate: e.target.value })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                    className="w-full h-10 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] px-3.5 font-mono text-[14px] text-[#141413]"
                   />
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setCreateModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-lg border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:bg-[#FAF9F6] cursor-pointer"
               >
                 Отмена
               </button>
@@ -1229,7 +1225,7 @@ export function LaunchCalendarView() {
                   });
                   setCreateModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[13px] font-medium cursor-pointer"
               >
                 Запланировать
               </button>
@@ -1345,38 +1341,38 @@ export function MarketingGrowthView() {
   );
 
   return (
-    <div className="space-y-10 pb-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E8E8E5] pb-6">
+    <div className="space-y-8 pb-20">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[#E4E1DA] pb-6">
         <div>
-          <div className="text-[13px] font-medium uppercase tracking-widest text-[#737373] mb-1.5">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#5C5953] mb-1.5">
             Продвижение, кампании и гипотезы роста
           </div>
-          <h1 className="text-[34px] md:text-[40px] font-bold tracking-[-0.03em] text-[#171717] dark:text-white">
+          <h1 className="text-[32px] md:text-[36px] font-semibold tracking-[-0.03em] text-[#141413]">
             Маркетинг и рост
           </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-[#F7F7F5] p-1 rounded-xl border border-[#E8E8E5]">
+          <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#E4E1DA]">
             <button
               onClick={() => setTab('campaigns')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-4 py-2 rounded-lg text-[13px] font-medium transition cursor-pointer ${
                 tab === 'campaigns'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Кампании ({filteredCampaigns.length})
+              Кампании <span className="font-mono text-[12px]">({filteredCampaigns.length})</span>
             </button>
             <button
               onClick={() => setTab('experiments')}
-              className={`px-4 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer ${
+              className={`px-4 py-2 rounded-lg text-[13px] font-medium transition cursor-pointer ${
                 tab === 'experiments'
-                  ? 'bg-white text-[#171717] shadow-2xs'
-                  : 'text-[#737373] hover:text-[#171717]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Тесты гипотез ({filteredExperiments.length})
+              Тесты гипотез <span className="font-mono text-[12px]">({filteredExperiments.length})</span>
             </button>
           </div>
 
@@ -1406,7 +1402,7 @@ export function MarketingGrowthView() {
                   setExpModalOpen(true);
                 }
               }}
-              className="h-11 px-5 rounded-xl bg-[#111111] text-white text-[15px] font-semibold cursor-pointer"
+              className="h-10 px-5 rounded-xl bg-[#141413] text-white text-[14px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
             >
               {tab === 'campaigns' ? '+ Новая кампания' : '+ Новая гипотеза'}
             </button>
@@ -1416,58 +1412,58 @@ export function MarketingGrowthView() {
 
       {/* Вкладка 1: Таблица кампаний */}
       {tab === 'campaigns' && (
-        <div className="bg-white rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Кампания и цель</th>
-                <th className="py-4 px-4">Бренд и канал</th>
-                <th className="py-4 px-4">Период</th>
-                <th className="py-4 px-4 text-right">План бюджета</th>
-                <th className="py-4 px-4 text-right">План выручки</th>
-                <th className="py-4 px-4 text-right">Факт выручки</th>
-                <th className="py-4 px-6 text-right">ROAS / ДРР</th>
+                <th className="py-3.5 px-6">Кампания и цель</th>
+                <th className="py-3.5 px-4">Бренд и канал</th>
+                <th className="py-3.5 px-4">Период</th>
+                <th className="py-3.5 px-4 text-right">План бюджета</th>
+                <th className="py-3.5 px-4 text-right">План выручки</th>
+                <th className="py-3.5 px-4 text-right">Факт выручки</th>
+                <th className="py-3.5 px-6 text-right">ROAS / ДРР</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredCampaigns.map((c) => (
                 <tr
                   key={c.id}
                   onClick={() => setSelectedCampaignId(c.id)}
-                  className="hover:bg-[#F7F7F5]/60 transition cursor-pointer"
+                  className="hover:bg-[#FAF9F6] transition cursor-pointer"
                 >
                   <td className="py-4 px-6">
-                    <div className="font-semibold text-[16px] text-[#171717]">{c.name}</div>
-                    <div className="text-[13px] text-[#737373]">{c.goal}</div>
+                    <div className="font-semibold text-[15px] text-[#141413]">{c.name}</div>
+                    <div className="text-[13px] text-[#5C5953]">{c.goal}</div>
                   </td>
-                  <td className="py-4 px-4 font-semibold">
+                  <td className="py-4 px-4 font-medium text-[#141413]">
                     {c.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(c.brandId)} · {c.channel}
                   </td>
-                  <td className="py-4 px-4 text-[#737373]">{c.periodLabel}</td>
-                  <td className="py-4 px-4 text-right font-semibold">
+                  <td className="py-4 px-4 font-mono text-[13px] text-[#5C5953]">{c.periodLabel}</td>
+                  <td className="py-4 px-4 text-right font-mono font-medium text-[#141413]">
                     {hasFinance ? formatCurrencyRub(c.plannedBudgetRub) : 'Скрыто'}
                   </td>
-                  <td className="py-4 px-4 text-right">
+                  <td className="py-4 px-4 text-right font-mono text-[#5C5953]">
                     {hasFinance ? formatCurrencyRub(c.plannedRevenueRub) : 'Скрыто'}
                   </td>
-                  <td className="py-4 px-4 text-right font-semibold">
+                  <td className="py-4 px-4 text-right font-mono font-semibold text-[#141413]">
                     {!hasFinance ? (
                       'Скрыто'
                     ) : c.actualRevenueRub !== null ? (
                       formatCurrencyRub(c.actualRevenueRub)
                     ) : (
-                      <span className="text-[#737373]">Нет данных</span>
+                      <span className="font-sans text-[#5C5953] font-normal">Нет данных</span>
                     )}
                   </td>
-                  <td className="py-4 px-6 text-right font-bold">
+                  <td className="py-4 px-6 text-right font-mono font-semibold">
                     {!hasFinance ? (
-                      <span className="text-[#737373] font-semibold">Скрыто</span>
+                      <span className="font-sans text-[#5C5953] font-medium">Скрыто</span>
                     ) : c.metrics.roas !== null && c.metrics.roas !== undefined ? (
                       <span className="text-[#16805D]">
                         {c.metrics.roas}x ({c.metrics.drrPct}% ДРР)
                       </span>
                     ) : (
-                      <span className="text-[#737373]">Нет данных</span>
+                      <span className="font-sans text-[#5C5953] font-normal">Нет данных</span>
                     )}
                   </td>
                 </tr>
@@ -1479,35 +1475,36 @@ export function MarketingGrowthView() {
 
       {/* Вкладка 2: Тесты гипотез */}
       {tab === 'experiments' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredExperiments.map((exp) => (
             <div
               key={exp.id}
               onClick={() => setSelectedExperimentId(exp.id)}
-              className="bg-white rounded-2xl border border-[#E8E8E5] hover:border-[#171717] p-7 flex flex-col justify-between space-y-5 cursor-pointer transition"
+              className="bg-white rounded-xl border border-[#E4E1DA] hover:border-[#141413] p-6 flex flex-col justify-between space-y-5 cursor-pointer transition-colors"
             >
               <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3 text-[13px]">
-                  <span className="font-semibold text-[#737373]">
-                    {exp.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(exp.brandId)} · {exp.timeframe}
+                <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3 text-[12px]">
+                  <span className="font-medium text-[#5C5953]">
+                    {exp.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(exp.brandId)} ·{' '}
+                    <span className="font-mono">{exp.timeframe}</span>
                   </span>
-                  <span className="font-semibold px-2.5 py-0.5 rounded-lg bg-[#F7F7F5] border border-[#E8E8E5]">
+                  <span className="font-medium px-2.5 py-0.5 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] text-[#141413]">
                     {EXPERIMENT_STATUS_LABELS_RU[exp.status]}
                   </span>
                 </div>
 
-                <h3 className="text-[20px] font-bold text-[#171717]">{exp.hypothesis}</h3>
-                <p className="text-[15px] text-[#737373] leading-relaxed">{exp.rationale}</p>
+                <h3 className="text-[18px] font-semibold text-[#141413] tracking-[-0.01em]">{exp.hypothesis}</h3>
+                <p className="text-[14px] text-[#5C5953] leading-relaxed">{exp.rationale}</p>
               </div>
 
-              <div className="pt-4 border-t border-[#E8E8E5] space-y-2 text-[14px]">
-                <div className="flex justify-between">
-                  <span className="text-[#737373]">Критерий успеха:</span>
-                  <b className="text-[#171717]">{exp.successCriteria}</b>
+              <div className="pt-4 border-t border-[#E4E1DA] space-y-2 text-[13px]">
+                <div className="flex justify-between gap-4">
+                  <span className="text-[#5C5953]">Критерий успеха:</span>
+                  <b className="text-[#141413] font-medium text-right">{exp.successCriteria}</b>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#737373]">Итог и решение:</span>
-                  <b className="text-[#16805D]">{exp.resultSummary || exp.decision}</b>
+                <div className="flex justify-between gap-4">
+                  <span className="text-[#5C5953]">Итог и решение:</span>
+                  <b className="text-[#16805D] font-semibold text-right">{exp.resultSummary || exp.decision}</b>
                 </div>
               </div>
             </div>
@@ -1519,32 +1516,32 @@ export function MarketingGrowthView() {
       {selectedCampaign && (
         <div
           onClick={() => setSelectedCampaignId(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/40"
+          className="fixed inset-0 z-50 flex justify-end bg-[#141413]/40"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-white h-full overflow-y-auto p-8 space-y-6 shadow-2xl border-l border-[#E8E8E5]"
+            className="w-full max-w-xl bg-white h-full overflow-y-auto p-8 space-y-6 shadow-xl border-l border-[#E4E1DA]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#E4E1DA] pb-5">
               <div>
-                <div className="text-[12px] font-semibold uppercase text-[#737373]">
+                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
                   Маркетинговая кампания · {selectedCampaign.channel}
                 </div>
-                <h2 className="text-[24px] font-bold text-[#171717] mt-1">
+                <h2 className="text-[22px] font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
                   {selectedCampaign.name}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedCampaignId(null)}
-                className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
+                className="rounded-xl border border-[#E4E1DA] p-2 text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 stroke-[1.5]" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-[14px]">
+            <div className="grid grid-cols-2 gap-4 text-[13px]">
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Статус кампании
                 </label>
                 <select
@@ -1555,7 +1552,7 @@ export function MarketingGrowthView() {
                       status: e.target.value as Campaign['status'],
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-medium bg-white text-[#141413]"
                 >
                   <option value="Запланирована">Запланирована</option>
                   <option value="Активна">Активна</option>
@@ -1564,7 +1561,7 @@ export function MarketingGrowthView() {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">Период</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Период</label>
                 <input
                   disabled={!canEditSelectedCampaign}
                   value={selectedCampaign.periodLabel}
@@ -1573,11 +1570,11 @@ export function MarketingGrowthView() {
                       periodLabel: e.target.value,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Фактический расход (₽)
                 </label>
                 {hasFinance ? (
@@ -1607,16 +1604,16 @@ export function MarketingGrowthView() {
                         },
                       });
                     }}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium text-[#141413]"
                   />
                 ) : (
-                  <div className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-semibold text-[#737373]">
+                  <div className="w-full h-10 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] px-3 flex items-center font-medium text-[#5C5953]">
                     Скрыто
                   </div>
                 )}
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Фактическая выручка (₽)
                 </label>
                 {hasFinance ? (
@@ -1646,16 +1643,16 @@ export function MarketingGrowthView() {
                         },
                       });
                     }}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium text-[#141413]"
                   />
                 ) : (
-                  <div className="w-full h-11 rounded-xl border border-[#E8E8E5] bg-[#F7F7F5] px-3 flex items-center font-semibold text-[#737373]">
+                  <div className="w-full h-10 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] px-3 flex items-center font-medium text-[#5C5953]">
                     Скрыто
                   </div>
                 )}
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Клики (шт.)
                 </label>
                 <input
@@ -1670,11 +1667,11 @@ export function MarketingGrowthView() {
                       },
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Выкупы (шт.)
                 </label>
                 <input
@@ -1689,15 +1686,15 @@ export function MarketingGrowthView() {
                       },
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium text-[#141413]"
                 />
               </div>
             </div>
 
-            <div className="rounded-2xl bg-[#F7F7F5] border border-[#E8E8E5] p-5 grid grid-cols-2 gap-4">
+            <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 grid grid-cols-2 gap-4">
               <div>
-                <div className="text-[12px] text-[#737373]">Расчётный ROAS</div>
-                <div className="text-[22px] font-bold text-[#16805D] mt-1">
+                <div className="text-[12px] text-[#5C5953]">Расчётный ROAS</div>
+                <div className="text-[22px] font-mono font-semibold text-[#16805D] mt-1">
                   {!hasFinance
                     ? 'Скрыто'
                     : selectedCampaign.metrics.roas !== null &&
@@ -1707,8 +1704,8 @@ export function MarketingGrowthView() {
                 </div>
               </div>
               <div>
-                <div className="text-[12px] text-[#737373]">Доля рекламных расходов (ДРР)</div>
-                <div className="text-[22px] font-bold text-[#171717] mt-1">
+                <div className="text-[12px] text-[#5C5953]">Доля рекламных расходов (ДРР)</div>
+                <div className="text-[22px] font-mono font-semibold text-[#141413] mt-1">
                   {!hasFinance
                     ? 'Скрыто'
                     : selectedCampaign.metrics.drrPct !== null &&
@@ -1726,32 +1723,32 @@ export function MarketingGrowthView() {
       {selectedExperiment && (
         <div
           onClick={() => setSelectedExperimentId(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/40"
+          className="fixed inset-0 z-50 flex justify-end bg-[#141413]/40"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-white h-full overflow-y-auto p-8 space-y-6 shadow-2xl border-l border-[#E8E8E5]"
+            className="w-full max-w-xl bg-white h-full overflow-y-auto p-8 space-y-6 shadow-xl border-l border-[#E4E1DA]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#E4E1DA] pb-5">
               <div>
-                <div className="text-[12px] font-semibold uppercase text-[#737373]">
-                  Эксперимент роста · {selectedExperiment.timeframe}
+                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
+                  Эксперимент роста · <span className="font-mono">{selectedExperiment.timeframe}</span>
                 </div>
-                <h2 className="text-[22px] font-bold text-[#171717] mt-1">
+                <h2 className="text-[20px] font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
                   {selectedExperiment.hypothesis}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedExperimentId(null)}
-                className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] cursor-pointer"
+                className="rounded-xl border border-[#E4E1DA] p-2 text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 stroke-[1.5]" />
               </button>
             </div>
 
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Статус эксперимента
                 </label>
                 <select
@@ -1762,7 +1759,7 @@ export function MarketingGrowthView() {
                       status: e.target.value as ExperimentStatus,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-medium bg-white text-[#141413]"
                 >
                   {(
                     [
@@ -1781,7 +1778,7 @@ export function MarketingGrowthView() {
               </div>
 
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Фактический результат замеров
                 </label>
                 <textarea
@@ -1793,12 +1790,12 @@ export function MarketingGrowthView() {
                       resultSummary: e.target.value,
                     })
                   }
-                  className="w-full rounded-xl border border-[#E8E8E5] p-3.5"
+                  className="w-full rounded-xl border border-[#E4E1DA] p-3.5 text-[#141413]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Управленческое решение
                 </label>
                 <input
@@ -1809,7 +1806,7 @@ export function MarketingGrowthView() {
                       decision: e.target.value,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 font-semibold"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 font-medium text-[#141413]"
                 />
               </div>
             </div>
@@ -1821,27 +1818,27 @@ export function MarketingGrowthView() {
       {campModalOpen && (
         <div
           onClick={() => setCampModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-4 tracking-[-0.02em]">
               Новая маркетинговая кампания
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Название кампании</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Название кампании</label>
                 <input
                   value={campForm.name}
                   onChange={(e) => setCampForm({ ...campForm, name: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">Бренд</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Бренд</label>
                   <select
                     value={campForm.brandId}
                     onChange={(e) =>
@@ -1850,7 +1847,7 @@ export function MarketingGrowthView() {
                         brandId: normalizeLabBrandCode(e.target.value),
                       })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white font-medium text-[#141413]"
                   >
                     {editableLaunchBrands.map((b) => (
                       <option key={b.code} value={b.code}>
@@ -1860,22 +1857,22 @@ export function MarketingGrowthView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">План бюджета (₽)</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">План бюджета (₽)</label>
                   <input
                     type="number"
                     value={campForm.plannedBudgetRub}
                     onChange={(e) =>
                       setCampForm({ ...campForm, plannedBudgetRub: e.target.value })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] font-mono text-[#141413]"
                   />
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setCampModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -1899,7 +1896,7 @@ export function MarketingGrowthView() {
                   });
                   setCampModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Создать кампанию
               </button>
@@ -1912,18 +1909,18 @@ export function MarketingGrowthView() {
       {expModalOpen && (
         <div
           onClick={() => setExpModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-4 tracking-[-0.02em]">
               Запуск маркетингового теста
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Бренд</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Бренд</label>
                 <select
                   value={expForm.brandId}
                   onChange={(e) =>
@@ -1932,7 +1929,7 @@ export function MarketingGrowthView() {
                       brandId: normalizeLabBrandCode(e.target.value),
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white font-medium"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white font-medium text-[#141413]"
                 >
                   {editableLaunchBrands.map((b) => (
                     <option key={b.code} value={b.code}>
@@ -1942,27 +1939,27 @@ export function MarketingGrowthView() {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Формулировка гипотезы</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Формулировка гипотезы</label>
                 <input
                   value={expForm.hypothesis}
                   onChange={(e) => setExpForm({ ...expForm, hypothesis: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Обоснование и механика</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Обоснование и механика</label>
                 <textarea
                   rows={3}
                   value={expForm.rationale}
                   onChange={(e) => setExpForm({ ...expForm, rationale: e.target.value })}
-                  className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[15px]"
+                  className="w-full rounded-xl border border-[#E4E1DA] p-3.5 text-[14px] text-[#141413]"
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setExpModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -1984,7 +1981,7 @@ export function MarketingGrowthView() {
                   });
                   setExpModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Создать
               </button>

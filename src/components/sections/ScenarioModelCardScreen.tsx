@@ -16,6 +16,7 @@ import {
   Star,
   ArrowLeft,
   ArrowRight,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import {
@@ -1266,7 +1267,7 @@ export function ScenarioModelCardScreen({
               type="button"
               disabled={!canEdit}
               onClick={handleSaveButtonClick}
-              className="h-9 px-3.5 rounded-[9px] bg-[#157347] hover:bg-[#115C39] text-white text-[12.5px] font-semibold border-[1.5px] border-[#157347] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 px-3.5 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12.5px] font-medium border border-[#141413] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Сохранить
             </button>
@@ -3642,12 +3643,13 @@ export function ScenarioModelCardScreen({
           <div className="p-5 md:p-6 space-y-6">
             {/* БАННЕР АВТОЗАПОЛНЕНИЯ НОРМАТИВОВ WB В 1 КЛИК (если у модели-гипотезы не заполнена логистика / комиссия / себестоимость) */}
             {(!pnl.logisticsFilled || !pnl.expensesFilled || pnl.unitCostPerPackRub === null) && (
-              <div className="rounded-2xl bg-emerald-500/8 border border-emerald-500/30 px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-0.5">
-                  <div className="text-[13.5px] font-bold text-[#0F172A]">
-                    ⚡ Быстрое заполнение юнит-экономики по нормативам категории WB
+                  <div className="text-[13.5px] font-semibold text-[#141413] inline-flex items-center gap-1.5">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.5} />
+                    <span>Быстрое заполнение юнит-экономики по нормативам категории WB</span>
                   </div>
-                  <p className="text-[12px] text-[#475569]">
+                  <p className="text-[12px] text-[#5C5953]">
                     Применить отраслевые нормативы для бренда {brandPortfolioLabel} (комиссия WB{' '}
                     {getCategoryWbNormsForBrand(model).marketplaceFeePct}%, логистика{' '}
                     {getCategoryWbNormsForBrand(model).logisticsRub} ₽, реклама ДРР{' '}
@@ -3676,9 +3678,10 @@ export function ScenarioModelCardScreen({
                         `Комиссия ${updated.marketplaceFeePct}%, логистика ${updated.logisticsRub} ₽, ДРР ${updated.adsPct}%`
                       );
                     }}
-                    className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold cursor-pointer shadow-2xs transition shrink-0"
+                    className="h-9 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
                   >
-                    ⚡ Заполнить отраслевые нормативы WB
+                    <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    <span>Заполнить отраслевые нормативы WB</span>
                   </button>
                 )}
               </div>
@@ -3687,15 +3690,15 @@ export function ScenarioModelCardScreen({
             {/* ВЕРХНЯЯ СЕТКА: БЛОК А (Сколько остаётся с одной ед.) + БЛОК Б (Результат за выбранный период) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* БЛОК А. Сколько остаётся с одного комплекта (Стр. 5 ТЗ) */}
-              <div className="lg:col-span-6 rounded-2xl bg-white border border-[#E2E6EE] p-4 md:p-5 space-y-3 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE4] pb-2.5">
+              <div className="lg:col-span-6 rounded-xl bg-white border border-[#E4E1DA] p-4 md:p-5 space-y-3 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E4E1DA] pb-2.5">
                   <div>
-                    <h3 className="text-[15px] font-bold text-[#141413]">
+                    <h3 className="text-[15px] font-semibold text-[#141413]">
                       {primaryUnitShort === 'компл.'
                         ? 'Блок А. Сколько остаётся с одного комплекта'
                         : `Блок А. Сколько остаётся с 1 ед. (${primaryUnitShort})`}
                     </h3>
-                    <p className="text-[11.5px] text-[#5E5D58]">
+                    <p className="text-[11.5px] text-[#5C5953]">
                       Последовательный расчёт расходов на 1 {primaryUnitShort}
                       {hasDistinctSecondary
                         ? ` (${model.unitsInPack} ${secondaryUnitShort})`
@@ -3722,9 +3725,10 @@ export function ScenarioModelCardScreen({
                               `${updated.marketplaceFeePct}% / ${updated.logisticsRub} ₽`
                             );
                           }}
-                          className="h-7 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-700 text-[11px] font-semibold cursor-pointer transition"
+                          className="h-7 px-2.5 rounded-md bg-[#FAF9F6] hover:bg-[#EFECE6] border border-[#E4E1DA] text-[#141413] text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
                         >
-                          ⚡ Авто-нормы WB
+                          <SlidersHorizontal className="h-3 w-3" strokeWidth={1.5} />
+                          <span>Авто-нормы WB</span>
                         </button>
                       )}
                     <StatusPill status={pnl.operatingProfitStatus} />
@@ -4061,9 +4065,10 @@ export function ScenarioModelCardScreen({
                           );
                           notify('success', 'Применены отраслевые нормативы WB');
                         }}
-                        className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold cursor-pointer transition"
+                        className="h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                       >
-                        ⚡ Применить нормативы WB
+                        <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        <span>Применить нормативы WB</span>
                       </button>
                       {model.logisticsRub > 0 && (
                         <button

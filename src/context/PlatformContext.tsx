@@ -150,6 +150,8 @@ interface PlatformContextValue extends PersistedState {
   setFinancialScenario: (scenario: FinancialScenario) => void;
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
+  uiStyle: 'editorial' | 'classic';
+  setUiStyle: (style: 'editorial' | 'classic') => void;
 
   // Выбранные связанные объекты (единая синхронизация во всех разделах, п. 18, 25 ТЗ)
   selectedProductId: string | null;
@@ -579,6 +581,21 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [simpleMode, setSimpleMode] = useState<boolean>(true);
   const [financialScenario, setFinancialScenario] = useState<FinancialScenario>('Base');
   const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [uiStyle, setUiStyleState] = useState<'editorial' | 'classic'>('editorial');
+
+  const setUiStyle = useCallback((nextStyle: 'editorial' | 'classic') => {
+    setUiStyleState(nextStyle);
+    try {
+      if (typeof document !== 'undefined') {
+        document.documentElement.dataset.ui = nextStyle;
+      }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('borners_ui_aesthetic_v1', nextStyle);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
@@ -654,6 +671,15 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         if (typeof parsedAuth.darkMode === 'boolean') {
           setDarkMode(parsedAuth.darkMode);
         }
+      }
+      const savedUiStyle = window.localStorage.getItem('borners_ui_aesthetic_v1');
+      if (savedUiStyle === 'classic' || savedUiStyle === 'editorial') {
+        setUiStyleState(savedUiStyle);
+        if (typeof document !== 'undefined') {
+          document.documentElement.dataset.ui = savedUiStyle;
+        }
+      } else if (typeof document !== 'undefined') {
+        document.documentElement.dataset.ui = 'editorial';
       }
 
       // Восстановление текущего раздела и выбранной карточки после перезагрузки (F5)
@@ -769,6 +795,11 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     if (typeof document === 'undefined') return;
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.dataset.ui = uiStyle;
+  }, [uiStyle]);
 
   // Сохранение текущего маршрута навигации в localStorage, чтобы F5 оставлял на том же экране
   useEffect(() => {
@@ -2540,6 +2571,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setFinancialScenario,
       darkMode,
       setDarkMode,
+      uiStyle,
+      setUiStyle,
       selectedProductId,
       setSelectedProductId,
       selectedConceptId,
@@ -2609,6 +2642,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       simpleMode,
       financialScenario,
       darkMode,
+      uiStyle,
+      setUiStyle,
       selectedProductId,
       selectedConceptId,
       selectedLaunchId,

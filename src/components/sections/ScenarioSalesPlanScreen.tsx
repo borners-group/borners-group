@@ -10,7 +10,6 @@ import {
   BarChart3,
   Table,
   PackageCheck,
-  Sparkles,
   Plus,
   RotateCcw,
 } from 'lucide-react';
@@ -447,9 +446,9 @@ export function ScenarioSalesPlanScreen({
                   `${detectModelBrandPortfolioLabel(model)} ${model.code} · Сценарий №${scenario.id}`
                 );
               }}
-              className="h-9 px-4 rounded-[10px] bg-[#2E6B4E] hover:bg-[#24563E] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              className="h-9 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[12.5px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" />
+              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
               <span>Сохранить</span>
             </button>
           )}
@@ -458,13 +457,13 @@ export function ScenarioSalesPlanScreen({
 
       {/* ПРОВЕРКА КОНФЛИКТА СРОКОВ (ТЕСТ 07) */}
       {metrics.hasScheduleConflict && metrics.scheduleConflictMessage && (
-        <div className="rounded-[16px] bg-[#FFF4F2] border-[1.5px] border-[#E05246] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+        <div className="rounded-xl bg-[#FFF4F2] border border-[#E05246] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-[10px] bg-[#E05246]/15 text-[#C93B2B] flex items-center justify-center shrink-0">
-              <AlertTriangle className="h-5 w-5" />
+            <div className="h-9 w-9 rounded-lg bg-[#E05246]/15 text-[#B91C1C] flex items-center justify-center shrink-0">
+              <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
             </div>
             <div>
-              <div className="text-[13.5px] font-bold text-[#9E2418]">
+              <div className="text-[13.5px] font-semibold text-[#9E2418]">
                 Конфликт сроков поставки и начала продаж
               </div>
               <div className="text-[12.5px] font-medium text-[#B83224]">
@@ -476,7 +475,7 @@ export function ScenarioSalesPlanScreen({
             <button
               type="button"
               onClick={toggleScheduleConflictDemo}
-              className="h-8 px-3.5 rounded-[8px] bg-white hover:bg-[#FCE8E5] border border-[#E05246] text-[12px] font-semibold text-[#9E2418] cursor-pointer"
+              className="h-8 px-3.5 rounded-lg bg-white hover:bg-[#FCE8E5] border border-[#E05246] text-[12px] font-medium text-[#9E2418] cursor-pointer"
             >
               Синхронизировать со складом (18 марта)
             </button>
@@ -488,26 +487,26 @@ export function ScenarioSalesPlanScreen({
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
         {/* 5.1. ЛЕВАЯ КОЛОНКА: 5 КЛЮЧЕВЫХ ПОКАЗАТЕЛЕЙ ПЛАНА */}
         <div className="xl:col-span-2 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-1 gap-3">
-          <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
-            <div className="text-[11.5px] text-[#6E6E73]">Годовая выручка</div>
-            <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <div className="text-[11.5px] text-[#78746C]">Годовая выручка</div>
+            <div className="font-mono tabular-nums text-[21px] font-semibold tracking-[-0.025em] text-[#141413]">
               {hasFinance
                 ? `${(metrics.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
                 : 'Скрыто'}
             </div>
-            <div className="text-[11px] font-semibold text-[#8B6F47]">
+            <div className="text-[11px] font-medium text-[#5C5953]">
               {hasFinance
                 ? `${metrics.goalSharePct.toFixed(1).replace('.', ',')}% цели сценария`
                 : 'Финансы скрыты'}
             </div>
           </div>
 
-          <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
-            <div className="text-[11.5px] text-[#6E6E73]">Объём продаж</div>
-            <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <div className="text-[11.5px] text-[#78746C]">Объём продаж</div>
+            <div className="font-mono tabular-nums text-[21px] font-semibold tracking-[-0.025em] text-[#141413]">
               {metrics.annualPacks.toLocaleString('ru-RU')}
             </div>
-            <div className="text-[11px] text-[#6E6E73]">
+            <div className="text-[11px] text-[#5C5953]">
               {primaryUnit}
               {hasDistinctSecondary
                 ? ` (${metrics.annualUnits.toLocaleString('ru-RU')} ${secondaryUnit})`
@@ -515,42 +514,42 @@ export function ScenarioSalesPlanScreen({
             </div>
           </div>
 
-          <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
-            <div className="text-[11.5px] text-[#6E6E73]">Средняя цена</div>
-            <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <div className="text-[11.5px] text-[#78746C]">Средняя цена</div>
+            <div className="font-mono tabular-nums text-[21px] font-semibold tracking-[-0.025em] text-[#141413]">
               {metrics.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
             </div>
-            <div className="text-[11px] text-[#6E6E73]">
+            <div className="text-[11px] text-[#5C5953]">
               за 1 {primaryUnit}
               {hasDistinctSecondary ? ` (${model.unitsInPack} ${secondaryUnit})` : ''}
             </div>
           </div>
 
-          <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
-            <div className="text-[11.5px] text-[#6E6E73]">Закупка (всего)</div>
-            <div className="text-[22px] font-bold tracking-[-0.02em] text-[#1D1D1F]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <div className="text-[11.5px] text-[#78746C]">Закупка (всего)</div>
+            <div className="font-mono tabular-nums text-[21px] font-semibold tracking-[-0.025em] text-[#141413]">
               {hasCost
                 ? `${(metrics.totalPurchaseNeedRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
                 : 'Скрыто'}
             </div>
-            <div className="text-[11px] text-[#6E6E73]">себестоимость с доставкой</div>
+            <div className="text-[11px] text-[#5C5953]">себестоимость с доставкой</div>
           </div>
 
-          <div className="rounded-[18px] bg-white border border-[#E6E0D4] p-4 space-y-1 shadow-2xs">
-            <div className="text-[11.5px] text-[#6E6E73]">Ожидаемая прибыль</div>
-            <div className="text-[22px] font-bold tracking-[-0.02em] text-[#2E6B4E]">
+          <div className="rounded-xl bg-white border border-[#E4E1DA] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <div className="text-[11.5px] text-[#78746C]">Ожидаемая прибыль</div>
+            <div className="font-mono tabular-nums text-[21px] font-semibold tracking-[-0.025em] text-[#15803D]">
               {hasFinance && hasCost
                 ? `${(metrics.annualProfitRub / 1_000_000).toFixed(1).replace('.', ',')} млн ₽`
                 : 'Скрыто'}
             </div>
-            <div className="text-[11px] font-semibold text-[#2E6B4E]">
+            <div className="text-[11px] font-medium text-[#15803D]">
               {hasFinance && hasCost ? `маржинальность ${metrics.unitMarginPct}%` : 'Финансы скрыты'}
             </div>
           </div>
         </div>
 
         {/* 5.2. ЦЕНТРАЛЬНАЯ КОЛОНКА: ПРОГНОЗ ПРОДАЖ И ВЫРУЧКИ (ГРАФИК ИЛИ ТАБЛИЦА) */}
-        <div className="xl:col-span-5 rounded-[20px] bg-white border border-[#E6E0D4] p-5 space-y-4 shadow-2xs">
+        <div className="xl:col-span-5 rounded-xl bg-white border border-[#E4E1DA] p-5 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-[15.5px] font-bold text-[#1D1D1F]">
@@ -1325,12 +1324,13 @@ export function ScenarioSalesPlanScreen({
 
           {/* ПРОВЕРКА ДЕФИЦИТА (ТЕСТ 06) */}
           {metrics.deficitMonths.length > 0 ? (
-            <div className="rounded-[14px] bg-[#FFF4F2] border border-[#E05246] p-3.5 space-y-2">
+            <div className="rounded-xl bg-[#FFF4F2] border border-[#E05246] p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-[#9E2418]">
-                  ⚠ Дефицит товара на складе
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#9E2418]">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#B91C1C]" />
+                  <span>Дефицит товара на складе</span>
                 </span>
-                <span className="text-[11px] font-bold text-[#C93B2B]">
+                <span className="font-mono text-[11px] font-semibold text-[#C93B2B]">
                   {metrics.deficitMonths.length} мес.
                 </span>
               </div>

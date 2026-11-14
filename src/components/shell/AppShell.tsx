@@ -241,6 +241,8 @@ export function AppShell() {
     setSimpleMode,
     darkMode,
     setDarkMode,
+    uiStyle,
+    setUiStyle,
     selectedProductId,
     selectedConceptId,
     selectedLaunchId,
@@ -1330,10 +1332,10 @@ export function AppShell() {
 
   return (
     <div>
-      <div className="min-h-screen bg-[#EEF2F6] dark:bg-[#0B0E14] text-[#0F172A] dark:text-[#EDF0F7] flex flex-col overflow-x-hidden transition-colors duration-200">
+      <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip">
-          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-white/95 dark:bg-[#121620]/95 backdrop-blur-md border-b border-[#D5DCE6] dark:border-[#222938] px-2.5 sm:px-6 lg:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
+          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-[var(--bg-card)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-2.5 sm:px-6 lg:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
               <button
@@ -1653,13 +1655,65 @@ export function AppShell() {
                       onClick={() => setProfileMenuOpen(false)}
                       className="fixed inset-0 z-40"
                     />
-                    <div className="absolute right-0 mt-1.5 w-76 max-w-[calc(100vw-20px)] bg-white rounded-[16px] border-[1.5px] border-[#141413] shadow-[0_18px_48px_rgba(20,20,19,0.16)] p-4 z-50 text-[13px] space-y-3">
-                      <div className="border-b border-[#ECEBE6] pb-3">
+                    <div className="absolute right-0 mt-1.5 w-80 max-w-[calc(100vw-20px)] bg-white rounded-[12px] border border-[#D2CEC4] shadow-[0_18px_48px_rgba(20,20,19,0.14)] p-4 z-50 text-[13px] space-y-3">
+                      <div className="border-b border-[#E4E1DA] pb-3">
                         <div className="font-semibold text-[15px] text-[#141413]">
                           {currentUser.fullName}
                         </div>
-                        <div className="text-[12px] text-[#686762] mt-0.5">
+                        <div className="text-[12px] text-[#5C5953] mt-0.5">
                           {currentUser.jobTitle} · {ROLE_LABELS_RU[currentUser.role]}
+                        </div>
+                      </div>
+
+                      {/* Мгновенное переключение дизайна / откат к v9 в 1 клик */}
+                      <div className="rounded-[10px] bg-[#FAF9F6] border border-[#E4E1DA] p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 px-0.5">
+                          <span className="text-[11.5px] font-semibold text-[#141413]">
+                            Стиль интерфейса
+                          </span>
+                          <span className="font-mono text-[10px] text-[#5C5953]">
+                            {uiStyle === 'editorial' ? 'COS / Ramp' : 'Откат v9'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 rounded-[8px] bg-[#EFEDE8] p-0.5 border border-[#E4E1DA]">
+                          <button
+                            type="button"
+                            data-ui-toggle="editorial"
+                            onClick={() => {
+                              setUiStyle('editorial');
+                              notify(
+                                'success',
+                                'Включён архитектурный стиль',
+                                'Тёплый камень #F6F5F2 · JetBrains Mono'
+                              );
+                            }}
+                            className={`h-7 rounded-[6px] text-[11.5px] font-semibold transition cursor-pointer ${
+                              uiStyle === 'editorial'
+                                ? 'bg-white text-[#141413] shadow-2xs border border-[#D2CEC4]'
+                                : 'text-[#5C5953] hover:text-[#141413]'
+                            }`}
+                          >
+                            Архитектурный
+                          </button>
+                          <button
+                            type="button"
+                            data-ui-toggle="classic"
+                            onClick={() => {
+                              setUiStyle('classic');
+                              notify(
+                                'success',
+                                'Возвращён классический вид v9',
+                                'Холодный сланец #EEF2F6 · Inter'
+                              );
+                            }}
+                            className={`h-7 rounded-[6px] text-[11.5px] font-semibold transition cursor-pointer ${
+                              uiStyle === 'classic'
+                                ? 'bg-white text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
+                                : 'text-[#5C5953] hover:text-[#141413]'
+                            }`}
+                          >
+                            Классический v9
+                          </button>
                         </div>
                       </div>
 

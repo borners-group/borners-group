@@ -8793,9 +8793,10 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
   );
 
   assert.equal(
-    nextConfigCode.includes('borners-2027-natele-lab-v9'),
+    nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
+      nextConfigCode.includes('borners-2027-natele-lab-v9'),
     true,
-    'next.config.ts обязан экспортировать актуальный buildId borners-2027-natele-lab-v9'
+    'next.config.ts обязан экспортировать актуальный релизный buildId'
   );
   assert.equal(
     dashCode.includes('normalizeLabBrandCode'),
@@ -8815,6 +8816,100 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
     'FinanceAndImportViews обязан включать живой каталог SKU в юнит-экономику, а LaunchAndGrowthViews — фильтровать запуски по брендовым правам'
   );
 });
+
+test('124. v10 Архитектурная дизайн-система COS / Ramp (тёплый камень #F6F5F2 + антрацит #141413) и JetBrains Mono для табличных артикулов/рублей', () => {
+  const layoutCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/layout.tsx'),
+    'utf8'
+  );
+  const cssCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/globals.css'),
+    'utf8'
+  );
+  const nextConfigCode = fs.readFileSync(
+    path.join(process.cwd(), 'next.config.ts'),
+    'utf8'
+  );
+
+  assert.equal(
+    layoutCode.includes('JetBrains_Mono') &&
+      layoutCode.includes("variable: '--font-mono'") &&
+      layoutCode.includes('data-ui="editorial"'),
+    true,
+    'layout.tsx обязан подключать JetBrains_Mono (--font-mono) и устанавливать data-ui="editorial" по умолчанию'
+  );
+  assert.equal(
+    cssCode.includes('--bg-page: #F6F5F2;') &&
+      cssCode.includes('--text-primary: #141413;') &&
+      cssCode.includes('--border-color: #E4E1DA;') &&
+      cssCode.includes('var(--font-mono)'),
+    true,
+    'globals.css обязан задавать тёплый архитектурный камень #F6F5F2, антрацит #141413 и var(--font-mono) для .font-mono'
+  );
+  assert.equal(
+    nextConfigCode.includes('borners-2027-editorial-ui-v10'),
+    true,
+    'next.config.ts обязан экспортировать релизный buildId borners-2027-editorial-ui-v10'
+  );
+});
+
+test('125. v10 Мгновенный откат дизайна в 1 клик (Архитектурный COS / Ramp ↔ Классический v9) в PlatformContext, AppShell и globals.css', () => {
+  const ctxCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/context/PlatformContext.tsx'),
+    'utf8'
+  );
+  const shellCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  const cssCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/globals.css'),
+    'utf8'
+  );
+
+  assert.equal(
+    ctxCode.includes('borners_ui_aesthetic_v1') &&
+      ctxCode.includes('document.documentElement.dataset.ui'),
+    true,
+    'PlatformContext обязан сохранять выбранный стиль интерфейса в borners_ui_aesthetic_v1 и синхронизировать html[data-ui]'
+  );
+  assert.equal(
+    shellCode.includes('data-ui-toggle="editorial"') &&
+      shellCode.includes('data-ui-toggle="classic"') &&
+      shellCode.includes('Классический v9'),
+    true,
+    'AppShell обязан предоставлять переключатель отката в 1 клик «Архитектурный ↔ Классический v9» в меню Профиля'
+  );
+  assert.equal(
+    cssCode.includes('html[data-ui="classic"]') &&
+      cssCode.includes('--bg-page: #EEF2F6;'),
+    true,
+    'globals.css обязан полностью сохранять палитру #EEF2F6 и типографику v9 при включении data-ui="classic"'
+  );
+});
+
+test('126. v10 Чистый редакционный интерфейс без мультяшных эмодзи и неоновых ИИ-эффектов во всех ключевых экранах', () => {
+  const coreFiles = [
+    'src/components/sections/PeaklyBrandCatalogAndGroups.tsx',
+    'src/components/sections/PeakOwnMoneyChartPanel.tsx',
+    'src/components/sections/ProductCatalogView.tsx',
+    'src/components/sections/UnifiedContourViews.tsx',
+    'src/components/sections/GrowthScenariosShowcase.tsx',
+    'src/components/sections/ScenarioModelCardScreen.tsx',
+    'src/components/sections/ManagementAndSystemViews.tsx',
+  ];
+  const cartoonEmojiRe = /[\u{1F680}\u{26A1}\u{1F525}\u{1F4CD}\u{1F4E6}\u{1F9EA}\u{1F4AC}\u{1F4CE}]/u;
+
+  for (const relPath of coreFiles) {
+    const code = fs.readFileSync(path.join(process.cwd(), relPath), 'utf8');
+    assert.equal(
+      cartoonEmojiRe.test(code),
+      false,
+      `${relPath} не должен содержать мультяшные ИИ-эмодзи (🚀, ⚡, 🔥, 📍, 📦, 🧪, 💬, 📎)`
+    );
+  }
+});
+
 
 
 

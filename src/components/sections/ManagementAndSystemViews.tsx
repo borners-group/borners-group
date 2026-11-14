@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   FileText,
   GripVertical,
+  MessageSquare,
   Paperclip,
   RefreshCw,
   Search,
@@ -245,54 +246,54 @@ export function MarketIntelligenceView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Архитектурная шапка раздела конкурентов */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
             Сводка и стратегия · Конкурентный анализ и исследования
           </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[#141413] mt-0.5">
             Рынок и конкуренты
           </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex items-center rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12px]">
+          <div className="inline-flex items-center rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-1 text-[12px]">
             <button
               onClick={() => setTab('competitors')}
-              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-8 px-3.5 rounded-lg font-medium transition cursor-pointer ${
                 tab === 'competitors'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Досье ({competitors.length})
+              Досье <span className="font-mono">({competitors.length})</span>
             </button>
             <button
               onClick={() => setTab('matrix')}
-              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-8 px-3.5 rounded-lg font-medium transition cursor-pointer ${
                 tab === 'matrix'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               Сводная таблица
             </button>
             <button
               onClick={() => setTab('trends')}
-              className={`h-8 px-3.5 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-8 px-3.5 rounded-lg font-medium transition cursor-pointer ${
                 tab === 'trends'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Исследования ({filteredResearch.length + filteredOpportunities.length})
+              Исследования <span className="font-mono">({filteredResearch.length + filteredOpportunities.length})</span>
             </button>
           </div>
 
           {canEditMarket && (
             <button
               onClick={() => setCompModalOpen(true)}
-              className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
+              className="h-9 px-4 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
             >
               Добавить конкурента
             </button>
@@ -302,57 +303,57 @@ export function MarketIntelligenceView() {
 
       {/* Вкладка 1: Досье конкурентов */}
       {tab === 'competitors' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {competitors.map((comp) => (
             <div
               key={comp.id}
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 flex flex-col justify-between space-y-5"
+              className="bg-white rounded-xl border border-[#E4E1DA] p-6 flex flex-col justify-between space-y-5"
             >
               <div className="space-y-4">
-                <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-4">
+                <div className="flex items-start justify-between gap-4 border-b border-[#E4E1DA] pb-4">
                   <div>
-                    <div className="text-[13px] font-medium text-[#737373]">
+                    <div className="text-[12px] font-medium text-[#5C5953]">
                       Каналы: {comp.marketplaces.join(', ')}
                     </div>
-                    <h3 className="text-[24px] font-bold text-[#171717] dark:text-white mt-0.5">
+                    <h3 className="text-[22px] font-semibold text-[#141413] mt-0.5 tracking-[-0.02em]">
                       {comp.brandName}
                     </h3>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-[15px] font-bold rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] px-3.5 py-1.5 text-[#171717]">
+                    <div className="text-[13px] font-mono font-semibold rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] px-3 py-1.5 text-[#141413]">
                       {comp.priceRangeRub}
                     </div>
                   </div>
                 </div>
 
-                <p className="text-[15px] text-[#737373] leading-relaxed">{comp.positioning}</p>
+                <p className="text-[14px] text-[#5C5953] leading-relaxed">{comp.positioning}</p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-3 border-t border-[#E8E8E5]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-3 border-t border-[#E4E1DA]">
                   <div>
-                    <div className="text-[13px] font-semibold text-[#16805D] mb-1">
+                    <div className="text-[12px] font-medium uppercase tracking-wider text-[#16805D] mb-1">
                       Сильные стороны
                     </div>
-                    <p className="text-[14px] text-[#171717] dark:text-zinc-300 leading-relaxed">
+                    <p className="text-[13.5px] text-[#141413] leading-relaxed">
                       {comp.strengths}
                     </p>
                   </div>
 
                   <div>
-                    <div className="text-[13px] font-semibold text-[#C94B4B] mb-1">
+                    <div className="text-[12px] font-medium uppercase tracking-wider text-[#C94B4B] mb-1">
                       Слабые места
                     </div>
-                    <p className="text-[14px] text-[#171717] dark:text-zinc-300 leading-relaxed">
+                    <p className="text-[13.5px] text-[#141413] leading-relaxed">
                       {comp.weaknesses}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-[#E8E8E5] flex items-center justify-between text-[13px]">
-                <span className="text-[#737373]">
-                  Ключевой ассортимент: <b className="text-[#171717]">{comp.keyProducts}</b>
+              <div className="pt-4 border-t border-[#E4E1DA] flex items-center justify-between text-[12.5px]">
+                <span className="text-[#5C5953]">
+                  Ключевой ассортимент: <b className="text-[#141413] font-medium">{comp.keyProducts}</b>
                 </span>
-                <span className="text-[#737373]">{comp.researchedAt}</span>
+                <span className="font-mono text-[#5C5953]">{comp.researchedAt}</span>
               </div>
             </div>
           ))}
@@ -361,27 +362,27 @@ export function MarketIntelligenceView() {
 
       {/* Вкладка 2: Сводная таблица */}
       {tab === 'matrix' && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Бренд конкурента</th>
-                <th className="py-4 px-4">Ценовой диапазон</th>
-                <th className="py-4 px-4">Позиционирование</th>
-                <th className="py-4 px-4">Сильные стороны</th>
-                <th className="py-4 px-6">Слабые места</th>
+                <th className="py-3.5 px-6">Бренд конкурента</th>
+                <th className="py-3.5 px-4">Ценовой диапазон</th>
+                <th className="py-3.5 px-4">Позиционирование</th>
+                <th className="py-3.5 px-4">Сильные стороны</th>
+                <th className="py-3.5 px-6">Слабые места</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {competitors.map((comp) => (
-                <tr key={comp.id} className="hover:bg-[#F7F7F5]/60 transition">
-                  <td className="py-4 px-6 font-bold text-[16px] text-[#171717] dark:text-white">
+                <tr key={comp.id} className="hover:bg-[#FAF9F6] transition">
+                  <td className="py-4 px-6 font-semibold text-[15px] text-[#141413]">
                     {comp.brandName}
                   </td>
-                  <td className="py-4 px-4 font-semibold">
+                  <td className="py-4 px-4 font-mono font-medium text-[#141413]">
                     {comp.priceRangeRub}
                   </td>
-                  <td className="py-4 px-4 text-[#737373]">{comp.positioning}</td>
+                  <td className="py-4 px-4 text-[#5C5953]">{comp.positioning}</td>
                   <td className="py-4 px-4 text-[#16805D] font-medium">
                     {comp.strengths}
                   </td>
@@ -397,54 +398,54 @@ export function MarketIntelligenceView() {
 
       {/* Вкладка 3: Исследования и ниши */}
       {tab === 'trends' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {canEditMarket && (
             <div className="flex justify-end">
               <button
                 onClick={() => setInsightModalOpen(true)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] bg-white text-[14px] font-semibold hover:bg-[#111111] hover:text-white transition cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] bg-white text-[13px] font-medium text-[#141413] hover:bg-[#141413] hover:text-white hover:border-[#141413] transition cursor-pointer"
               >
                 + Зафиксировать исследование
               </button>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredResearch.map((ins) => (
               <div
                 key={ins.id}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-3"
+                className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-3"
               >
-                <div className="flex items-center justify-between text-[13px] font-semibold text-[#737373] border-b border-[#E8E8E5] pb-3">
+                <div className="flex items-center justify-between text-[12px] font-medium text-[#5C5953] border-b border-[#E4E1DA] pb-3">
                   <span>{ins.category}</span>
-                  <span>{ins.researchDate}</span>
+                  <span className="font-mono">{ins.researchDate}</span>
                 </div>
-                <h4 className="text-[20px] font-bold text-[#171717] dark:text-white">
+                <h4 className="text-[18px] font-semibold text-[#141413] tracking-[-0.01em]">
                   {ins.title}
                 </h4>
-                <p className="text-[15px] text-[#737373] leading-relaxed">{ins.conclusions}</p>
+                <p className="text-[14px] text-[#5C5953] leading-relaxed">{ins.conclusions}</p>
               </div>
             ))}
 
             {filteredOpportunities.map((opp) => (
               <div
                 key={opp.id}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-3"
+                className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-3"
               >
-                <div className="flex items-center justify-between text-[13px] font-semibold text-[#737373] border-b border-[#E8E8E5] pb-3">
+                <div className="flex items-center justify-between text-[12px] font-medium text-[#5C5953] border-b border-[#E4E1DA] pb-3">
                   <span>
                     Рыночная ниша ·{' '}
                     {opp.brandId === 'ALL' ? 'Вся группа' : formatLabBrandLabel(opp.brandId)}
                   </span>
                   <span>Конкуренция: {opp.competitionLevel}</span>
                 </div>
-                <h4 className="text-[20px] font-bold text-[#171717] dark:text-white">
+                <h4 className="text-[18px] font-semibold text-[#141413] tracking-[-0.01em]">
                   {opp.title}
                 </h4>
-                <p className="text-[15px] text-[#737373] leading-relaxed">
+                <p className="text-[14px] text-[#5C5953] leading-relaxed">
                   Аудитория: {opp.audience} · Потенциал: {opp.potentialDemand}
                 </p>
-                <div className="text-[14px] font-semibold text-[#171717] pt-2 border-t border-[#E8E8E5]">
+                <div className="text-[13px] font-medium text-[#141413] pt-2 border-t border-[#E4E1DA]">
                   Экономика: {opp.economicsNote}
                 </div>
               </div>
@@ -457,70 +458,70 @@ export function MarketIntelligenceView() {
       {compModalOpen && (
         <div
           onClick={() => setCompModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-8 space-y-6 shadow-2xl"
+            className="w-full max-w-xl bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-4">
-              <h3 className="text-[22px] font-bold">Новое досье конкурента</h3>
+            <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-4">
+              <h3 className="text-[20px] font-semibold text-[#141413] tracking-[-0.02em]">Новое досье конкурента</h3>
               <button
                 onClick={() => setCompModalOpen(false)}
-                className="text-[13px] font-semibold text-[#737373] hover:text-[#171717] cursor-pointer"
+                className="text-[13px] font-medium text-[#5C5953] hover:text-[#141413] cursor-pointer"
               >
                 Закрыть
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[14px]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Название бренда</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Название бренда</label>
                 <input
                   value={compForm.brandName}
                   onChange={(e) => setCompForm({ ...compForm, brandName: e.target.value })}
                   placeholder="Например: Belle YOU"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Ценовой коридор</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Ценовой коридор</label>
                 <input
                   value={compForm.priceRangeRub}
                   onChange={(e) => setCompForm({ ...compForm, priceRangeRub: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] font-mono text-[#141413]"
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block font-semibold mb-1.5">Позиционирование</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Позиционирование</label>
                 <input
                   value={compForm.positioning}
                   onChange={(e) => setCompForm({ ...compForm, positioning: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Сильные стороны</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Сильные стороны</label>
                 <input
                   value={compForm.strengths}
                   onChange={(e) => setCompForm({ ...compForm, strengths: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Слабые места</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Слабые места</label>
                 <input
                   value={compForm.weaknesses}
                   onChange={(e) => setCompForm({ ...compForm, weaknesses: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setCompModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -542,7 +543,7 @@ export function MarketIntelligenceView() {
                   });
                   setCompModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Сохранить
               </button>
@@ -555,40 +556,40 @@ export function MarketIntelligenceView() {
       {insightModalOpen && (
         <div
           onClick={() => setInsightModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-4 tracking-[-0.02em]">
               Новое рыночное исследование
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Заголовок наблюдения</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Заголовок наблюдения</label>
                 <input
                   value={insightForm.title}
                   onChange={(e) => setInsightForm({ ...insightForm, title: e.target.value })}
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1.5">Выводы и рекомендации</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Выводы и рекомендации</label>
                 <textarea
                   rows={3}
                   value={insightForm.conclusions}
                   onChange={(e) =>
                     setInsightForm({ ...insightForm, conclusions: e.target.value })
                   }
-                  className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[15px]"
+                  className="w-full rounded-xl border border-[#E4E1DA] p-3.5 text-[14px] text-[#141413]"
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setInsightModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -605,7 +606,7 @@ export function MarketIntelligenceView() {
                   });
                   setInsightModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Сохранить
               </button>
@@ -816,12 +817,12 @@ export function RoadmapTasksView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Архитектурная шапка раздела CRM */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
             03 · Закупки и CRM · Операционные поручения и дорожная карта
           </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[#141413] mt-0.5">
             Задачи и проекты CRM
           </h1>
         </div>
@@ -830,19 +831,19 @@ export function RoadmapTasksView() {
           <button
             type="button"
             onClick={() => setOverdueOnly(!overdueOnly)}
-            className={`h-9 px-3.5 rounded-[9px] border-[1.5px] text-[12px] font-semibold transition cursor-pointer ${
+            className={`h-9 px-3.5 rounded-xl border text-[12px] font-medium transition cursor-pointer ${
               overdueOnly
-                ? 'bg-[#B91C1C] text-white border-[#B91C1C]'
-                : 'bg-white text-[#141413] border-[#CECDC4] hover:border-[#B91C1C]'
+                ? 'bg-[#C94B4B] text-white border-[#C94B4B]'
+                : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#C94B4B]'
             }`}
           >
-            Просроченные ({overdueCount})
+            Просроченные <span className="font-mono">({overdueCount})</span>
           </button>
 
           <select
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
-            className="h-9 rounded-[9px] bg-white border-[1.5px] border-[#CECDC4] hover:border-[#141413] px-3 text-[12px] font-semibold text-[#141413] outline-none cursor-pointer"
+            className="h-9 rounded-xl bg-white border border-[#E4E1DA] hover:border-[#141413] px-3 text-[12.5px] font-medium text-[#141413] outline-none cursor-pointer"
           >
             <option value="ALL">Все исполнители</option>
             {users.map((u) => (
@@ -852,36 +853,36 @@ export function RoadmapTasksView() {
             ))}
           </select>
 
-          <div className="inline-flex items-center rounded-[9px] bg-[#EFEFE9] border-[1.5px] border-[#CECDC4] p-0.5 text-[12px]">
+          <div className="inline-flex items-center rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-1 text-[12px]">
             <button
               onClick={() => setViewMode('kanban')}
-              className={`h-8 px-3 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-7 px-3 rounded-lg font-medium transition cursor-pointer ${
                 viewMode === 'kanban'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
               Доска CRM
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`h-8 px-3 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-7 px-3 rounded-lg font-medium transition cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Таблица ({filteredTasks.length})
+              Таблица <span className="font-mono">({filteredTasks.length})</span>
             </button>
             <button
               onClick={() => setViewMode('projects')}
-              className={`h-8 px-3 rounded-[7px] font-semibold transition cursor-pointer ${
+              className={`h-7 px-3 rounded-lg font-medium transition cursor-pointer ${
                 viewMode === 'projects'
-                  ? 'bg-[#141413] text-white shadow-2xs'
-                  : 'text-[#3F3E3A] hover:text-[#141413]'
+                  ? 'bg-white text-[#141413] border border-[#E4E1DA] shadow-2xs'
+                  : 'text-[#5C5953] hover:text-[#141413]'
               }`}
             >
-              Проекты ({projects.length})
+              Проекты <span className="font-mono">({projects.length})</span>
             </button>
           </div>
 
@@ -901,7 +902,7 @@ export function RoadmapTasksView() {
                 }));
                 setModalOpen(true);
               }}
-              className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12.5px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
+              className="h-9 px-4 rounded-xl bg-[#141413] text-white text-[12.5px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
             >
               Новая задача
             </button>
@@ -910,49 +911,51 @@ export function RoadmapTasksView() {
       </div>
 
       {/* Симметричная 4-колоночная сводка CRM */}
-      <div className="rounded-[12px] bg-white border-[1.5px] border-[#CFC8BC] overflow-hidden">
-        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y-[1.5px] lg:divide-y-0 lg:divide-x-[1.5px] divide-[#CFC8BC]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] overflow-hidden">
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#E4E1DA]">
           <div className="p-5 flex flex-col justify-between">
-            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#7A756D]">
+            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#5C5953]">
               Всего поручений в CRM
             </span>
-            <span className="font-serif-editorial text-[34px] font-semibold text-[#181715] mt-1 leading-none">
-              {filteredTasks.length} задач
+            <span className="font-mono text-[28px] font-semibold text-[#141413] mt-2 leading-none">
+              {filteredTasks.length} <span className="font-sans text-[14px] font-normal text-[#5C5953]">задач</span>
             </span>
           </div>
           <div className="p-5 flex flex-col justify-between">
-            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#7A756D]">
+            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#5C5953]">
               В активной работе / На проверке
             </span>
-            <span className="font-serif-editorial text-[34px] font-semibold text-[#181715] mt-1 leading-none">
+            <span className="font-mono text-[28px] font-semibold text-[#141413] mt-2 leading-none">
               {
                 filteredTasks.filter(
                   (t) => t.status === 'In Progress' || t.status === 'Review'
                 ).length
               }{' '}
-              задач
+              <span className="font-sans text-[14px] font-normal text-[#5C5953]">задач</span>
             </span>
           </div>
           <div className="p-5 flex flex-col justify-between">
-            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#7A756D]">
+            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#5C5953]">
               Выполнено и закрыто
             </span>
-            <span className="font-serif-editorial text-[34px] font-semibold text-[#1F6E50] mt-1 leading-none">
-              {filteredTasks.filter((t) => t.status === 'Done').length} задач
+            <span className="font-mono text-[28px] font-semibold text-[#16805D] mt-2 leading-none">
+              {filteredTasks.filter((t) => t.status === 'Done').length}{' '}
+              <span className="font-sans text-[14px] font-normal text-[#5C5953]">задач</span>
             </span>
           </div>
           <div className="p-5 flex flex-col justify-between">
-            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#7A756D]">
+            <span className="font-mono text-[10.5px] uppercase tracking-wider text-[#5C5953]">
               Требуют внимания / Просрочено
             </span>
-            <span className="font-serif-editorial text-[34px] font-semibold text-[#B83E3E] mt-1 leading-none">
-              {overdueOrBlockedCount} задач
+            <span className="font-mono text-[28px] font-semibold text-[#C94B4B] mt-2 leading-none">
+              {overdueOrBlockedCount}{' '}
+              <span className="font-sans text-[14px] font-normal text-[#5C5953]">задач</span>
             </span>
           </div>
         </div>
       </div>
 
-      {/* КАНБАН-ДОСКА С ПЕРЕТАСКИВАНИЕМ (СИММЕТРИЧНЫЕ КОЛОНКИ С ЧЁТКИМИ ЛИНИЯМИ) */}
+      {/* КАНБАН-ДОСКА С ПЕРЕТАСКИВАНИЕМ */}
       {viewMode === 'kanban' && (
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 items-stretch">
           {TASK_COLUMNS.map((status) => {
@@ -965,24 +968,24 @@ export function RoadmapTasksView() {
                 onDragOver={(e) => handleDragOver(e, status)}
                 onDragLeave={() => setDragOverColumn(null)}
                 onDrop={(e) => handleDrop(e, status)}
-                className={`p-4 rounded-[12px] min-h-[540px] flex flex-col transition-all border-[1.5px] border-t-[3px] ${
+                className={`p-3.5 rounded-xl min-h-[540px] flex flex-col transition-colors border ${
                   isDropTarget
-                    ? 'bg-white border-[#B85D35] border-t-[#B85D35] shadow-lg'
-                    : 'bg-[#FAF8F5] border-[#CFC8BC] border-t-[#181715]'
+                    ? 'bg-white border-[#141413] ring-1 ring-[#141413]'
+                    : 'bg-[#FAF9F6] border-[#E4E1DA]'
                 }`}
               >
                 {/* Шапка колонки */}
-                <div className="flex items-center justify-between mb-4 pb-3 border-b-2 border-[#181715]">
-                  <span className="text-[14px] font-bold text-[#181715]">
+                <div className="flex items-center justify-between mb-3.5 pb-3 border-b border-[#E4E1DA]">
+                  <span className="text-[13.5px] font-semibold text-[#141413]">
                     {TASK_STATUS_LABELS_RU[status]}
                   </span>
-                  <span className="text-[12.5px] font-mono font-semibold text-[#181715] bg-white px-2.5 py-0.5 rounded-[6px] border-[1.5px] border-[#CFC8BC]">
+                  <span className="text-[12px] font-mono font-medium text-[#5C5953] bg-white px-2 py-0.5 rounded-md border border-[#E4E1DA]">
                     {colTasks.length}
                   </span>
                 </div>
 
                 {/* Список карточек */}
-                <div className="space-y-3.5 flex-1">
+                <div className="space-y-3 flex-1">
                   {colTasks.map((task) => {
                     const assignee = users.find((u) => u.id === task.assigneeId);
                     const linkedProduct = products.find((p) => p.id === task.productId);
@@ -999,42 +1002,33 @@ export function RoadmapTasksView() {
                         onDragStart={(e) => handleDragStart(e, task.id)}
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedTaskId(task.id)}
-                        className={`bg-white dark:bg-zinc-950 rounded-xl border border-[#E8E8E5] hover:border-[#171717] p-4 space-y-3 ${
+                        className={`bg-white rounded-xl border border-[#E4E1DA] hover:border-[#141413] p-4 space-y-3 ${
                           canDragThis
                             ? 'cursor-grab active:cursor-grabbing'
                             : 'cursor-pointer'
-                        } transition select-none ${
+                        } transition-colors select-none ${
                           isBeingDragged ? 'opacity-40 scale-[0.98]' : ''
                         }`}
                       >
                         {/* Верхняя строка: Бренд и Приоритет */}
-                        <div className="flex items-center justify-between gap-2 text-[13px]">
-                          <div className="flex items-center gap-1.5 font-semibold text-[#737373]">
+                        <div className="flex items-center justify-between gap-2 text-[12px]">
+                          <div className="flex items-center gap-1.5 font-medium text-[#5C5953]">
                             {canDragThis && (
-                              <GripVertical className="h-4 w-4 text-[#737373]" />
+                              <GripVertical className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                             )}
-                            <span
-                              style={{
-                                color:
-                                  task.brandId === 'BORNERS'
-                                    ? '#D97745'
-                                    : task.brandId === 'NA_TELE'
-                                    ? '#8B8078'
-                                    : '#737373',
-                              }}
-                            >
+                            <span className="uppercase tracking-wider text-[11px]">
                               {task.brandId === 'ALL'
                                 ? 'Вся группа'
                                 : formatLabBrandLabel(task.brandId)}
                             </span>
                           </div>
                           <span
-                            className={`font-semibold ${
+                            className={`font-medium ${
                               task.priority === 'Critical'
                                 ? 'text-[#C94B4B]'
                                 : task.priority === 'High'
-                                ? 'text-[#D99527]'
-                                : 'text-[#737373]'
+                                ? 'text-[#B45309]'
+                                : 'text-[#5C5953]'
                             }`}
                           >
                             {TASK_PRIORITY_LABELS_RU[task.priority]}
@@ -1042,7 +1036,7 @@ export function RoadmapTasksView() {
                         </div>
 
                         {/* Крупное название задачи */}
-                        <div className="text-[16px] font-bold text-[#171717] dark:text-zinc-100 leading-snug">
+                        <div className="text-[14.5px] font-semibold text-[#141413] leading-snug">
                           {task.title}
                         </div>
 
@@ -1055,10 +1049,10 @@ export function RoadmapTasksView() {
                                   e.stopPropagation();
                                   navigateTo('product-catalog', { productId: linkedProduct.id });
                                 }}
-                                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[12px] font-mono font-medium text-[#141413] hover:underline cursor-pointer"
                               >
                                 <span>SKU: {linkedProduct.sku}</span>
-                                <ArrowUpRight className="h-3.5 w-3.5" />
+                                <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5]" />
                               </button>
                             )}
                             {linkedConcept && (
@@ -1067,10 +1061,10 @@ export function RoadmapTasksView() {
                                   e.stopPropagation();
                                   navigateTo('product-lab', { conceptId: linkedConcept.id });
                                 }}
-                                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[12px] font-mono font-medium text-[#141413] hover:underline cursor-pointer"
                               >
                                 <span>R&D: {linkedConcept.code}</span>
-                                <ArrowUpRight className="h-3.5 w-3.5" />
+                                <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5]" />
                               </button>
                             )}
                             {linkedLaunch && (
@@ -1079,28 +1073,36 @@ export function RoadmapTasksView() {
                                   e.stopPropagation();
                                   navigateTo('launch-calendar', { launchId: linkedLaunch.id });
                                 }}
-                                className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[12px] font-medium text-[#141413] hover:underline cursor-pointer"
                               >
                                 <span>Релиз: {linkedLaunch.name}</span>
-                                <ArrowUpRight className="h-3.5 w-3.5" />
+                                <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5]" />
                               </button>
                             )}
                           </div>
                         )}
 
                         {/* Подвал карточки: Исполнитель, Вложения/Комментарии и Дедлайн */}
-                        <div className="flex items-center justify-between pt-3 border-t border-[#E8E8E5] text-[13px]">
-                          <span className="font-medium text-[#737373] truncate">
+                        <div className="flex items-center justify-between pt-3 border-t border-[#E4E1DA] text-[12px]">
+                          <span className="font-medium text-[#5C5953] truncate">
                             {assignee?.fullName.split(' ')[0] || 'Команда'}
                             {(task.comments.length > 0 || task.attachments.length > 0) && (
-                              <span className="ml-1.5 text-[11px] text-[#737373]">
-                                · 💬{task.comments.length} 📎{task.attachments.length}
+                              <span className="ml-1.5 inline-flex items-center gap-1.5 font-mono text-[11px] text-[#5C5953]">
+                                <span>·</span>
+                                <span className="inline-flex items-center">
+                                  <MessageSquare className="inline h-3 w-3 stroke-[1.5] mr-0.5" />
+                                  {task.comments.length}
+                                </span>
+                                <span className="inline-flex items-center">
+                                  <Paperclip className="inline h-3 w-3 stroke-[1.5] mr-0.5" />
+                                  {task.attachments.length}
+                                </span>
                               </span>
                             )}
                           </span>
                           <span
-                            className={`font-semibold ${
-                              isOverdue ? 'text-[#C94B4B]' : 'text-[#171717]'
+                            className={`font-mono font-medium ${
+                              isOverdue ? 'text-[#C94B4B]' : 'text-[#141413]'
                             }`}
                           >
                             {task.deadline}
@@ -1111,7 +1113,7 @@ export function RoadmapTasksView() {
                   })}
 
                   {colTasks.length === 0 && (
-                    <div className="h-36 rounded-xl border border-dashed border-[#E8E8E5] flex items-center justify-center text-[14px] text-[#737373] text-center px-4">
+                    <div className="h-32 rounded-xl border border-dashed border-[#D2CEC4] flex items-center justify-center text-[13px] text-[#5C5953] text-center px-4">
                       Перетащите карточку сюда
                     </div>
                   )}
@@ -1124,19 +1126,19 @@ export function RoadmapTasksView() {
 
       {/* ТАБЛИЧНЫЙ СПИСОК ЗАДАЧ */}
       {viewMode === 'list' && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-          <table className="w-full text-left text-[15px]">
-            <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+          <table className="w-full text-left text-[14px]">
+            <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
               <tr>
-                <th className="py-4 px-6">Задача</th>
-                <th className="py-4 px-4">Бренд</th>
-                <th className="py-4 px-4">Приоритет</th>
-                <th className="py-4 px-4">Ответственный</th>
-                <th className="py-4 px-4">Срок</th>
-                <th className="py-4 px-6 text-right">Статус</th>
+                <th className="py-3.5 px-6">Задача</th>
+                <th className="py-3.5 px-4">Бренд</th>
+                <th className="py-3.5 px-4">Приоритет</th>
+                <th className="py-3.5 px-4">Ответственный</th>
+                <th className="py-3.5 px-4">Срок</th>
+                <th className="py-3.5 px-6 text-right">Статус</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8E8E5]">
+            <tbody className="divide-y divide-[#E4E1DA]">
               {filteredTasks.map((task) => {
                 const assignee = users.find((u) => u.id === task.assigneeId);
                 const isOverdue = task.deadline < todayStr && task.status !== 'Done';
@@ -1144,27 +1146,27 @@ export function RoadmapTasksView() {
                   <tr
                     key={task.id}
                     onClick={() => setSelectedTaskId(task.id)}
-                    className="hover:bg-[#F7F7F5]/60 transition cursor-pointer"
+                    className="hover:bg-[#FAF9F6] transition cursor-pointer"
                   >
                     <td className="py-4 px-6">
-                      <div className="font-semibold text-[16px] text-[#171717] dark:text-white">
+                      <div className="font-semibold text-[15px] text-[#141413]">
                         {task.title}
                       </div>
-                      <div className="text-[13px] text-[#737373] mt-0.5">{task.description}</div>
+                      <div className="text-[13px] text-[#5C5953] mt-0.5">{task.description}</div>
                     </td>
-                    <td className="py-4 px-4 font-semibold">
+                    <td className="py-4 px-4 font-medium text-[#141413]">
                       {task.brandId === 'ALL'
                         ? 'Вся группа'
                         : formatLabBrandLabel(task.brandId)}
                     </td>
-                    <td className="py-4 px-4 font-semibold">
+                    <td className="py-4 px-4 font-medium text-[#141413]">
                       {TASK_PRIORITY_LABELS_RU[task.priority]}
                     </td>
-                    <td className="py-4 px-4 text-[#737373]">
+                    <td className="py-4 px-4 text-[#5C5953]">
                       {assignee?.fullName}
                     </td>
-                    <td className="py-4 px-4 font-semibold">
-                      <span className={isOverdue ? 'text-[#C94B4B]' : ''}>
+                    <td className="py-4 px-4 font-mono font-medium">
+                      <span className={isOverdue ? 'text-[#C94B4B]' : 'text-[#141413]'}>
                         {task.deadline}
                       </span>
                     </td>
@@ -1179,7 +1181,7 @@ export function RoadmapTasksView() {
                           if (!canEditTaskItem(task)) return;
                           updateTaskStatus(task.id, e.target.value as TaskStatus);
                         }}
-                        className="h-10 rounded-xl border border-[#E8E8E5] px-3 text-[14px] font-semibold bg-white disabled:opacity-60 cursor-pointer"
+                        className="h-9 rounded-xl border border-[#E4E1DA] px-3 text-[13px] font-medium bg-white text-[#141413] disabled:opacity-60 cursor-pointer"
                       >
                         {TASK_COLUMNS.map((st) => (
                           <option key={st} value={st}>
@@ -1198,30 +1200,30 @@ export function RoadmapTasksView() {
 
       {/* ДОРОЖНАЯ КАРТА (ИЕРАРХИЯ ПО П. 12 ТЗ: СТРАТЕГИЧЕСКАЯ ЦЕЛЬ → ПРОЕКТЫ → ЗАДАЧИ) */}
       {viewMode === 'projects' && (
-        <div className="space-y-8">
+        <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="text-[14px] text-[#737373]">
+            <div className="text-[13.5px] text-[#5C5953]">
               Иерархия дорожной карты:{' '}
-              <b className="text-[#171717]">Стратегическая цель → Проекты → Задачи</b>
+              <b className="text-[#141413] font-semibold">Стратегическая цель → Проекты → Задачи</b>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {['ALL', 'Q1 2027', 'Q2 2027', '2026', '2027'].map((period) => (
                 <button
                   key={period}
                   onClick={() => setRoadmapPeriodFilter(period)}
-                  className={`px-3.5 py-1.5 rounded-xl text-[13px] font-semibold border transition cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                     roadmapPeriodFilter === period
-                      ? 'bg-[#111111] text-white border-[#111111]'
-                      : 'bg-white text-[#171717] border-[#E8E8E5]'
+                      ? 'bg-[#141413] text-white border-[#141413]'
+                      : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
                   }`}
                 >
-                  {period === 'ALL' ? 'Все периоды' : period}
+                  {period === 'ALL' ? 'Все периоды' : <span className="font-mono">{period}</span>}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-5">
             {strategicGoals
               .filter(
                 (g) =>
@@ -1258,26 +1260,26 @@ export function RoadmapTasksView() {
                 return (
                   <div
                     key={goal.id}
-                    className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-6"
+                    className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-5"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E8E8E5] pb-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E4E1DA] pb-4">
                       <div>
-                        <div className="text-[12px] font-semibold uppercase tracking-wider text-[#737373]">
-                          Стратегическая цель · {goal.periodQuarter} ({goal.periodYear}) ·{' '}
+                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
+                          Стратегическая цель · <span className="font-mono">{goal.periodQuarter} ({goal.periodYear})</span> ·{' '}
                           {goal.brandId === 'ALL'
                             ? 'Вся группа'
                             : formatLabBrandLabel(goal.brandId)}
                         </div>
-                        <h3 className="text-[22px] font-bold text-[#171717] dark:text-white mt-1">
+                        <h3 className="text-[20px] font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
                           {goal.title}
                         </h3>
                       </div>
-                      <span className="px-3.5 py-1.5 rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] text-[13px] font-bold text-[#16805D]">
+                      <span className="px-3 py-1.5 rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] text-[12.5px] font-mono font-semibold text-[#16805D]">
                         Целевой KPI: {goal.targetMetric} ({goal.progressPct}%)
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {goalProjects.map((proj) => {
                         const owner = users.find((u) => u.id === proj.ownerId);
                         const projTasks = tasks.filter(
@@ -1297,28 +1299,28 @@ export function RoadmapTasksView() {
                         return (
                           <div
                             key={proj.id}
-                            className="rounded-xl bg-[#F7F7F5]/60 border border-[#E8E8E5] p-5 space-y-4"
+                            className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-5 space-y-4"
                           >
-                            <div className="flex items-center justify-between text-[12px] font-semibold text-[#737373]">
-                              <span>Проект · {proj.quarter}</span>
-                              <span className="text-[#171717]">{proj.status}</span>
+                            <div className="flex items-center justify-between text-[12px] font-medium text-[#5C5953]">
+                              <span>Проект · <span className="font-mono">{proj.quarter}</span></span>
+                              <span className="text-[#141413]">{proj.status}</span>
                             </div>
 
                             <div>
-                              <h4 className="text-[18px] font-bold text-[#171717]">
+                              <h4 className="text-[17px] font-semibold text-[#141413]">
                                 {proj.name}
                               </h4>
-                              <p className="text-[13px] text-[#737373] mt-1">
+                              <p className="text-[13px] text-[#5C5953] mt-1">
                                 {proj.description}
                               </p>
                             </div>
 
                             {/* Список связанных задач проекта */}
                             {projTasks.length > 0 && (
-                              <div className="space-y-2 pt-2 border-t border-[#E8E8E5]">
-                                <div className="flex items-center justify-between text-[12px] font-semibold text-[#737373]">
-                                  <span>Задачи проекта ({projTasks.length})</span>
-                                  <span>
+                              <div className="space-y-2 pt-2 border-t border-[#E4E1DA]">
+                                <div className="flex items-center justify-between text-[12px] font-medium text-[#5C5953]">
+                                  <span>Задачи проекта (<span className="font-mono">{projTasks.length}</span>)</span>
+                                  <span className="font-mono">
                                     Выполнено: {doneCount}/{projTasks.length}
                                   </span>
                                 </div>
@@ -1326,12 +1328,12 @@ export function RoadmapTasksView() {
                                   <div
                                     key={pt.id}
                                     onClick={() => setSelectedTaskId(pt.id)}
-                                    className="rounded-lg bg-white border border-[#E8E8E5] px-3 py-2 flex items-center justify-between text-[13px] hover:border-[#171717] cursor-pointer"
+                                    className="rounded-lg bg-white border border-[#E4E1DA] px-3 py-2 flex items-center justify-between text-[13px] hover:border-[#141413] transition cursor-pointer"
                                   >
-                                    <span className="font-semibold text-[#171717] truncate pr-2">
+                                    <span className="font-medium text-[#141413] truncate pr-2">
                                       {pt.title}
                                     </span>
-                                    <span className="text-[11px] font-semibold text-[#737373] shrink-0">
+                                    <span className="text-[11px] font-medium text-[#5C5953] shrink-0">
                                       {TASK_STATUS_LABELS_RU[pt.status]}
                                     </span>
                                   </div>
@@ -1339,10 +1341,10 @@ export function RoadmapTasksView() {
                               </div>
                             )}
 
-                            <div className="pt-2 border-t border-[#E8E8E5] text-[12px] text-[#737373] flex justify-between">
+                            <div className="pt-2 border-t border-[#E4E1DA] text-[12px] text-[#5C5953] flex justify-between">
                               <span>
                                 Руководитель:{' '}
-                                <b className="text-[#171717]">{owner?.fullName}</b>
+                                <b className="text-[#141413] font-medium">{owner?.fullName}</b>
                               </span>
                             </div>
                           </div>
@@ -1360,39 +1362,39 @@ export function RoadmapTasksView() {
       {selectedTask && (
         <div
           onClick={() => setSelectedTaskId(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/40"
+          className="fixed inset-0 z-50 flex justify-end bg-[#141413]/40"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-white dark:bg-zinc-900 h-full overflow-y-auto p-8 space-y-6 shadow-2xl border-l border-[#E8E8E5]"
+            className="w-full max-w-xl bg-white h-full overflow-y-auto p-8 space-y-6 shadow-xl border-l border-[#E4E1DA]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8E8E5] pb-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#E4E1DA] pb-5">
               <div>
-                <div className="text-[12px] font-semibold uppercase text-[#737373]">
+                <div className="text-[11px] font-mono font-medium uppercase tracking-[0.12em] text-[#5C5953]">
                   Карточка задачи · ID {selectedTask.id}
                 </div>
-                <h2 className="text-[24px] font-bold text-[#171717] dark:text-white mt-1">
+                <h2 className="text-[22px] font-semibold text-[#141413] mt-1 tracking-[-0.02em]">
                   {selectedTask.title}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedTaskId(null)}
-                className="rounded-xl border border-[#E8E8E5] p-2 text-[#171717] hover:bg-[#111111] hover:text-white cursor-pointer"
+                className="rounded-xl border border-[#E4E1DA] p-2 text-[#141413] hover:bg-[#141413] hover:text-white hover:border-[#141413] transition cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 stroke-[1.5]" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-[14px]">
+            <div className="grid grid-cols-2 gap-4 text-[13px]">
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">Статус</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Статус</label>
                 <select
                   disabled={!canEditSelectedTask}
                   value={selectedTask.status}
                   onChange={(e) =>
                     updateTaskStatus(selectedTask.id, e.target.value as TaskStatus)
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-medium bg-white text-[#141413] disabled:opacity-60"
                 >
                   {TASK_COLUMNS.map((st) => (
                     <option key={st} value={st}>
@@ -1402,7 +1404,7 @@ export function RoadmapTasksView() {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">Приоритет</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Приоритет</label>
                 <select
                   disabled={!canEditSelectedTask}
                   value={selectedTask.priority}
@@ -1411,7 +1413,7 @@ export function RoadmapTasksView() {
                       priority: e.target.value as TaskPriority,
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-medium bg-white text-[#141413] disabled:opacity-60"
                 >
                   <option value="Critical">Критический</option>
                   <option value="High">Высокий</option>
@@ -1420,14 +1422,14 @@ export function RoadmapTasksView() {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">Ответственный</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Ответственный</label>
                 <select
                   disabled={!canEditSelectedTask}
                   value={selectedTask.assigneeId}
                   onChange={(e) =>
                     updateTask(selectedTask.id, { assigneeId: e.target.value })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-medium bg-white text-[#141413] disabled:opacity-60"
                 >
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
@@ -1437,7 +1439,7 @@ export function RoadmapTasksView() {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-[#737373] mb-1">Дедлайн</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Дедлайн</label>
                 <input
                   type="date"
                   disabled={!canEditSelectedTask}
@@ -1445,13 +1447,13 @@ export function RoadmapTasksView() {
                   onChange={(e) =>
                     updateTask(selectedTask.id, { deadline: e.target.value })
                   }
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 font-semibold bg-white disabled:opacity-60"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 font-mono font-medium bg-white text-[#141413] disabled:opacity-60"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[13px] font-semibold text-[#737373] mb-1.5">
+              <label className="block text-[13px] font-medium text-[#5C5953] mb-1.5">
                 Описание задачи
               </label>
               <textarea
@@ -1461,19 +1463,19 @@ export function RoadmapTasksView() {
                 onChange={(e) =>
                   updateTask(selectedTask.id, { description: e.target.value })
                 }
-                className="w-full rounded-xl border border-[#E8E8E5] p-3.5 text-[14px] disabled:opacity-60"
+                className="w-full rounded-xl border border-[#E4E1DA] p-3.5 text-[14px] text-[#141413] disabled:opacity-60"
               />
             </div>
 
             {/* Вложения к задаче */}
-            <div className="space-y-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="space-y-3 pt-4 border-t border-[#E4E1DA]">
               <div className="flex items-center justify-between">
-                <h4 className="text-[16px] font-bold">
-                  Вложения ({selectedTask.attachments.length})
+                <h4 className="text-[15px] font-semibold text-[#141413]">
+                  Вложения (<span className="font-mono">{selectedTask.attachments.length}</span>)
                 </h4>
                 {canEditSelectedTask && (
-                  <label className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#171717] hover:underline cursor-pointer">
-                    <Paperclip className="h-4 w-4" />
+                  <label className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#141413] hover:underline cursor-pointer">
+                    <Paperclip className="h-4 w-4 stroke-[1.5]" />
                     <span>Прикрепить файл</span>
                     <input
                       type="file"
@@ -1487,35 +1489,36 @@ export function RoadmapTasksView() {
                 {selectedTask.attachments.map((att, idx) => (
                   <span
                     key={idx}
-                    className="px-3 py-1.5 rounded-lg bg-[#F7F7F5] border border-[#E8E8E5] text-[13px] font-medium text-[#171717]"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] text-[13px] font-medium text-[#141413]"
                   >
-                    📎 {att}
+                    <Paperclip className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953] shrink-0" />
+                    <span>{att}</span>
                   </span>
                 ))}
                 {selectedTask.attachments.length === 0 && (
-                  <span className="text-[13px] text-[#737373]">Вложений пока нет</span>
+                  <span className="text-[13px] text-[#5C5953]">Вложений пока нет</span>
                 )}
               </div>
             </div>
 
             {/* Комментарии к задаче */}
-            <div className="space-y-4 pt-4 border-t border-[#E8E8E5]">
-              <h4 className="text-[16px] font-bold">
-                Комментарии ({selectedTask.comments.length})
+            <div className="space-y-4 pt-4 border-t border-[#E4E1DA]">
+              <h4 className="text-[15px] font-semibold text-[#141413]">
+                Комментарии (<span className="font-mono">{selectedTask.comments.length}</span>)
               </h4>
               <div className="space-y-2.5 max-h-56 overflow-y-auto">
                 {selectedTask.comments.map((cm) => (
                   <div
                     key={cm.id}
-                    className="rounded-xl bg-[#F7F7F5] border border-[#E8E8E5] p-3.5 text-[14px]"
+                    className="rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] p-3.5 text-[13.5px]"
                   >
-                    <div className="flex items-center justify-between text-[12px] text-[#737373] mb-1">
-                      <span className="font-semibold text-[#171717]">
+                    <div className="flex items-center justify-between text-[12px] text-[#5C5953] mb-1">
+                      <span className="font-medium text-[#141413]">
                         {cm.authorName}
                       </span>
-                      <span>{cm.createdAt}</span>
+                      <span className="font-mono">{cm.createdAt}</span>
                     </div>
-                    <p className="text-[#171717]">{cm.text}</p>
+                    <p className="text-[#141413]">{cm.text}</p>
                   </div>
                 ))}
               </div>
@@ -1526,7 +1529,7 @@ export function RoadmapTasksView() {
                     value={taskCommentText}
                     onChange={(e) => setTaskCommentText(e.target.value)}
                     placeholder="Написать комментарий по задаче..."
-                    className="flex-1 h-10 rounded-xl border border-[#E8E8E5] px-3.5 text-[14px]"
+                    className="flex-1 h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[13.5px] text-[#141413]"
                   />
                   <button
                     type="button"
@@ -1545,7 +1548,7 @@ export function RoadmapTasksView() {
                       });
                       setTaskCommentText('');
                     }}
-                    className="h-10 px-4 rounded-xl bg-[#111111] text-white text-[13px] font-semibold cursor-pointer"
+                    className="h-10 px-4 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
                   >
                     Отправить
                   </button>
@@ -1554,16 +1557,16 @@ export function RoadmapTasksView() {
             </div>
 
             {canEditSelectedTask && (
-              <div className="pt-4 border-t border-[#E8E8E5] flex justify-between items-center">
+              <div className="pt-4 border-t border-[#E4E1DA] flex justify-between items-center">
                 <button
                   type="button"
                   onClick={() => {
                     archiveEntity('task', selectedTask.id);
                     setSelectedTaskId(null);
                   }}
-                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#C94B4B] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#C94B4B] hover:underline cursor-pointer"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4 stroke-[1.5]" />
                   <span>Удалить в корзину</span>
                 </button>
               </div>
@@ -1576,32 +1579,32 @@ export function RoadmapTasksView() {
       {modalOpen && (
         <div
           onClick={() => setModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl"
+            className="w-full max-w-lg bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-4 tracking-[-0.02em]">
               Постановка задачи
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Формулировка задачи</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Формулировка задачи</label>
                 <input
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                   placeholder="Например: Проверить посадку образца после стирки"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">Бренд</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Бренд</label>
                   <select
                     value={newTask.brandId}
                     onChange={(e) => setNewTask({ ...newTask, brandId: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white text-[#141413]"
                   >
                     {editableTaskBrandOptions.map((opt) => (
                       <option key={opt.code} value={opt.code}>
@@ -1611,13 +1614,13 @@ export function RoadmapTasksView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">Приоритет</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Приоритет</label>
                   <select
                     value={newTask.priority}
                     onChange={(e) =>
                       setNewTask({ ...newTask, priority: e.target.value as TaskPriority })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white text-[#141413]"
                   >
                     <option value="Critical">Критический</option>
                     <option value="High">Высокий</option>
@@ -1626,13 +1629,13 @@ export function RoadmapTasksView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">Исполнитель</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Исполнитель</label>
                   <select
                     value={newTask.assigneeId}
                     onChange={(e) =>
                       setNewTask({ ...newTask, assigneeId: e.target.value })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white text-[#141413]"
                   >
                     {users.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -1642,20 +1645,20 @@ export function RoadmapTasksView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">Дедлайн</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Дедлайн</label>
                   <input
                     type="date"
                     value={newTask.deadline}
                     onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] font-mono text-[#141413]"
                   />
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -1673,7 +1676,7 @@ export function RoadmapTasksView() {
                   });
                   setModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Создать задачу
               </button>
@@ -1919,19 +1922,19 @@ export function DocumentsView() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
             04 · Финансы и документы · Реестр ТЗ, лекал, отчётов и спецификаций
           </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[#141413] mt-0.5">
             Документы, ТЗ и PDF
           </h1>
         </div>
 
         {canEditDocs && (
           <div className="flex flex-wrap items-center gap-2">
-            <label className="h-9 px-3.5 rounded-[9px] border-[1.5px] border-[#CECDC4] bg-white hover:border-[#141413] text-[#141413] text-[12px] font-semibold transition cursor-pointer inline-flex items-center">
+            <label className="h-9 px-3.5 rounded-xl border border-[#E4E1DA] bg-white hover:border-[#141413] text-[#141413] text-[12.5px] font-medium transition cursor-pointer inline-flex items-center">
               <span>Загрузить пакет файлов</span>
               <input
                 type="file"
@@ -1958,7 +1961,7 @@ export function DocumentsView() {
                 }));
                 setModalOpen(true);
               }}
-              className="h-9 px-4 rounded-[9px] bg-[#141413] text-white text-[12px] font-semibold hover:bg-[#2A2A28] transition cursor-pointer"
+              className="h-9 px-4 rounded-xl bg-[#141413] text-white text-[12.5px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
             >
               Добавить ТЗ / документ
             </button>
@@ -1971,22 +1974,22 @@ export function DocumentsView() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setCategoryFilter('ALL')}
-            className={`px-4 py-2 rounded-xl text-[14px] font-semibold border transition cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
               categoryFilter === 'ALL'
-                ? 'bg-[#111111] text-white border-[#111111]'
-                : 'bg-white text-[#171717] border-[#E8E8E5] hover:border-[#171717]'
+                ? 'bg-[#141413] text-white border-[#141413]'
+                : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
             }`}
           >
-            Все ({filteredDocs.length})
+            Все <span className="font-mono">({filteredDocs.length})</span>
           </button>
           {DOC_CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
-              className={`px-4 py-2 rounded-xl text-[14px] font-semibold border capitalize transition cursor-pointer ${
+              className={`px-3.5 py-2 rounded-xl text-[13px] font-medium border capitalize transition cursor-pointer ${
                 categoryFilter === cat
-                  ? 'bg-[#111111] text-white border-[#111111]'
-                  : 'bg-white text-[#171717] border-[#E8E8E5] hover:border-[#171717]'
+                  ? 'bg-[#141413] text-white border-[#141413]'
+                  : 'bg-white text-[#141413] border-[#E4E1DA] hover:border-[#141413]'
               }`}
             >
               {cat}
@@ -1995,29 +1998,29 @@ export function DocumentsView() {
         </div>
 
         <div className="relative w-full md:w-80">
-          <Search className="h-4 w-4 text-[#737373] absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="h-4 w-4 stroke-[1.5] text-[#5C5953] absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Поиск документа..."
-            className="w-full h-11 rounded-xl bg-white border border-[#E8E8E5] pl-10 pr-4 text-[15px] outline-none"
+            className="w-full h-10 rounded-xl bg-white border border-[#E4E1DA] focus:border-[#141413] pl-10 pr-4 text-[14px] text-[#141413] outline-none"
           />
         </div>
       </div>
 
       {/* Таблица документов */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-        <table className="w-full text-left text-[15px]">
-          <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+      <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+        <table className="w-full text-left text-[14px]">
+          <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
             <tr>
-              <th className="py-4 px-6">Наименование и файл</th>
-              <th className="py-4 px-4">Привязка к карточке (R&amp;D / SKU)</th>
-              <th className="py-4 px-4">Категория / Бренд</th>
-              <th className="py-4 px-4">Дата и автор</th>
-              <th className="py-4 px-6 text-right">Действие</th>
+              <th className="py-3.5 px-6">Наименование и файл</th>
+              <th className="py-3.5 px-4">Привязка к карточке (R&amp;D / SKU)</th>
+              <th className="py-3.5 px-4">Категория / Бренд</th>
+              <th className="py-3.5 px-4">Дата и автор</th>
+              <th className="py-3.5 px-6 text-right">Действие</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E8E8E5]">
+          <tbody className="divide-y divide-[#E4E1DA]">
             {filteredDocs.map((doc) => {
               const isExcelNative =
                 doc.fileName.toLowerCase().endsWith('.xlsx') ||
@@ -2039,12 +2042,12 @@ export function DocumentsView() {
                   canUserEditBrand(currentUser, normalizeLabBrandCode(doc.brandId)));
 
               return (
-                <tr key={doc.id} className="hover:bg-[#FAF8F5] transition">
+                <tr key={doc.id} className="hover:bg-[#FAF9F6] transition">
                   <td className="py-4 px-6">
-                    <div className="font-semibold text-[15.5px] text-[#181715]">
+                    <div className="font-semibold text-[15px] text-[#141413]">
                       {doc.title}
                     </div>
-                    <div className="text-[12.5px] text-[#7A756D] mt-0.5">
+                    <div className="text-[12px] font-mono text-[#5C5953] mt-0.5">
                       {doc.fileName} · {Math.round(doc.fileSizeBytes / 1024)} КБ
                     </div>
                   </td>
@@ -2054,11 +2057,11 @@ export function DocumentsView() {
                         <button
                           type="button"
                           onClick={() => navigateTo('product-lab', { conceptId: linkedConcept.id })}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-[#FAF8F5] border border-[#CFC8BC] hover:border-[#181715] text-[12px] font-semibold text-[#181715] cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium text-[#141413] cursor-pointer"
                         >
-                          <span className="text-[#B85D35] font-mono">R&amp;D:</span>
+                          <span className="text-[#5C5953] font-mono">R&amp;D:</span>
                           <span className="truncate max-w-[180px]">{linkedConcept.name}</span>
-                          <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+                          <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5] shrink-0" />
                         </button>
                       )}
                       {linkedProduct && (
@@ -2080,11 +2083,11 @@ export function DocumentsView() {
                             }
                             navigateTo('product-catalog', { productId: linkedProduct.id });
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-[#FAF8F5] border border-[#CFC8BC] hover:border-[#181715] text-[12px] font-semibold text-[#181715] cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#FAF9F6] border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium text-[#141413] cursor-pointer"
                         >
-                          <span className="text-[#1F6E50] font-mono">SKU:</span>
-                          <span className="truncate max-w-[180px]">{linkedProduct.sku} · {linkedProduct.name}</span>
-                          <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+                          <span className="text-[#16805D] font-mono">SKU:</span>
+                          <span className="truncate max-w-[180px]"><span className="font-mono">{linkedProduct.sku}</span> · {linkedProduct.name}</span>
+                          <ArrowUpRight className="h-3.5 w-3.5 stroke-[1.5] shrink-0" />
                         </button>
                       )}
                       {canEditThisDoc && (
@@ -2113,7 +2116,7 @@ export function DocumentsView() {
                                 });
                               }
                             }}
-                            className="h-8 rounded-[6px] border border-[#D4CDC2] bg-white px-2 text-[11.5px] font-medium text-[#5C5852] max-w-[230px] cursor-pointer"
+                            className="h-8 rounded-lg border border-[#E4E1DA] bg-white px-2 text-[11.5px] font-medium text-[#5C5953] max-w-[230px] cursor-pointer"
                           >
                             <option value="">Привязать к карточке R&amp;D или SKU...</option>
                             <optgroup label="Карточки разработки R&D">
@@ -2136,14 +2139,14 @@ export function DocumentsView() {
                     </div>
                   </td>
                   <td className="py-4 px-4">
-                    <div className="font-medium capitalize text-[#6E6A63]">{doc.category}</div>
-                    <div className="text-[12px] font-semibold text-[#181715]">
+                    <div className="font-medium capitalize text-[#5C5953]">{doc.category}</div>
+                    <div className="text-[12px] font-medium text-[#141413]">
                       {doc.brandId === 'ALL' ? 'BORNERS GROUP' : formatLabBrandLabel(doc.brandId)}
                     </div>
                   </td>
                   <td className="py-4 px-4">
-                    <div className="font-semibold text-[#181715]">{doc.uploadedAt}</div>
-                    <div className="text-[12.5px] text-[#7A756D]">{doc.uploadedBy}</div>
+                    <div className="font-mono font-medium text-[#141413] text-[13px]">{doc.uploadedAt}</div>
+                    <div className="text-[12px] text-[#5C5953]">{doc.uploadedBy}</div>
                   </td>
                   <td className="py-4 px-6 text-right">
                     <div className="inline-flex items-center justify-end gap-2">
@@ -2152,17 +2155,17 @@ export function DocumentsView() {
                           <button
                             type="button"
                             onClick={() => handleDownloadExcel(doc)}
-                            className="inline-flex items-center gap-1.5 rounded-[8px] bg-[#181715] text-white px-3.5 py-2 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#141413] text-white px-3.5 py-2 text-[12.5px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
                           >
-                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                            <FileSpreadsheet className="h-3.5 w-3.5 stroke-[1.5]" />
                             <span>Скачать Excel (.xlsx)</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDownloadPdf(doc)}
-                            className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] text-[#181715] px-3 py-2 text-[13px] font-medium hover:border-[#181715] transition cursor-pointer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] text-[#141413] px-3 py-2 text-[12.5px] font-medium hover:border-[#141413] transition cursor-pointer"
                           >
-                            <FileText className="h-3.5 w-3.5 text-[#7A756D]" />
+                            <FileText className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                             <span>PDF</span>
                           </button>
                         </>
@@ -2171,17 +2174,17 @@ export function DocumentsView() {
                           <button
                             type="button"
                             onClick={() => handleDownloadPdf(doc)}
-                            className="inline-flex items-center gap-1.5 rounded-[8px] bg-[#181715] text-white px-3.5 py-2 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#141413] text-white px-3.5 py-2 text-[12.5px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
                           >
-                            <FileText className="h-3.5 w-3.5" />
+                            <FileText className="h-3.5 w-3.5 stroke-[1.5]" />
                             <span>Скачать PDF</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDownloadExcel(doc)}
-                            className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] text-[#181715] px-3 py-2 text-[13px] font-medium hover:border-[#181715] transition cursor-pointer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] text-[#141413] px-3 py-2 text-[12.5px] font-medium hover:border-[#141413] transition cursor-pointer"
                           >
-                            <FileSpreadsheet className="h-3.5 w-3.5 text-[#7A756D]" />
+                            <FileSpreadsheet className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                             <span>Excel (.xlsx)</span>
                           </button>
                         </>
@@ -2191,9 +2194,9 @@ export function DocumentsView() {
                           type="button"
                           onClick={() => archiveEntity('document', doc.id)}
                           title="Удалить в корзину"
-                          className="h-9 w-9 rounded-[8px] border border-[#EAE6DF] hover:border-[#C94B4B] text-[#7A756D] hover:text-[#C94B4B] inline-flex items-center justify-center cursor-pointer transition"
+                          className="h-9 w-9 rounded-lg border border-[#E4E1DA] hover:border-[#C94B4B] text-[#5C5953] hover:text-[#C94B4B] inline-flex items-center justify-center cursor-pointer transition"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5 stroke-[1.5]" />
                         </button>
                       )}
                     </div>
@@ -2208,34 +2211,34 @@ export function DocumentsView() {
       {modalOpen && (
         <div
           onClick={() => setModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg bg-white rounded-xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl max-h-[90vh] overflow-y-auto"
           >
-            <h3 className="text-[22px] font-bold border-b border-[#E8E8E5] pb-4">
+            <h3 className="text-[20px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-4 tracking-[-0.02em]">
               Загрузка документов и привязка к карточке
             </h3>
-            <div className="space-y-4 text-[14px]">
+            <div className="space-y-4 text-[13px]">
               <div>
-                <label className="block font-semibold mb-1.5">Название документа</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Название документа</label>
                 <input
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="Например: Техническое задание и табель мер лекала"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">Категория</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Категория</label>
                   <select
                     value={form.category}
                     onChange={(e) =>
                       setForm({ ...form, category: e.target.value as DocumentCategory })
                     }
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white capitalize"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white text-[#141413] capitalize"
                   >
                     {DOC_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -2245,11 +2248,11 @@ export function DocumentsView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">Бренд</label>
+                  <label className="block font-medium text-[#5C5953] mb-1.5">Бренд</label>
                   <select
                     value={form.brandId}
                     onChange={(e) => setForm({ ...form, brandId: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] bg-white text-[#141413]"
                   >
                     {editableDocBrandOptions.map((opt) => (
                       <option key={opt.code} value={opt.code}>
@@ -2262,13 +2265,13 @@ export function DocumentsView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1.5">
+                  <label className="block font-medium text-[#5C5953] mb-1.5">
                     Привязать к карточке R&amp;D (опционально)
                   </label>
                   <select
                     value={form.conceptId}
                     onChange={(e) => setForm({ ...form, conceptId: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 text-[13.5px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 text-[13px] bg-white text-[#141413]"
                   >
                     <option value="">Без привязки к R&amp;D</option>
                     {visibleConcepts.map((c) => (
@@ -2279,13 +2282,13 @@ export function DocumentsView() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1.5">
+                  <label className="block font-medium text-[#5C5953] mb-1.5">
                     Привязать к артикулу SKU (опционально)
                   </label>
                   <select
                     value={form.productId}
                     onChange={(e) => setForm({ ...form, productId: e.target.value })}
-                    className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3 text-[13.5px] bg-white"
+                    className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3 text-[13px] bg-white text-[#141413]"
                   >
                     <option value="">Без привязки к SKU</option>
                     {visibleCatalogProducts.map((p) => (
@@ -2298,7 +2301,7 @@ export function DocumentsView() {
               </div>
 
               <div>
-                <label className="block font-semibold mb-1.5">
+                <label className="block font-medium text-[#5C5953] mb-1.5">
                   Выбрать один или сразу несколько файлов (PDF, XLSX, DOCX, PNG, SVG)
                 </label>
                 <input
@@ -2327,21 +2330,21 @@ export function DocumentsView() {
                     };
                     reader.readAsDataURL(file);
                   }}
-                  className="w-full text-[13px] text-[#737373] mb-3"
+                  className="w-full text-[13px] text-[#5C5953] mb-3"
                 />
-                <label className="block font-semibold mb-1.5">Имя файла в реестре</label>
+                <label className="block font-medium text-[#5C5953] mb-1.5">Имя файла в реестре</label>
                 <input
                   value={form.fileName}
                   onChange={(e) => setForm({ ...form, fileName: e.target.value })}
                   placeholder="BORNERS_Spec_2027.pdf"
-                  className="w-full h-11 rounded-xl border border-[#E8E8E5] px-3.5 text-[15px]"
+                  className="w-full h-10 rounded-xl border border-[#E4E1DA] px-3.5 text-[14px] font-mono text-[#141413]"
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#E8E8E5]">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#E4E1DA]">
               <button
                 onClick={() => setModalOpen(false)}
-                className="h-11 px-5 rounded-xl border border-[#E8E8E5] text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-5 rounded-xl border border-[#E4E1DA] text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
               >
                 Отмена
               </button>
@@ -2365,7 +2368,7 @@ export function DocumentsView() {
                   });
                   setModalOpen(false);
                 }}
-                className="h-11 px-6 rounded-xl bg-[#111111] text-white text-[14px] font-semibold cursor-pointer"
+                className="h-10 px-6 rounded-xl bg-[#141413] text-white text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
                 Сохранить
               </button>
@@ -2404,35 +2407,35 @@ export function TeamView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Архитектурная шапка команды */}
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-5 md:p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+          <div className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
             04 · Финансы и документы · Матрица прав доступа ({users.length} участников)
           </div>
-          <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[#141413] mt-0.5">
             Команда и роли доступа
           </h1>
         </div>
 
-        <div className="text-[12.5px] font-semibold rounded-[10px] border-[1.5px] border-[#CECDC4] bg-[#F5F5F1] text-[#141413] px-3.5 py-2">
-          Профиль: {currentUser.fullName} ({ROLE_LABELS_RU[currentUser.role]})
+        <div className="text-[12.5px] font-medium rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] text-[#141413] px-3.5 py-2">
+          Профиль: <span className="font-semibold">{currentUser.fullName}</span> ({ROLE_LABELS_RU[currentUser.role]})
         </div>
       </div>
 
       {/* Крупная таблица участников без колонки «Переключиться» */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] overflow-x-auto">
-        <table className="w-full text-left text-[15px]">
-          <thead className="border-b border-[#E8E8E5] text-[13px] font-semibold uppercase tracking-wider text-[#737373] bg-[#F7F7F5]/60">
+      <div className="bg-white rounded-xl border border-[#E4E1DA] overflow-x-auto">
+        <table className="w-full text-left text-[14px]">
+          <thead className="border-b border-[#E4E1DA] text-[12px] font-medium uppercase tracking-wider text-[#5C5953] bg-[#FAF9F6]">
             <tr>
-              <th className="py-4 px-6">Сотрудник / Партнёр</th>
-              <th className="py-4 px-4">Системная роль</th>
-              <th className="py-4 px-4">Доступ к брендам</th>
-              <th className="py-4 px-4">Финансы и P&L</th>
-              <th className="py-4 px-4">Себестоимость (COGS)</th>
-              <th className="py-4 px-6 text-right">Статус</th>
+              <th className="py-3.5 px-6">Сотрудник / Партнёр</th>
+              <th className="py-3.5 px-4">Системная роль</th>
+              <th className="py-3.5 px-4">Доступ к брендам</th>
+              <th className="py-3.5 px-4">Финансы и P&L</th>
+              <th className="py-3.5 px-4">Себестоимость (COGS)</th>
+              <th className="py-3.5 px-6 text-right">Статус</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E8E8E5]">
+          <tbody className="divide-y divide-[#E4E1DA]">
             {users.map((u) => {
               const isCurrent = u.id === currentUser.id;
               return (
@@ -2440,26 +2443,26 @@ export function TeamView() {
                   key={u.id}
                   className={
                     isCurrent
-                      ? 'bg-[#F7F7F5]/80 dark:bg-zinc-800/40'
-                      : 'hover:bg-[#F7F7F5]/40 transition'
+                      ? 'bg-[#FAF9F6]'
+                      : 'hover:bg-[#FAF9F6] transition'
                   }
                 >
                   <td className="py-4 px-6">
-                    <div className="flex items-center gap-4">
-                      <span className="h-10 w-10 rounded-xl bg-[#111111] text-white flex items-center justify-center text-[14px] font-semibold shrink-0">
+                    <div className="flex items-center gap-3.5">
+                      <span className="h-9 w-9 rounded-lg bg-[#141413] text-white flex items-center justify-center text-[13px] font-mono font-medium shrink-0">
                         {u.avatarInitials}
                       </span>
                       <div>
-                        <div className="font-bold text-[16px] text-[#171717] dark:text-white flex items-center gap-2.5">
+                        <div className="font-semibold text-[15px] text-[#141413] flex items-center gap-2">
                           <span>{u.fullName}</span>
                           {isCurrent && (
-                            <span className="rounded-md bg-[#F7F7F5] border border-[#E8E8E5] px-2 py-0.5 text-[11px] font-semibold uppercase text-[#737373]">
+                            <span className="rounded-md bg-white border border-[#E4E1DA] px-2 py-0.5 text-[10.5px] font-mono font-medium uppercase text-[#5C5953]">
                               Вы
                             </span>
                           )}
                         </div>
-                        <div className="text-[13px] text-[#737373] mt-0.5">
-                          {u.jobTitle} · {u.email}
+                        <div className="text-[12.5px] text-[#5C5953] mt-0.5">
+                          {u.jobTitle} · <span className="font-mono">{u.email}</span>
                         </div>
                       </div>
                     </div>
@@ -2474,7 +2477,7 @@ export function TeamView() {
                           role: e.target.value as UserRole,
                         })
                       }
-                      className="h-10 rounded-xl border border-[#E8E8E5] px-3 text-[14px] font-semibold bg-white text-[#171717] disabled:opacity-60 outline-none cursor-pointer"
+                      className="h-9 rounded-xl border border-[#E4E1DA] px-3 text-[13px] font-medium bg-white text-[#141413] disabled:opacity-60 outline-none cursor-pointer"
                     >
                       <option value="Owner">Владелец</option>
                       <option value="Admin">Администратор</option>
@@ -2485,7 +2488,7 @@ export function TeamView() {
                   </td>
 
                   <td className="py-4 px-4">
-                    <div className="inline-flex flex-wrap items-center gap-2">
+                    <div className="inline-flex flex-wrap items-center gap-1.5">
                       {brands.map((brand) => {
                         const active =
                           u.assignedBrandIds.includes('ALL') ||
@@ -2499,10 +2502,10 @@ export function TeamView() {
                             onClick={() =>
                               toggleBrandAccess(u.id, u.assignedBrandIds, brand.code)
                             }
-                            className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition ${
+                            className={`px-2.5 py-1 rounded-lg text-[12px] font-medium border transition ${
                               active
-                                ? 'bg-[#111111] text-white border-[#111111]'
-                                : 'bg-white text-[#737373] border-[#E8E8E5]'
+                                ? 'bg-[#141413] text-white border-[#141413]'
+                                : 'bg-white text-[#5C5953] border-[#E4E1DA]'
                             } ${
                               canManageUsers ? 'cursor-pointer hover:opacity-85' : 'cursor-default'
                             }`}
@@ -2515,7 +2518,7 @@ export function TeamView() {
                   </td>
 
                   <td className="py-4 px-4">
-                    <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         disabled={!canManageUsers}
@@ -2525,16 +2528,16 @@ export function TeamView() {
                             canViewFinance: e.target.checked,
                           })
                         }
-                        className="h-4 w-4 accent-[#111111] cursor-pointer"
+                        className="h-4 w-4 accent-[#141413] cursor-pointer"
                       />
-                      <span className="text-[14px] font-medium text-[#171717]">
+                      <span className="text-[13px] font-medium text-[#141413]">
                         {u.canViewFinance ? 'Разрешено' : 'Скрыто'}
                       </span>
                     </label>
                   </td>
 
                   <td className="py-4 px-4">
-                    <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         disabled={!canManageUsers}
@@ -2544,17 +2547,17 @@ export function TeamView() {
                             canViewCostPrice: e.target.checked,
                           })
                         }
-                        className="h-4 w-4 accent-[#111111] cursor-pointer"
+                        className="h-4 w-4 accent-[#141413] cursor-pointer"
                       />
-                      <span className="text-[14px] font-medium text-[#171717]">
+                      <span className="text-[13px] font-medium text-[#141413]">
                         {u.canViewCostPrice ? 'Разрешено' : 'Скрыто'}
                       </span>
                     </label>
                   </td>
 
                   <td className="py-4 px-6 text-right">
-                    <span className="inline-flex items-center gap-2 text-[14px] font-semibold text-[#16805D]">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[#16805D]" />
+                    <span className="inline-flex items-center gap-2 text-[13px] font-medium text-[#16805D]">
+                      <span className="h-2 w-2 rounded-full bg-[#16805D]" />
                       <span>Активен</span>
                     </span>
                   </td>
@@ -2566,43 +2569,43 @@ export function TeamView() {
       </div>
 
       {/* Справка по ролям и Журнал действий */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-4">
-          <h3 className="text-[20px] font-bold border-b border-[#E8E8E5] pb-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-4">
+          <h3 className="text-[18px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-3 tracking-[-0.01em]">
             Матрица полномочий
           </h3>
-          <div className="space-y-3 text-[14px] text-[#737373] leading-relaxed">
+          <div className="space-y-3 text-[13.5px] text-[#5C5953] leading-relaxed">
             <div>
-              <b className="text-[#171717]">Владелец и Администратор:</b> полный доступ ко всем разделам, утверждение стратегий и управление ролями.
+              <b className="text-[#141413] font-medium">Владелец и Администратор:</b> полный доступ ко всем разделам, утверждение стратегий и управление ролями.
             </div>
             <div>
-              <b className="text-[#171717]">Менеджер:</b> управление каталогом, R&D и запусками; утверждённые блоки стратегии защищены от изменений.
+              <b className="text-[#141413] font-medium">Менеджер:</b> управление каталогом, R&D и запусками; утверждённые блоки стратегии защищены от изменений.
             </div>
             <div>
-              <b className="text-[#171717]">Наблюдатель и Партнёр:</b> без доступа к разделу «Финансы», себестоимости (COGS) и маржинальности.
+              <b className="text-[#141413] font-medium">Наблюдатель и Партнёр:</b> без доступа к разделу «Финансы», себестоимости (COGS) и маржинальности.
             </div>
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-2xl border border-[#E8E8E5] p-7 space-y-4">
-          <div className="flex items-center justify-between border-b border-[#E8E8E5] pb-3">
-            <h3 className="text-[20px] font-bold">Журнал действий</h3>
-            <span className="text-[13px] text-[#737373]">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-3">
+            <h3 className="text-[18px] font-semibold text-[#141413] tracking-[-0.01em]">Журнал действий</h3>
+            <span className="text-[12.5px] font-mono text-[#5C5953]">
               Записей: {auditLog.length}
             </span>
           </div>
-          <div className="divide-y divide-[#E8E8E5] max-h-72 overflow-y-auto text-[14px]">
+          <div className="divide-y divide-[#E4E1DA] max-h-72 overflow-y-auto text-[13.5px]">
             {auditLog.slice(0, 12).map((entry) => (
               <div
                 key={entry.id}
                 className="py-3 flex items-center justify-between gap-4"
               >
                 <div className="truncate">
-                  <b className="text-[#171717]">{entry.actorName}</b>{' '}
-                  <span className="text-[#737373]">({ROLE_LABELS_RU[entry.actorRole]})</span> —{' '}
-                  <span className="text-[#737373]">{entry.summary}</span>
+                  <b className="text-[#141413] font-medium">{entry.actorName}</b>{' '}
+                  <span className="text-[#5C5953]">({ROLE_LABELS_RU[entry.actorRole]})</span> —{' '}
+                  <span className="text-[#5C5953]">{entry.summary}</span>
                 </div>
-                <span className="text-[13px] text-[#737373] shrink-0">
+                <span className="text-[12px] font-mono text-[#5C5953] shrink-0">
                   {entry.createdAt}
                 </span>
               </div>
@@ -2683,27 +2686,27 @@ export function SettingsView() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="rounded-[18px] bg-white border-[1.5px] border-[#C8C7BE] p-5 md:p-6 shadow-[0_2px_10px_rgba(20,20,19,0.03)]">
-        <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
+      <div className="rounded-xl bg-white border border-[#E4E1DA] p-5 md:p-6">
+        <div className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-[#5C5953]">
           Администрирование · Черновик разделов и резервное копирование
         </div>
-        <h1 className="text-[23px] font-bold tracking-[-0.02em] text-[#141413] mt-0.5">
+        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-[#141413] mt-0.5">
           Настройки системы · BORNERS GROUP
         </h1>
       </div>
 
       {/* АДМИНКА: ЧЕРНОВИК РАЗДЕЛОВ И ИНСТРУМЕНТОВ */}
       {isOwnerOrAdmin && (
-        <div className="bg-white rounded-[16px] border-[1.5px] border-[#CFC8BC] p-6 md:p-7 space-y-5 shadow-xs">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#EAE6DF] pb-4">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 md:p-7 space-y-5">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E4E1DA] pb-4">
             <div className="space-y-1">
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-[#B85D35] font-bold">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#5C5953] font-medium">
                 <span>АДМИНКА · ЧЕРНОВИК ИНСТРУМЕНТОВ ({enabledCount} из {totalCount} включено)</span>
               </div>
-              <h2 className="text-[22px] font-bold text-[#181715]">
+              <h2 className="text-[20px] font-semibold text-[#141413] tracking-[-0.02em]">
                 Скрытые разделы в черновике (управление видимостью меню)
               </h2>
-              <p className="text-[13.5px] text-[#5C5852] max-w-3xl">
+              <p className="text-[13.5px] text-[#5C5953] max-w-3xl leading-relaxed">
                 В основном рабочем меню оставлены только 7 ключевых разделов («Главная», «Сценарии роста», «Модели (SKU)», «План продаж», «Производство», «Закупки», «Документы»). Любой дополнительный инструмент из черновика можно вернуть в меню или открыть в 1 клик.
               </p>
             </div>
@@ -2715,9 +2718,9 @@ export function SettingsView() {
                   setAllDraftModules(true);
                   notify('success', 'Все разделы из черновика возвращены в меню');
                 }}
-                className="h-9 px-3.5 rounded-[9px] bg-[#181715] text-white text-[12.5px] font-semibold hover:bg-[#2C2B29] transition cursor-pointer"
+                className="h-9 px-3.5 rounded-xl bg-[#141413] text-white text-[12.5px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
               >
-                Вернуть все ({totalCount})
+                Вернуть все (<span className="font-mono">{totalCount}</span>)
               </button>
               <button
                 type="button"
@@ -2725,7 +2728,7 @@ export function SettingsView() {
                   setAllDraftModules(false);
                   notify('success', 'Дополнительные разделы скрыты в черновик (оставлены 7 базовых)');
                 }}
-                className="h-9 px-3.5 rounded-[9px] border border-[#D4CDC2] bg-[#FAF8F5] text-[#181715] text-[12.5px] font-semibold hover:border-[#181715] transition cursor-pointer"
+                className="h-9 px-3.5 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] text-[#141413] text-[12.5px] font-medium hover:border-[#141413] transition cursor-pointer"
               >
                 Оставить только 7 базовых
               </button>
@@ -2738,35 +2741,35 @@ export function SettingsView() {
               return (
                 <div
                   key={item.key}
-                  className={`rounded-[12px] border p-4 flex items-start justify-between gap-4 transition ${
+                  className={`rounded-xl border p-4 flex items-start justify-between gap-4 transition ${
                     isEnabled
-                      ? 'bg-[#F4F9F6] border-[#1F6E50]/40'
-                      : 'bg-[#FAF8F5] border-[#E5E0D8]'
+                      ? 'bg-white border-[#141413]'
+                      : 'bg-[#FAF9F6] border-[#E4E1DA]'
                   }`}
                 >
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[14.5px] font-bold text-[#181715]">
+                      <span className="text-[14px] font-semibold text-[#141413]">
                         {item.title}
                       </span>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${
+                        className={`px-2 py-0.5 rounded-md text-[10.5px] font-medium ${
                           isEnabled
-                            ? 'bg-[#1F6E50] text-white'
-                            : 'bg-[#EAE4D8] text-[#6E6A63]'
+                            ? 'bg-[#16805D] text-white'
+                            : 'bg-[#EFEDE8] text-[#5C5953]'
                         }`}
                       >
                         {isEnabled ? 'В меню' : 'В черновике'}
                       </span>
                     </div>
-                    <p className="text-[12.5px] text-[#5C5852] leading-snug">
+                    <p className="text-[12.5px] text-[#5C5953] leading-snug">
                       {item.subtitle}
                     </p>
                     {item.sectionId && (
                       <button
                         type="button"
                         onClick={() => navigateTo(item.sectionId!)}
-                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
+                        className="inline-flex items-center gap-1 text-[12px] font-medium text-[#141413] hover:underline pt-1 cursor-pointer"
                       >
                         <span>Открыть раздел без включения в меню →</span>
                       </button>
@@ -2775,7 +2778,7 @@ export function SettingsView() {
                       <button
                         type="button"
                         onClick={() => setPlatformMode('strategy')}
-                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#B85D35] hover:underline pt-1 cursor-pointer"
+                        className="inline-flex items-center gap-1 text-[12px] font-medium text-[#141413] hover:underline pt-1 cursor-pointer"
                       >
                         <span>Открыть презентацию 8 слайдов →</span>
                       </button>
@@ -2785,10 +2788,10 @@ export function SettingsView() {
                   <button
                     type="button"
                     onClick={() => toggleDraftModule(item.key)}
-                    className={`shrink-0 h-8 px-3 rounded-[8px] text-[12px] font-semibold transition cursor-pointer ${
+                    className={`shrink-0 h-8 px-3 rounded-lg text-[12px] font-medium transition cursor-pointer ${
                       isEnabled
-                        ? 'bg-[#1F6E50] text-white hover:bg-[#17563E]'
-                        : 'bg-white border border-[#CFC8BC] text-[#181715] hover:border-[#181715]'
+                        ? 'bg-[#141413] text-white hover:bg-[#2A2927]'
+                        : 'bg-white border border-[#E4E1DA] text-[#141413] hover:border-[#141413]'
                     }`}
                   >
                     {isEnabled ? 'Скрыть' : 'Вернуть'}
@@ -2801,42 +2804,42 @@ export function SettingsView() {
       )}
 
       {/* Корпоративный домен BORNERS GROUP */}
-      <div className="bg-white rounded-[12px] border-[1.5px] border-[#CFC8BC] border-t-[3px] border-t-[#181715] p-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#B85D35] font-semibold">
+          <div className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#5C5953] font-medium">
             ОФИЦИАЛЬНЫЙ ДОМЕН ПЛАТФОРМЫ
           </div>
-          <div className="text-[20px] font-bold text-[#181715]">
-            Borners Group · <span className="font-mono text-[#1F6E50]">borners-group.ru</span>
+          <div className="text-[19px] font-semibold text-[#141413] tracking-[-0.01em]">
+            Borners Group · <span className="font-mono text-[#16805D]">borners-group.ru</span>
           </div>
-          <div className="text-[13px] text-[#5C5852]">
+          <div className="text-[13px] text-[#5C5953]">
             Единый защищённый контур управления портфелем 5 брендов: BORNERS, НА ТЕЛЕ, AKUSHA, LISKANI и FUKAI (2026–2027)
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="px-3 py-1.5 rounded-[8px] bg-[#1F6E50]/12 border border-[#1F6E50]/30 text-[12.5px] font-mono font-semibold text-[#1F6E50]">
+          <span className="px-3 py-1.5 rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] text-[12px] font-mono font-medium text-[#16805D]">
             ✓ Домен borners-group.ru активен
           </span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-[12px] border border-[#EAE6DF] p-7 space-y-5">
-          <h3 className="text-[20px] font-semibold text-[#181715] border-b border-[#EAE6DF] pb-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-5">
+          <h3 className="text-[18px] font-semibold text-[#141413] border-b border-[#E4E1DA] pb-3 tracking-[-0.01em]">
             Акцентные цвета брендов
           </h3>
 
-          <div className="divide-y divide-[#EAE6DF]">
+          <div className="divide-y divide-[#E4E1DA]">
             {brands.map((brand) => (
               <div
                 key={brand.id}
-                className="py-4 flex items-center justify-between gap-4"
+                className="py-3.5 flex items-center justify-between gap-4"
               >
                 <div>
-                  <div className="text-[16px] font-semibold text-[#181715]">
+                  <div className="text-[15px] font-semibold text-[#141413]">
                     {brand.name}
                   </div>
-                  <div className="text-[13px] text-[#7A756D] font-mono">{brand.accentColor}</div>
+                  <div className="text-[12.5px] text-[#5C5953] font-mono">{brand.accentColor}</div>
                 </div>
                 <input
                   type="color"
@@ -2846,19 +2849,19 @@ export function SettingsView() {
                     if (!isOwnerOrAdmin) return;
                     updateBrandPalette(brand.id, e.target.value, brand.secondaryColor);
                   }}
-                  className="h-9 w-14 rounded-[6px] border border-[#EAE6DF] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="h-9 w-14 rounded-lg border border-[#E4E1DA] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-white rounded-[12px] border border-[#EAE6DF] p-7 space-y-6">
-          <div className="border-b border-[#EAE6DF] pb-4">
-            <h3 className="text-[20px] font-semibold text-[#181715]">
+        <div className="bg-white rounded-xl border border-[#E4E1DA] p-6 space-y-5">
+          <div className="border-b border-[#E4E1DA] pb-4">
+            <h3 className="text-[18px] font-semibold text-[#141413] tracking-[-0.01em]">
               Резервное копирование и выгрузка базы
             </h3>
-            <p className="text-[13.5px] text-[#7A756D] mt-1">
+            <p className="text-[13px] text-[#5C5953] mt-1">
               {isSupabaseConfigured
                 ? 'Синхронизация с облачной базой Supabase активна'
                 : 'Автосохранение изменений в хранилище браузера активно'}
@@ -2866,11 +2869,11 @@ export function SettingsView() {
           </div>
 
           <div className="space-y-4">
-            <p className="text-[13.5px] text-[#5C5852] leading-relaxed">
-              Вы можете выгрузить сводную финансовую и продуктовую ведомость в формате таблицы Excel (<code className="font-mono text-[12px]">.xlsx</code>), сохранить полный снимок базы в JSON или вернуть демонстрационные данные к исходному состоянию.
+            <p className="text-[13.5px] text-[#5C5953] leading-relaxed">
+              Вы можете выгрузить сводную финансовую и продуктовую ведомость в формате таблицы Excel (<code className="font-mono text-[12px] text-[#141413]">.xlsx</code>), сохранить полный снимок базы в JSON или вернуть демонстрационные данные к исходному состоянию.
             </p>
 
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="flex flex-wrap gap-2.5 pt-2">
               {canExportFullFinancialExcel && (
                 <button
                   type="button"
@@ -2914,9 +2917,9 @@ export function SettingsView() {
                       `В выгрузку включено ${mergedCatalogProducts.length} позиций каталога всех 5 брендов.`
                     );
                   }}
-                  className="inline-flex items-center gap-2 h-10 rounded-[8px] bg-[#181715] text-white px-4 text-[13px] font-medium hover:bg-[#2C2B29] transition cursor-pointer"
+                  className="inline-flex items-center gap-2 h-10 rounded-xl bg-[#141413] text-white px-4 text-[13px] font-medium hover:bg-[#2A2927] transition cursor-pointer"
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
+                  <FileSpreadsheet className="h-4 w-4 stroke-[1.5]" />
                   <span>Скачать сводную базу Excel (.xlsx)</span>
                 </button>
               )}
@@ -2976,14 +2979,14 @@ export function SettingsView() {
                         notify('error', 'Ошибка сохранения резервной копии JSON');
                       }
                     }}
-                    className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer"
+                    className="inline-flex items-center gap-2 h-10 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] px-4 text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer"
                   >
-                    <Download className="h-4 w-4" />
+                    <Download className="h-4 w-4 stroke-[1.5]" />
                     <span>Экспорт базы JSON</span>
                   </button>
 
-                  <label className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 text-[13px] font-medium text-[#181715] hover:border-[#181715] transition cursor-pointer">
-                    <Upload className="h-4 w-4" />
+                  <label className="inline-flex items-center gap-2 h-10 rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] px-4 text-[13px] font-medium text-[#141413] hover:border-[#141413] transition cursor-pointer">
+                    <Upload className="h-4 w-4 stroke-[1.5]" />
                     <span>Импорт базы JSON</span>
                     <input
                       type="file"
@@ -3083,16 +3086,16 @@ export function SettingsView() {
                         resetToDemoDefaults();
                       }
                     }}
-                    className="inline-flex items-center gap-2 h-10 rounded-[8px] border border-[#C94B4B]/40 text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white px-4 text-[13px] font-medium transition cursor-pointer"
+                    className="inline-flex items-center gap-2 h-10 rounded-xl border border-[#C94B4B]/40 text-[#C94B4B] hover:bg-[#C94B4B] hover:text-white px-4 text-[13px] font-medium transition cursor-pointer"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw className="h-4 w-4 stroke-[1.5]" />
                     <span>Сбросить демо-данные</span>
                   </button>
                 </>
               )}
 
               {!canExportFullFinancialExcel && !isOwnerOrAdmin && (
-                <div className="rounded-[10px] border border-[#EAE6DF] bg-[#FAF8F5] px-4 py-3 text-[13px] text-[#5C5852]">
+                <div className="rounded-xl border border-[#E4E1DA] bg-[#FAF9F6] px-4 py-3 text-[13px] text-[#5C5953]">
                   Выгрузка полных финансовых таблиц, резервное копирование JSON и сброс демо-базы доступны ролям Owner и Admin.
                 </div>
               )}

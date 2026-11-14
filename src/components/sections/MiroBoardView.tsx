@@ -978,37 +978,37 @@ export function MiroBoardView() {
   return (
     <div
       data-no-swipe-nav="true"
-      className="rounded-[16px] bg-white border-2 border-[#181715] overflow-hidden shadow-xs overscroll-contain"
+      className="rounded-2xl bg-white border border-[#E4E1DA] overflow-hidden shadow-xs overscroll-contain"
     >
       {/* ПАНЕЛЬ ИНСТРУМЕНТОВ СТУДИИ ИДЕЙ (БЕСКОНЕЧНЫЙ ХОЛСТ) */}
       <div
         data-tour="studio-canvas"
-        className="px-5 py-4 bg-[#FAF8F5] border-b-2 border-[#181715] flex flex-wrap items-center justify-between gap-3"
+        className="px-5 py-4 bg-[#FAF9F6] border-b border-[#E4E1DA] flex flex-wrap items-center justify-between gap-3"
       >
         <div>
-          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-[#B85D35] font-semibold">
-            <span>КРЕАТИВНАЯ СТУДИЯ · БЕСКОНЕЧНЫЙ ХОЛСТ И СВЯЗИ</span>
+          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-[#5C5953]">
+            <span>ATELIER R&amp;D STUDIO · БЕСКОНЕЧНЫЙ ХОЛСТ И СВЯЗИ</span>
           </div>
-          <h2 className="font-serif-editorial text-[24px] font-semibold text-[#181715] leading-tight">
+          <h2 className="text-[20px] font-semibold tracking-tight text-[#141413] leading-tight mt-0.5">
             Студия идей: бесконечная доска со стрелочками, фото и голосом
           </h2>
         </div>
 
-        {/* Кнопки инструментов холста */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Архитектурная плавающая панель инструментов холста */}
+        <div className="bg-white/95 border border-[#E4E1DA] rounded-xl shadow-xs p-1.5 flex flex-wrap items-center gap-1.5">
           {canEdit && (
             <>
               <button
                 type="button"
                 onClick={() => handleAddSticky('#FFF8D6')}
-                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#181715] hover:bg-[#2C2B29] text-white text-[12.5px] font-semibold transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-medium transition-colors cursor-pointer"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>+ Стикер</span>
               </button>
 
-              <label className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#181715] text-[12.5px] font-semibold transition cursor-pointer">
-                <ImageIcon className="h-3.5 w-3.5 text-[#B85D35]" />
+              <label className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white hover:bg-[#FAF9F6] text-[#141413] border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium transition-colors cursor-pointer">
+                <ImageIcon className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                 <span>+ Фото (1–10)</span>
                 <input
                   type="file"
@@ -1024,16 +1024,16 @@ export function MiroBoardView() {
                 <button
                   type="button"
                   onClick={startVoiceRecording}
-                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#B85D35] hover:bg-[#9E4B27] text-white text-[12.5px] font-semibold transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#FAF9F6] hover:bg-[#EFEDE8] text-[#141413] border border-[#E4E1DA] text-[12px] font-medium transition-colors cursor-pointer"
                 >
-                  <Mic className="h-3.5 w-3.5" />
+                  <Mic className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                   <span>+ Записать голос</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={stopVoiceRecording}
-                  className="inline-flex items-center gap-2 h-9 px-3.5 rounded-[8px] bg-[#C94B4B] text-white text-[12.5px] font-bold animate-pulse cursor-pointer"
+                  className="inline-flex items-center gap-2 h-8 px-3 rounded-lg bg-rose-700 text-white text-[12px] font-semibold animate-pulse cursor-pointer"
                 >
                   <Square className="h-3.5 w-3.5 fill-current" />
                   <span>Стоп ({recordingSec} сек.) — сохранить</span>
@@ -1043,9 +1043,9 @@ export function MiroBoardView() {
               {/* Загрузка готового голосового файла */}
               <label
                 title="Загрузить голосовое из Telegram / телефона (.ogg, .mp3, .wav, .m4a)"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-white hover:bg-[#F3EFE8] text-[#181715] border-[1.5px] border-[#CFC8BC] hover:border-[#181715] text-[12px] font-medium transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-white hover:bg-[#FAF9F6] text-[#141413] border border-[#E4E1DA] hover:border-[#141413] text-[12px] font-medium transition-colors cursor-pointer"
               >
-                <Upload className="h-3.5 w-3.5 text-[#5C5852]" />
+                <Upload className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
                 <span>Аудиофайл</span>
                 <input
                   type="file"
@@ -1061,7 +1061,7 @@ export function MiroBoardView() {
                 onChange={(e) => {
                   if (e.target.value) handlePinConcept(e.target.value);
                 }}
-                className="h-9 rounded-[8px] bg-white border-[1.5px] border-[#CFC8BC] hover:border-[#181715] px-2.5 text-[12px] font-medium text-[#181715] cursor-pointer max-w-[195px]"
+                className="h-8 rounded-lg bg-[#FAF9F6] border border-[#E4E1DA] hover:border-[#141413] px-2.5 text-[12px] font-medium text-[#141413] cursor-pointer max-w-[195px] focus:outline-none"
               >
                 <option value="">+ Карточка R&amp;D...</option>
                 {concepts
@@ -1082,33 +1082,33 @@ export function MiroBoardView() {
           )}
 
           {/* Управление бесконечным холстом и масштабом */}
-          <div className="inline-flex items-center rounded-[8px] border-[1.5px] border-[#CFC8BC] bg-white p-0.5">
+          <div className="inline-flex items-center rounded-lg border border-[#E4E1DA] bg-[#FAF9F6] p-0.5">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))}
-              className="p-1.5 text-[#5C5852] hover:text-[#181715] cursor-pointer"
+              className="p-1.5 text-[#5C5953] hover:text-[#141413] cursor-pointer"
               title="Отдалить холст"
             >
-              <ZoomOut className="h-3.5 w-3.5" />
+              <ZoomOut className="h-3.5 w-3.5 stroke-[1.5]" />
             </button>
-            <span className="px-2 font-mono text-[11px] font-semibold text-[#181715]">
+            <span className="px-2 font-mono text-[11px] font-medium text-[#141413]">
               {Math.round(zoom * 100)}%
             </span>
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(1.5, Number((z + 0.1).toFixed(2))))}
-              className="p-1.5 text-[#5C5852] hover:text-[#181715] cursor-pointer"
+              className="p-1.5 text-[#5C5953] hover:text-[#141413] cursor-pointer"
               title="Приблизить холст"
             >
-              <ZoomIn className="h-3.5 w-3.5" />
+              <ZoomIn className="h-3.5 w-3.5 stroke-[1.5]" />
             </button>
             <button
               type="button"
               onClick={handleCenterCanvas}
-              className="px-2 py-1 text-[11px] font-semibold text-[#5C5852] hover:text-[#181715] border-l border-[#E5E0D8] inline-flex items-center gap-1 cursor-pointer"
+              className="px-2 py-1 text-[11px] font-medium text-[#5C5953] hover:text-[#141413] border-l border-[#E4E1DA] inline-flex items-center gap-1 cursor-pointer"
               title="Вернуться к центру карточек на бесконечном холсте"
             >
-              <Compass className="h-3.5 w-3.5 text-[#B85D35]" />
+              <Compass className="h-3.5 w-3.5 stroke-[1.5] text-[#5C5953]" />
               <span>Центр</span>
             </button>
           </div>
@@ -1123,9 +1123,9 @@ export function MiroBoardView() {
                   `Карточек на холсте: ${visibleItems.length} · Связей: ${arrowLinks.length}`
                 )
               }
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-[8px] bg-[#16805D] hover:bg-[#116649] text-white text-[12.5px] font-semibold transition cursor-pointer shadow-2xs"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white text-[12px] font-medium transition-colors cursor-pointer"
             >
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5 stroke-[1.5]" />
               <span>Сохранить доску</span>
             </button>
           )}
@@ -1133,18 +1133,18 @@ export function MiroBoardView() {
       </div>
 
       {/* ПОДСКАЗКА ПО БЕСКОНЕЧНОМУ ХОЛСТУ И СТРЕЛОЧКАМ */}
-      <div className="px-5 py-2 bg-[#F3EFE8] border-b border-[#D8D1C5] flex flex-wrap items-center justify-between gap-2 text-[12px] text-[#4A4742]">
+      <div className="px-5 py-2 bg-[#FAF9F6] border-b border-[#E4E1DA] flex flex-wrap items-center justify-between gap-2 text-[12px] text-[#5C5953]">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 font-medium text-[#181715]">
-            <GitCommitHorizontal className="h-4 w-4 text-[#B85D35]" />
+          <span className="inline-flex items-center gap-1.5 text-[#5C5953]">
+            <GitCommitHorizontal className="h-4 w-4 stroke-[1.5] text-[#141413]" />
             <span>
-              <strong>Как прикрепить стрелочку:</strong> потяните за кружок{' '}
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#B85D35] align-middle mx-0.5" />{' '}
-              на краю любой карточки к другой карточке или нажмите <strong>«↗ Стрелка»</strong> в шапке стикера.
+              <strong className="font-medium text-[#141413]">Как прикрепить стрелочку:</strong> потяните за кружок{' '}
+              <span className="inline-block h-2 w-2 rounded-full bg-[#141413] align-middle mx-0.5" />{' '}
+              на краю любой карточки к другой карточке или нажмите <strong className="font-medium text-[#141413]">«↗ Стрелка»</strong> в шапке стикера.
             </span>
           </span>
           {connectingSourceId && (
-            <span className="inline-flex items-center gap-2 rounded-full bg-[#B85D35] text-white px-3 py-0.5 text-[11.5px] font-semibold animate-pulse">
+            <span className="inline-flex items-center gap-2 rounded-full bg-[#141413] text-white px-3 py-0.5 text-[11.5px] font-medium">
               <span>Выберите карточку, к которой прикрепить стрелку...</span>
               <button
                 type="button"
@@ -1156,8 +1156,8 @@ export function MiroBoardView() {
             </span>
           )}
         </div>
-        <div className="font-mono text-[11px] text-[#6E6A63]">
-          Бесконечный холст (зажмите пустое место для перемещения) · X:{Math.round(-pan.x)} Y:{Math.round(-pan.y)} · Связей: {arrowLinks.length}
+        <div className="font-mono text-[11px] text-[#5C5953]">
+          Холст · X:{Math.round(-pan.x)} Y:{Math.round(-pan.y)} · Связей: {arrowLinks.length}
         </div>
       </div>
 
@@ -1180,11 +1180,11 @@ export function MiroBoardView() {
         onTouchCancel={handleTouchEndViewport}
         style={{
           backgroundImage:
-            'radial-gradient(circle, #BDB5A6 1.35px, transparent 1.35px)',
+            'radial-gradient(circle, #D2CEC4 1.25px, transparent 1.25px)',
           backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
           backgroundPosition: `${pan.x}px ${pan.y}px`,
         }}
-        className={`relative w-full h-[680px] overflow-hidden overscroll-contain touch-none bg-[#F4F1EA] select-none ${
+        className={`relative w-full h-[680px] overflow-hidden overscroll-contain touch-none bg-[#F6F5F2] select-none ${
           isPanning
             ? 'cursor-grabbing'
             : connectingSourceId || draggingArrowFromId
@@ -1217,7 +1217,7 @@ export function MiroBoardView() {
                 refY="4"
                 orient="auto"
               >
-                <path d="M 0 0 L 10 4 L 0 8 z" fill="#B85D35" />
+                <path d="M 0 0 L 10 4 L 0 8 z" fill="#5C5953" />
               </marker>
               <marker
                 id="studio-arrowhead-active"
@@ -1227,7 +1227,7 @@ export function MiroBoardView() {
                 refY="4"
                 orient="auto"
               >
-                <path d="M 0 0 L 10 4 L 0 8 z" fill="#E07A4F" />
+                <path d="M 0 0 L 10 4 L 0 8 z" fill="#141413" />
               </marker>
             </defs>
 
@@ -1252,19 +1252,19 @@ export function MiroBoardView() {
                 <path
                   d={geometry.path}
                   fill="none"
-                  stroke="#B85D35"
-                  strokeWidth={2.75}
+                  stroke="#5C5953"
+                  strokeWidth={2}
                   markerEnd="url(#studio-arrowhead)"
-                  className="transition-all group-hover:stroke-[#E07A4F]"
+                  className="transition-all group-hover:stroke-[#141413]"
                 />
                 {/* Начальная точка стрелки */}
                 <circle
                   cx={geometry.x1}
                   cy={geometry.y1}
-                  r={4.5}
-                  fill="#FAF8F5"
-                  stroke="#B85D35"
-                  strokeWidth={2.5}
+                  r={4}
+                  fill="#FAF9F6"
+                  stroke="#5C5953"
+                  strokeWidth={2}
                 />
                 {/* Кнопка удаления стрелки посередине дуги */}
                 {canEditItem(source) && (
@@ -1278,18 +1278,18 @@ export function MiroBoardView() {
                   >
                     <title>Удалить эту стрелку</title>
                     <circle
-                      r={10}
-                      fill="#FAF8F5"
-                      stroke="#B85D35"
-                      strokeWidth={1.75}
-                      className="group-hover:fill-[#B93829] group-hover:stroke-[#B93829] transition-colors"
+                      r={9.5}
+                      fill="#FFFFFF"
+                      stroke="#D2CEC4"
+                      strokeWidth={1.5}
+                      className="group-hover:fill-[#141413] group-hover:stroke-[#141413] transition-colors"
                     />
                     <text
                       textAnchor="middle"
                       dominantBaseline="central"
                       fontSize="10"
                       fontWeight="bold"
-                      fill="#B85D35"
+                      fill="#5C5953"
                       className="group-hover:fill-white select-none"
                     >
                       ✕
@@ -1299,15 +1299,15 @@ export function MiroBoardView() {
               </g>
             ))}
 
-            {/* Живая пунктирная стрелка во время перетаскивания от точки карточки */}
+            {/* Живая пунктирная стрелка во время перетаскивании от точки карточки */}
             {activeDragSource && arrowCursorWorld && (
               <path
                 d={`M ${activeDragSource.x + (activeDragSource.width || 290) / 2} ${
                   activeDragSource.y + estimateCardHeight(activeDragSource) / 2
                 } L ${arrowCursorWorld.x} ${arrowCursorWorld.y}`}
                 fill="none"
-                stroke="#E07A4F"
-                strokeWidth={2.5}
+                stroke="#141413"
+                strokeWidth={2}
                 strokeDasharray="6 4"
                 markerEnd="url(#studio-arrowhead-active)"
               />
@@ -1344,14 +1344,14 @@ export function MiroBoardView() {
                   width: `${item.width || 290}px`,
                   backgroundColor: item.color || '#FFF8D6',
                 }}
-                className={`miro-pastel-card group/card pointer-events-auto touch-none absolute rounded-[14px] border-2 p-4 space-y-2.5 transition-shadow ${
+                className={`miro-pastel-card group/card pointer-events-auto touch-none absolute rounded-xl border p-4 space-y-2.5 transition-shadow ${
                   draggingId === item.id
-                    ? 'border-[#181715] shadow-2xl z-30 cursor-grabbing'
+                    ? 'border-[#141413] shadow-xl z-30 cursor-grabbing'
                     : isConnectSource
-                    ? 'border-[#B85D35] ring-4 ring-[#B85D35]/30 shadow-xl z-30'
+                    ? 'border-[#141413] ring-2 ring-[#141413]/20 shadow-lg z-30'
                     : isConnectTargetCandidate
-                    ? 'border-[#B85D35] hover:ring-4 hover:ring-[#B85D35]/40 shadow-lg z-20 cursor-pointer'
-                    : `border-[#181715]/85 hover:border-[#181715] shadow-md z-10 ${
+                    ? 'border-[#141413] hover:ring-2 hover:ring-[#141413]/30 shadow-md z-20 cursor-pointer'
+                    : `border-black/15 hover:border-[#141413]/70 shadow-sm z-10 ${
                         itemEditable ? 'cursor-grab' : 'cursor-default'
                       }`
                 }`}
@@ -1365,9 +1365,9 @@ export function MiroBoardView() {
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
                       onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className=" -top-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
+                      className="-top-2 left-1/2 -translate-x-1/2 absolute h-4 w-4 rounded-full bg-white border border-[#141413] hover:bg-[#141413] hover:scale-125 transition flex items-center justify-center shadow-2xs z-30 cursor-crosshair touch-none"
                     >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#141413]" />
                     </button>
                     <button
                       type="button"
@@ -1375,9 +1375,9 @@ export function MiroBoardView() {
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
                       onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-right-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
+                      className="-right-2 top-1/2 -translate-y-1/2 absolute h-4 w-4 rounded-full bg-white border border-[#141413] hover:bg-[#141413] hover:scale-125 transition flex items-center justify-center shadow-2xs z-30 cursor-crosshair touch-none"
                     >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#141413]" />
                     </button>
                     <button
                       type="button"
@@ -1385,9 +1385,9 @@ export function MiroBoardView() {
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
                       onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-bottom-2.5 left-1/2 -translate-x-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
+                      className="-bottom-2 left-1/2 -translate-x-1/2 absolute h-4 w-4 rounded-full bg-white border border-[#141413] hover:bg-[#141413] hover:scale-125 transition flex items-center justify-center shadow-2xs z-30 cursor-crosshair touch-none"
                     >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#141413]" />
                     </button>
                     <button
                       type="button"
@@ -1395,17 +1395,17 @@ export function MiroBoardView() {
                       onMouseDown={(e) => handleStartDragArrow(e, item.id)}
                       onTouchStart={(e) => handleTouchStartArrow(e, item.id)}
                       title="Потяните отсюда стрелку к другой карточке"
-                      className="-left-2.5 top-1/2 -translate-y-1/2 absolute h-5 w-5 rounded-full bg-white border-2 border-[#B85D35] hover:bg-[#B85D35] hover:scale-125 transition flex items-center justify-center shadow-xs z-30 cursor-crosshair touch-none"
+                      className="-left-2 top-1/2 -translate-y-1/2 absolute h-4 w-4 rounded-full bg-white border border-[#141413] hover:bg-[#141413] hover:scale-125 transition flex items-center justify-center shadow-2xs z-30 cursor-crosshair touch-none"
                     >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#B85D35]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#141413]" />
                     </button>
                   </>
                 )}
 
                 {/* Верхняя полоска карточки */}
                 <div className="flex items-center justify-between gap-1.5 border-b border-black/10 pb-2">
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider font-bold text-[#4A4742]">
-                    <Move className="h-3 w-3" />
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider font-medium text-[#5C5953]">
+                    <Move className="h-3 w-3 stroke-[1.5]" />
                     <span>
                       {item.type === 'sticky'
                         ? 'СТИКЕР'
@@ -1428,10 +1428,10 @@ export function MiroBoardView() {
                             prev === item.id ? null : item.id
                           );
                         }}
-                        className={`px-2 py-0.5 rounded-[5px] text-[10.5px] font-bold transition cursor-pointer inline-flex items-center gap-1 ${
+                        className={`px-2 py-0.5 rounded-md text-[10.5px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 ${
                           isConnectSource
-                            ? 'bg-[#B85D35] text-white'
-                            : 'bg-white/80 hover:bg-[#181715] text-[#181715] hover:text-white border border-black/20'
+                            ? 'bg-[#141413] text-white'
+                            : 'bg-white/80 hover:bg-[#141413] text-[#141413] hover:text-white border border-black/15'
                         }`}
                         title="Прикрепить стрелочкой к другой карточке"
                       >
@@ -1445,17 +1445,17 @@ export function MiroBoardView() {
                             type="button"
                             onClick={() => updateMiroItem(item.id, { color: c.hex })}
                             style={{ backgroundColor: c.hex }}
-                            className="h-3.5 w-3.5 rounded-full border border-black/30 cursor-pointer"
+                            className="h-3.5 w-3.5 rounded-full border border-black/25 cursor-pointer"
                             title={c.label}
                           />
                         ))}
                       <button
                         type="button"
                         onClick={() => deleteMiroItem(item.id)}
-                        className="p-1 text-[#6E6A63] hover:text-[#B93829] cursor-pointer"
+                        className="p-1 text-[#5C5953] hover:text-rose-700 cursor-pointer"
                         title="Удалить с холста"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3.5 w-3.5 stroke-[1.5]" />
                       </button>
                     </div>
                   )}
@@ -1468,18 +1468,18 @@ export function MiroBoardView() {
                   onChange={(e) => {
                     if (itemEditable) updateMiroItem(item.id, { title: e.target.value });
                   }}
-                  className="w-full bg-transparent text-[14.5px] font-bold text-[#181715] outline-none border-b border-transparent focus:border-black/25 pb-0.5"
+                  className="w-full bg-transparent text-[14px] font-semibold text-[#141413] outline-none border-b border-transparent focus:border-black/25 pb-0.5"
                 />
 
                 {/* Фотография или галерея, если это фото-карточка */}
                 {item.imageUrl && (
-                  <div className="rounded-[10px] bg-white border border-black/15 p-2 space-y-2">
+                  <div className="rounded-lg bg-white border border-black/10 p-2 space-y-2">
                     <img
                       src={resolvePublicAssetUrl(item.imageUrl)}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-36 object-contain rounded-[6px] bg-[#FAF8F5]"
+                      className="w-full h-36 object-contain rounded-md bg-[#F6F5F2]"
                     />
                     {item.galleryUrls && item.galleryUrls.length > 1 && (
                       <div className="flex items-center gap-1.5 overflow-x-auto pt-1">
@@ -1492,7 +1492,7 @@ export function MiroBoardView() {
                             }}
                             className={`h-9 w-9 rounded border overflow-hidden shrink-0 cursor-pointer ${
                               item.imageUrl === u
-                                ? 'border-[#B85D35] border-2'
+                                ? 'border-[#141413] border-2'
                                 : 'border-black/15'
                             }`}
                           >
@@ -1510,9 +1510,9 @@ export function MiroBoardView() {
 
                 {/* Плеер голосового сообщения */}
                 {item.type === 'voice' && (
-                  <div className="rounded-[10px] bg-white border-[1.5px] border-[#181715]/20 p-2.5 space-y-2">
-                    <div className="flex items-center gap-2 text-[11.5px] font-semibold text-[#B85D35]">
-                      <Volume2 className="h-4 w-4 shrink-0" />
+                  <div className="rounded-lg bg-white border border-black/15 p-2.5 space-y-2">
+                    <div className="flex items-center gap-2 text-[11.5px] font-medium text-[#141413]">
+                      <Volume2 className="h-4 w-4 stroke-[1.5] shrink-0 text-[#5C5953]" />
                       <span>Голосовая заметка · Прослушать</span>
                     </div>
                     <audio
@@ -1543,9 +1543,9 @@ export function MiroBoardView() {
                       return (
                         <span
                           key={targetId}
-                          className="inline-flex items-center gap-1 rounded-[5px] bg-white/85 border border-black/15 px-1.5 py-0.5 text-[10px] font-medium text-[#181715]"
+                          className="inline-flex items-center gap-1 rounded bg-white/85 border border-black/15 px-1.5 py-0.5 text-[10px] font-medium text-[#141413]"
                         >
-                          <span className="text-[#B85D35] font-bold">➔</span>
+                          <span className="text-[#5C5953]">➔</span>
                           <span className="truncate max-w-[130px]">{targetObj.title}</span>
                           {itemEditable && (
                             <button
@@ -1554,10 +1554,10 @@ export function MiroBoardView() {
                                 e.stopPropagation();
                                 removeArrowConnection(item.id, targetId);
                               }}
-                              className="text-[#8C867B] hover:text-[#B93829] cursor-pointer"
+                              className="text-[#5C5953] hover:text-rose-700 cursor-pointer"
                               title="Открепить стрелку"
                             >
-                              <X className="h-2.5 w-2.5" />
+                              <X className="h-2.5 w-2.5 stroke-[1.5]" />
                             </button>
                           )}
                         </span>
@@ -1576,10 +1576,10 @@ export function MiroBoardView() {
                       setSelectedConceptId(linkedConcept.id);
                       navigateTo('product-lab', { conceptId: linkedConcept.id });
                     }}
-                    className="w-full rounded-[8px] bg-[#181715] hover:bg-[#B85D35] text-white py-1.5 px-3 text-[11.5px] font-semibold transition cursor-pointer flex items-center justify-between"
+                    className="w-full rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white py-1.5 px-3 text-[11.5px] font-medium transition-colors cursor-pointer flex items-center justify-between"
                   >
                     <span className="inline-flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3" />
+                      <Sparkles className="h-3 w-3 stroke-[1.5]" />
                       <span>Открыть карточку R&amp;D</span>
                     </span>
                     <span>→</span>
@@ -1598,7 +1598,7 @@ export function MiroBoardView() {
                         'Создайте новую разработку или восстановите карточку из Корзины'
                       );
                     }}
-                    className="w-full rounded-[8px] bg-[#FAF8F5] hover:bg-[#FCE8DF] border border-[#D4CDC2] text-[#7A756D] hover:text-[#9E4622] py-1.5 px-3 text-[11px] font-semibold transition cursor-pointer flex items-center justify-between"
+                    className="w-full rounded-lg bg-[#FAF9F6] hover:bg-[#EFEDE8] border border-[#E4E1DA] text-[#5C5953] hover:text-[#141413] py-1.5 px-3 text-[11px] font-medium transition-colors cursor-pointer flex items-center justify-between"
                   >
                     <span>Карточка R&amp;D в архиве</span>
                     <span>!</span>
@@ -1618,17 +1618,17 @@ export function MiroBoardView() {
                         e.stopPropagation();
                         handlePromoteMiroItemToRnD(item);
                       }}
-                      className="w-full rounded-[8px] bg-[#181715] hover:bg-[#B85D35] text-white py-1.5 px-3 text-[11.5px] font-semibold transition cursor-pointer flex items-center justify-between"
+                      className="w-full rounded-lg bg-[#141413] hover:bg-[#2A2A28] text-white py-1.5 px-3 text-[11.5px] font-medium transition-colors cursor-pointer flex items-center justify-between"
                     >
                       <span className="inline-flex items-center gap-1.5">
-                        <Sparkles className="h-3 w-3" />
+                        <Sparkles className="h-3 w-3 stroke-[1.5]" />
                         <span>В разработку R&amp;D →</span>
                       </span>
                     </button>
                   )}
 
-                <div className="flex items-center justify-between text-[10.5px] text-[#6E6A63] pt-1.5 border-t border-black/10">
-                  <span>
+                <div className="flex items-center justify-between text-[10.5px] text-[#5C5953] pt-1.5 border-t border-black/10">
+                  <span className="font-mono text-[10px]">
                     {item.authorName} · {item.createdAt}
                   </span>
                   {itemEditable && (
@@ -1642,9 +1642,9 @@ export function MiroBoardView() {
                         });
                         notify('success', `✓ Карточка «${item.title}» сохранена`);
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] bg-[#16805D] hover:bg-[#116649] text-white text-[10.5px] font-semibold transition cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#141413] hover:bg-[#2A2A28] text-white text-[10.5px] font-medium transition-colors cursor-pointer"
                     >
-                      <Check className="h-2.5 w-2.5" />
+                      <Check className="h-2.5 w-2.5 stroke-[1.5]" />
                       <span>Сохранить</span>
                     </button>
                   )}

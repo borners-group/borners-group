@@ -3,8 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
+  ArrowUpRight,
   Check,
-  Edit3,
   FlaskConical,
   Folder,
   ImagePlus,
@@ -60,7 +60,7 @@ import {
   isBrandScenarioExplicitlyNone,
   resolveEffectiveScenarioForModel,
 } from '@/lib/portfolioPersistence';
-import { getModelBrandAccentStyles, loadProductGroups } from '@/lib/productGroups';
+import { loadProductGroups } from '@/lib/productGroups';
 import {
   buildPdfConceptFromScenarioModel,
   formatLabBrandLabel,
@@ -928,56 +928,56 @@ export function ProductCatalogView() {
   return (
     <div className="space-y-5 pb-20">
       {/* 1. ШАПКА ЕДИНОГО КАТАЛОГА 01 · ПРОДУКТ */}
-      <div className="rounded-2xl bg-white border border-[#CBD5E1] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+      <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#475569]">
+            <div className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92]">
               01 · Продукт · Единый каталог моделей и паспортов ({filteredModels.length} SKU)
             </div>
-            <h1 className="text-[22px] sm:text-[24px] font-extrabold tracking-tight text-[#0F172A] mt-0.5">
+            <h1 className="text-[22px] sm:text-[24px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] mt-0.5">
               Каталог моделей (SKU)
             </h1>
-            <p className="text-[12.5px] text-[#475569] mt-0.5">
+            <p className="text-[12.5px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
               Нажмите на любую карточку, чтобы загрузить фото, изменить характеристики, цвета, закупки и план продаж на 12 мес.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex items-center rounded-[10px] bg-[#EEF2F6] border border-[#CBD5E1] p-1 text-[12px]">
+            <div className="inline-flex items-center rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-1 text-[12px]">
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                className={`h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                   viewMode === 'grid'
-                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
-                    : 'text-[#475569] hover:text-[#0F172A]'
+                    ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                    : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                 }`}
               >
-                <LayoutGrid className="h-3.5 w-3.5" />
+                <LayoutGrid className="h-3.5 w-3.5" strokeWidth={1.5} />
                 <span>Витрина</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('groups')}
-                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                className={`h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                   viewMode === 'groups'
-                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
-                    : 'text-[#475569] hover:text-[#0F172A]'
+                    ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                    : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                 }`}
               >
-                <Folder className="h-3.5 w-3.5" />
+                <Folder className="h-3.5 w-3.5" strokeWidth={1.5} />
                 <span>Группы и бренды</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                className={`h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
-                    : 'text-[#475569] hover:text-[#0F172A]'
+                    ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                    : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                 }`}
               >
-                <TableIcon className="h-3.5 w-3.5" />
+                <TableIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
                 <span>Таблица</span>
               </button>
               {filteredModels.some(
@@ -986,13 +986,13 @@ export function ProductCatalogView() {
                 <button
                   type="button"
                   onClick={() => setViewMode('liskani_269')}
-                  className={`h-8 px-3 rounded-[7px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  className={`h-8 px-3 rounded-md font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                     viewMode === 'liskani_269'
-                      ? 'bg-white text-[#0F172A] border border-[#CBD5E1] shadow-2xs'
-                      : 'text-[#475569] hover:text-[#0F172A]'
+                      ? 'bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] shadow-2xs'
+                      : 'text-[#5C5953] dark:text-[#9E9A92] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                   }`}
                 >
-                  <TableIcon className="h-3.5 w-3.5" />
+                  <TableIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
                   <span>Все 269 размеров SKU</span>
                 </button>
               )}
@@ -1001,12 +1001,12 @@ export function ProductCatalogView() {
             <button
               type="button"
               onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-              className="h-9.5 px-3.5 rounded-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-300 dark:border-indigo-500/30 text-[12.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+              className="h-9.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] dark:text-[#F5F4F0] dark:border-[#282724] text-[12.5px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <FlaskConical className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
+              <FlaskConical className="h-4 w-4 text-[#5C5953] dark:text-[#9E9A92]" strokeWidth={1.5} />
               <span>Лаборатория R&D</span>
               {activeLabConceptsForFilter.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-mono text-[10.5px]">
+                <span className="px-1.5 py-0.5 rounded-full bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] font-mono text-[10.5px]">
                   {activeLabConceptsForFilter.length}
                 </span>
               )}
@@ -1016,9 +1016,9 @@ export function ProductCatalogView() {
               <button
                 type="button"
                 onClick={() => openCreateModalForBrand()}
-                className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                className="h-9.5 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-4 w-4" strokeWidth={1.5} />
                 <span>Добавить модель</span>
               </button>
             )}
@@ -1026,7 +1026,7 @@ export function ProductCatalogView() {
         </div>
 
         {/* Быстрый переключатель брендов прямо в шапке каталога */}
-        <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+        <div className="pt-3 border-t border-[#E4E1DA] dark:border-[#282724] flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
@@ -1060,16 +1060,18 @@ export function ProductCatalogView() {
                       }
                     }
                   }}
-                  className={`h-8 px-3 rounded-[8px] text-[12px] font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                  className={`h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
                     isAct
-                      ? 'bg-[#E2E8F0] text-[#0F172A] border-[#94A3B8] shadow-2xs'
-                      : 'bg-[#F8FAFC] hover:bg-white text-[#334155] border-[#CBD5E1]'
+                      ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
+                      : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-white dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
                   }`}
                 >
                   <span>{b.label}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded font-mono text-[10.5px] ${
-                      isAct ? 'bg-white text-[#0F172A]' : 'bg-[#E2E8F0] text-[#334155]'
+                      isAct
+                        ? 'bg-white/15 dark:bg-black/15 text-white dark:text-[#141413]'
+                        : 'bg-[#EFECE6] dark:bg-[#282724] text-[#5C5953] dark:text-[#9E9A92]'
                     }`}
                   >
                     {b.count}
@@ -1081,19 +1083,19 @@ export function ProductCatalogView() {
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative w-64">
-              <Search className="h-3.5 w-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="h-3.5 w-3.5 text-[#78746C] absolute left-3 top-1/2 -translate-y-1/2" strokeWidth={1.5} />
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Поиск SKU, названия, ткани..."
-                className="w-full h-8.5 rounded-[8px] bg-[#F8FAFC] focus:bg-white border border-[#CBD5E1] focus:border-[#0F172A] pl-8.5 pr-3 text-[12.5px] outline-none"
+                className="w-full h-8.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] focus:bg-white dark:focus:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] focus:border-[#141413] dark:focus:border-[#F5F4F0] pl-8.5 pr-3 text-[12.5px] text-[#141413] dark:text-[#F5F4F0] outline-none transition-colors"
               />
             </div>
 
             <select
               value={stageFilter}
               onChange={(e) => setStageFilter(e.target.value)}
-              className="h-8.5 rounded-[8px] bg-[#F8FAFC] border border-[#CBD5E1] px-2.5 text-[12px] font-semibold text-[#334155] outline-none cursor-pointer"
+              className="h-8.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] px-2.5 text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0] outline-none cursor-pointer"
             >
               <option value="ALL">Все статусы</option>
               <option value="Действующий">Действующий</option>
@@ -1112,10 +1114,10 @@ export function ProductCatalogView() {
             <button
               type="button"
               onClick={() => setCategoryFilter('ALL')}
-              className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold border transition cursor-pointer ${
+              className={`h-7.5 px-3 rounded-md text-[12px] font-medium border transition-colors cursor-pointer ${
                 categoryFilter === 'ALL'
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0F172A]'
+                  ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
+                  : 'bg-white dark:bg-[#151514] text-[#5C5953] dark:text-[#9E9A92] border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953]'
               }`}
             >
               Все категории ({brandFilteredModels.length})
@@ -1125,10 +1127,10 @@ export function ProductCatalogView() {
                 key={cat}
                 type="button"
                 onClick={() => setCategoryFilter(cat)}
-                className={`h-7.5 px-3 rounded-[7px] text-[12px] font-semibold border transition cursor-pointer ${
+                className={`h-7.5 px-3 rounded-md text-[12px] font-medium border transition-colors cursor-pointer ${
                   categoryFilter === cat
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0F172A]'
+                    ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
+                    : 'bg-white dark:bg-[#151514] text-[#5C5953] dark:text-[#9E9A92] border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953]'
                 }`}
               >
                 {cat}
@@ -1137,22 +1139,22 @@ export function ProductCatalogView() {
           </div>
         )}
 
-        {/* СВОДКА ОФИЦИАЛЬНОГО ПЛАНА AKUSHA 2027 (31 МОДЕЛЬ · 24 КАРТОЧКИ · 20 377 ПАР · 47 808 ЗАКАЗОВ · 105,79 МЛН ₽) */}
+        {/* СВОДКА ОФИЦИАЛЬНОЛЬНОГО ПЛАНА AKUSHA 2027 (31 МОДЕЛЬ · 24 КАРТОЧКИ · 20 377 ПАР · 47 808 ЗАКАЗОВ · 105,79 МЛН ₽) */}
         {normalizePortfolioBrandCode(brandFilter) === 'AKUSHA' && (
-          <div className="rounded-[14px] bg-[#F8FAFC] border border-[#CBD5E1] p-4 space-y-3">
+          <div className="rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] font-mono text-[10.5px] font-bold">
+                  <span className="px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
                     AKUSHA · ПЛАН 2027 (31 МОДЕЛЬ · 9 ГРУПП)
                   </span>
-                  <span className="text-[13.5px] font-extrabold text-[#0F172A]">
+                  <span className="font-mono tabular-nums text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     20 377 выкупленных пар · 47 808 заказов
                     {hasFinance ? ' · 105,79 млн ₽ выручки' : ''}
                     {hasCost ? ' · 37,45 млн ₽ себестоимость' : ''}
                   </span>
                 </div>
-                <p className="text-[12px] text-[#475569] mt-0.5">
+                <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                   24 карточки в каталоге (включая общую карточку №09–16 «Замшевые лоферы · 8 цветов» на 4 920 пар / 14 915 заказов) · 26 оригинальных фотографий из утверждённого документа · для Топсайдеров (№17–20) и Мокасин (№28–31) цена и себестоимость помечены «уточнить» без искусственных допущений.
                 </p>
               </div>
@@ -1162,7 +1164,7 @@ export function ProductCatalogView() {
                   href={resolveCatalogAssetUrl('/docs/akusha_plan_2027_31_models.pdf')}
                   target="_blank"
                   rel="noreferrer"
-                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                  className="h-8 px-3 rounded-lg bg-white dark:bg-[#151514] hover:bg-[#EFECE6] dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
                 >
                   <span>↗ План продаж AKUSHA 2027 · 31 модель (.pdf)</span>
                 </a>
@@ -1171,7 +1173,7 @@ export function ProductCatalogView() {
                   onClick={() =>
                     setViewMode(viewMode === 'groups' ? 'grid' : 'groups')
                   }
-                  className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#282724] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[11.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <span>
                     {viewMode === 'groups'
@@ -1187,18 +1189,18 @@ export function ProductCatalogView() {
         {/* СВОДКА ОФИЦИАЛЬНОГО ПЛАНА LISKANI 2027 (500 МЛН ₽ ВЫКУПОВ · 877,19 МЛН ₽ ЗАКАЗОВ · 269 SKU) */}
         {(normalizePortfolioBrandCode(brandFilter) === 'LISKANI' ||
           viewMode === 'liskani_269') && (
-          <div className="rounded-[14px] bg-[#F8FAFC] border border-[#CBD5E1] p-4 space-y-3">
+          <div className="rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] font-mono text-[10.5px] font-bold">
+                  <span className="px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
                     LISKANI · ПЛАН 2027 ({liskaniBannerBuyoutText})
                   </span>
-                  <span className="text-[13.5px] font-extrabold text-[#0F172A]">
+                  <span className="font-mono tabular-nums text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasFinance ? '500,00 млн ₽ выкупов · 877,19 млн ₽ заказов · ' : ''}289 889 {liskaniPrimaryUnit}
                   </span>
                 </div>
-                <p className="text-[12px] text-[#475569] mt-0.5">
+                <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                   33 цветовые карточки Wildberries с реальными студийными фото · 269 размерных SKU{' '}
                   {hasFinance
                     ? '(Блэкаут: 350 млн ₽ / 104 SKU · Мрамор: 75 млн ₽ / 80 SKU · Рогожка: 60 млн ₽ / 40 SKU · Тюль Вуаль: 15 млн ₽ / 45 SKU)'
@@ -1210,7 +1212,7 @@ export function ProductCatalogView() {
                 <a
                   href={resolveCatalogAssetUrl('/docs/liskani_assortment_2027_269_sku.xlsx')}
                   download="Ассортимент_LISKANI_2027_269_SKU.xlsx"
-                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                  className="h-8 px-3 rounded-lg bg-white dark:bg-[#151514] hover:bg-[#EFECE6] dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
                 >
                   <span>↓ Ассортимент 269 SKU (.xlsx)</span>
                 </a>
@@ -1218,7 +1220,7 @@ export function ProductCatalogView() {
                   href={resolveCatalogAssetUrl('/docs/liskani_plan_2027_269_sku.pdf')}
                   target="_blank"
                   rel="noreferrer"
-                  className="h-8 px-3 rounded-[8px] bg-white hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-bold inline-flex items-center gap-1.5 transition"
+                  className="h-8 px-3 rounded-lg bg-white dark:bg-[#151514] hover:bg-[#EFECE6] dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
                 >
                   <span>↗ План 2027 помесячно (.pdf)</span>
                 </a>
@@ -1227,7 +1229,7 @@ export function ProductCatalogView() {
                   onClick={() =>
                     setViewMode(viewMode === 'liskani_269' ? 'grid' : 'liskani_269')
                   }
-                  className="h-8 px-3 rounded-[8px] bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-8 px-3 rounded-lg bg-[#141413] hover:bg-[#282724] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[11.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <span>
                     {viewMode === 'liskani_269'
@@ -1241,15 +1243,15 @@ export function ProductCatalogView() {
         )}
       </div>
 
-      {/* РЕЖИМ 1: ВИТРИНА КАРТОЧЕК (ЕДИНАЯ БАЗА БЕЗ ДУБЛЕЙ И ЧУЖИХ ФОТО) */}
+      {/* РЕЖИМ 1: ВИТРИНА КАРТОЧЕК — COS / ACNE LOOKBOOK LINESHEET */}
       {viewMode === 'grid' && (
         <>
           {filteredModels.length === 0 ? (
-            <div className="rounded-2xl bg-white border border-[#CBD5E1] p-10 text-center space-y-4">
-              <div className="text-[16px] font-bold text-[#0F172A]">
+            <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-10 text-center space-y-4">
+              <div className="text-[16px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 В выбранном фильтре пока нет карточек моделей
               </div>
-              <p className="text-[13px] text-[#475569] max-w-lg mx-auto">
+              <p className="text-[13px] text-[#5C5953] dark:text-[#9E9A92] max-w-lg mx-auto">
                 Добавьте новую модель для бренда{' '}
                 <strong>
                   {brandFilter === 'ALL' ? 'холдинга' : formatLabBrandLabel(brandFilter)}
@@ -1261,9 +1263,9 @@ export function ProductCatalogView() {
                   <button
                     type="button"
                     onClick={() => openCreateModalForBrand()}
-                    className="h-9.5 px-4 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                    className="h-9.5 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4" strokeWidth={1.5} />
                     <span>+ Добавить первую модель</span>
                   </button>
                 )}
@@ -1273,9 +1275,9 @@ export function ProductCatalogView() {
                     <button
                       type="button"
                       onClick={handleSyncBrandFromLab}
-                      className="h-9.5 px-4 rounded-[10px] bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                      className="h-9.5 px-4 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] dark:text-[#F5F4F0] dark:border-[#282724] text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      <FlaskConical className="h-4 w-4" />
+                      <FlaskConical className="h-4 w-4" strokeWidth={1.5} />
                       <span>
                         Перенести из Лаборатории R&D ({activeLabConceptsForFilter.length})
                       </span>
@@ -1301,16 +1303,17 @@ export function ProductCatalogView() {
                             `Стартовая матрица ${formatLabBrandLabel(normFilter)} добавлена (${res.addedCount} SKU)`
                           );
                         }}
-                        className="h-9.5 px-4 rounded-[10px] bg-[#0F172A] hover:bg-[#1E293B] text-white text-[13px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition"
+                        className="h-9.5 px-4 rounded-lg bg-[#141413] hover:bg-[#282724] text-white text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                       >
-                        <span>🚀 Запустить стартовую матрицу (3 SKU)</span>
+                        <ArrowUpRight className="h-4 w-4" strokeWidth={1.5} />
+                        <span>Запустить стартовую матрицу (3 SKU)</span>
                       </button>
                     );
                   })()}
                 <button
                   type="button"
                   onClick={() => navigateTo('product-lab', { brandId: brandFilter })}
-                  className="h-9.5 px-3.5 rounded-[10px] bg-[#EEF2F6] hover:bg-[#E2E8F0] text-[#0F172A] border border-[#CBD5E1] text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                  className="h-9.5 px-3.5 rounded-lg bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#141413] border border-[#E4E1DA] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] dark:text-[#F5F4F0] dark:border-[#282724] text-[12.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <span>Открыть Лабораторию R&D →</span>
                 </button>
@@ -1326,7 +1329,6 @@ export function ProductCatalogView() {
                   ? computeModelScenarioMetrics({ ...mod, plansByScenario: {} }, activeScen)
                   : computeModelScenarioMetrics(mod, activeScen);
                 const unitCfg = getBrandUnitConfig(mod);
-                const accent = getModelBrandAccentStyles(displayBrand);
                 const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
                 const mainGallery =
                   mod.gallery.find((g) => g.isMain && Boolean(g.url || g.originalUrl)) ||
@@ -1335,6 +1337,16 @@ export function ProductCatalogView() {
                 const colors = mod.palettes[0]?.colors || [];
                 const categoryText = mod.categoryLabel || unitCfg.categoryDefault;
                 const canEditThisModel = canEditModel(mod);
+                const stageLabel = mod.modelStageStatus || mod.launchStatus || 'В плане';
+                const isActiveStage =
+                  stageLabel === 'Действующий' ||
+                  stageLabel === 'Утверждено' ||
+                  stageLabel === 'Масштабирование';
+                const skuDisplay = actingMeta
+                  ? `WB ${actingMeta.wbSku}`
+                  : mod.wbArticle
+                  ? `${mod.code} · WB ${mod.wbArticle}`
+                  : mod.code;
                 const unitPackCaption =
                   mod.unitsInPack === 1 && unitCfg.primaryUnit === unitCfg.secondaryUnit
                     ? unitCfg.primaryUnit === 'пар'
@@ -1346,42 +1358,56 @@ export function ProductCatalogView() {
                   <div
                     key={mod.id}
                     onClick={() => setActivePassportModelId(mod.id)}
-                    className="relative bg-white rounded-2xl border border-[#CBD5E1] hover:border-[#0F172A] p-5 flex flex-col justify-between transition cursor-pointer group space-y-4 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:shadow-[0_12px_28px_-6px_rgba(15,23,42,0.10)]"
+                    className="relative rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] flex flex-col justify-between transition-colors cursor-pointer group overflow-hidden"
                   >
-                    <div className="space-y-3.5">
-                      {/* Верхняя строка: Бренд, артикул, статус и удаление */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                    <div>
+                      {/* Studio photo frame at the top on a clean #F6F5F2 gallery mat */}
+                      <div className="relative h-52 w-full bg-[#F6F5F2] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] flex items-center justify-center p-4 overflow-hidden">
+                        <BoxerPackStackSvg
+                          colors={colors}
+                          brandLabel={displayBrand}
+                          customPhotoUrl={mainPhotoUrl}
+                        />
+
+                        {/* Calm monochrome badge in top-left with subtle status dot */}
+                        <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/92 dark:bg-[#151514]/92 backdrop-blur-xs border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] font-mono text-[10.5px]">
                           <span
-                            className={`px-2 py-0.5 rounded-[6px] font-mono text-[10.5px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-                          >
-                            {displayBrand}
-                          </span>
-                          <span className="font-mono text-[12px] font-bold text-[#334155] truncate">
-                            {actingMeta
-                              ? `WB ${actingMeta.wbSku}`
-                              : mod.wbArticle
-                              ? `${mod.code} · WB ${mod.wbArticle}`
-                              : mod.code}
-                          </span>
-                          {mod.liskaniSizeVariants &&
-                            mod.liskaniSizeVariants.length > 0 && (
-                              <span className="px-1.5 py-0.5 rounded-[5px] bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold shrink-0">
-                                {mod.liskaniSizeVariants.length} разм.
-                              </span>
-                            )}
+                            className={`inline-block h-1.5 w-1.5 rounded-full ${
+                              isActiveStage ? 'bg-[#15803D]' : 'bg-[#78746C]'
+                            }`}
+                          />
+                          <span>{stageLabel}</span>
+                          {mod.liskaniSizeVariants && mod.liskaniSizeVariants.length > 0 && (
+                            <span className="text-[#78746C] dark:text-[#9E9A92]">
+                              · {mod.liskaniSizeVariants.length} разм.
+                            </span>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="px-2 py-0.5 rounded-[6px] bg-[#F1F5F9] border border-[#CBD5E1] text-[10.5px] font-bold text-[#334155]">
-                            {mod.modelStageStatus || mod.launchStatus}
-                          </span>
+                        {/* Top-right quiet actions (always present & clickable in DOM) */}
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                          {canEditThisModel && (
+                            <label
+                              onClick={(e) => e.stopPropagation()}
+                              title="Загрузить или заменить фото карточки"
+                              className="h-7 px-2 rounded-md bg-white/92 dark:bg-[#151514]/92 hover:bg-white dark:hover:bg-[#282724] text-[#5C5953] hover:text-[#141413] dark:text-[#9E9A92] dark:hover:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] text-[10.5px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              <span>{mainPhotoUrl ? 'Фото' : '+ Фото'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleQuickUploadCardPhoto(e, mod)}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
                           {canEditThisModel && (
                             <button
                               type="button"
                               onClick={(e) => handleDeleteScenarioModel(mod, e)}
                               title="Удалить карточку модели"
-                              className="h-6 w-6 rounded-[6px] bg-white hover:bg-[#FEF2F2] border border-[#CBD5E1] hover:border-[#FECACA] text-[#64748B] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none font-bold transition cursor-pointer"
+                              className="h-7 w-7 rounded-md bg-white/92 dark:bg-[#151514]/92 hover:bg-[#FEF2F2] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#FECACA] text-[#8A867E] hover:text-[#B91C1C] flex items-center justify-center text-[14px] leading-none transition-colors cursor-pointer"
                             >
                               ×
                             </button>
@@ -1389,62 +1415,49 @@ export function ProductCatalogView() {
                         </div>
                       </div>
 
-                      {/* Визуальный блок: реальное фото или аккуратная векторная иллюстрация по категории бренда + быстрая кнопка фото */}
-                      <div className="relative h-48 w-full rounded-[12px] bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center p-3 overflow-hidden">
-                        <BoxerPackStackSvg
-                          colors={colors}
-                          brandLabel={displayBrand}
-                          customPhotoUrl={mainPhotoUrl}
-                        />
-                        {canEditThisModel && (
-                          <label
-                            onClick={(e) => e.stopPropagation()}
-                            title="Загрузить или заменить фото карточки"
-                            className="absolute top-2.5 right-2.5 h-7.5 px-2.5 rounded-[7px] bg-white/95 hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11px] font-semibold inline-flex items-center gap-1 shadow-2xs cursor-pointer transition"
-                          >
-                            <ImagePlus className="h-3.5 w-3.5" />
-                            <span>{mainPhotoUrl ? 'Заменить фото' : '+ Фото'}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleQuickUploadCardPhoto(e, mod)}
-                              className="hidden"
-                            />
-                          </label>
+                      {/* Editorial Linesheet Body */}
+                      <div className="p-4 pb-3.5 space-y-2">
+                        <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-[#5C5953] dark:text-[#9E9A92]">
+                          <span className="truncate">
+                            {displayBrand} · {skuDisplay}
+                          </span>
+                          <span className="shrink-0 text-[#78746C] dark:text-[#9E9A92]">
+                            {unitPackCaption}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="text-[15.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] leading-snug tracking-[-0.01em]">
+                            {mod.title}
+                          </h3>
+                          <div className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
+                            {categoryText}
+                          </div>
+                        </div>
+
+                        {(mod.fabric?.composition || mod.fabric?.density) && (
+                          <p className="text-[12px] text-[#78746C] dark:text-[#9E9A92] leading-relaxed line-clamp-1">
+                            {mod.fabric?.composition}
+                            {mod.fabric?.density ? ` · ${mod.fabric.density}` : ''}
+                          </p>
                         )}
                       </div>
-
-                      {/* Название и категория */}
-                      <div>
-                        <h3 className="text-[17px] font-extrabold text-[#0F172A] leading-snug group-hover:text-emerald-700 transition-colors">
-                          {mod.title}
-                        </h3>
-                        <div className="text-[12.5px] font-medium text-[#475569] mt-1">
-                          {categoryText} · {unitPackCaption}
-                        </div>
-                      </div>
-
-                      {/* Состав ткани */}
-                      <p className="text-[12.5px] text-[#64748B] leading-relaxed line-clamp-2">
-                        {mod.fabric?.composition}
-                        {mod.fabric?.density ? ` · ${mod.fabric.density}` : ''}
-                      </p>
                     </div>
 
-                    {/* Нижний блок: Цена, Себестоимость, Маржа и кнопка открытия паспорта */}
-                    <div className="pt-3.5 border-t border-[#E2E8F0] space-y-3">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <div className="text-[11px] font-medium text-[#64748B]">РРЦ</div>
-                          <div className="font-mono text-[15px] font-extrabold text-[#0F172A] mt-0.5">
+                    {/* Hairline-separated metric strip */}
+                    <div>
+                      <div className="grid grid-cols-3 divide-x divide-[#E4E1DA] dark:divide-[#282724] border-t border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6]/60 dark:bg-[#1D1C1A]/50">
+                        <div className="px-3.5 py-2.5">
+                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">РРЦ</div>
+                          <div className="font-mono tabular-nums text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                             {met.avgRetailPriceRub > 0
                               ? formatCurrencyRub(met.avgRetailPriceRub)
                               : 'уточнить'}
                           </div>
                         </div>
-                        <div>
-                          <div className="text-[11px] font-medium text-[#64748B]">Себестоимость</div>
-                          <div className="font-mono text-[15px] font-bold text-[#334155] mt-0.5">
+                        <div className="px-3.5 py-2.5">
+                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">Себест.</div>
+                          <div className="font-mono tabular-nums text-[13.5px] font-medium text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                             {!hasCost
                               ? 'Скрыто'
                               : mod.unitCostRub > 0
@@ -1452,15 +1465,15 @@ export function ProductCatalogView() {
                               : 'уточнить'}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-[11px] font-medium text-[#64748B]">
+                        <div className="px-3.5 py-2.5 text-right">
+                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">
                             {!hasFinance || met.annualRevenueRub <= 0
-                              ? 'План продаж / Год'
+                              ? 'План / Год'
                               : !hasCost
-                              ? 'Выручка / Год'
+                              ? 'Выручка'
                               : 'Маржа / Год'}
                           </div>
-                          <div className="font-mono text-[14px] font-extrabold text-emerald-600 mt-0.5">
+                          <div className="font-mono tabular-nums text-[13px] font-semibold text-[#15803D] dark:text-emerald-400 mt-0.5">
                             {!hasFinance || met.annualRevenueRub <= 0
                               ? `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
                               : !hasCost
@@ -1470,41 +1483,26 @@ export function ProductCatalogView() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#64748B]">
+                      <div className="px-4 py-2.5 border-t border-[#E4E1DA] dark:border-[#282724] flex items-center justify-between text-[11px] text-[#5C5953] dark:text-[#9E9A92]">
                         <span>
                           Выкуп WB:{' '}
                           {met.buyoutRatePct > 0 ? (
                             <>
-                              <strong className="font-mono text-[#0F172A]">
+                              <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
                                 {met.buyoutRatePct}%
                               </strong>{' '}
                               (×{met.orderMultiplier.toFixed(2).replace('.', ',')})
                             </>
                           ) : (
-                            <strong className="font-mono text-amber-700">уточнить</strong>
+                            <strong className="font-mono text-[#78746C]">уточнить</strong>
                           )}
                         </span>
-                        {met.annualOrdersPacks > 0 ? (
-                          <span className="font-mono text-[#475569]">
-                            Заказы: {met.annualOrdersPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
-                          </span>
-                        ) : (
-                          <span className="font-mono text-[#475569]">
-                            Выкупы: {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 text-[12px] font-bold text-[#0F172A] group-hover:text-emerald-700">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Edit3 className="h-3.5 w-3.5" />
+                        <span className="inline-flex items-center gap-1 font-medium text-[#141413] dark:text-[#F5F4F0]">
                           <span>
-                            {canEditThisModel
-                              ? 'Открыть и редактировать карточку'
-                              : 'Открыть карточку модели'}
+                            {canEditThisModel ? 'Паспорт модели' : 'Открыть'}
                           </span>
+                          <ArrowUpRight className="h-3.5 w-3.5 text-[#78746C] group-hover:text-[#141413] dark:group-hover:text-[#F5F4F0] transition-colors" strokeWidth={1.5} />
                         </span>
-                        <span>→</span>
                       </div>
                     </div>
                   </div>
@@ -1517,7 +1515,7 @@ export function ProductCatalogView() {
 
       {/* РЕЖИМ 2: ГРУППЫ ТОВАРОВ И КАБИНЕТЫ БРЕНДОВ */}
       {viewMode === 'groups' && (
-        <div className="rounded-2xl bg-white border border-[#CBD5E1] p-5 md:p-6 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
           <PeaklyCatalogGroupsAndBrandsView
             key={`groups-${productGroupsReloadTick}`}
             models={scenarioModels}
@@ -1548,9 +1546,9 @@ export function ProductCatalogView() {
 
       {/* РЕЖИМ 3: СВОДНАЯ ТАБЛИЦА КАТАЛОГА */}
       {viewMode === 'table' && (
-        <div className="bg-white rounded-2xl border border-[#CBD5E1] overflow-x-auto shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+        <div className="bg-white dark:bg-[#151514] rounded-xl border border-[#E4E1DA] dark:border-[#282724] overflow-x-auto shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
           <table className="w-full text-left text-[13.5px]">
-            <thead className="border-b border-[#CBD5E1] text-[11px] font-bold uppercase tracking-wider text-[#475569] bg-[#F8FAFC]">
+            <thead className="border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] font-semibold uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92] bg-[#FAF9F6] dark:bg-[#1D1C1A]">
               <tr>
                 <th className="py-3.5 px-5">Артикул</th>
                 <th className="py-3.5 px-4">Модель и материалы</th>
@@ -1563,7 +1561,7 @@ export function ProductCatalogView() {
                 <th className="py-3.5 px-5 text-right">Действия</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
               {filteredModels.map((mod) => {
                 const displayBrand = detectModelBrandPortfolioLabel(mod);
                 const { effectiveScenario: activeScen, explicitlyNone } =
@@ -1572,7 +1570,6 @@ export function ProductCatalogView() {
                 const met = explicitlyNone
                   ? computeModelScenarioMetrics({ ...mod, plansByScenario: {} }, activeScen)
                   : computeModelScenarioMetrics(mod, activeScen);
-                const accent = getModelBrandAccentStyles(displayBrand);
                 const canEditThisModel = canEditModel(mod);
                 const unitPackCaption =
                   mod.unitsInPack === 1 && unitCfg.primaryUnit === unitCfg.secondaryUnit
@@ -1584,50 +1581,48 @@ export function ProductCatalogView() {
                   <tr
                     key={mod.id}
                     onClick={() => setActivePassportModelId(mod.id)}
-                    className="hover:bg-[#F8FAFC] transition cursor-pointer"
+                    className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] transition-colors cursor-pointer"
                   >
-                    <td className="py-3.5 px-5 font-mono font-bold text-[#0F172A]">
+                    <td className="py-3.5 px-5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {mod.code}
                     </td>
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#0F172A]">{mod.title}</div>
-                      <div className="text-[12px] text-[#64748B] truncate max-w-md">
+                      <div className="font-semibold text-[#141413] dark:text-[#F5F4F0]">{mod.title}</div>
+                      <div className="text-[12px] text-[#78746C] dark:text-[#9E9A92] truncate max-w-md">
                         {mod.fabric?.composition}
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-[5px] font-mono text-[10.5px] font-bold border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-                      >
+                      <span className="px-2 py-0.5 rounded font-mono text-[10.5px] font-medium bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724]">
                         {displayBrand}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-[#334155]">
+                    <td className="py-3.5 px-4 text-[#5C5953] dark:text-[#9E9A92]">
                       <div>{mod.categoryLabel || unitCfg.categoryDefault}</div>
-                      <div className="text-[11px] text-[#64748B]">
+                      <div className="text-[11px] text-[#78746C]">
                         {unitPackCaption}
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {met.avgRetailPriceRub > 0
                         ? formatCurrencyRub(met.avgRetailPriceRub)
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono text-[#334155]">
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums text-[#5C5953] dark:text-[#9E9A92]">
                       {!hasCost
                         ? 'Скрыто'
                         : mod.unitCostRub > 0
                         ? formatCurrencyRub(mod.unitCostRub)
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#15803D] dark:text-emerald-400">
                       {!hasCost || !hasFinance
                         ? 'Скрыто'
                         : met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
                         ? `${met.unitMarginPct.toFixed(1)}%`
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0F172A]">
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {!hasFinance
                         ? 'Скрыто'
                         : met.annualRevenueRub > 0
@@ -1642,7 +1637,7 @@ export function ProductCatalogView() {
                             e.stopPropagation();
                             setActivePassportModelId(mod.id);
                           }}
-                          className="h-7.5 px-2.5 rounded-[7px] bg-[#EEF2F6] hover:bg-[#E2E8F0] text-[#1E293B] border border-[#CBD5E1] text-[11.5px] font-semibold transition cursor-pointer"
+                          className="h-7.5 px-2.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-[#EFECE6] dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium transition-colors cursor-pointer"
                         >
                           {canEditThisModel ? 'Редактировать' : 'Открыть'}
                         </button>
@@ -1651,9 +1646,9 @@ export function ProductCatalogView() {
                             type="button"
                             onClick={(e) => handleDeleteScenarioModel(mod, e)}
                             title="Удалить карточку"
-                            className="h-7.5 w-7.5 rounded-[7px] border border-[#CBD5E1] bg-white hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#64748B] hover:text-[#DC2626] flex items-center justify-center transition cursor-pointer"
+                            className="h-7.5 w-7.5 rounded-md border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:bg-[#FEF2F2] hover:border-[#FECACA] text-[#8A867E] hover:text-[#B91C1C] flex items-center justify-center transition-colors cursor-pointer"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                           </button>
                         )}
                       </div>
