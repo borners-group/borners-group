@@ -37,9 +37,11 @@ import {
 } from './unifiedBusinessEngine.ts';
 import {
   deleteModelGalleryFromIdb,
+  loadRollingSnapshotsFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
   savePortfolioSnapshotToIdb,
+  saveRollingSnapshotsToIdb,
 } from './safeStorage.ts';
 
 const CLIENT_SAVED_S1_MODELS = applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS);
@@ -67,6 +69,7 @@ export const STORAGE_KEY_DELETED_SCENARIOS = 'borners_deleted_scenario_ids_v1';
 export const STORAGE_KEY_DELETED_MODEL_SNAPSHOTS = 'borners_deleted_models_snapshots_v1';
 export const STORAGE_KEY_PORTFOLIO_UPDATED_AT = 'borners_portfolio_updated_at_v1';
 export const STORAGE_KEY_BACKUP_UPDATED_AT = 'borners_backup_updated_at_v1';
+export const STORAGE_KEY_ROLLING_SNAPSHOTS = 'borners_rolling_snapshots_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
 export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
 export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_repair_v1';
@@ -315,43 +318,45 @@ export function isLegacyPlaceholderAkusha(
   return false;
 }
 
+const OFFICIAL_AKUSHA_IDS_AND_CODES = new Set<string>(
+  AKUSHA_2027_MODELS.flatMap((m) => [m.id.toUpperCase(), m.code.toUpperCase()])
+);
+
+/**
+ * Распознаёт ТОЛЬКО старые до-2027 черновики AKUSHA (3 демо-карточки Cloud Walk / Soft Suede / Everyday
+ * либо старый слепок официального AKU-001..031 без слота 202706).
+ * НИКОГДА не отбрасывает кастомные пользовательские SKU AKUSHA (например AKU-032, AKU-NEW-99)!
+ */
+export function isStalePre2027AkushaDraft(
+  entry: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
+): boolean {
+  if (isLegacyPlaceholderAkusha(entry)) return true;
+  const codeU = (entry.code || '').trim().toUpperCase();
+  const idU = (entry.id || '').trim().toUpperCase();
+  const isOfficialAkushaPreset =
+    OFFICIAL_AKUSHA_IDS_AND_CODES.has(codeU) ||
+    OFFICIAL_AKUSHA_IDS_AND_CODES.has(idU) ||
+    /^SCEN-AKUSHA-0\d{2}$/.test(idU);
+  if (!isOfficialAkushaPreset) return false;
+  return !entry.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
+}
+
 export function runAkusha2027OfficialMigrationV1(): void {
   const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_AKUSHA_2027_V1);
   if (alreadyMigrated === '1') return;
-
-  const officialIdsAndCodes = new Set<string>();
-  for (const m of AKUSHA_2027_MODELS) {
-    officialIdsAndCodes.add(m.id.toUpperCase());
-    officialIdsAndCodes.add(m.code.toUpperCase());
-  }
 
   // 1. Очищаем реестр удалённых карточек от официальных AKU-001..AKU-031
   const prevDeleted = getDeletedModelsRegistry();
   if (prevDeleted.length > 0) {
     const cleanedDeleted = prevDeleted.filter(
-      (item) => !officialIdsAndCodes.has(item.toUpperCase())
+      (item) => !OFFICIAL_AKUSHA_IDS_AND_CODES.has(item.toUpperCase())
     );
     if (cleanedDeleted.length !== prevDeleted.length) {
       safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, cleanedDeleted);
     }
   }
 
-  const isOldDraftAkushaEntry = (
-    entry: Partial<ScenarioModelSpec> | Partial<UserSavedModelPlanBackup>
-  ): boolean => {
-    if (isLegacyPlaceholderAkusha(entry)) return true;
-    const brandU = (entry.customBrandLabel || '').toUpperCase();
-    const codeU = (entry.code || '').trim().toUpperCase();
-    const idU = (entry.id || '').trim().toUpperCase();
-    const isAkusha =
-      brandU === 'AKUSHA' ||
-      codeU.startsWith('AKU-') ||
-      idU.startsWith('SCEN-AKUSHA-') ||
-      officialIdsAndCodes.has(codeU) ||
-      officialIdsAndCodes.has(idU);
-    if (!isAkusha) return false;
-    return !entry.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
-  };
+  const isOldDraftAkushaEntry = isStalePre2027AkushaDraft;
 
   // 2. Очищаем backup пользовательских планов от старых черновых карточек AKUSHA, чтобы не было дублей
   const backup = safeGetStorageJson<Record<string, UserSavedModelPlanBackup>>(
@@ -824,6 +829,7 @@ export function syncUserPlansBackup(
   if (safeSetStorageJson(STORAGE_KEY_USER_PLANS_BACKUP, backup)) {
     safeSetStorageJson(STORAGE_KEY_BACKUP_UPDATED_AT, new Date().toISOString());
   }
+  recordRollingLocalSnapshotIfChanged(modelsList);
 }
 
 export function overlayBackupOntoModels(
@@ -1051,12 +1057,91 @@ export function overlayBackupOntoModels(
   return overlaid;
 }
 
+export interface RollingLocalPortfolioSnapshot {
+  id: string;
+  createdAtIso: string;
+  skuCount: number;
+  fingerprint: string;
+  models: ScenarioModelSpec[];
+}
+
+let inMemoryRollingSnapshots: RollingLocalPortfolioSnapshot[] = [];
+let rollingIdbHydrationPromise: Promise<void> | null = null;
+
+function ensureRollingSnapshotsHydratedFromIdb(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (!rollingIdbHydrationPromise) {
+    rollingIdbHydrationPromise = loadRollingSnapshotsFromIdb<RollingLocalPortfolioSnapshot>()
+      .then((loaded) => {
+        if (!Array.isArray(loaded) || loaded.length === 0) return;
+        const seen = new Set(inMemoryRollingSnapshots.map((s) => s.fingerprint));
+        const merged = [...inMemoryRollingSnapshots];
+        for (const oldSnap of loaded) {
+          if (oldSnap && oldSnap.fingerprint && !seen.has(oldSnap.fingerprint)) {
+            seen.add(oldSnap.fingerprint);
+            merged.push(oldSnap);
+          }
+        }
+        inMemoryRollingSnapshots = merged.slice(0, 6);
+      })
+      .catch(() => {});
+  }
+  return rollingIdbHydrationPromise;
+}
+
+function recordRollingLocalSnapshotIfChanged(cleanModels: ScenarioModelSpec[]): void {
+  if (typeof window === 'undefined' || cleanModels.length === 0) return;
+  try {
+    ensureRollingSnapshotsHydratedFromIdb();
+    let totalPacksSum = 0;
+    let totalPriceSum = 0;
+    for (const m of cleanModels) {
+      totalPriceSum += Math.round(m.retailPriceRub || 0) + Math.round(m.unitCostRub || 0);
+      for (const pl of Object.values(m.plansByScenario || {})) {
+        if (pl && Array.isArray(pl.monthlyPacks)) {
+          for (const p of pl.monthlyPacks) totalPacksSum += Math.round(p || 0);
+        }
+      }
+    }
+    const fingerprint = `${cleanModels.length}:${totalPacksSum}:${totalPriceSum}`;
+    if (inMemoryRollingSnapshots[0]?.fingerprint === fingerprint) return;
+
+    const compactModels: ScenarioModelSpec[] = cleanModels.map((m) => ({
+      ...m,
+      gallery: Array.isArray(m.gallery)
+        ? m.gallery.filter((g) => !(typeof g?.url === 'string' && g.url.startsWith('data:image/')))
+        : [],
+      attachedPdfs: [],
+    }));
+
+    const nextSnap: RollingLocalPortfolioSnapshot = {
+      id: `snap-${Date.now()}`,
+      createdAtIso: new Date().toISOString(),
+      skuCount: compactModels.length,
+      fingerprint,
+      models: compactModels,
+    };
+    inMemoryRollingSnapshots = [nextSnap, ...inMemoryRollingSnapshots].slice(0, 6);
+    void ensureRollingSnapshotsHydratedFromIdb().then(() => {
+      void saveRollingSnapshotsToIdb(inMemoryRollingSnapshots);
+    });
+  } catch {
+    // non-fatal rolling history
+  }
+}
+
+export function getRollingLocalSnapshots(): RollingLocalPortfolioSnapshot[] {
+  ensureRollingSnapshotsHydratedFromIdb();
+  return inMemoryRollingSnapshots;
+}
+
 export function persistPortfolioModels(modelsList: ScenarioModelSpec[]): ScenarioModelSpec[] {
   const deletedReg = getDeletedModelsRegistry();
   const clean = modelsList.filter((m) => !isModelMarkedDeleted(m, deletedReg));
   touchPortfolioUpdatedAt();
   safeSetStorageJson(STORAGE_KEY_MODELS, clean);
   syncUserPlansBackup(clean);
+  recordRollingLocalSnapshotIfChanged(clean);
   return clean;
 }
 

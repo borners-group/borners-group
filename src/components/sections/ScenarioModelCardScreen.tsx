@@ -800,7 +800,10 @@ export function ScenarioModelCardScreen({
   const handleScenarioPriceChange = (nextPriceRub: number) => {
     if (!canEdit) return;
     const clean = Math.max(0, Math.round(nextPriceRub));
-    const prevPrice = plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub;
+    const prevPrice =
+      (plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+        ? plan.monthlyPricesRub[selectedMonthIdx]
+        : model.retailPriceRub;
     const updatedModel = updateModelScenarioPrice(model, scenario.id, clean);
     commitWithAudit(
       updatedModel,
@@ -1033,7 +1036,9 @@ export function ScenarioModelCardScreen({
   const selMonthPrice =
     selMonthAct && selMonthAct.actualPriceRub !== null
       ? selMonthAct.actualPriceRub
-      : plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub;
+      : (plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+      ? plan.monthlyPricesRub[selectedMonthIdx]
+      : model.retailPriceRub;
   const selMonthRevRub =
     selMonthAct && selMonthAct.actualBuyoutsPacks !== null
       ? selMonthPacks * selMonthPrice
@@ -1888,16 +1893,35 @@ export function ScenarioModelCardScreen({
                     type="number"
                     min={0}
                     step={10}
-                    value={plan.monthlyPricesRub[selectedMonthIdx] ?? model.retailPriceRub}
+                    aria-label="РРЦ продажи WB"
+                    placeholder="Уточнить РРЦ"
+                    value={
+                      ((plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+                        ? plan.monthlyPricesRub[selectedMonthIdx]
+                        : model.retailPriceRub) > 0
+                        ? (plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+                          ? plan.monthlyPricesRub[selectedMonthIdx]
+                          : model.retailPriceRub
+                        : ''
+                    }
                     onChange={(e) => handleScenarioPriceChange(Number(e.target.value))}
                     className="h-9 w-full rounded-[8px] border-[1.5px] border-[#CECDC4] focus:border-[#141413] px-2.5 text-[16px] font-bold text-[#141413]"
                   />
                   <span className="text-[13px] font-semibold text-[#5E5D58]">₽</span>
                 </div>
-              ) : (
+              ) : pnl.avgRealizedPricePerPackRub > 0 ? (
                 <div className="text-[23px] font-bold tracking-[-0.02em] text-[#141413]">
                   {formatRub(pnl.avgRealizedPricePerPackRub)}
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  onClick={() => canEdit && setIsEditing(true)}
+                  className="text-left text-[17px] font-bold text-[#B45309] hover:underline disabled:no-underline cursor-pointer"
+                >
+                  Уточнить РРЦ →
+                </button>
               )}
 
               <div className="text-[11.5px] text-[#5E5D58]">
@@ -3474,7 +3498,9 @@ export function ScenarioModelCardScreen({
                       const planOrdersPacks = baseMetrics.monthlyOrdersPacks[mIdx] || 0;
                       const planOrdersRub = baseMetrics.monthlyOrdersRub[mIdx] || 0;
                       const planPrice =
-                        plan.monthlyPricesRub[mIdx] ?? model.retailPriceRub;
+                        (plan.monthlyPricesRub[mIdx] || 0) > 0
+                          ? plan.monthlyPricesRub[mIdx]
+                          : model.retailPriceRub;
                       const planRev = baseMetrics.monthlyRevenuesRub[mIdx] || 0;
                       const actRec = shared.actualSalesByMonth[mIdx];
                       const actPacks = actRec?.actualBuyoutsPacks ?? null;
@@ -4092,7 +4118,35 @@ export function ScenarioModelCardScreen({
                 </div>
 
                 {/* Редактируемые поля с человеческими названиями и пояснением под каждым полем */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-[12px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 text-[12px]">
+                  <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
+                    <span className="font-semibold text-[#141413] block">
+                      Цена продажи WB (РРЦ), ₽
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      disabled={!canEdit}
+                      aria-label="Цена продажи WB (РРЦ)"
+                      value={
+                        ((plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+                          ? plan.monthlyPricesRub[selectedMonthIdx]
+                          : model.retailPriceRub) > 0
+                          ? (plan.monthlyPricesRub[selectedMonthIdx] || 0) > 0
+                            ? plan.monthlyPricesRub[selectedMonthIdx]
+                            : model.retailPriceRub
+                          : ''
+                      }
+                      placeholder="Уточнить"
+                      onChange={(e) => handleScenarioPriceChange(Number(e.target.value))}
+                      className="h-8 w-full rounded-[7px] border border-[#CECDC4] bg-[#F7F7F4] px-2 font-mono font-bold text-[#141413] disabled:opacity-60"
+                    />
+                    <span className="text-[10.5px] text-[#6E6E73] block">
+                      Розничная цена выкупа за 1 {primaryUnitShort}
+                    </span>
+                  </label>
+
                   <label className="rounded-[10px] bg-white border border-[#DED8CC] p-2.5 space-y-1">
                     <span className="font-semibold text-[#141413] block">
                       Закупочная себестоимость, ₽

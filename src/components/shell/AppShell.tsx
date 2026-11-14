@@ -69,6 +69,7 @@ import {
   clearAllDeletedModelSnapshots,
   getDeletedModelSnapshots,
   getDeletedModelsRegistry,
+  getRollingLocalSnapshots,
   parseFullPlatformBackupBundle,
   permanentlyDeleteModelFromTrash,
   resolveEffectiveScenarioForModel,
@@ -76,6 +77,7 @@ import {
   touchPortfolioUpdatedAt,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/portfolioPersistence';
+import { getActiveSupabaseClient } from '@/lib/supabase';
 import {
   formatLabBrandLabel,
   normalizeLabBrandCode,
@@ -270,6 +272,7 @@ export function AppShell() {
   const [homeSubView, setHomeSubView] = useState<'home' | 'summary'>('home');
 
   useEffect(() => {
+    getRollingLocalSnapshots();
     const onSubView = (e: Event) => {
       const ce = e as CustomEvent<{ subView?: 'home' | 'summary' }>;
       if (ce.detail?.subView) {
@@ -709,7 +712,7 @@ export function AppShell() {
         const remoteId = data.buildId || currentBuildId;
         setDetectedBuildId(remoteId);
         const seenId = window.localStorage.getItem(SEEN_BUILD_KEY);
-        if (remoteId !== currentBuildId || seenId !== remoteId) {
+        if (seenId !== remoteId) {
           setUpdateBannerOpen(true);
         }
       } catch {
@@ -753,7 +756,6 @@ export function AppShell() {
   const handleApplySiteUpdate = useCallback(() => {
     try {
       window.localStorage.setItem('borners_seen_build_id_v1', detectedBuildId);
-      window.localStorage.removeItem('borners_liskani_269_official_migrated_v3');
     } catch {
       // ignore
     }
@@ -1793,6 +1795,44 @@ export function AppShell() {
                         {/* Раздел 10.5 ТЗ: Резервная копия всех данных BORNERS GROUP (Экспорт + Импорт) */}
                         {isOwnerOrAdmin && (
                           <>
+                        <div className="px-3 py-1.5 rounded-[8px] bg-[#FAF9F6] border border-[#E4E1DA] flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-[#5C5953]">Хранение данных:</span>
+                          <span className="font-mono font-semibold text-[#141413]">
+                            {getActiveSupabaseClient() ? 'Облако активно' : 'Локально в браузере'}
+                          </span>
+                        </div>
+                        {(() => {
+                          const rollingSnaps = getRollingLocalSnapshots();
+                          const prevSnap = rollingSnaps.length > 1 ? rollingSnaps[1] : null;
+                          if (!prevSnap) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                applyPortfolioBackupSnapshotToStorage(
+                                  prevSnap.models,
+                                  livePortfolio.scenarios
+                                );
+                                livePortfolio.updateModelsBatch(() => prevSnap.models);
+                                setProfileMenuOpen(false);
+                                notify(
+                                  'success',
+                                  'Восстановлена предыдущая авто-точка',
+                                  `Откат к слепку (${prevSnap.skuCount} SKU от ${new Date(prevSnap.createdAtIso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })})`
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                            >
+                              <span>Откат к прошлой авто-точке</span>
+                              <span className="font-mono text-[10.5px] text-[#5C5953]">
+                                {new Date(prevSnap.createdAtIso).toLocaleTimeString('ru-RU', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           onClick={() => {

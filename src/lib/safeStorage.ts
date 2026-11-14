@@ -701,3 +701,45 @@ export async function deletePdfBlobFromIdb(pdfId: string): Promise<void> {
     // ignore
   }
 }
+
+const IDB_ROLLING_SNAPSHOTS_KEY = '__ROLLING_PORTFOLIO_SNAPSHOTS_V1__';
+
+export async function saveRollingSnapshotsToIdb(snapshots: unknown[]): Promise<boolean> {
+  try {
+    const db = await openFilesDb();
+    return await new Promise<boolean>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readwrite');
+      tx.objectStore(IDB_PHOTO_STORE).put(snapshots, IDB_ROLLING_SNAPSHOTS_KEY);
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function loadRollingSnapshotsFromIdb<T = unknown>(): Promise<T[]> {
+  try {
+    const db = await openFilesDb();
+    return await new Promise<T[]>((resolve) => {
+      const tx = db.transaction(IDB_PHOTO_STORE, 'readonly');
+      const req = tx.objectStore(IDB_PHOTO_STORE).get(IDB_ROLLING_SNAPSHOTS_KEY);
+      req.onsuccess = () => {
+        db.close();
+        resolve(Array.isArray(req.result) ? (req.result as T[]) : []);
+      };
+      req.onerror = () => {
+        db.close();
+        resolve([]);
+      };
+    });
+  } catch {
+    return [];
+  }
+}

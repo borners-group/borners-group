@@ -13,7 +13,29 @@ export interface CloudPortfolioCorePayload {
   deletedModelIds?: string[];
   deletedScenarioIds?: number[];
   customBrands?: string[];
+  financeContourParams?: unknown;
+  productGroups?: unknown;
   updatedAtIso: string;
+}
+
+function isAutomatedOrLocalhostWriteBlocked(): boolean {
+  if (
+    typeof globalThis !== 'undefined' &&
+    (globalThis as { __BORNERS_ALLOW_CLOUD_WRITE_IN_TEST__?: boolean })
+      .__BORNERS_ALLOW_CLOUD_WRITE_IN_TEST__ === true
+  ) {
+    return false;
+  }
+  if (typeof navigator !== 'undefined' && navigator.webdriver === true) {
+    return true;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return true;
+    }
+  }
+  return false;
 }
 
 const lastSyncedGalleryFingerprintByModelId = new Map<string, string>();
@@ -89,6 +111,7 @@ export async function pushModelGalleryToSupabase(
   modelId: string,
   gallery: ScenarioModelSpec['gallery']
 ): Promise<boolean> {
+  if (isAutomatedOrLocalhostWriteBlocked()) return false;
   const client = getActiveSupabaseClient();
   if (!client || !modelId || !Array.isArray(gallery)) return false;
 
@@ -178,6 +201,7 @@ export async function pushModelGalleryToSupabase(
 export async function pushPortfolioCoreToSupabase(
   input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>
 ): Promise<boolean> {
+  if (isAutomatedOrLocalhostWriteBlocked()) return false;
   const client = getActiveSupabaseClient();
   if (!client) return false;
 

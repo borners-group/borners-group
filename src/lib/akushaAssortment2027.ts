@@ -899,9 +899,6 @@ function buildAkushaCommercialPlan(
 ): ScenarioCommercialPlan {
   const firstActiveIdx = seed.monthlyPacks.findIndex((p) => p > 0);
   const salesStartMonthIdx = firstActiveIdx >= 0 ? firstActiveIdx : 0;
-  const monthlyRevenuesRubOverride = seed.monthlyPacks.map(
-    (packs) => packs * seed.retailPriceRub
-  );
   const monthlyOrdersRub = seed.monthlyOrdersPacks.map(
     (ord) => ord * seed.retailPriceRub
   );
@@ -914,7 +911,6 @@ function buildAkushaCommercialPlan(
     monthlyPacks: [...seed.monthlyPacks],
     monthlyPricesRub: Array(12).fill(seed.retailPriceRub),
     monthlyReceiptsPacks: [...seed.monthlyPacks],
-    monthlyRevenuesRubOverride,
     monthlyOrdersPacks: [...seed.monthlyOrdersPacks],
     monthlyOrdersRub,
     buyoutRatePct: seed.buyoutRatePct,

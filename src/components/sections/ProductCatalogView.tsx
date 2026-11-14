@@ -1361,19 +1361,12 @@ export function ProductCatalogView() {
                     className="relative rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] flex flex-col justify-between transition-colors cursor-pointer group overflow-hidden"
                   >
                     <div>
-                      {/* Studio photo frame at the top on a clean #F6F5F2 gallery mat */}
-                      <div className="relative h-52 w-full bg-[#F6F5F2] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] flex items-center justify-center p-4 overflow-hidden">
-                        <BoxerPackStackSvg
-                          colors={colors}
-                          brandLabel={displayBrand}
-                          customPhotoUrl={mainPhotoUrl}
-                        />
-
-                        {/* Calm monochrome badge in top-left with subtle status dot */}
-                        <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/92 dark:bg-[#151514]/92 backdrop-blur-xs border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] font-mono text-[10.5px]">
+                      {/* Верхняя плашка продаж прямо над карточкой */}
+                      <div className="px-3.5 py-2 bg-[#FAF9F6] dark:bg-[#181715] border-b border-[#E4E1DA] dark:border-[#282724] flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center gap-1.5 text-[#141413] dark:text-[#F5F4F0] font-mono text-[10.5px] shrink-0">
                           <span
                             className={`inline-block h-1.5 w-1.5 rounded-full ${
-                              isActiveStage ? 'bg-[#15803D]' : 'bg-[#78746C]'
+                              isActiveStage || met.annualPacks > 0 ? 'bg-[#15803D]' : 'bg-[#78746C]'
                             }`}
                           />
                           <span>{stageLabel}</span>
@@ -1383,6 +1376,30 @@ export function ProductCatalogView() {
                             </span>
                           )}
                         </div>
+                        <div
+                          className={`font-mono tabular-nums text-[11px] font-semibold truncate ${
+                            met.annualPacks > 0
+                              ? 'text-[#141413] dark:text-[#F5F4F0]'
+                              : 'text-[#78746C] dark:text-[#9E9A92]'
+                          }`}
+                        >
+                          {!hasFinance
+                            ? `План: ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+                            : met.annualRevenueRub > 0
+                            ? `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽ · ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+                            : met.annualPacks > 0
+                            ? `План: ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit} · РРЦ уточнить`
+                            : `План: 0 ${unitCfg.primaryUnit}`}
+                        </div>
+                      </div>
+
+                      {/* Studio photo frame at the top on a clean #F6F5F2 gallery mat */}
+                      <div className="relative h-52 w-full bg-[#F6F5F2] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] flex items-center justify-center p-4 overflow-hidden">
+                        <BoxerPackStackSvg
+                          colors={colors}
+                          brandLabel={displayBrand}
+                          customPhotoUrl={mainPhotoUrl}
+                        />
 
                         {/* Top-right quiet actions (always present & clickable in DOM) */}
                         <div className="absolute top-3 right-3 flex items-center gap-1.5">
@@ -1469,15 +1486,15 @@ export function ProductCatalogView() {
                           <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">
                             {!hasFinance || met.annualRevenueRub <= 0
                               ? 'План / Год'
-                              : !hasCost
-                              ? 'Выручка'
+                              : !hasCost || mod.unitCostRub <= 0
+                              ? 'Выручка / Год'
                               : 'Маржа / Год'}
                           </div>
                           <div className="font-mono tabular-nums text-[13px] font-semibold text-[#15803D] dark:text-emerald-400 mt-0.5">
                             {!hasFinance || met.annualRevenueRub <= 0
                               ? `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
-                              : !hasCost
-                              ? `${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                              : !hasCost || mod.unitCostRub <= 0
+                              ? `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`
                               : `${met.unitMarginPct.toFixed(0)}% · ${(met.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`}
                           </div>
                         </div>

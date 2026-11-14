@@ -8793,7 +8793,8 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
   );
 
   assert.equal(
-    nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
+    nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
+      nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
       nextConfigCode.includes('borners-2027-natele-lab-v9'),
     true,
     'next.config.ts обязан экспортировать актуальный релизный buildId'
@@ -8847,9 +8848,10 @@ test('124. v10 Архитектурная дизайн-система COS / Ramp
     'globals.css обязан задавать тёплый архитектурный камень #F6F5F2, антрацит #141413 и var(--font-mono) для .font-mono'
   );
   assert.equal(
-    nextConfigCode.includes('borners-2027-editorial-ui-v10'),
+    nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
+      nextConfigCode.includes('borners-2027-editorial-ui-v10'),
     true,
-    'next.config.ts обязан экспортировать релизный buildId borners-2027-editorial-ui-v10'
+    'next.config.ts обязан экспортировать актуальный релизный buildId'
   );
 });
 
@@ -8908,6 +8910,964 @@ test('126. v10 Чистый редакционный интерфейс без �
       `${relPath} не должен содержать мультяшные ИИ-эмодзи (🚀, ⚡, 🔥, 📍, 📦, 🧪, 💬, 📎)`
     );
   }
+});
+
+// ============================================================================
+// РЕЛИЗ v11 — МАССИРОВАННЫЙ СТРЕСС-ПАКЕТ (ТЕСТЫ 127–171):
+// ПОКАРТОЧНАЯ ПРОВЕРКА ВСЕХ 24 КАРТОЧЕК AKUSHA, ВСЕХ 5 БРЕНДОВ, R&D СИНКА,
+// ЗАЩИТЫ ОТ СБРОСА ЦЕН, ОБЛАЧНЫХ ГОНОК И ПЛАШЕК ПРОДАЖ НАД КАРТОЧКАМИ
+// ============================================================================
+
+{
+  const { AKUSHA_2027_MODELS: akushaListForPerCardSuite, AKUSHA_2027_SCENARIO_DEF: akushaScenDef } =
+    await import('../src/lib/akushaAssortment2027.ts');
+
+  akushaListForPerCardSuite.forEach((akushaSeedCard, idx) => {
+    const testNum = 127 + idx; // Тесты 127..150 (ровно 24 покарточных теста AKUSHA!)
+    test(`${testNum}. v11 Покарточный аудит AKUSHA [${akushaSeedCard.code}] «${akushaSeedCard.title}»: план в парах > 0, отсутствие блокировки выручки и 100% сохранение правок после F5`, async () => {
+      const {
+        ensureModelUnifiedV11,
+        updateModelScenarioPrice,
+        updateModelUnitCostWithVariants,
+        updateModelScenarioMonthBuyouts,
+        computeFinancialPnL,
+        computeProcurementPlan,
+      } = await import('../src/lib/unifiedBusinessEngine.ts');
+      const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+      const normCard = ensureModelUnifiedV11(akushaSeedCard);
+      const plan202706 = normCard.plansByScenario[202706];
+      assert.ok(plan202706, `${akushaSeedCard.code} обязан иметь слот сценария 202706`);
+      assert.equal(
+        plan202706.monthlyRevenuesRubOverride,
+        undefined,
+        `${akushaSeedCard.code} НЕ должен иметь жёсткий monthlyRevenuesRubOverride, блокирующий пересчёт цены`
+      );
+
+      const baseMet = computeModelScenarioMetrics(normCard, akushaScenDef);
+      assert.ok(
+        baseMet.annualPacks > 0,
+        `На карточке ${akushaSeedCard.code} обязан быть ненулевой годовой план продаж в парах (получено ${baseMet.annualPacks})`
+      );
+
+      if (normCard.retailPriceRub > 0) {
+        assert.equal(
+          baseMet.annualRevenueRub,
+          baseMet.annualPacks * normCard.retailPriceRub,
+          `${akushaSeedCard.code}: базовая выручка строго равна пары × РРЦ`
+        );
+      } else {
+        assert.equal(baseMet.annualRevenueRub, 0);
+      }
+
+      // Проверяем выставление/изменение цены и себестоимости на КАЖДОЙ из 24 карточек AKUSHA
+      const targetTestPrice = 6790 + idx * 100;
+      const targetTestCost = 2350 + idx * 25;
+      let edited = updateModelScenarioPrice(normCard, 202706, targetTestPrice);
+      edited = updateModelUnitCostWithVariants(edited, targetTestCost);
+
+      const metAfterPrice = computeModelScenarioMetrics(edited, akushaScenDef);
+      const pnlAfterPrice = computeFinancialPnL(edited, akushaScenDef);
+      const procAfterPrice = computeProcurementPlan(edited, akushaScenDef);
+
+      assert.equal(
+        metAfterPrice.annualPacks,
+        baseMet.annualPacks,
+        `${akushaSeedCard.code}: смена цены не меняет годовой объём в парах`
+      );
+      assert.equal(
+        metAfterPrice.annualRevenueRub,
+        baseMet.annualPacks * targetTestPrice,
+        `${akushaSeedCard.code}: после ввода цены выручка обязана мгновенно стать ${baseMet.annualPacks * targetTestPrice} ₽ (без залипания в 0 ₽!)`
+      );
+      assert.equal(
+        pnlAfterPrice.annualRevenueRub,
+        baseMet.annualPacks * targetTestPrice,
+        `${akushaSeedCard.code}: P&L контура 04 обязан видеть ту же самую выручку`
+      );
+      assert.ok(
+        procAfterPrice.annualDemandPacks >= baseMet.annualPacks,
+        `${akushaSeedCard.code}: контур 03 · Закупки обязан учитывать годовой спрос`
+      );
+      assert.ok(
+        Number.isFinite(metAfterPrice.unitMarginPct) && !Number.isNaN(metAfterPrice.unitMarginPct),
+        `${akushaSeedCard.code}: маржа конечна и без NaN`
+      );
+
+      // Проверяем изменение выкупов конкретного месяца (+50 пар в июне)
+      const prevJune = edited.plansByScenario[202706].monthlyPacks[5] || 0;
+      const editedWithJune = updateModelScenarioMonthBuyouts(edited, 202706, 5, prevJune + 50);
+      const metAfterJune = computeModelScenarioMetrics(editedWithJune, akushaScenDef);
+      assert.equal(metAfterJune.annualPacks, baseMet.annualPacks + 50);
+      assert.equal(
+        metAfterJune.annualRevenueRub,
+        (baseMet.annualPacks + 50) * targetTestPrice
+      );
+      // Сценарий 1 и 202706 синхронны
+      assert.equal(editedWithJune.plansByScenario[1].monthlyPacks[5], prevJune + 50);
+    });
+  });
+}
+
+test('151. v11 Авто-исцеление старого кэша localStorage с ловушкой monthlyRevenuesRubOverride: [0..0] и monthlyPricesRub: [0..0] на AKU-017..020 и AKU-028..031', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { ensureModelUnifiedV11, computeFinancialPnL } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+  const unpricedCodes = [
+    'AKU-017',
+    'AKU-018',
+    'AKU-019',
+    'AKU-020',
+    'AKU-028',
+    'AKU-029',
+    'AKU-030',
+    'AKU-031',
+  ];
+
+  for (const code of unpricedCodes) {
+    const base = AKUSHA_2027_MODELS.find((m) => m.code === code)!;
+    assert.ok(base, `Найдена карточка ${code}`);
+    const expectedPairs = base.plansByScenario[202706].monthlyPacks.reduce((a, b) => a + b, 0);
+    assert.ok(expectedPairs > 0);
+
+    // Имитируем отравленный слепок из кэша v9/v10: пользователь задал retailPriceRub = 6990,
+    // но в планах остались monthlyRevenuesRubOverride: [0..0] и monthlyPricesRub: [0..0]!
+    const poisonedCachedModel = {
+      ...base,
+      retailPriceRub: 6990,
+      unitCostRub: 2100,
+      plansByScenario: {
+        ...base.plansByScenario,
+        202706: {
+          ...base.plansByScenario[202706],
+          monthlyPricesRub: Array(12).fill(0),
+          monthlyRevenuesRubOverride: Array(12).fill(0),
+        },
+      },
+    };
+
+    // Даже ДО вызова ensureModelUnifiedV11 метрики обязаны игнорировать ложный [0..0] оверрайд!
+    const rawMet = computeModelScenarioMetrics(poisonedCachedModel, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(
+      rawMet.annualRevenueRub,
+      expectedPairs * 6990,
+      `${code}: computeModelScenarioMetrics обязан игнорировать отравленный [0..0] override`
+    );
+
+    const healed = ensureModelUnifiedV11(poisonedCachedModel);
+    assert.equal(
+      healed.plansByScenario[202706].monthlyRevenuesRubOverride,
+      undefined,
+      `${code}: ensureModelUnifiedV11 обязан вычищать [0..0] monthlyRevenuesRubOverride`
+    );
+    assert.deepEqual(
+      healed.plansByScenario[202706].monthlyPricesRub,
+      Array(12).fill(6990),
+      `${code}: ensureModelUnifiedV11 обязан восстанавливать помесячные цены из retailPriceRub`
+    );
+
+    const pnl = computeFinancialPnL(healed, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(pnl.annualRevenueRub, expectedPairs * 6990);
+  }
+});
+
+test('152. v11 Защита оператора ?? от нулевой цены месяца (0 ?? retailPriceRub -> retailPriceRub) в Продажах и Финансах', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+  const { computeFinancialPnL } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const aku17 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+  const partialZeroMonthPrices = {
+    ...aku17,
+    retailPriceRub: 6500,
+    plansByScenario: {
+      ...aku17.plansByScenario,
+      202706: {
+        ...aku17.plansByScenario[202706],
+        // Например, в июле акционная цена 7000, а остальные стояли 0
+        monthlyPricesRub: aku17.plansByScenario[202706].monthlyPacks.map((_, i) =>
+          i === 6 ? 7000 : 0
+        ),
+      },
+    },
+  };
+
+  const met = computeModelScenarioMetrics(partialZeroMonthPrices, AKUSHA_2027_SCENARIO_DEF);
+  const pnl = computeFinancialPnL(partialZeroMonthPrices, AKUSHA_2027_SCENARIO_DEF);
+  const expectedRev = partialZeroMonthPrices.plansByScenario[202706].monthlyPacks.reduce(
+    (sum, packs, i) => sum + packs * (i === 6 ? 7000 : 6500),
+    0
+  );
+  assert.equal(met.annualRevenueRub, expectedRev);
+  assert.equal(pnl.annualRevenueRub, expectedRev);
+  assert.ok(met.avgRetailPriceRub >= 6500);
+});
+
+test('153. v11 Защита цен и планов продаж в Каталоге при нажатии «Перенести AKUSHA в План 2027» в Лаборатории R&D (bulk sync)', async () => {
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const {
+    syncAllBrandConceptsToScenarioPortfolio,
+    buildPdfConceptFromScenarioModel,
+  } = await import('../src/lib/rndCatalogSync.ts');
+  const { updateModelScenarioPrice, updateModelUnitCostWithVariants } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+  // Концепты Лаборатории R&D для всех 24 карточек AKUSHA (с исходными seed-ценами 7 500 ₽ у AKU-001 и 0 ₽ у AKU-017..020, AKU-028..031)
+  const akushaLabConcepts = AKUSHA_2027_MODELS.map((m) =>
+    buildPdfConceptFromScenarioModel(m, INITIAL_CONCEPTS)
+  );
+
+  // Пользователь заполнил в Каталоге цены на все бесценовые модели AKUSHA и поменял цену на AKU-001!
+  const userFilledCatalog = AKUSHA_2027_MODELS.map((m) => {
+    if (m.code === 'AKU-001') {
+      return updateModelUnitCostWithVariants(
+        updateModelScenarioPrice(m, 202706, 8490),
+        2950
+      );
+    }
+    if (m.retailPriceRub === 0) {
+      return updateModelUnitCostWithVariants(
+        updateModelScenarioPrice(m, 202706, 6390),
+        2150
+      );
+    }
+    return m;
+  });
+
+  const revBeforeBulkSync = userFilledCatalog.reduce(
+    (s, m) => s + computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF).annualRevenueRub,
+    0
+  );
+  const packsBeforeBulkSync = userFilledCatalog.reduce(
+    (s, m) => s + computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF).annualPacks,
+    0
+  );
+  assert.equal(packsBeforeBulkSync, 20_377);
+  assert.ok(revBeforeBulkSync > 130_000_000);
+
+  // Нажимаем массовую синхронизацию AKUSHA из Лаборатории R&D (где у AKU-017..020 и AKU-028..031 plannedRetailPrice = 0, а у AKU-001 старые 7 500 ₽!)
+  const bulkRes = syncAllBrandConceptsToScenarioPortfolio(
+    [...INITIAL_CONCEPTS, ...akushaLabConcepts],
+    'AKUSHA',
+    userFilledCatalog,
+    [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF]
+  );
+  assert.equal(bulkRes.syncedItems.length, 24, 'Синхронизированы все 24 концепта AKUSHA');
+
+  const aku001After = bulkRes.models.find((m) => m.code === 'AKU-001')!;
+  const aku017After = bulkRes.models.find((m) => m.code === 'AKU-017')!;
+  const aku031After = bulkRes.models.find((m) => m.code === 'AKU-031')!;
+
+  assert.equal(
+    aku001After.retailPriceRub,
+    8490,
+    'Цена AKU-001 (8 490 ₽) НЕ должна сбрасываться обратно к seed-цене при массовом синке из R&D!'
+  );
+  assert.equal(aku001After.unitCostRub, 2950);
+  assert.equal(
+    aku017After.retailPriceRub,
+    6390,
+    'Заполненная в каталоге цена AKU-017 (6 390 ₽) НЕ должна затираться в 2 490 ₽ или 0 ₽!'
+  );
+  assert.equal(aku017After.unitCostRub, 2150);
+  assert.equal(aku031After.retailPriceRub, 6390);
+  assert.equal(aku031After.unitCostRub, 2150);
+
+  const revAfterBulkSync = bulkRes.models.reduce(
+    (s, m) => s + computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF).annualRevenueRub,
+    0
+  );
+  const packsAfterBulkSync = bulkRes.models.reduce(
+    (s, m) => s + computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF).annualPacks,
+    0
+  );
+  assert.equal(packsAfterBulkSync, 20_377, 'Ни одна пара продаж AKUSHA не потеряна');
+  assert.equal(revAfterBulkSync, revBeforeBulkSync, 'Годовая выручка AKUSHA сохранена рубль-в-рубль!');
+});
+
+test('154. v11 Одиночный синк и импорт R&D концепта без цены (plannedRetailPrice = 0) НЕ выдумывает 2 490 ₽ поверх существующей карточки AKUSHA и не понижает статус Утверждено', async () => {
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const {
+    syncConceptToScenarioPortfolio,
+    buildConceptPatchFromScenarioModel,
+    buildPdfConceptFromScenarioModel,
+  } = await import('../src/lib/rndCatalogSync.ts');
+  const { updateModelScenarioPrice, updateModelUnitCostWithVariants } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const rawAku17 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+  const patchAku17 = buildConceptPatchFromScenarioModel(rawAku17);
+  assert.equal(patchAku17.plannedRetailPrice, 0, 'buildConceptPatchFromScenarioModel не должен придумывать 2 490 ₽');
+  assert.equal(patchAku17.plannedUnitCost, 0, 'buildConceptPatchFromScenarioModel не должен придумывать 1 ₽');
+
+  const conceptAku17 = buildPdfConceptFromScenarioModel(rawAku17, INITIAL_CONCEPTS);
+  assert.ok(conceptAku17);
+  assert.equal(conceptAku17.plannedRetailPrice || 0, 0);
+  assert.equal(conceptAku17.plannedUnitCost || 0, 0);
+
+  // Случай А: в каталоге цена ещё 0 («уточнить») -> после добавления фото в R&D цена остаётся честным 0, а не фальшивыми 2490 ₽!
+  const syncUnpriced = syncConceptToScenarioPortfolio(
+    { ...conceptAku17, stage: 'IDEA' },
+    AKUSHA_2027_MODELS,
+    [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF]
+  );
+  assert.equal(
+    syncUnpriced.model.retailPriceRub,
+    0,
+    'Бесценовая карточка AKU-017 не должна получать фейковую цену 2 490 ₽ при правке концепта без цены'
+  );
+  assert.equal(
+    syncUnpriced.model.unitCostRub,
+    0,
+    'Бесценовая карточка AKU-017 не должна получать фейковую себестоимость 623 ₽'
+  );
+  assert.equal(
+    syncUnpriced.model.launchStatus,
+    'В плане',
+    'Карточка каталога со статусом «В плане» не должна разжаловаться в «В разработке» при правке концепта'
+  );
+
+  const rawAku01 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-001')!;
+  const conceptAku01 = buildPdfConceptFromScenarioModel(rawAku01, INITIAL_CONCEPTS);
+  const syncApproved = syncConceptToScenarioPortfolio(
+    { ...conceptAku01, stage: 'IDEA' },
+    AKUSHA_2027_MODELS,
+    [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF]
+  );
+  assert.equal(
+    syncApproved.model.launchStatus,
+    'Утверждено',
+    'Утверждённая карточка AKU-001 не должна разжаловаться в «В разработке»'
+  );
+
+  // Случай Б: в каталоге уже заполнена цена 6 390 ₽ / 2 150 ₽, а в R&D концепт оставался с 0 ₽ -> цена каталога не затирается!
+  const pricedCatalog = AKUSHA_2027_MODELS.map((m) =>
+    m.code === 'AKU-017'
+      ? updateModelUnitCostWithVariants(updateModelScenarioPrice(m, 202706, 6390), 2150)
+      : m
+  );
+  const syncOverPriced = syncConceptToScenarioPortfolio(
+    { ...conceptAku17, stage: 'DESIGN' },
+    pricedCatalog,
+    [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF]
+  );
+  assert.equal(syncOverPriced.model.retailPriceRub, 6390);
+  assert.equal(syncOverPriced.model.unitCostRub, 2150);
+});
+
+test('155. v11 Защита пользовательских кастомных SKU AKUSHA (AKU-032, AKU-CUSTOM-99) в isStalePre2027AkushaDraft и createBrandProductModel', async () => {
+  const { isStalePre2027AkushaDraft } = await import('../src/lib/portfolioPersistence.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+
+  // 1. Создаём новую пользовательскую модель AKUSHA при передаче только INITIAL_SCENARIOS (без 202706 в аргументе)
+  const created = createBrandProductModel(AKUSHA_2027_MODELS, INITIAL_SCENARIOS, {
+    title: 'Лоферы замшевые AKUSHA Весна',
+    brandCode: 'AKUSHA',
+    retailPriceRub: 7900,
+    unitCostRub: 2600,
+    initialMonthlyPacks: [0, 0, 120, 180, 220, 190, 140, 110, 90, 0, 0, 0],
+  });
+
+  assert.ok(
+    created.model.plansByScenario[202706],
+    'createBrandProductModel для AKUSHA обязан автоматически создавать слот плана 202706'
+  );
+  assert.equal(isStalePre2027AkushaDraft(created.model), false);
+
+  // 2. Даже если кастомная карточка AKU-CUSTOM-99 была создана в старом сценарии без слота 202706, она НЕ должна удаляться!
+  const customWithout202706: any = {
+    id: 'scen-akusha-1799999999-35',
+    code: 'AKU-CUSTOM-99',
+    title: 'Кастомные кеды AKUSHA',
+    customBrandLabel: 'AKUSHA',
+    plansByScenario: {
+      4: { scenarioId: 4, monthlyPacks: Array(12).fill(100), monthlyPricesRub: Array(12).fill(6500) },
+    },
+  };
+  assert.equal(
+    isStalePre2027AkushaDraft(customWithout202706),
+    false,
+    'Пользовательский SKU AKU-CUSTOM-99 никогда не должен признаваться старым черновиком!'
+  );
+
+  // 3. При этом старые демо-заглушки Cloud Walk / Soft Suede и старый AKU-001 без 202706 корректно отсеиваются
+  assert.equal(
+    isStalePre2027AkushaDraft({
+      id: 'old-1',
+      code: 'AKU-001',
+      title: 'Кроссовки городские AKUSHA Cloud Walk',
+      plansByScenario: {},
+    }),
+    true
+  );
+  assert.equal(
+    isStalePre2027AkushaDraft({
+      id: 'scen-akusha-001',
+      code: 'AKU-001',
+      title: 'Ботинки женские',
+      plansByScenario: { 1: {} as any },
+    }),
+    true
+  );
+});
+
+test('156. v11 Сквозная проверка всех 9 товарных групп AKUSHA в PeaklyBrandCatalogAndGroups: 0 пустых групп и точная сумма 20 377 пар', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { buildDefaultProductGroups, computeProductGroupMetrics } = await import(
+    '../src/lib/productGroups.ts'
+  );
+
+  const defaultGroups = buildDefaultProductGroups(AKUSHA_2027_MODELS);
+  const akushaAllGroups = defaultGroups.filter((g) => g.brandCode === 'AKUSHA');
+  assert.equal(
+    akushaAllGroups.length,
+    10,
+    'Должно быть 10 системных групп AKUSHA (1 сводная мастер-группа + 9 товарных подгрупп)'
+  );
+
+  const masterGroup = akushaAllGroups.find((g) => g.id === 'grp-akusha-shoes')!;
+  assert.ok(masterGroup);
+  const masterMetrics = computeProductGroupMetrics(
+    masterGroup,
+    AKUSHA_2027_MODELS,
+    AKUSHA_2027_SCENARIO_DEF
+  );
+  assert.equal(masterMetrics.modelsCount, 24);
+  assert.equal(masterMetrics.annualPacks, 20_377);
+  assert.equal(masterMetrics.annualRevenueRub, 105_793_210);
+
+  const akushaGroups = akushaAllGroups.filter((g) => g.id !== 'grp-akusha-shoes');
+  assert.equal(akushaGroups.length, 9, 'Должно быть ровно 9 товарных подгрупп AKUSHA');
+
+  let sumGroupPairs = 0;
+  let sumGroupRev = 0;
+  let sumGroupSkus = 0;
+
+  for (const grp of akushaGroups) {
+    const gm = computeProductGroupMetrics(grp, AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF);
+    assert.ok(gm.modelsCount > 0, `Группа «${grp.title}» не должна быть пустой`);
+    assert.ok(
+      gm.annualPacks > 0,
+      `Над группой «${grp.title}» обязан быть ненулевой план продаж в парах (получено ${gm.annualPacks})`
+    );
+    sumGroupSkus += gm.modelsCount;
+    sumGroupPairs += gm.annualPacks;
+    sumGroupRev += gm.annualRevenueRub;
+  }
+
+  assert.equal(sumGroupSkus, 24, 'Все 24 карточки AKUSHA распределены по 9 группам без потерь');
+  assert.equal(sumGroupPairs, 20_377, 'Сумма продаж по 9 группам AKUSHA строго равна 20 377 парам');
+  assert.equal(sumGroupRev, 105_793_210, 'Сумма выручки по 9 группам AKUSHA строго равна 105 793 210 ₽');
+});
+
+test('157. v11 Полная ревизия холдинга BORNERS GROUP по всем 5 брендам: BORNERS, LISKANI, AKUSHA, FUKAI, НА ТЕЛЕ без взаимного затирания', async () => {
+  const { hydratePortfolioModelsFromStorage, filterModelsForScenario } = await import(
+    '../src/lib/portfolioPersistence.ts'
+  );
+  const { ACTING_2027_SCENARIO_DEF } = await import('../src/lib/actingAssortment2027.ts');
+  const { LISKANI_2027_SCENARIO_DEF } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+  const { computeMultiBrandPortfolioSummary } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = undefined;
+  try {
+    const models = hydratePortfolioModelsFromStorage();
+    const allScenarios = [
+      ACTING_2027_SCENARIO_DEF,
+      ...INITIAL_SCENARIOS,
+      LISKANI_2027_SCENARIO_DEF,
+      AKUSHA_2027_SCENARIO_DEF,
+    ];
+
+    const summary = computeMultiBrandPortfolioSummary(models, allScenarios, {
+      BORNERS: 1,
+      FUKAI: 100,
+      LISKANI: 202705,
+      AKUSHA: 202706,
+      NA_TELE: 2,
+    });
+
+    const byBrand = Object.fromEntries(summary.brands.map((r) => [r.brandCode, r]));
+    assert.equal(byBrand.BORNERS.modelsCount, 21);
+    assert.equal(byBrand.BORNERS.annualRevenueRub, 686_284_972);
+
+    assert.equal(byBrand.FUKAI.modelsCount, 2);
+    assert.equal(byBrand.FUKAI.annualRevenueRub, 90_553_401);
+
+    assert.equal(byBrand.LISKANI.modelsCount, 33);
+    assert.equal(byBrand.LISKANI.annualRevenueRub, 500_000_000);
+
+    assert.equal(byBrand.AKUSHA.modelsCount, 24);
+    assert.equal(byBrand.AKUSHA.annualRevenueRub, 105_793_210);
+    assert.ok(byBrand.AKUSHA.totalProcurementQuantity > 0);
+
+    // Строгая изоляция: в Сценарии 1 BORNERS (при выключенном групповом флаге) нет ни одной чужой карточки
+    const pureS1 = filterModelsForScenario(models, INITIAL_SCENARIOS[0], false, 'ALL');
+    assert.equal(pureS1.length, 21);
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('158. v11 Стресс-тест 10 последовательных циклов правок и перезагрузок F5 по всем 5 брендам (цены, себестоимость, % выкупа, месяцы, PO)', async () => {
+  const { hydratePortfolioModelsFromStorage, persistPortfolioModels } = await import(
+    '../src/lib/portfolioPersistence.ts'
+  );
+  const {
+    updateModelScenarioPrice,
+    updateModelUnitCostWithVariants,
+    updateModelBuyoutRatePct,
+    updateModelScenarioMonthBuyouts,
+    computeProcurementPlan,
+    approveRecommendedBatch,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, String(v)),
+      removeItem: (k: string) => store.delete(k),
+    },
+  };
+
+  try {
+    for (let cycle = 1; cycle <= 10; cycle++) {
+      let models = hydratePortfolioModelsFromStorage();
+      models = models.map((m) => {
+        if (m.code === 'AKU-017') {
+          let u = updateModelScenarioPrice(m, 202706, 6000 + cycle * 100);
+          u = updateModelUnitCostWithVariants(u, 2000 + cycle * 20);
+          u = updateModelScenarioMonthBuyouts(u, 202706, 4, 200 + cycle);
+          return u;
+        }
+        if (m.code === 'AKU-031') {
+          let u = updateModelBuyoutRatePct(m, 34, { scenarioId: 202706 });
+          u = updateModelScenarioPrice(u, 202706, 5500 + cycle * 50);
+          return u;
+        }
+        if (m.code === 'BRN-001-SC' && cycle === 5) {
+          const proc = computeProcurementPlan(m, INITIAL_SCENARIOS[0]);
+          if (proc.recommendedBatches.length > 0) {
+            return approveRecommendedBatch(m, proc.recommendedBatches[0], 'Стресс-тест');
+          }
+        }
+        return m;
+      });
+      persistPortfolioModels(models);
+    }
+
+    // Финальный F5 после 10 циклов
+    const finalHydrated = hydratePortfolioModelsFromStorage();
+    const aku17 = finalHydrated.find((m) => m.code === 'AKU-017')!;
+    const aku31 = finalHydrated.find((m) => m.code === 'AKU-031')!;
+    const brnSc = finalHydrated.find((m) => m.code === 'BRN-001-SC')!;
+
+    assert.equal(aku17.retailPriceRub, 7000);
+    assert.equal(aku17.unitCostRub, 2200);
+    assert.equal(aku17.plansByScenario[202706].monthlyPacks[4], 210);
+    const met17 = computeModelScenarioMetrics(aku17, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(met17.annualRevenueRub, met17.annualPacks * 7000);
+
+    assert.equal(aku31.buyoutRatePct, 34);
+    assert.equal(aku31.retailPriceRub, 6000);
+    const met31 = computeModelScenarioMetrics(aku31, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(met31.annualRevenueRub, 540 * 6000);
+
+    assert.ok(brnSc.sharedSupplyAndFact!.approvedOrders.length >= 1);
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('159. v11 Аварийное восстановление заполненных цен AKU-017..020 и AKU-028..031 из borners_user_saved_plans_v1 при потере основного ключа', async () => {
+  const {
+    STORAGE_KEY_MODELS,
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { updateModelScenarioPrice, updateModelUnitCostWithVariants } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, String(v)),
+      removeItem: (k: string) => store.delete(k),
+    },
+  };
+
+  try {
+    let models = hydratePortfolioModelsFromStorage();
+    models = models.map((m) =>
+      m.retailPriceRub === 0 && m.code.startsWith('AKU-')
+        ? updateModelUnitCostWithVariants(updateModelScenarioPrice(m, 202706, 6890), 2250)
+        : m
+    );
+    persistPortfolioModels(models);
+
+    // Имитируем пропажу основного ключа borners_tz_models_v1
+    store.delete(STORAGE_KEY_MODELS);
+
+    const recovered = hydratePortfolioModelsFromStorage();
+    for (const code of ['AKU-017', 'AKU-018', 'AKU-019', 'AKU-020', 'AKU-028', 'AKU-029', 'AKU-030', 'AKU-031']) {
+      const card = recovered.find((m) => m.code === code)!;
+      const met = computeModelScenarioMetrics(card, AKUSHA_2027_SCENARIO_DEF);
+      assert.equal(card.retailPriceRub, 6890, `${code}: цена восстановлена из резервного ключа`);
+      assert.equal(card.unitCostRub, 2250, `${code}: себестоимость восстановлена из резервного ключа`);
+      assert.equal(met.annualRevenueRub, met.annualPacks * 6890);
+    }
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('160. v11 Авто-точки локального отката (getRollingLocalSnapshots) не расходуют квоту localStorage и фиксируют изменения портфеля', async () => {
+  const {
+    STORAGE_KEY_ROLLING_SNAPSHOTS,
+    getRollingLocalSnapshots,
+    hydratePortfolioModelsFromStorage,
+    persistPortfolioModels,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { updateModelScenarioPrice } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, String(v)),
+      removeItem: (k: string) => store.delete(k),
+    },
+  };
+
+  try {
+    const m1 = hydratePortfolioModelsFromStorage();
+    persistPortfolioModels(m1);
+    const m2 = m1.map((m) =>
+      m.code === 'AKU-017' ? updateModelScenarioPrice(m, 202706, 7150) : m
+    );
+    persistPortfolioModels(m2);
+
+    assert.equal(
+      store.has(STORAGE_KEY_ROLLING_SNAPSHOTS),
+      false,
+      'Rolling snapshots хранятся в памяти + IndexedDB и занимают 0 байт в localStorage'
+    );
+    const snaps = getRollingLocalSnapshots();
+    assert.ok(snaps.length >= 2, 'Должны быть записаны как минимум 2 авто-точки отката');
+    assert.notEqual(snaps[0].fingerprint, snaps[1].fingerprint);
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('161. v11 Синхронизация облака: точная перезапись STORAGE_KEY_USER_PLANS_BACKUP (replaceExact) при приходе свежего облака и победа локальных правок при более новой метке времени', async () => {
+  const {
+    STORAGE_KEY_USER_PLANS_BACKUP,
+    mergeCloudPortfolioSnapshot,
+    syncUserPlansBackup,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+  const { updateModelScenarioPrice } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, String(v)),
+      removeItem: (k: string) => store.delete(k),
+    },
+  };
+
+  try {
+    const staleCustom: any = {
+      ...AKUSHA_2027_MODELS[0],
+      id: 'ghost-local-custom',
+      code: 'AKU-GHOST-77',
+      title: 'Удалённый на другом устройстве черновик',
+    };
+    syncUserPlansBackup([...AKUSHA_2027_MODELS, staleCustom]);
+    assert.ok(store.get(STORAGE_KEY_USER_PLANS_BACKUP)?.includes('AKU-GHOST-77'));
+
+    const cloudModels = AKUSHA_2027_MODELS.map((m) =>
+      m.code === 'AKU-017' ? updateModelScenarioPrice(m, 202706, 6650) : m
+    );
+    const mergeRes = mergeCloudPortfolioSnapshot({
+      localModels: AKUSHA_2027_MODELS,
+      cloudModels,
+      localUpdatedAtIso: '2026-11-10T10:00:00.000Z',
+      cloudUpdatedAtIso: '2026-11-14T20:00:00.000Z',
+    });
+    assert.equal(mergeRes.shouldPushLocalToCloud, false);
+    assert.equal(
+      mergeRes.models.find((m) => m.code === 'AKU-017')?.retailPriceRub,
+      6650
+    );
+
+    syncUserPlansBackup(mergeRes.models, { replaceExact: !mergeRes.shouldPushLocalToCloud });
+    assert.equal(
+      store.get(STORAGE_KEY_USER_PLANS_BACKUP)?.includes('AKU-GHOST-77'),
+      false,
+      'При replaceExact старый призрак в STORAGE_KEY_USER_PLANS_BACKUP очищается'
+    );
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('162. v11 Защита облака Supabase от случайной перезаписи из localhost и Headless Chrome E2E (isAutomatedOrLocalhostWriteBlocked)', async () => {
+  const { pushPortfolioCoreToSupabase, pushModelGalleryToSupabase } = await import(
+    '../src/lib/supabaseCloudSync.ts'
+  );
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = {
+    location: { hostname: '127.0.0.1' },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  try {
+    const pushedCore = await pushPortfolioCoreToSupabase({ models: [] });
+    const pushedGal = await pushModelGalleryToSupabase('scen-akusha-001', []);
+    assert.equal(pushedCore, false, 'Запись в облако с 127.0.0.1 должна блокироваться');
+    assert.equal(pushedGal, false, 'Запись галереи в облако с 127.0.0.1 должна блокироваться');
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('163. v11 Защита баннера обновления в AppShell: отсутствие сброса миграций при клике «Обновить» и защита от бесконечного цикла 20 сек', () => {
+  const shellCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    shellCode.includes("removeItem('borners_liskani_269_official_migrated_v3')"),
+    false,
+    'handleApplySiteUpdate НЕ должен удалять флаг миграции borners_liskani_269_official_migrated_v3!'
+  );
+  assert.equal(
+    shellCode.includes('if (seenId !== remoteId)'),
+    true,
+    'Проверка версии должна опираться на seenId !== remoteId без зацикливания после «Позже»'
+  );
+});
+
+test('164. v11 Визуальный контракт PeaklyBrandCatalogAndGroups: плашка продаж НАД каждой карточкой, честный спарклайн в парах и отсутствие 0,00 млн ₽ у бесценовых групп AKUSHA', () => {
+  const code = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    code.includes('Верхняя плашка продаж прямо над карточкой') &&
+      code.includes('topSalesSummaryLabel'),
+    true,
+    'Над каждой карточкой в PeaklyBrandCatalogAndGroups обязана рендериться верхняя плашка продаж 2027'
+  );
+  assert.equal(
+    code.includes('usePacksSpark') && code.includes('Сезон весна–лето'),
+    true,
+    'Спарклайн бесценовых SKU обязан строиться по парам, а летние модели AKUSHA (дек = 0) — показывать годовую выручку и «Сезон весна–лето»'
+  );
+  assert.equal(
+    code.includes('План продаж 2027') && code.includes('(РРЦ уточнить)'),
+    true,
+    'Шапка групп Топсайдеры и Мокасины обязана показывать план продаж в парах вместо 0,00 млн ₽'
+  );
+});
+
+test('165. v11 Визуальный контракт ProductCatalogView: плашка продаж НАД каждой карточкой в режиме Плитки и честный «План / Год»', () => {
+  const code = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    code.includes('Верхняя плашка продаж прямо над карточкой'),
+    true,
+    'В ProductCatalogView над каждой карточкой обязана выводиться верхняя плашка продаж 2027'
+  );
+  assert.equal(
+    code.includes("'План / Год'") && code.includes("'Выручка / Год'"),
+    true,
+    'Нижняя полоса метрик обязана разделять План / Год (в парах), Выручка / Год и Маржа / Год'
+  );
+});
+
+test('166. v11 Визуальный контракт ProductLabView: плашка годовых продаж 2027 прямо над карточками Канбана и Галереи R&D', () => {
+  const code = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    code.includes('getConceptLinkedSalesBadge') &&
+      code.includes('Верхняя плашка артикула и плана продаж 2027 прямо над карточкой'),
+    true,
+    'Карточки Лаборатории R&D обязаны показывать связанный план продаж 2027 прямо над фото'
+  );
+});
+
+test('167. v11 Контракт GrowthScenariosShowcase: защита кастомных AKUSHA при чтении IDB, синхронизация 202706/202705 в степпере и эффективный сценарий строки таблицы', () => {
+  const code = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    code.includes('isStalePre2027AkushaDraft(snapMod)'),
+    true,
+    'GrowthScenariosShowcase обязан использовать безопасный фильтр isStalePre2027AkushaDraft'
+  );
+  assert.equal(
+    code.includes('const rowEffScen = resolveEffectiveScenarioForModel('),
+    true,
+    'Строки сводной таблицы на Главной обязаны считать метрики по эффективному сценарию бренда модели'
+  );
+});
+
+test('168. v11 Полный экспорт и импорт JSON-резервной копии со всеми заполненными ценами AKUSHA и 5 брендами', async () => {
+  const {
+    buildFullPlatformBackupBundle,
+    parseFullPlatformBackupBundle,
+    hydratePortfolioModelsFromStorage,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { updateModelScenarioPrice, updateModelUnitCostWithVariants } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const { AKUSHA_2027_SCENARIO_DEF } = await import('../src/lib/akushaAssortment2027.ts');
+
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).window = undefined;
+  try {
+    const baseModels = hydratePortfolioModelsFromStorage().map((m) =>
+      m.code === 'AKU-017'
+        ? updateModelUnitCostWithVariants(updateModelScenarioPrice(m, 202706, 6950), 2300)
+        : m
+    );
+    const bundle = buildFullPlatformBackupBundle({
+      scenarios: [...INITIAL_SCENARIOS, AKUSHA_2027_SCENARIO_DEF],
+      models: baseModels,
+      selectedScenarioByBrand: { BORNERS: 1, AKUSHA: 202706 },
+      includeGroupPortfolioInS1: false,
+    });
+    const jsonText = JSON.stringify(bundle);
+    const parsed = parseFullPlatformBackupBundle(jsonText);
+    assert.equal(parsed.valid, true);
+    const restoredAku17 = parsed.bundle!.models.find((m) => m.code === 'AKU-017')!;
+    assert.equal(restoredAku17.retailPriceRub, 6950);
+    assert.equal(restoredAku17.unitCostRub, 2300);
+    assert.equal(
+      restoredAku17.plansByScenario[202706].monthlyPacks.reduce((a, b) => a + b, 0),
+      986
+    );
+  } finally {
+    (globalThis as any).window = prevWin;
+  }
+});
+
+test('169. v11 Сезонные летние мюли AKUSHA Tomori Walk Mule (AKU-024..027): 0 продаж в декабре при 675 парах и 4 043 250 ₽ за весну–лето', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+  const { computeProcurementPlan } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const muleCodes = ['AKU-024', 'AKU-025', 'AKU-026', 'AKU-027'];
+  let totalMulePairs = 0;
+  let totalMuleRev = 0;
+
+  for (const code of muleCodes) {
+    const m = AKUSHA_2027_MODELS.find((x) => x.code === code)!;
+    const met = computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF);
+    const proc = computeProcurementPlan(m, AKUSHA_2027_SCENARIO_DEF);
+    assert.equal(met.targetMonthPacks, 0, `${code}: в декабре у летних мюлей 0 пар`);
+    assert.ok(met.annualPacks > 0, `${code}: за весну–лето активные продажи (${met.annualPacks} пар)`);
+    assert.ok(met.annualRevenueRub > 0, `${code}: годовая выручка > 0`);
+    assert.ok(proc.annualDemandPacks >= met.annualPacks);
+    totalMulePairs += met.annualPacks;
+    totalMuleRev += met.annualRevenueRub;
+  }
+
+  assert.equal(totalMulePairs, 675);
+  assert.equal(totalMuleRev, 4_043_250);
+});
+
+test('170. v11 Дыхабельные мокасины AKUSHA (AKU-028..031, buyoutRatePct = 0 -> 35%, цена 0 -> 5 490 ₽): полный цикл от «уточнить» до полной финмодели без NaN', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const {
+    updateModelBuyoutRatePct,
+    updateModelScenarioPrice,
+    updateModelUnitCostWithVariants,
+    computeFinancialPnL,
+    computeProcurementPlan,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+
+  const mocCodes = ['AKU-028', 'AKU-029', 'AKU-030', 'AKU-031'];
+  let sumMocPairs = 0;
+  let sumMocRev = 0;
+
+  for (const code of mocCodes) {
+    let m = AKUSHA_2027_MODELS.find((x) => x.code === code)!;
+    m = updateModelBuyoutRatePct(m, 35, { scenarioId: 202706 });
+    m = updateModelScenarioPrice(m, 202706, 5490);
+    m = updateModelUnitCostWithVariants(m, 1890);
+
+    const met = computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF);
+    const pnl = computeFinancialPnL(m, AKUSHA_2027_SCENARIO_DEF);
+    const proc = computeProcurementPlan(m, AKUSHA_2027_SCENARIO_DEF);
+
+    assert.ok(met.annualPacks > 0);
+    assert.ok(met.annualOrdersPacks > met.annualPacks);
+    assert.equal(met.annualRevenueRub, met.annualPacks * 5490);
+    assert.equal(pnl.annualRevenueRub, met.annualPacks * 5490);
+    assert.ok((pnl.annualOperatingProfitRub ?? 0) > 0);
+    assert.ok((proc.totalRecommendedBudgetRub ?? 0) > 0);
+
+    sumMocPairs += met.annualPacks;
+    sumMocRev += met.annualRevenueRub;
+  }
+
+  assert.equal(sumMocPairs, 1685);
+  assert.equal(sumMocRev, 1685 * 5490);
+});
+
+test('171. v11 Релизный идентификатор borners-2027-sales-integrity-v11 в next.config.ts', () => {
+  const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
+  assert.equal(
+    nextConfigCode.includes('borners-2027-sales-integrity-v11'),
+    true,
+    'next.config.ts обязан экспортировать buildId borners-2027-sales-integrity-v11'
+  );
 });
 
 

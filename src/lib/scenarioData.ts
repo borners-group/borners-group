@@ -1105,9 +1105,16 @@ export function computeModelScenarioMetrics(
       (pr, idx) => pr === actingSku.monthly[idx]?.realization_price_rub
     );
 
+  const hasPositiveSalesPacks = plan.monthlyPacks.some((p) => (p || 0) > 0);
+  const isStaleAllZeroRevenueOverride =
+    Array.isArray(plan.monthlyRevenuesRubOverride) &&
+    plan.monthlyRevenuesRubOverride.every((v) => !v) &&
+    hasPositiveSalesPacks;
+
   const hasExactRevenueOverride =
     Array.isArray(plan.monthlyRevenuesRubOverride) &&
-    plan.monthlyRevenuesRubOverride.length === 12;
+    plan.monthlyRevenuesRubOverride.length === 12 &&
+    !isStaleAllZeroRevenueOverride;
 
   const monthlyRevenuesRub = isUnmodifiedActingPlan
     ? actingSku.monthly.map((m) => m.revenue_rub)
@@ -1116,11 +1123,17 @@ export function computeModelScenarioMetrics(
         typeof rev === 'number' && rev >= 0
           ? rev
           : (plan.monthlyPacks[idx] || 0) *
-            (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
+            ((plan.monthlyPricesRub[idx] || 0) > 0
+              ? plan.monthlyPricesRub[idx]
+              : model.retailPriceRub)
       )
-    : plan.monthlyPacks.map(
-        (packs, idx) => packs * (plan.monthlyPricesRub[idx] ?? model.retailPriceRub)
-      );
+    : plan.monthlyPacks.map((packs, idx) => {
+        const effPrice =
+          (plan.monthlyPricesRub[idx] || 0) > 0
+            ? plan.monthlyPricesRub[idx]
+            : model.retailPriceRub;
+        return packs * effPrice;
+      });
 
   const isExactPresetOrders =
     hasExactRevenueOverride &&
@@ -1144,7 +1157,7 @@ export function computeModelScenarioMetrics(
             typeof storedOrder === 'number' &&
             storedOrder >= 0 &&
             (storedOrder === Math.ceil((cleanPacks * 100) / buyoutRatePct) ||
-              Math.round((storedOrder * buyoutRatePct) / 100) === cleanPacks)
+              Math.abs(Math.round((storedOrder * buyoutRatePct) / 100) - cleanPacks) <= 2)
           ) {
             return Math.round(storedOrder);
           }
@@ -1165,7 +1178,10 @@ export function computeModelScenarioMetrics(
               ? monthlyRevenuesRub[idx]
               : Math.round((monthlyRevenuesRub[idx] * 100) / buyoutRatePct);
           }
-          const price = plan.monthlyPricesRub[idx] ?? model.retailPriceRub;
+          const price =
+            (plan.monthlyPricesRub[idx] || 0) > 0
+              ? plan.monthlyPricesRub[idx]
+              : model.retailPriceRub;
           return ordPacks * price;
         });
 
@@ -1180,9 +1196,9 @@ export function computeModelScenarioMetrics(
 
   const targetMonthIdx = scenario.targetMonthIdx ?? 11;
   const fallbackScenarioPriceRub =
-    plan.monthlyPricesRub[targetMonthIdx] ??
-    plan.monthlyPricesRub.find((p) => p > 0) ??
-    model.retailPriceRub;
+    (plan.monthlyPricesRub[targetMonthIdx] || 0) > 0
+      ? plan.monthlyPricesRub[targetMonthIdx]
+      : plan.monthlyPricesRub.find((p) => p > 0) || model.retailPriceRub;
   const avgRetailPriceRub =
     annualPacks > 0 ? Math.round(annualRevenueRub / annualPacks) : fallbackScenarioPriceRub;
 

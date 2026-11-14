@@ -445,6 +445,7 @@ export function syncConceptToScenarioPortfolio(
   options?: {
     initialMonthlyBuyouts?: number[];
     targetScenarioIds?: number[];
+    preserveExistingCatalogPrices?: boolean;
   }
 ): SyncConceptToPortfolioResult {
   const brandCode = normalizeLabBrandCode(concept.brandId);
@@ -470,14 +471,48 @@ export function syncConceptToScenarioPortfolio(
     concept.packUnitsCount && concept.packUnitsCount > 0
       ? Math.max(1, Math.round(concept.packUnitsCount))
       : Math.max(1, Math.round(defaultPackUnits));
-  const retailPriceRub = Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
-  const unitCostRub = resolveConceptPrimaryUnitCostRub(concept, packUnits);
-  const launchStatus = mapConceptStageToLaunchStatus(concept.stage);
 
   const selectedSample =
     concept.samples?.find((s) => s.isSelectedForProduction) ||
     concept.samples?.find((s) => s.status === 'approved') ||
     concept.samples?.[concept.samples.length - 1];
+
+  const hasExplicitConceptRetail =
+    typeof concept.plannedRetailPrice === 'number' && concept.plannedRetailPrice > 0;
+  const sampleRawPriceCheck =
+    selectedSample?.estimatedUnitProductionPrice ??
+    (selectedSample as { sampleUnitCost?: number } | undefined)?.sampleUnitCost ??
+    0;
+  const hasExplicitConceptCost =
+    (typeof concept.plannedUnitCost === 'number' && concept.plannedUnitCost > 0) ||
+    Boolean(concept.productionOrders?.[0]?.unitPrice && concept.productionOrders[0].unitPrice > 0) ||
+    sampleRawPriceCheck > 0;
+
+  const retailPriceRub = existing
+    ? options?.preserveExistingCatalogPrices && (existing.retailPriceRub || 0) > 0
+      ? existing.retailPriceRub
+      : hasExplicitConceptRetail
+      ? Math.max(100, Math.round(concept.plannedRetailPrice!))
+      : existing.retailPriceRub
+    : Math.max(100, Math.round(concept.plannedRetailPrice || 2490));
+
+  const unitCostRub = existing
+    ? options?.preserveExistingCatalogPrices && (existing.unitCostRub || 0) > 0
+      ? existing.unitCostRub
+      : hasExplicitConceptCost
+      ? resolveConceptPrimaryUnitCostRub(concept, packUnits)
+      : existing.unitCostRub
+    : resolveConceptPrimaryUnitCostRub(concept, packUnits);
+
+  const mappedStatus = mapConceptStageToLaunchStatus(concept.stage);
+  const launchStatus =
+    existing && concept.stage !== 'REJECTED'
+      ? existing.launchStatus === 'Утверждено'
+        ? 'Утверждено'
+        : existing.launchStatus === 'В плане' && mappedStatus === 'В разработке'
+        ? 'В плане'
+        : mappedStatus
+      : mappedStatus;
   const rawComp =
     selectedSample?.materialAndComposition?.trim() ||
     concept.techPack?.ru?.compositionAndDensity?.trim() ||
@@ -581,11 +616,20 @@ export function syncConceptToScenarioPortfolio(
             )
           );
 
+      const clearStaleZeroOverride =
+        retailPriceRub !== prevRetail ||
+        (Array.isArray(pl.monthlyRevenuesRubOverride) &&
+          pl.monthlyRevenuesRubOverride.every((v) => !v) &&
+          updatedMonthlyPacks.some((v) => (v || 0) > 0));
+
       nextPlans[scId] = {
         ...pl,
         monthlyPacks: updatedMonthlyPacks,
         monthlyPricesRub: updatedMonthlyPrices,
         monthlyReceiptsPacks: updatedReceipts,
+        monthlyRevenuesRubOverride: clearStaleZeroOverride
+          ? undefined
+          : pl.monthlyRevenuesRubOverride,
         monthlyOrdersRub: pl.monthlyOrdersRub ? updatedOrdersRub : pl.monthlyOrdersRub,
         firstOrderPacks: orderPacks > 0 ? orderPacks : pl.firstOrderPacks,
         salesStartMonthIdx:
@@ -794,7 +838,9 @@ export function syncAllBrandConceptsToScenarioPortfolio(
   );
 
   for (const concept of matchingConcepts) {
-    const res = syncConceptToScenarioPortfolio(concept, workingModels, scenarios);
+    const res = syncConceptToScenarioPortfolio(concept, workingModels, scenarios, {
+      preserveExistingCatalogPrices: true,
+    });
     workingModels = res.models;
     syncedItems.push({
       conceptId: concept.id,
@@ -814,10 +860,13 @@ export function buildConceptPatchFromScenarioModel(
 ): Partial<ProductConcept> & { name: string; brandId: string } {
   const brandCode = normalizeLabBrandCode(detectModelBrandPortfolioLabel(model));
   const packUnits = Math.max(1, Math.round(model.unitsInPack || 1));
+  const rawUnitCost = Math.max(0, Number(model.unitCostRub) || 0);
   const perPieceUnitCost =
-    packUnits > 1
-      ? Math.max(1, Math.round((model.unitCostRub || 0) / packUnits))
-      : Math.max(1, Math.round(model.unitCostRub || 0));
+    rawUnitCost > 0
+      ? packUnits > 1
+        ? Math.max(1, Math.round(rawUnitCost / packUnits))
+        : Math.max(1, Math.round(rawUnitCost))
+      : 0;
 
   const mainPhoto =
     model.gallery?.find((g) => g.isMain)?.url ||
@@ -853,7 +902,7 @@ export function buildConceptPatchFromScenarioModel(
       galleryPhotos.length > 0
         ? galleryPhotos
         : [{ id: `gp-cat-${model.id}-main`, url: mainPhoto, caption: model.title }],
-    plannedRetailPrice: model.retailPriceRub || 2490,
+    plannedRetailPrice: Math.max(0, Math.round(Number(model.retailPriceRub) || 0)),
     plannedUnitCost: perPieceUnitCost,
     packUnitsCount: packUnits,
     supplierName:
@@ -871,10 +920,13 @@ export function buildPdfConceptFromScenarioModel(
   const profile = getBrandProductionProfile(brandCode, `${model.title} ${model.categoryLabel || ''}`);
   const brandLabel = profile.brandLabel;
   const packUnits = Math.max(1, Math.round(model.unitsInPack || 1));
+  const rawUnitCost = Math.max(0, Number(model.unitCostRub) || 0);
   const perPieceUnitCost =
-    packUnits > 1
-      ? Math.max(1, Math.round((model.unitCostRub || 0) / packUnits))
-      : Math.max(1, Math.round(model.unitCostRub || 0));
+    rawUnitCost > 0
+      ? packUnits > 1
+        ? Math.max(1, Math.round(rawUnitCost / packUnits))
+        : Math.max(1, Math.round(rawUnitCost))
+      : 0;
 
   const cleanCodeUpper = (model.code || '').trim().toUpperCase();
   const cleanTitleUpper = (model.title || '').trim().toUpperCase();
@@ -1010,7 +1062,7 @@ export function buildPdfConceptFromScenarioModel(
     targetAudience: brandLabel,
     keyDifferentiators: constructionRu,
     referencesNotes: compositionRu,
-    plannedRetailPrice: model.retailPriceRub || 2490,
+    plannedRetailPrice: Math.max(0, Math.round(Number(model.retailPriceRub) || 0)),
     plannedUnitCost: perPieceUnitCost,
     packUnitsCount: packUnits,
     currency: 'RUB',

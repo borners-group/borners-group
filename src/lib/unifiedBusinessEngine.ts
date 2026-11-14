@@ -875,8 +875,49 @@ export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioMode
       (rawModel.waistband?.type || '').includes('BORNERS (по фото)') ||
       (rawModel.waistband?.logoRepeat || '').includes('Жаккардовый пояс по фото карточки'));
 
+  const sanitizedPlansByScenario: ScenarioModelSpec['plansByScenario'] = {};
+  if (rawModel.plansByScenario && typeof rawModel.plansByScenario === 'object') {
+    for (const [scKey, pl] of Object.entries(rawModel.plansByScenario)) {
+      if (!pl || typeof pl !== 'object') continue;
+      const numScId = Number(scKey);
+      const hasPacks = Array.isArray(pl.monthlyPacks) && pl.monthlyPacks.some((p) => (p || 0) > 0);
+      const isStaleZeroRevOverride =
+        Array.isArray(pl.monthlyRevenuesRubOverride) &&
+        pl.monthlyRevenuesRubOverride.every((v) => !v) &&
+        hasPacks;
+      const shouldHealZeroMonthlyPrices =
+        (rawModel.retailPriceRub || 0) > 0 &&
+        Array.isArray(pl.monthlyPricesRub) &&
+        pl.monthlyPricesRub.every((pr) => !pr);
+
+      if (isStaleZeroRevOverride || shouldHealZeroMonthlyPrices) {
+        const healedPrices = shouldHealZeroMonthlyPrices
+          ? Array<number>(12).fill(rawModel.retailPriceRub)
+          : pl.monthlyPricesRub;
+        const healedOrdersRub =
+          shouldHealZeroMonthlyPrices && Array.isArray(pl.monthlyOrdersPacks)
+            ? pl.monthlyOrdersPacks.map((ord) => (ord || 0) * rawModel.retailPriceRub)
+            : pl.monthlyOrdersRub;
+        sanitizedPlansByScenario[numScId] = {
+          ...pl,
+          monthlyPricesRub: healedPrices,
+          monthlyOrdersRub: healedOrdersRub,
+          monthlyRevenuesRubOverride: isStaleZeroRevOverride
+            ? undefined
+            : pl.monthlyRevenuesRubOverride,
+        };
+      } else {
+        sanitizedPlansByScenario[numScId] = pl;
+      }
+    }
+  }
+
   const model: ScenarioModelSpec = {
     ...rawModel,
+    plansByScenario:
+      Object.keys(sanitizedPlansByScenario).length > 0
+        ? sanitizedPlansByScenario
+        : rawModel.plansByScenario,
     wbArticle: cleanedWbArticle,
     gallery: sanitizedGallery,
     palettes: sanitizedPalettes,
@@ -2142,12 +2183,21 @@ export function computeFinancialPnL(
       monthlyEffectiveRevRub.push(p * pr);
     } else {
       const p = Math.max(0, plan.monthlyPacks[m] || 0);
+      const isStaleZeroRevOverride =
+        Array.isArray(plan.monthlyRevenuesRubOverride) &&
+        plan.monthlyRevenuesRubOverride.every((v) => !v) &&
+        plan.monthlyPacks.some((pk) => (pk || 0) > 0);
+      const effPrice =
+        (plan.monthlyPricesRub[m] || 0) > 0
+          ? plan.monthlyPricesRub[m]
+          : model.retailPriceRub;
       const rev = isUnmodifiedActingPlan
         ? actingSku.monthly[m]?.revenue_rub || 0
-        : plan.monthlyRevenuesRubOverride &&
+        : !isStaleZeroRevOverride &&
+          plan.monthlyRevenuesRubOverride &&
           plan.monthlyRevenuesRubOverride[m] !== undefined
         ? plan.monthlyRevenuesRubOverride[m]
-        : p * (plan.monthlyPricesRub[m] ?? model.retailPriceRub);
+        : p * effPrice;
       monthlyEffectivePacks.push(p);
       monthlyEffectiveRevRub.push(rev);
     }
@@ -2636,7 +2686,10 @@ export function exportStructuredScenarioPlan(
       seenSkuMonth.add(dedupeKey);
 
       const packs = Math.max(0, plan.monthlyPacks[idx] || 0);
-      const price = Math.max(0, plan.monthlyPricesRub[idx] ?? m.retailPriceRub);
+      const price = Math.max(
+        0,
+        (plan.monthlyPricesRub[idx] || 0) > 0 ? plan.monthlyPricesRub[idx] : m.retailPriceRub
+      );
       const act = shared.actualSalesByMonth[idx];
       const status: ValueStatusCode =
         act && act.actualBuyoutsPacks !== null
@@ -3184,24 +3237,29 @@ export function computeScenarioInvestmentSummary(
     const logRub = 0;
     const otherVarRub = 0;
 
+    const hasValidRevOverride =
+      Array.isArray(plan.monthlyRevenuesRubOverride) &&
+      plan.monthlyRevenuesRubOverride.length === 12 &&
+      (plan.monthlyRevenuesRubOverride.some((r) => (r || 0) > 0) ||
+        !plan.monthlyPacks.some((p) => (p || 0) > 0));
+
     for (let idx = 0; idx < 12; idx++) {
       const act = shared.actualSalesByMonth[idx];
       const packsM =
         act && act.actualBuyoutsPacks !== null
           ? Math.max(0, act.actualBuyoutsPacks)
           : Math.max(0, plan.monthlyPacks[idx] || 0);
+      const effPlanPriceM =
+        (plan.monthlyPricesRub[idx] || 0) > 0 ? plan.monthlyPricesRub[idx] : m.retailPriceRub;
       const revM =
         act && act.actualBuyoutsPacks !== null
           ? packsM *
-            (act.actualPriceRub !== null
-              ? act.actualPriceRub
-              : plan.monthlyPricesRub[idx] ?? m.retailPriceRub)
+            (act.actualPriceRub !== null ? act.actualPriceRub : effPlanPriceM)
           : isUnmodifiedActing
           ? actingSku.monthly[idx]?.revenue_rub || 0
-          : plan.monthlyRevenuesRubOverride &&
-            plan.monthlyRevenuesRubOverride[idx] !== undefined
-          ? plan.monthlyRevenuesRubOverride[idx]
-          : packsM * (plan.monthlyPricesRub[idx] ?? m.retailPriceRub);
+          : hasValidRevOverride && plan.monthlyRevenuesRubOverride![idx] !== undefined
+          ? plan.monthlyRevenuesRubOverride![idx]
+          : packsM * effPlanPriceM;
 
       const deductionsM =
         Math.round((revM * (mpPct + adsPct)) / 100) +
@@ -4499,10 +4557,18 @@ export function createBrandProductModel(
   const monthlyOrdersRub = monthlyOrdersPacks.map((op) => op * cleanPrice);
 
   const plansByScenario: ScenarioModelSpec['plansByScenario'] = {};
-  for (const sc of scenarios) {
-    if (sc.id === 100) continue;
-    plansByScenario[sc.id] = {
-      scenarioId: sc.id,
+  const requiredScenarioIds = new Set<number>(
+    scenarios.filter((sc) => sc.id !== 100).map((sc) => sc.id)
+  );
+  requiredScenarioIds.add(1);
+  requiredScenarioIds.add(2);
+  if (effectiveBrand === 'AKUSHA') requiredScenarioIds.add(202706);
+  if (effectiveBrand === 'LISKANI') requiredScenarioIds.add(202705);
+
+  for (const scId of requiredScenarioIds) {
+    const scObj = scenarios.find((s) => s.id === scId);
+    plansByScenario[scId] = {
+      scenarioId: scId,
       monthlyPacks: [...monthlyPacks],
       monthlyPricesRub: Array(12).fill(cleanPrice),
       monthlyReceiptsPacks: Array(12).fill(0),
@@ -4511,7 +4577,7 @@ export function createBrandProductModel(
       buyoutRatePct: cleanBuyoutRatePct,
       initialStockPacks: 0,
       firstOrderPacks: 0,
-      nextOrderDateLabel: `15 января ${sc.year || 2027}`,
+      nextOrderDateLabel: `15 января ${scObj?.year || 2027}`,
       salesStartMonthIdx: 0,
       warehouseArrivalMonthIdx: 0,
       warehouseArrivalDateLabel: '1 января',

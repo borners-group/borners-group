@@ -3732,6 +3732,16 @@ export function PeaklyCatalogGroupsAndBrandsView({
     const nextOrderDate =
       confirmedPos[0]?.orderPlacementDateIso || firstDraft?.recommendedOrderDateIso || null;
 
+    const topSalesSummaryLabel = !hasFinance
+      ? `План 2027: ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+      : met.annualRevenueRub > 0
+      ? `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽ · ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
+      : met.annualPacks > 0
+      ? `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit} · РРЦ уточнить`
+      : `План: 0 ${unitCfg.primaryUnit}`;
+
+    const usePacksSpark = !hasFinance || (met.annualRevenueRub <= 0 && met.annualPacks > 0);
+
     return (
       <div
         key={mod.id}
@@ -3746,17 +3756,30 @@ export function PeaklyCatalogGroupsAndBrandsView({
         }}
         className="group relative rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] text-left transition-colors cursor-pointer flex flex-col justify-between overflow-hidden"
       >
-        {/* Studio Gallery Mat */}
-        <div className="relative bg-[#F6F5F2] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] px-3.5 pt-8 pb-3">
-          <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-md bg-white/92 dark:bg-[#151514]/92 backdrop-blur-xs border border-[#E4E1DA] dark:border-[#282724] px-2 py-0.5 font-mono text-[10.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+        {/* Верхняя плашка продаж прямо над карточкой */}
+        <div className="px-3 py-1.5 bg-[#FAF9F6] dark:bg-[#181715] border-b border-[#E4E1DA] dark:border-[#282724] flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] font-medium text-[#5C5953] dark:text-[#9A968E] shrink-0">
             <span
               className={`inline-block h-1.5 w-1.5 rounded-full ${
-                isActiveSale ? 'bg-[#15803D]' : 'bg-[#78746C]'
+                isActiveSale || met.annualPacks > 0 ? 'bg-[#15803D]' : 'bg-[#78746C]'
               }`}
             />
             <span>{stageLabel}</span>
           </span>
+          <span
+            className={`font-mono tabular-nums text-[10.5px] font-semibold truncate ${
+              met.annualPacks > 0
+                ? 'text-[#141413] dark:text-[#F5F4F0]'
+                : 'text-[#78746C] dark:text-[#9A968E]'
+            }`}
+            title={`Годовой план продаж 2027: ${topSalesSummaryLabel}`}
+          >
+            {topSalesSummaryLabel}
+          </span>
+        </div>
 
+        {/* Studio Gallery Mat */}
+        <div className="relative bg-[#F6F5F2] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] px-3.5 pt-4 pb-3">
           {onDeleteModel && canEditMod && (
             <button
               type="button"
@@ -3810,19 +3833,25 @@ export function PeaklyCatalogGroupsAndBrandsView({
               <div className="pr-2">
                 <div className="font-sans text-[10px] text-[#5C5953] dark:text-[#9A968E]">Цена WB</div>
                 <div className="text-[12px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
+                  {met.avgRetailPriceRub > 0
+                    ? `${met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽`
+                    : 'уточнить'}
                 </div>
               </div>
               <div className="px-2">
                 <div className="font-sans text-[10px] text-[#5C5953] dark:text-[#9A968E]">Маржа</div>
                 <div className="text-[12px] font-semibold text-[#15803D] dark:text-emerald-400">
-                  {hasFinance && hasCost ? `${met.unitMarginPct.toFixed(0)}%` : 'Скрыто'}
+                  {!hasFinance || !hasCost
+                    ? 'Скрыто'
+                    : met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
+                    ? `${met.unitMarginPct.toFixed(0)}%`
+                    : 'уточнить'}
                 </div>
               </div>
               <div className="pl-2">
                 <div className="font-sans text-[10px] text-[#5C5953] dark:text-[#9A968E]">Объём/год</div>
                 <div className="text-[12px] font-semibold text-[#141413] dark:text-[#F5F4F0] truncate">
-                  {met.annualPacks.toLocaleString('ru-RU')}
+                  {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
                 </div>
               </div>
             </div>
@@ -3834,8 +3863,8 @@ export function PeaklyCatalogGroupsAndBrandsView({
                 const hPx = Math.max(
                   3,
                   Math.round(
-                    ((hasFinance ? mRev : mPacks) /
-                      (hasFinance ? maxModMonthRev : maxModMonthPacks)) *
+                    ((usePacksSpark ? mPacks : mRev) /
+                      (usePacksSpark ? maxModMonthPacks : maxModMonthRev)) *
                       16
                   )
                 );
@@ -3844,12 +3873,16 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     key={mIdx}
                     style={{ height: `${hPx}px` }}
                     title={
-                      hasFinance
-                        ? `${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽`
+                      !usePacksSpark
+                        ? `${MONTHS_SHORT_RU[mIdx]}: ${(mRev / 1_000_000).toFixed(2)} млн ₽ (${mPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit})`
                         : `${MONTHS_SHORT_RU[mIdx]}: ${mPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
                     }
                     className={`flex-1 rounded-[1.5px] ${
-                      mIdx === 11 ? 'bg-[#141413] dark:bg-[#F5F4F0]' : 'bg-[#CBC7BE] dark:bg-[#3A3834]'
+                      mIdx === 11 && mPacks > 0
+                        ? 'bg-[#141413] dark:bg-[#F5F4F0]'
+                        : mPacks > 0
+                        ? 'bg-[#8E8A80] dark:bg-[#6E6A60]'
+                        : 'bg-[#E4E1DA] dark:bg-[#2C2A27]'
                     }`}
                   />
                 );
@@ -3883,7 +3916,40 @@ export function PeaklyCatalogGroupsAndBrandsView({
             className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] flex items-center justify-between gap-2"
           >
             <div>
-              {hasFinance ? (
+              {!hasFinance ? (
+                <>
+                  <div className="font-mono text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] leading-tight">
+                    {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}{' '}
+                    <span className="font-sans text-[10px] font-normal text-[#5C5953]">/ год</span>
+                  </div>
+                  <div className="text-[11px] text-[#5C5953] mt-0.5">
+                    Выручка: <strong className="font-mono text-[#5C5953]">Скрыто</strong>
+                  </div>
+                </>
+              ) : met.annualRevenueRub <= 0 && met.annualPacks > 0 ? (
+                <>
+                  <div className="font-mono text-[13.5px] font-semibold tabular-nums text-[#141413] dark:text-[#F5F4F0] leading-tight">
+                    {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}{' '}
+                    <span className="font-sans text-[10px] font-normal text-[#5C5953]">/ год</span>
+                  </div>
+                  <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E] mt-0.5">
+                    Дек: <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">{met.targetMonthPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}</strong> · РРЦ уточнить
+                  </div>
+                </>
+              ) : met.annualRevenueRub > 0 && met.targetMonthPacks === 0 && met.annualPacks > 0 ? (
+                <>
+                  <div className="font-mono text-[14px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0] leading-tight">
+                    {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽{' '}
+                    <span className="font-sans text-[10px] font-normal text-[#5C5953]">/ год</span>
+                  </div>
+                  <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E] mt-0.5">
+                    Сезон весна–лето ·{' '}
+                    <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                      {met.annualPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}
+                    </strong>
+                  </div>
+                </>
+              ) : (
                 <>
                   <div className="font-mono text-[14px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0] leading-tight">
                     {(met.targetMonthRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽{' '}
@@ -3894,16 +3960,6 @@ export function PeaklyCatalogGroupsAndBrandsView({
                     <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
                       {(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽
                     </strong>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="font-mono text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] leading-tight">
-                    {met.targetMonthPacks.toLocaleString('ru-RU')} {unitCfg.primaryUnit}{' '}
-                    <span className="font-sans text-[10px] font-normal text-[#5C5953]">/ дек</span>
-                  </div>
-                  <div className="text-[11px] text-[#5C5953] mt-0.5">
-                    Выручка: <strong className="font-mono text-[#5C5953]">Скрыто</strong>
                   </div>
                 </>
               )}
@@ -4077,10 +4133,18 @@ export function PeaklyCatalogGroupsAndBrandsView({
                   <div className="flex flex-wrap items-center gap-6 text-right">
                     <div>
                       <div className="text-[10.5px] font-medium text-[#64748B]">
-                        Выручка за год
+                        {hasFinance && gm.annualRevenueRub <= 0 && gm.annualPacks > 0
+                          ? 'План продаж 2027'
+                          : 'Продажи за год'}
                       </div>
                       <div className="font-mono text-[14px] font-extrabold text-[#111827]">
-                        {hasFinance ? formatMln(gm.annualRevenueRub) : 'Скрыто'}
+                        {!hasFinance
+                          ? 'Скрыто'
+                          : gm.annualRevenueRub > 0
+                          ? `${formatMln(gm.annualRevenueRub)} · ${gm.annualPacks.toLocaleString('ru-RU')} ${gm.primaryUnit}`
+                          : gm.annualPacks > 0
+                          ? `${gm.annualPacks.toLocaleString('ru-RU')} ${gm.primaryUnit} (РРЦ уточнить)`
+                          : formatMln(0)}
                       </div>
                     </div>
 
@@ -4095,12 +4159,18 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
                     <div className="hidden sm:block">
                       <div className="text-[10.5px] font-medium text-[#64748B]">
-                        {hasFinance && hasCost
+                        {hasFinance && hasCost && gm.avgMarginPct > 0
                           ? `Старт Q1 (маржа ${gm.avgMarginPct}%)`
                           : 'Старт Q1'}
                       </div>
                       <div className="font-mono text-[14px] font-bold text-[#059669]">
-                        {hasCost ? formatMln(gm.firstWaveStartRub) : 'Скрыто'}
+                        {!hasCost
+                          ? 'Скрыто'
+                          : gm.firstWaveStartRub > 0
+                          ? formatMln(gm.firstWaveStartRub)
+                          : gm.procurementPacks > 0
+                          ? 'себест. уточнить'
+                          : formatMln(0)}
                       </div>
                     </div>
 

@@ -85,6 +85,7 @@ import {
   hydratePortfolioModelsFromStorage,
   isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
+  isStalePre2027AkushaDraft,
   markModelAsDeletedInStorage,
   markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
@@ -127,6 +128,7 @@ export {
   hydratePortfolioModelsFromStorage,
   isBrandScenarioExplicitlyNone,
   isModelMarkedDeleted,
+  isStalePre2027AkushaDraft,
   markModelAsDeletedInStorage,
   markScenarioAsDeletedInStorage,
   mergeCloudPortfolioSnapshot,
@@ -186,6 +188,7 @@ export function useLiveScenarioPortfolio() {
   const includeGroupRef = useRef(includeGroupPortfolioInS1);
   includeGroupRef.current = includeGroupPortfolioInS1;
   const localMutationSeqRef = useRef(0);
+  const initialCloudPullDoneRef = useRef(false);
 
   const cloudDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleCompleteCloudPush = useCallback(
@@ -196,7 +199,8 @@ export function useLiveScenarioPortfolio() {
         selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode, number | null>>;
         includeGroupPortfolioInS1?: boolean;
       },
-      immediate = false
+      immediate = false,
+      allowBeforeInitialPull = false
     ) => {
       if (overrides?.models) modelsRef.current = overrides.models;
       if (overrides?.scenarios) scenariosRef.current = overrides.scenarios;
@@ -205,6 +209,10 @@ export function useLiveScenarioPortfolio() {
       }
       if (typeof overrides?.includeGroupPortfolioInS1 === 'boolean') {
         includeGroupRef.current = overrides.includeGroupPortfolioInS1;
+      }
+
+      if (!initialCloudPullDoneRef.current && !allowBeforeInitialPull) {
+        return;
       }
 
       const runPush = () => {
@@ -221,6 +229,8 @@ export function useLiveScenarioPortfolio() {
           includeGroupPortfolioInS1: includeGroupRef.current,
           deletedModelIds: getDeletedModelsRegistry(),
           deletedScenarioIds: getDeletedScenariosRegistry(),
+          financeContourParams: safeGetStorageJson('borners_finance_contour_params_v1'),
+          productGroups: safeGetStorageJson('borners_product_groups_v1'),
         });
       };
 
@@ -416,12 +426,7 @@ export function useLiveScenarioPortfolio() {
         for (const snapMod of idbSnapMeta.models) {
           if (!snapMod || !snapMod.id || !snapMod.code) continue;
           if (isModelMarkedDeleted(snapMod)) continue;
-          const isOldAkushaDraft =
-            ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
-              snapMod.code.toUpperCase().startsWith('AKU-') ||
-              snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
-            !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
-          if (isOldAkushaDraft) continue;
+          if (isStalePre2027AkushaDraft(snapMod)) continue;
 
           const existingIdx = workingModels.findIndex(
             (m) =>
@@ -479,7 +484,12 @@ export function useLiveScenarioPortfolio() {
 
       const seqBeforeCloud = localMutationSeqRef.current;
       const cloud = await pullPortfolioFromSupabase();
-      if (cancelled || !cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) {
+      initialCloudPullDoneRef.current = true;
+      if (cancelled) return;
+      if (!cloud || !Array.isArray(cloud.models) || cloud.models.length === 0) {
+        if (localMutationSeqRef.current > 0) {
+          scheduleCompleteCloudPush(undefined, true, true);
+        }
         return;
       }
 
@@ -558,7 +568,9 @@ export function useLiveScenarioPortfolio() {
       }
 
       safeSetStorageJson(STORAGE_KEY_MODELS, mergeRes.models);
-      syncUserPlansBackup(mergeRes.models);
+      syncUserPlansBackup(mergeRes.models, {
+        replaceExact: !mergeRes.shouldPushLocalToCloud,
+      });
       void savePortfolioSnapshotToIdb(
         mergeRes.models,
         isCloudNewer && cloud.updatedAtIso ? cloud.updatedAtIso : localUpdatedAtIso || undefined
@@ -628,8 +640,16 @@ export function useLiveScenarioPortfolio() {
         setIncludeGroupState(cloud.includeGroupPortfolioInS1);
       }
 
+      if (isCloudNewer && cloud.financeContourParams && typeof cloud.financeContourParams === 'object') {
+        safeSetStorageJson('borners_finance_contour_params_v1', cloud.financeContourParams);
+      }
+
+      if (isCloudNewer && Array.isArray(cloud.productGroups)) {
+        safeSetStorageJson('borners_product_groups_v1', cloud.productGroups);
+      }
+
       if (mergeRes.shouldPushLocalToCloud) {
-        scheduleCompleteCloudPush({ models: mergeRes.models, scenarios: nextScen }, true);
+        scheduleCompleteCloudPush({ models: mergeRes.models, scenarios: nextScen }, true, true);
       } else if (cloud.updatedAtIso) {
         touchPortfolioUpdatedAt(cloud.updatedAtIso);
       }

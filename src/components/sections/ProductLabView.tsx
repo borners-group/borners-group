@@ -32,6 +32,7 @@ import {
   canUserEditBrand,
   canUserViewBrandConcept,
   canUserViewCostPrice,
+  canUserViewFinance,
   validateRnDStageTransition,
   normalizeConceptStageToSeven,
 } from '@/lib/finance';
@@ -44,14 +45,22 @@ import {
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
 import { MiroBoardView } from '@/components/sections/MiroBoardView';
 import { compressImageFileToDataUrl } from '@/lib/document-export';
-import { ScenarioModelSpec, resolvePublicAssetUrl } from '@/lib/scenarioData';
+import {
+  ScenarioModelSpec,
+  computeModelScenarioMetrics,
+  resolvePublicAssetUrl,
+} from '@/lib/scenarioData';
 import { saveModelGalleryToIdb } from '@/lib/safeStorage';
 import {
   deleteModelFromPortfolio,
   markModelAsDeletedInStorage,
+  resolveEffectiveScenarioForModel,
   useLiveScenarioPortfolio,
 } from '@/lib/useLiveScenarioPortfolio';
-import { detectModelBrandPortfolioLabel } from '@/lib/unifiedBusinessEngine';
+import {
+  detectModelBrandPortfolioLabel,
+  getBrandUnitConfig,
+} from '@/lib/unifiedBusinessEngine';
 import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import {
   buildConceptPatchFromScenarioModel,
@@ -126,8 +135,32 @@ export function ProductLabView() {
   const {
     models: liveScenarioModels,
     scenarios: liveScenarios,
+    currentScenario: liveCurrentScenario,
+    selectedScenarioByBrand: liveSelectedScenarioByBrand,
+    includeGroupPortfolioInS1: liveIncludeGroupS1,
     updateModelsBatch,
   } = useLiveScenarioPortfolio();
+
+  const hasFinanceAccess = canUserViewFinance(currentUser);
+
+  const getConceptLinkedSalesBadge = (c: ProductConcept): string | null => {
+    const linked = findLinkedScenarioModelForConcept(c, liveScenarioModels);
+    if (!linked) return null;
+    const effScen = resolveEffectiveScenarioForModel(
+      linked,
+      liveScenarios,
+      liveSelectedScenarioByBrand,
+      liveCurrentScenario,
+      liveIncludeGroupS1
+    );
+    const met = computeModelScenarioMetrics(linked, effScen);
+    const unitCfg = getBrandUnitConfig(linked);
+    if (met.annualPacks <= 0 && met.annualRevenueRub <= 0) return null;
+    if (!hasFinanceAccess || met.annualRevenueRub <= 0) {
+      return `План: ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`;
+    }
+    return `${(met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽ · ${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`;
+  };
 
   const prevBrandFilterRef = useRef(brandFilter);
 
@@ -1443,10 +1476,20 @@ export function ProductLabView() {
                             onClick={() => openConceptCard(concept)}
                             className="group relative bg-white rounded-xl border border-[#E4E1DA] hover:border-[#141413] transition-colors overflow-hidden cursor-pointer flex flex-col"
                           >
-                            {/* Код концепта в верхнем левом углу свотча */}
-                            <span className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-white/92 backdrop-blur-xs border border-[#E4E1DA] font-mono text-[10.5px] font-medium text-[#141413]">
-                              {concept.code}
-                            </span>
+                            {/* Верхняя плашка артикула и плана продаж 2027 прямо над карточкой */}
+                            <div className="px-2.5 py-1.5 bg-[#FAF9F6] border-b border-[#E4E1DA] flex items-center justify-between gap-1.5">
+                              <span className="font-mono text-[10.5px] font-medium text-[#141413] shrink-0">
+                                {concept.code}
+                              </span>
+                              {(() => {
+                                const salesBadge = getConceptLinkedSalesBadge(concept);
+                                return salesBadge ? (
+                                  <span className="font-mono tabular-nums text-[10px] font-semibold text-[#15803D] truncate">
+                                    {salesBadge}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
 
                             {canEditCard && (
                               <button
@@ -1456,7 +1499,7 @@ export function ProductLabView() {
                                   handleDeleteConceptEverywhere(concept);
                                 }}
                                 title="Удалить карточку"
-                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute top-2.5 right-2.5 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#E4E1DA] flex items-center justify-center text-[#5C5953] hover:text-[#DC2626] hover:border-[#DC2626] transition-all cursor-pointer"
+                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute top-9 right-2.5 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#E4E1DA] flex items-center justify-center text-[#5C5953] hover:text-[#DC2626] hover:border-[#DC2626] transition-all cursor-pointer"
                               >
                                 <Trash2 className="h-3.5 w-3.5 stroke-[1.5]" />
                               </button>
@@ -1588,6 +1631,19 @@ export function ProductLabView() {
                   onClick={() => openConceptCard(concept)}
                   className="group relative bg-white rounded-xl border border-[#E4E1DA] hover:border-[#141413] overflow-hidden cursor-pointer transition-colors flex flex-col"
                 >
+                  {(() => {
+                    const salesBadge = getConceptLinkedSalesBadge(concept);
+                    return (
+                      <div className="px-3.5 py-2 bg-[#FAF9F6] border-b border-[#E4E1DA] flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-medium text-[#141413] shrink-0">
+                          {concept.code}
+                        </span>
+                        <span className="font-mono tabular-nums text-[10.5px] font-semibold text-[#15803D] truncate">
+                          {salesBadge || CONCEPT_STAGE_LABELS_RU[stage]}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   {canEditCard && (
                     <button
                       type="button"
@@ -1596,7 +1652,7 @@ export function ProductLabView() {
                         handleDeleteConceptEverywhere(concept);
                       }}
                       title="Удалить карточку"
-                      className="opacity-0 group-hover:opacity-100 absolute top-3 right-3 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#E4E1DA] flex items-center justify-center text-[#5C5953] hover:text-[#DC2626] hover:border-[#DC2626] transition-all cursor-pointer"
+                      className="opacity-0 group-hover:opacity-100 absolute top-11 right-3 z-10 h-7 w-7 rounded-lg bg-white/95 border border-[#E4E1DA] flex items-center justify-center text-[#5C5953] hover:text-[#DC2626] hover:border-[#DC2626] transition-all cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5 stroke-[1.5]" />
                     </button>

@@ -99,6 +99,7 @@ import {
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isModelMarkedDeleted,
+  isStalePre2027AkushaDraft,
   markModelAsDeletedInStorage,
   overlayBackupOntoModels as overlayUserPlansBackup,
   resolveEffectiveScenarioForModel,
@@ -1104,12 +1105,7 @@ export function GrowthScenariosShowcase({
           for (const snapMod of idbSnapMeta.models) {
             if (!snapMod || !snapMod.id || !snapMod.code) continue;
             if (isModelMarkedDeleted(snapMod)) continue;
-            const isOldAkushaDraft =
-              ((snapMod.customBrandLabel || '').toUpperCase() === 'AKUSHA' ||
-                snapMod.code.toUpperCase().startsWith('AKU-') ||
-                snapMod.id.toLowerCase().startsWith('scen-akusha-')) &&
-              !snapMod.plansByScenario?.[AKUSHA_2027_SCENARIO_ID];
-            if (isOldAkushaDraft) continue;
+            if (isStalePre2027AkushaDraft(snapMod)) continue;
 
             const idx = working.findIndex(
               (m) =>
@@ -1778,15 +1774,45 @@ export function GrowthScenariosShowcase({
     }
     const syncedPlan = updated.plansByScenario[targetScen.id];
     if (syncedPlan) {
+      const modBrand = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(updated));
+      const nextPlansMap = {
+        ...updated.plansByScenario,
+        [targetScen.id]: {
+          ...syncedPlan,
+          monthlyReceiptsPacks: [...nextMonthlyPacks],
+        },
+      };
+      if (modBrand === 'AKUSHA' && (targetScen.id === 1 || targetScen.id === AKUSHA_2027_SCENARIO_ID)) {
+        if (nextPlansMap[AKUSHA_2027_SCENARIO_ID]) {
+          nextPlansMap[AKUSHA_2027_SCENARIO_ID] = {
+            ...nextPlansMap[AKUSHA_2027_SCENARIO_ID],
+            monthlyReceiptsPacks: [...nextMonthlyPacks],
+          };
+        }
+        if (nextPlansMap[1]) {
+          nextPlansMap[1] = {
+            ...nextPlansMap[1],
+            monthlyReceiptsPacks: [...nextMonthlyPacks],
+          };
+        }
+      }
+      if (modBrand === 'LISKANI' && (targetScen.id === 1 || targetScen.id === LISKANI_2027_SCENARIO_ID)) {
+        if (nextPlansMap[LISKANI_2027_SCENARIO_ID]) {
+          nextPlansMap[LISKANI_2027_SCENARIO_ID] = {
+            ...nextPlansMap[LISKANI_2027_SCENARIO_ID],
+            monthlyReceiptsPacks: [...nextMonthlyPacks],
+          };
+        }
+        if (nextPlansMap[1]) {
+          nextPlansMap[1] = {
+            ...nextPlansMap[1],
+            monthlyReceiptsPacks: [...nextMonthlyPacks],
+          };
+        }
+      }
       updated = {
         ...updated,
-        plansByScenario: {
-          ...updated.plansByScenario,
-          [targetScen.id]: {
-            ...syncedPlan,
-            monthlyReceiptsPacks: [...nextMonthlyPacks],
-          },
-        },
+        plansByScenario: nextPlansMap,
       };
     }
     commitModels((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
@@ -4673,10 +4699,18 @@ export function GrowthScenariosShowcase({
                   </thead>
                   <tbody className="divide-y divide-[#E4E3DC] bg-white">
                     {filteredModels.map((mod, modIdx) => {
-                      const met = computeModelScenarioMetrics(mod, currentScenario);
+                      const rowEffScen = resolveEffectiveScenarioForModel(
+                        mod,
+                        scenarios,
+                        selectedScenarioByBrand,
+                        currentScenario,
+                        includeGroupPortfolioInS1
+                      );
+                      const met = computeModelScenarioMetrics(mod, rowEffScen);
+                      const modUnitCfg = getBrandUnitConfig(mod);
                       const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
                       const priorityLabel = getModelPriority(mod);
-                      const rowCanEdit = canEditModel(mod) && canEditScenario(currentScenario);
+                      const rowCanEdit = canEditModel(mod) && canEditScenario(rowEffScen);
                       const rowPriorityCanEdit = canEditModel(mod);
                       const packSharePct =
                         currentAgg.targetMonthPacks > 0
@@ -4741,7 +4775,9 @@ export function GrowthScenariosShowcase({
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono text-[#262624] whitespace-nowrap">
-                            {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
+                            {met.avgRetailPriceRub > 0
+                              ? `${met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽`
+                              : 'уточнить'}
                           </td>
                           <td
                             className="py-2.5 px-3 text-center"
@@ -4797,18 +4833,22 @@ export function GrowthScenariosShowcase({
                             )}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono font-bold text-[#141413] whitespace-nowrap">
-                            {hasFinance
-                              ? `${(met.targetMonthRevenueRub / 1_000_000)
+                            {!hasFinance
+                              ? 'Скрыто'
+                              : met.annualRevenueRub <= 0 && met.annualPacks > 0
+                              ? `${met.targetMonthPacks.toLocaleString('ru-RU')} ${modUnitCfg.primaryUnit}`
+                              : `${(met.targetMonthRevenueRub / 1_000_000)
                                   .toFixed(2)
-                                  .replace('.', ',')} млн ₽`
-                              : 'Скрыто'}
+                                  .replace('.', ',')} млн ₽`}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono font-semibold text-[#262624] whitespace-nowrap">
-                            {hasFinance
-                              ? `${(met.annualRevenueRub / 1_000_000)
+                            {!hasFinance
+                              ? 'Скрыто'
+                              : met.annualRevenueRub <= 0 && met.annualPacks > 0
+                              ? `${met.annualPacks.toLocaleString('ru-RU')} ${modUnitCfg.primaryUnit}`
+                              : `${(met.annualRevenueRub / 1_000_000)
                                   .toFixed(2)
-                                  .replace('.', ',')} млн ₽`
-                              : 'Скрыто'}
+                                  .replace('.', ',')} млн ₽`}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono text-[11.5px] text-[#5E5D58] whitespace-nowrap">
                             {(hasFinance ? met.goalSharePct : packSharePct)
