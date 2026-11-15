@@ -4623,18 +4623,6 @@ export function FinanceContourView() {
         <FinanceView />
       ) : (
         <>
-          <ScenarioContourHeader
-            stepCode="04 · Финансы · Инвестиции, возврат с WB и прибыль"
-            title="Инвестиционная потребность, возврат выручки с WB и прибыль 2027"
-            subtitle="Раздельный расчёт: 1) Вложить на старт (Партия №1), 2) Пик своих денег с учётом возврата выручки WB, 3) Закупки за весь год и 4) Себестоимость продаж и прибыль."
-            selectedScenarioId={selectedScenarioId}
-            orderedScenarios={orderedScenarios}
-            onSelectScenario={setSelectedScenarioId}
-            includeGroupPortfolioInS1={includeGroupPortfolioInS1}
-            onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
-            eligibleCount={scopedFinanceEntries.length}
-          />
-
           {scopedFinanceEntries.length === 0 && (
             <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1 max-w-2xl">
@@ -4713,6 +4701,54 @@ export function FinanceContourView() {
               </div>
             </div>
           )}
+
+          {/* ОСНОВНОЙ УПРОЩЁННЫЙ ФИНАНСОВЫЙ ИНТЕРФЕЙС (ТЗ v14: Разделы 1–11) */}
+          <div id="finance-investment-schedule-anchor">
+            <InvestmentSchedulePanel
+              models={holdingSourceModels}
+              scenarios={scenarios}
+              activeScenario={currentScenario}
+              brandFilter={isHoldingAllBrands ? 'ALL' : brandFilter}
+              selectedScenarioByBrand={selectedScenarioByBrand}
+              includeGroupPortfolioInS1={includeGroupPortfolioInS1}
+              onSelectBrandFilter={(b: string) => setBrandFilter(b)}
+              onSelectScenarioId={(scId: number, bOvr?: string) =>
+                setSelectedScenarioId(
+                  scId,
+                  bOvr || (!isHoldingAllBrands ? brandFilter : undefined)
+                )
+              }
+              onOpenBatchInProcurement={(mId, bCode) => {
+                try {
+                  window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
+                  window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
+                  window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
+                } catch {
+                  // ignore
+                }
+                if (bCode) setBrandFilter(bCode);
+                navigateTo('roadmap-tasks');
+              }}
+              onOpenMissingCostSku={(mId) => {
+                if (mId) {
+                  openSkuPassport(mId);
+                } else {
+                  navigateTo('product-catalog');
+                }
+              }}
+              extraDetailedAnalyticsSlot={
+                <div className="space-y-6 pt-4 border-t border-[#E4E1DA] dark:border-[#282724]">
+                  <ScenarioContourHeader
+                    stepCode="04 · Финансы · Подробная аналитика P&L и прибыли"
+                    title="Инвестиционная потребность, возврат выручки с WB и прибыль 2027"
+                    subtitle="Раздельный расчёт: 1) Вложить на старт (Партия №1), 2) Пик своих денег с учётом возврата выручки WB, 3) Закупки за весь год и 4) Себестоимость продаж и прибыль."
+                    selectedScenarioId={selectedScenarioId}
+                    orderedScenarios={orderedScenarios}
+                    onSelectScenario={setSelectedScenarioId}
+                    includeGroupPortfolioInS1={includeGroupPortfolioInS1}
+                    onToggleGroupPortfolio={setIncludeGroupPortfolioInS1}
+                    eligibleCount={scopedFinanceEntries.length}
+                  />
 
           {/* 4 РАЗДЕЛЁННЫХ ФИНАНСОВЫХ ПОКАЗАТЕЛЯ ПО ТЗ */}
           {(() => {
@@ -5268,36 +5304,6 @@ export function FinanceContourView() {
             }
           />
 
-          {/* 02.Б · ГРАФИК ИНВЕСТИЦИЙ, РЕИНВЕСТИРОВАНИЕ С ПРОДАЖ WB И КАЛЕНДАРЬ ПЛАТЕЖЕЙ ПО ДАТАМ */}
-          <div id="finance-investment-schedule-anchor">
-            <InvestmentSchedulePanel
-              models={holdingSourceModels}
-              scenarios={scenarios}
-              activeScenario={currentScenario}
-              brandFilter={isHoldingAllBrands ? 'ALL' : brandFilter}
-              selectedScenarioByBrand={selectedScenarioByBrand}
-              includeGroupPortfolioInS1={includeGroupPortfolioInS1}
-              onSelectBrandFilter={(b: string) => setBrandFilter(b)}
-              onSelectScenarioId={(scId: number, bOvr?: string) =>
-                setSelectedScenarioId(
-                  scId,
-                  bOvr || (!isHoldingAllBrands ? brandFilter : undefined)
-                )
-              }
-              onOpenBatchInProcurement={(mId, bCode) => {
-                try {
-                  window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
-                  window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
-                  window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
-                } catch {
-                  // ignore
-                }
-                if (bCode) setBrandFilter(bCode);
-                navigateTo('roadmap-tasks');
-              }}
-            />
-          </div>
-
           {/* 03 · Юнит-экономика по моделям */}
           <section className="rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5399,6 +5405,10 @@ export function FinanceContourView() {
               </table>
             </div>
           </section>
+                </div>
+              }
+            />
+          </div>
         </>
       )}
     </div>

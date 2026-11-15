@@ -8,13 +8,17 @@ import {
   type CapitalInjectionRecord,
   type ComputedInvestmentScheduleResult,
   type CustomCashOperationRecord,
+  type HoldingGroupOverviewSummary,
   type InvestmentLedgerGlobalSettings,
   type InvestmentLedgerState,
   type ManualPaymentOverride,
+  type PlanComparisonWithBaseline,
   type ResetToAutoPlanPreview,
   appendLedgerAudit,
   applyResetScenarioToAutoPlan,
+  computeHoldingBrandsOverviewRows,
   computeInvestmentSchedule,
+  computePlanComparisonWithAutoBaseline,
   computeResetToAutoPlanPreview,
   createDefaultInvestmentLedgerState,
   ensureScenarioPlanSlot,
@@ -22,6 +26,8 @@ import {
   loadInvestmentLedgerState,
   saveInvestmentLedgerState,
 } from '@/lib/investmentScheduleEngine';
+
+export type InvestmentSaveIndicatorStatus = 'saved_cloud' | 'saving' | 'saved_local';
 
 export interface UseInvestmentScheduleParams {
   models: ScenarioModelSpec[];
@@ -33,28 +39,51 @@ export interface UseInvestmentScheduleParams {
   explicitInitialCashRub?: number;
   explicitWbLagMonths?: number | null;
   explicitWbScheduleSpecified?: boolean;
+  targetYear?: 2027 | 2028;
 }
 
 export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
   const [ledgerState, setLedgerState] = useState<InvestmentLedgerState>(() =>
     createDefaultInvestmentLedgerState()
   );
+  const [saveStatus, setSaveStatus] = useState<InvestmentSaveIndicatorStatus>('saved_cloud');
+  const [lastSavedAtIso, setLastSavedAtIso] = useState<string>('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const syncLedger = () => {
-      setLedgerState(loadInvestmentLedgerState());
+      const loaded = loadInvestmentLedgerState();
+      setLedgerState(loaded);
+      if (loaded.updatedAtIso) {
+        setLastSavedAtIso(loaded.updatedAtIso);
+      }
+    };
+    const handleCloudStatus = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ status?: InvestmentSaveIndicatorStatus; atIso?: string }>)
+        ?.detail;
+      if (detail?.status) {
+        setSaveStatus(detail.status);
+      }
+      if (detail?.atIso) {
+        setLastSavedAtIso(detail.atIso);
+      }
     };
     syncLedger();
     window.addEventListener('borners-investment-ledger-changed', syncLedger);
     window.addEventListener('borners-finance-params-changed', syncLedger);
+    window.addEventListener('borners-cloud-save-status', handleCloudStatus);
     window.addEventListener('storage', syncLedger);
     return () => {
       window.removeEventListener('borners-investment-ledger-changed', syncLedger);
       window.removeEventListener('borners-finance-params-changed', syncLedger);
+      window.removeEventListener('borners-cloud-save-status', handleCloudStatus);
       window.removeEventListener('storage', syncLedger);
     };
   }, []);
+
+  const selectedYear: 2027 | 2028 =
+    params.targetYear ||
+    (ledgerState.globalSettings.selectedFinanceYear === 2028 ? 2028 : 2027);
 
   const schedule: ComputedInvestmentScheduleResult = useMemo(
     () =>
@@ -69,6 +98,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         explicitInitialCashRub: params.explicitInitialCashRub,
         explicitWbLagMonths: params.explicitWbLagMonths,
         explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
+        targetYear: params.targetYear,
       }),
     [
       params.models,
@@ -80,9 +110,125 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       params.explicitInitialCashRub,
       params.explicitWbLagMonths,
       params.explicitWbScheduleSpecified,
+      params.targetYear,
       ledgerState,
     ]
   );
+
+  const planComparison: PlanComparisonWithBaseline = useMemo(
+    () =>
+      computePlanComparisonWithAutoBaseline(
+        {
+          models: params.models,
+          scenarios: params.scenarios,
+          activeScenario: params.activeScenario,
+          brandFilter: params.brandFilter,
+          selectedScenarioByBrand: params.selectedScenarioByBrand,
+          includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
+          ledgerState,
+          explicitInitialCashRub: params.explicitInitialCashRub,
+          explicitWbLagMonths: params.explicitWbLagMonths,
+          explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
+          targetYear: params.targetYear,
+        },
+        schedule
+      ),
+    [
+      params.models,
+      params.scenarios,
+      params.activeScenario,
+      params.brandFilter,
+      params.selectedScenarioByBrand,
+      params.includeGroupPortfolioInS1,
+      params.explicitInitialCashRub,
+      params.explicitWbLagMonths,
+      params.explicitWbScheduleSpecified,
+      params.targetYear,
+      ledgerState,
+      schedule,
+    ]
+  );
+
+  const holdingOverview: HoldingGroupOverviewSummary | null = useMemo(() => {
+    const isAll = !params.brandFilter || params.brandFilter === 'ALL';
+    if (!isAll) return null;
+    return computeHoldingBrandsOverviewRows(
+      {
+        models: params.models,
+        scenarios: params.scenarios,
+        activeScenario: params.activeScenario,
+        selectedScenarioByBrand: params.selectedScenarioByBrand,
+        includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
+        ledgerState,
+        explicitInitialCashRub: params.explicitInitialCashRub,
+        explicitWbLagMonths: params.explicitWbLagMonths,
+        explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
+        targetYear: params.targetYear,
+      },
+      schedule
+    );
+  }, [
+    params.brandFilter,
+    params.models,
+    params.scenarios,
+    params.activeScenario,
+    params.selectedScenarioByBrand,
+    params.includeGroupPortfolioInS1,
+    params.explicitInitialCashRub,
+    params.explicitWbLagMonths,
+    params.explicitWbScheduleSpecified,
+    params.targetYear,
+    ledgerState,
+    schedule,
+  ]);
+
+  const activeCapitalInjections: CapitalInjectionRecord[] = useMemo(() => {
+    const list: CapitalInjectionRecord[] = [];
+    const seen = new Set<string>();
+    const groupKey = schedule.scenarioYear === 2028 ? 'GROUP:ALL@2028' : 'GROUP:ALL';
+    for (const inj of ledgerState.sharedCommitted.committedCapitalInjections || []) {
+      if (
+        !schedule.isGroupAllBrands &&
+        inj.brandCode &&
+        inj.brandCode !== 'ALL' &&
+        inj.brandCode !== params.brandFilter
+      ) {
+        continue;
+      }
+      const m = (inj.dateIso || '').trim().match(/^(\d{4})-(\d{2})/);
+      if (m) {
+        const yr = Number(m[1]);
+        const mo = Number(m[2]);
+        const valid =
+          yr === schedule.scenarioYear || (yr === schedule.scenarioYear - 1 && mo >= 9);
+        if (!valid) continue;
+      }
+      if (!seen.has(inj.id)) {
+        seen.add(inj.id);
+        list.push(inj);
+      }
+    }
+    const scopes = schedule.isGroupAllBrands
+      ? Object.keys(ledgerState.scenarioPlans).filter((k) =>
+          schedule.scenarioYear === 2028 ? k.endsWith('@2028') : !k.endsWith('@2028')
+        )
+      : Array.from(new Set([schedule.activeScopeKey, groupKey]));
+    for (const sk of scopes) {
+      for (const inj of ledgerState.scenarioPlans[sk]?.plannedCapitalInjections || []) {
+        if (!seen.has(inj.id)) {
+          seen.add(inj.id);
+          list.push(inj);
+        }
+      }
+    }
+    return list.sort((a, b) => (a.dateIso < b.dateIso ? -1 : a.dateIso > b.dateIso ? 1 : 0));
+  }, [
+    ledgerState,
+    params.brandFilter,
+    schedule.activeScopeKey,
+    schedule.isGroupAllBrands,
+    schedule.scenarioYear,
+  ]);
 
   const resetPreview: ResetToAutoPlanPreview = useMemo(
     () => computeResetToAutoPlanPreview(schedule, ledgerState),
@@ -90,8 +236,16 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
   );
 
   const commitNextLedger = useCallback((next: InvestmentLedgerState) => {
+    setSaveStatus('saving');
     const saved = saveInvestmentLedgerState(next, { syncFinanceParams: true });
     setLedgerState(saved);
+    setLastSavedAtIso(saved.updatedAtIso);
+    // В локальном/автономном режиме через 550 мс подтверждаем локальное сохранение, если облако ещё не прислало saved_cloud
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setSaveStatus((prev) => (prev === 'saving' ? 'saved_local' : prev));
+      }, 550);
+    }
     return saved;
   }, []);
 
@@ -318,6 +472,10 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
           input.patch.customOrderDateIso !== undefined
             ? input.patch.customOrderDateIso
             : baseB?.customOrderDateIso,
+        customPacksQty:
+          input.patch.customPacksQty !== undefined
+            ? input.patch.customPacksQty
+            : baseB?.customPacksQty,
         updatedAtIso: new Date().toISOString(),
         updatedBy: author,
       };
@@ -334,6 +492,9 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       nextScenarioPlans[targetScope] = slot;
 
       const afterParts: string[] = [];
+      if (merged.customPacksQty !== undefined) {
+        afterParts.push(`Объём партии: ${merged.customPacksQty.toLocaleString('ru-RU')} ед.`);
+      }
       if (merged.customPrepaymentPct !== undefined) {
         afterParts.push(
           `Аванс/Доплата: ${merged.customPrepaymentPct}% / ${100 - merged.customPrepaymentPct}%`
@@ -606,10 +767,24 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     [commitNextLedger, schedule]
   );
 
+  const setSelectedYear = useCallback(
+    (nextYear: 2027 | 2028, author = 'Владелец') => {
+      updateGlobalSettings({ selectedFinanceYear: nextYear }, author);
+    },
+    [updateGlobalSettings]
+  );
+
   return {
     ledgerState,
     schedule,
     resetPreview,
+    planComparison,
+    holdingOverview,
+    activeCapitalInjections,
+    selectedYear,
+    setSelectedYear,
+    saveStatus,
+    lastSavedAtIso,
     updateGlobalSettings,
     updatePaymentOperation,
     updateBatchTerms,

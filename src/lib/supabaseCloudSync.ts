@@ -229,14 +229,42 @@ export async function pushModelGalleryToSupabase(
   }
 }
 
+function emitCloudSaveStatus(
+  status: 'saving' | 'saved_cloud' | 'saved_local',
+  atIso?: string
+): void {
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.dispatchEvent === 'function' &&
+    typeof CustomEvent === 'function'
+  ) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('borners-cloud-save-status', {
+          detail: { status, atIso: atIso || new Date().toISOString() },
+        })
+      );
+    } catch {
+      // Игнорируем в тестовых окружениях без полноценного DOM EventTarget
+    }
+  }
+}
+
 export async function pushPortfolioCoreToSupabase(
   input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>
 ): Promise<boolean> {
-  if (isAutomatedOrLocalhostWriteBlocked()) return false;
+  if (isAutomatedOrLocalhostWriteBlocked()) {
+    emitCloudSaveStatus('saved_local');
+    return false;
+  }
   const client = getActiveSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    emitCloudSaveStatus('saved_local');
+    return false;
+  }
 
   const mySeq = ++latestCorePushSeq;
+  emitCloudSaveStatus('saving');
 
   try {
     // Синхронизируем только те base64-фотогалереи, чей слепок реально изменился (O(1) для неизменённых SKU)
@@ -313,8 +341,10 @@ export async function pushPortfolioCoreToSupabase(
       },
       { onConflict: 'key' }
     );
+    emitCloudSaveStatus(!error ? 'saved_cloud' : 'saved_local', nowIso);
     return !error;
   } catch {
+    emitCloudSaveStatus('saved_local');
     return false;
   }
 }

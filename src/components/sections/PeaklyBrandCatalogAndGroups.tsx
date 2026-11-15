@@ -30,7 +30,10 @@ import {
   getActingSkuByWbOrVendor,
 } from '@/lib/actingAssortment2027';
 import { useInvestmentSchedule } from '@/lib/useInvestmentSchedule';
-import { InvestmentScheduleModal } from '@/components/sections/InvestmentScheduleModalAndPanel';
+import {
+  InvestmentScheduleModal,
+  InvestmentSchedulePanel,
+} from '@/components/sections/InvestmentScheduleModalAndPanel';
 import {
   CanonicalBrandCode,
   CustomBatchPeriodDef,
@@ -1305,81 +1308,8 @@ export function PeaklyMasterCabinetsSummary({
           </p>
         </div>
 
-        {/* Единый сегментированный пульт кабинетов + действия */}
+        {/* Действия заголовка Главного экрана */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex flex-wrap items-center gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]">
-            <button
-              type="button"
-              onClick={() => {
-                onSelectBrandFilter('ALL');
-                const bornersScenId = multiBrandSummary.brands.find(
-                  (x) => x.brandCode === 'BORNERS'
-                )?.selectedScenarioId;
-                if (bornersScenId) {
-                  onSelectActiveScenarioId(bornersScenId, 'ALL');
-                }
-              }}
-              className={`h-7 px-2.5 rounded-md text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                activeBrandFilter === 'ALL'
-                  ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
-                  : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0] hover:bg-white dark:hover:bg-[#151514]'
-              }`}
-            >
-              <span>Все (5)</span>
-              {hasFinance && (
-                <span className="font-mono text-[11px] opacity-80">
-                  {(holdingTotal.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн
-                </span>
-              )}
-            </button>
-
-            {multiBrandSummary.brands.map((b) => {
-              const isSelected =
-                activeBrandFilter !== 'ALL' &&
-                normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
-              const hasRev = b.hasScenario && b.hasModels && b.annualRevenueRub > 0;
-              return (
-                <button
-                  key={b.brandCode}
-                  type="button"
-                  onClick={() => {
-                    if (isSelected) {
-                      onSelectBrandFilter('ALL');
-                      const bornersScenId = multiBrandSummary.brands.find(
-                        (x) => x.brandCode === 'BORNERS'
-                      )?.selectedScenarioId;
-                      if (bornersScenId) {
-                        onSelectActiveScenarioId(bornersScenId, 'ALL');
-                      }
-                    } else {
-                      onSelectBrandFilter(b.brandCode);
-                      if (b.selectedScenarioId !== null) {
-                        onSelectActiveScenarioId(b.selectedScenarioId, b.brandCode);
-                      }
-                    }
-                  }}
-                  className={`h-7 px-2.5 rounded-md text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
-                      : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0] hover:bg-white dark:hover:bg-[#151514]'
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      hasRev ? 'bg-[#15803D]' : 'bg-[#78746C]'
-                    }`}
-                  />
-                  <span>{b.displayCode}</span>
-                  {hasRev && hasFinance && (
-                    <span className="font-mono text-[11px] opacity-75">
-                      {(b.annualRevenueRub / 1_000_000).toFixed(0)} млн
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
           {canEditAllStarter && activeBrandsCount < 5 && onLaunchAllCabinets && (
             <button
               type="button"
@@ -1402,6 +1332,23 @@ export function PeaklyMasterCabinetsSummary({
               <span>↺ 3 базовых</span>
             </button>
           )}
+
+          <button
+            type="button"
+            data-testid="open-investment-schedule-btn"
+            onClick={() => {
+              const el = document.getElementById('when-and-how-much-anchor');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              } else {
+                setInvestmentModalOpen(true);
+              }
+            }}
+            className="h-9 px-3.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[#141413] dark:text-[#F5F4F0] text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <Calendar className="w-3.5 h-3.5" strokeWidth={1.5} />
+            <span>Календарь инвестиций</span>
+          </button>
 
           {onOpenStrategySummary && (
             <button
@@ -1469,6 +1416,33 @@ export function PeaklyMasterCabinetsSummary({
           </div>
         )}
 
+      {/* УПРОЩЁННЫЙ ФИНАНСОВЫЙ ИНТЕРФЕЙС ГЛАВНОГО ЭКРАНА (ТЗ v14: Разделы 1–11) */}
+      {hasLiveInvSchedule ? (
+        <InvestmentSchedulePanel
+          models={models || []}
+          scenarios={scenarios}
+          activeScenario={activeScenarioForInv}
+          brandFilter={normalizedSelectedBrand}
+          selectedScenarioByBrand={
+            selectedScenarioByBrand as Partial<
+              Record<CanonicalBrandCode | 'LISCANI', number | null>
+            >
+          }
+          onSelectBrandFilter={onSelectBrandFilter}
+          onSelectScenarioId={onSelectActiveScenarioId}
+          onOpenBatchInProcurement={(mId, bCode) => {
+            try {
+              window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
+              window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
+              window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
+            } catch {
+              // ignore
+            }
+            if (bCode) onSelectBrandFilter(bCode);
+            navigateTo('roadmap-tasks');
+          }}
+          extraDetailedAnalyticsSlot={
+            <div className="space-y-6 pt-4 border-t border-[#E4E1DA] dark:border-[#282724]">
       {/* 1. ГЛАВНЫЙ ИТОГ 2027: ЧИСТЫЙ АРХИТЕКТУРНЫЙ ЛИСТ (COS / RAMP SHEET) */}
       <div
         onClick={() => safeNavigateSection('finance')}
@@ -1659,12 +1633,7 @@ export function PeaklyMasterCabinetsSummary({
             >
               <button
                 type="button"
-                data-testid="open-investment-schedule-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInvestmentModalFocusOpKey(null);
-                  setInvestmentModalOpen(true);
-                }}
+                data-testid="open-investment-schedule-legacy-btn"
                 className="h-9 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-xs font-medium inline-flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
               >
                 <Calendar className="h-3.5 w-3.5" />
@@ -2980,6 +2949,10 @@ export function PeaklyMasterCabinetsSummary({
         )}
       </div>
       )}
+            </div>
+          }
+        />
+      ) : null}
 
       {/* 5. СЕКЦИЯ «| КАБИНЕТЫ, 4 ВОЛНЫ ЗАКУПОК И КЭШФЛОУ ХОЛДИНГА» ПРЯМО НА ХОЛСТЕ */}
       <div className="space-y-3">

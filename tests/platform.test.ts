@@ -8793,7 +8793,8 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
   );
 
   assert.equal(
-    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+    nextConfigCode.includes('borners-2027-finance-simplification-v14') ||
+      nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
       nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
@@ -8850,7 +8851,8 @@ test('124. v10 Архитектурная дизайн-система COS / Ramp
     'globals.css обязан задавать тёплый архитектурный камень #F6F5F2, антрацит #141413 и var(--font-mono) для .font-mono'
   );
   assert.equal(
-    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+    nextConfigCode.includes('borners-2027-finance-simplification-v14') ||
+      nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
       nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10'),
@@ -9868,7 +9870,8 @@ test('170. v11 Дыхабельные мокасины AKUSHA (AKU-028..031, buy
 test('171. v11/v12/v13 Актуальный релизный идентификатор в next.config.ts', () => {
   const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
   assert.equal(
-    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+    nextConfigCode.includes('borners-2027-finance-simplification-v14') ||
+      nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
       nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11'),
     true,
@@ -10106,14 +10109,15 @@ test('177. v12 Живая синхронизация (Realtime + pagehide flush 
   );
 });
 
-test('178. v13 Релизный идентификатор borners-2027-investment-schedule-v13 и проброс NEXT_PUBLIC_SUPABASE_URL в next.config.ts', () => {
+test('178. v13/v14 Релизный идентификатор borners-2027-finance-simplification-v14 и проброс NEXT_PUBLIC_SUPABASE_URL в next.config.ts', () => {
   const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
   assert.equal(
-    nextConfigCode.includes('borners-2027-investment-schedule-v13') &&
+    (nextConfigCode.includes('borners-2027-finance-simplification-v14') ||
+      nextConfigCode.includes('borners-2027-investment-schedule-v13')) &&
       nextConfigCode.includes('https://ocdmyldosplufhhwrrwq.supabase.co') &&
       nextConfigCode.includes('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     true,
-    'next.config.ts обязан экспортировать buildId borners-2027-investment-schedule-v13 и конфигурацию Supabase'
+    'next.config.ts обязан экспортировать актуальный buildId v14 и конфигурацию Supabase'
   );
 });
 
@@ -10894,6 +10898,413 @@ test('188. v13 Кнопка «Вернуть расчёт по плану» с �
   );
   assert.equal(afterResetLedger.auditHistory[0]?.actionType, 'reset_to_auto');
 });
+
+// ============================================================================
+// РЕЛИЗ v14 — УПРОЩЕНИЕ ФИНАНСОВ И УПРАВЛЕНИЕ ИНВЕСТИЦИЯМИ (ТЕСТЫ 189–196)
+// ============================================================================
+
+test('189. v14 Раздел 5 ТЗ: Собственные вложения НЕ уменьшают искусственно расчётную потребность в капитале, отдельно показывая общую потребность, внесённые деньги и остаток', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+    ensureScenarioPlanSlot,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseLedger = createDefaultInvestmentLedgerState();
+  const baseRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: baseLedger,
+  });
+
+  assert.ok(
+    baseRes.calculatedCapitalNeedRub !== null && baseRes.calculatedCapitalNeedRub > 10_000_000,
+    'Расчётная потребность в капитале BORNERS S1 определена'
+  );
+  assert.equal(baseRes.totalOwnMoneyConfiguredRub, 0);
+  assert.equal(baseRes.remainingOwnMoneyNeededRub, baseRes.calculatedCapitalNeedRub);
+
+  // Добавляем собственное вложение 6 млн ₽ до первой закупки (статус «Оплачено»)
+  const fundedLedger = createDefaultInvestmentLedgerState();
+  fundedLedger.sharedCommitted.committedCapitalInjections.push({
+    id: 'cap-test-6m',
+    dateIso: '2026-11-10',
+    amountRub: 6_000_000,
+    title: 'Взнос учредителя',
+    sourceComment: 'Собственные средства на 1-ю волну',
+    status: 'Оплачено',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Владелец',
+  });
+  // И плановое вложение 4 млн ₽ со статусом «Запланировано»
+  const slot = ensureScenarioPlanSlot(fundedLedger, 'BORNERS:1');
+  slot.plannedCapitalInjections.push({
+    id: 'cap-plan-4m',
+    dateIso: '2026-12-28',
+    amountRub: 4_000_000,
+    title: 'Плановый транш',
+    sourceComment: 'Овердрафт',
+    status: 'Запланировано',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Владелец',
+  });
+  fundedLedger.scenarioPlans['BORNERS:1'] = slot;
+
+  const fundedRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: fundedLedger,
+  });
+
+  assert.equal(
+    fundedRes.calculatedCapitalNeedRub,
+    baseRes.calculatedCapitalNeedRub,
+    'Расчётная потребность в капитале НЕ уменьшается искусственно при добавлении собственных вложений'
+  );
+  assert.equal(fundedRes.factualOwnMoneyContributedRub, 6_000_000);
+  assert.equal(fundedRes.plannedUserInjectionsRub, 4_000_000);
+  assert.equal(fundedRes.totalOwnMoneyConfiguredRub, 10_000_000);
+  assert.equal(
+    fundedRes.remainingOwnMoneyNeededRub,
+    baseRes.calculatedCapitalNeedRub! - 10_000_000,
+    'Оставшаяся сумма финансирования точно учитывает внесённые и плановые вложения'
+  );
+});
+
+test('190. v14 Раздел 4 ТЗ: Блок «Когда и сколько вложить» формирует точные даты DD.MM.YYYY (12.11.2026, 01.01.2027) и раскрывает все 7 полей платежей фабрикам', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const res = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  assert.ok(res.whenAndHowMuchRows.length >= 2, 'Сформированы даты вложений');
+  assert.equal(res.whenAndHowMuchRows[0].dateDotRu, '12.11.2026');
+  assert.equal(res.whenAndHowMuchRows[1].dateDotRu, '01.01.2027');
+
+  const firstPayment = res.whenAndHowMuchRows[0].factoryPayments[0];
+  assert.ok(firstPayment, 'Раскрытие строки содержит конкретные платежи фабрикам');
+  assert.ok(firstPayment.productTitle.length > 0, '1. Название товара заполнено');
+  assert.ok(firstPayment.batchNumber.length > 0, '2. Номер партии заполнен');
+  assert.ok(firstPayment.factoryName.length > 0, '3. Фабрика заполнена');
+  assert.match(firstPayment.paymentDateDotRu, /^\d{2}\.\d{2}\.\d{4}$/, '4. Дата платежа DD.MM.YYYY');
+  assert.ok(firstPayment.amountRub > 0, '5. Сумма платежа > 0');
+  assert.ok(firstPayment.paymentStageLabel.includes('Предоплата'), '6. Этап оплаты указан');
+  assert.match(firstPayment.arrivalDateDotRu, /^\d{2}\.\d{2}\.\d{4}$/, '7. Дата поступления товара DD.MM.YYYY');
+});
+
+test('191. v14 Раздел 6 ТЗ: Перенос планового платежа на следующий месяц и уменьшение объёма партии пересчитывают обеспеченность товара и показывают предупреждение о дефиците', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+    ensureScenarioPlanSlot,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+  const janPayment = baseRes.whenAndHowMuchRows[1].factoryPayments[0];
+
+  // 1) Переносим платёж 01.01.2027 на февраль 2027
+  const shiftedLedger = createDefaultInvestmentLedgerState();
+  const slot1 = ensureScenarioPlanSlot(shiftedLedger, janPayment.scenarioScopeKey);
+  slot1.paymentOverrides[janPayment.opKey] = {
+    opKey: janPayment.opKey,
+    batchKey: janPayment.batchKey,
+    customDateIso: '2027-02-01',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Владелец',
+  };
+  shiftedLedger.scenarioPlans[janPayment.scenarioScopeKey] = slot1;
+
+  const shiftedRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: shiftedLedger,
+  });
+
+  assert.ok(
+    shiftedRes.calculatedCapitalNeedRub! < baseRes.calculatedCapitalNeedRub!,
+    'Перенос платежа на февраль снижает расчётную потребность на январь'
+  );
+  assert.ok(
+    shiftedRes.supplyDeficitWarnings.length >= 1,
+    'Возникает предупреждение о риске нехватки товара при задержке оплаты партии'
+  );
+
+  // 2) Уменьшаем объём плановой партии вдвое через customPacksQty
+  const reducedLedger = createDefaultInvestmentLedgerState();
+  const slot2 = ensureScenarioPlanSlot(reducedLedger, janPayment.scenarioScopeKey);
+  slot2.batchOverrides[janPayment.batchKey] = {
+    batchKey: janPayment.batchKey,
+    customPacksQty: Math.max(10, Math.floor(janPayment.defaultPacksQty * 0.3)),
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Владелец',
+  };
+  reducedLedger.scenarioPlans[janPayment.scenarioScopeKey] = slot2;
+
+  const reducedRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: reducedLedger,
+  });
+
+  assert.ok(
+    reducedRes.totalProcurementCostRub < baseRes.totalProcurementCostRub,
+    'Уменьшение объёма партии пересчитывает общую стоимость закупок'
+  );
+  assert.ok(
+    reducedRes.supplyDeficitWarnings.some((w) => w.batchKey === janPayment.batchKey),
+    'Уменьшение объёма плановой партии ниже спроса предупреждает о нехватке товара'
+  );
+});
+
+test('192. v14 Раздел 2 ТЗ: Переключатель Год 2027 / 2028 пересчитывает показатели с переносом остатков без дублирования остатков и PO между годами', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { ensureModelUnifiedV11 } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const baseModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+  // Задаём первой модели реальный начальный складской остаток 2027 г. (800 компл.) и утверждённый PO 2027 г.
+  const firstUnified = ensureModelUnifiedV11(baseModels[0]);
+  const lockedCost = firstUnified.unitCostRub || 500;
+  const uip = Math.max(1, firstUnified.unitsInPack || 1);
+  const models = [
+    {
+      ...firstUnified,
+      sharedSupplyAndFact: {
+        ...firstUnified.sharedSupplyAndFact!,
+        actualOpeningStockPacks: 800,
+        approvedOrders: [
+          {
+            id: 'po-2027-only',
+            orderNumber: 'PO-2027-01',
+            version: 1,
+            status: 'in_production' as const,
+            confirmedByFactory: true,
+            factoryName: 'Fabrika #1',
+            approvedAt: '2027-01-10T10:00:00.000Z',
+            approvedBy: 'CFO',
+            arrivalMonthIdx: 2,
+            coveredEndMonthIdx: 4,
+            coverageMonthsLabel: 'Мар–Май 2027',
+            requiredArrivalDateIso: '2027-03-01',
+            orderPlacementDateIso: '2027-01-10',
+            leadTimeDaysAtApproval: 50,
+            packsQty: 300,
+            unitsInPack: uip,
+            physicalUnitsQty: 300 * uip,
+            lockedUnitCostRub: lockedCost,
+            totalOrderRub: 300 * lockedCost,
+            prepaymentRub: Math.round(0.3 * 300 * lockedCost),
+            balancePaymentRub: 300 * lockedCost - Math.round(0.3 * 300 * lockedCost),
+          },
+        ],
+      },
+    },
+    ...baseModels.slice(1),
+  ];
+
+  const res2027 = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+    targetYear: 2027,
+  });
+  const res2028 = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+    targetYear: 2028,
+  });
+
+  assert.equal(res2027.scenarioYear, 2027);
+  assert.equal(res2028.scenarioYear, 2028);
+  assert.ok(res2028.activeScopeKey.endsWith('@2028'), 'Слот 2028 изолирован суффиксом @2028');
+  assert.ok(res2028.peakShortageMonthFullRu.endsWith('2028'), 'Пиковый месяц 2028 относится к 2028 году');
+  assert.ok(res2027.approvedProcurementCostRub > 0, 'В 2027 году учитывается утверждённый заказ 2027 года');
+  assert.equal(
+    res2028.approvedProcurementCostRub,
+    0,
+    'Утверждённый заказ 2027 года не дублируется в 2028 году'
+  );
+  assert.ok(res2028.totalGrossSalesRevenueRub > 0, 'Выручка 2028 рассчитана');
+  assert.notEqual(
+    res2028.totalProcurementCostRub,
+    res2027.totalProcurementCostRub,
+    'Закупки 2028 не дублируют начальный остаток 2027 года и пересчитываются с учётом переходящих остатков'
+  );
+});
+
+test('193. v14 Разделы 7, 8, 9 и 10 ТЗ: Рекомендации «Что нужно сделать» (<= 3), «Сравнить с исходным планом», «Свободные деньги бизнеса» и «Общая сводка группы» по 5 брендам', async () => {
+  const {
+    computeHoldingBrandsOverviewRows,
+    computeInvestmentSchedule,
+    computePlanComparisonWithAutoBaseline,
+    createDefaultInvestmentLedgerState,
+    ensureScenarioPlanSlot,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+
+  const allModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...INITIAL_SCENARIO_MODELS,
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+
+  const ledger = createDefaultInvestmentLedgerState();
+  const bornersSchedule = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+
+  // Раздел 7: максимум 3 рекомендации на реальных данных
+  assert.ok(bornersSchedule.recommendations.length >= 1 && bornersSchedule.recommendations.length <= 3);
+  assert.equal(bornersSchedule.isPreliminaryCalculation, true, 'Пометка предварительного расчёта при незаполненной себестоимости части SKU');
+
+  // Раздел 8: график «Свободные деньги бизнеса» по 12 месяцам
+  assert.equal(bornersSchedule.monthlyCalendarRows.length, 12);
+  assert.ok(
+    bornersSchedule.monthlyCalendarRows.some((r) => typeof r.businessFreeCashRub === 'number')
+  );
+
+  // Раздел 9: Сравнение с исходным планом
+  const firstOp = bornersSchedule.whenAndHowMuchRows[1].factoryPayments[0];
+  const slot = ensureScenarioPlanSlot(ledger, firstOp.scenarioScopeKey);
+  slot.paymentOverrides[firstOp.opKey] = {
+    opKey: firstOp.opKey,
+    batchKey: firstOp.batchKey,
+    customDateIso: '2027-02-15',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'CFO',
+  };
+  ledger.scenarioPlans[firstOp.scenarioScopeKey] = slot;
+
+  const cmp = computePlanComparisonWithAutoBaseline({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+  assert.equal(cmp.hasDifferences, true);
+  assert.ok(cmp.deltaCalculatedNeedRub !== null && cmp.deltaCalculatedNeedRub < 0);
+
+  // Раздел 10: Общая сводка группы по 5 брендам (BORNERS, FUKAI, AKUSHA, LISCANI, НА ТЕЛЕ)
+  const selectedByBrand = {
+    BORNERS: 1,
+    FUKAI: 2,
+    AKUSHA: AKUSHA_2027_SCENARIO_ID,
+    LISKANI: LISKANI_2027_SCENARIO_ID,
+    NA_TELE: 2,
+  };
+  const groupSchedule = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'ALL',
+    selectedScenarioByBrand: selectedByBrand,
+    ledgerState: ledger,
+  });
+  const overview = computeHoldingBrandsOverviewRows(
+    {
+      models: allModels,
+      scenarios: allScenarios,
+      activeScenario: s1,
+      selectedScenarioByBrand: selectedByBrand,
+      ledgerState: ledger,
+    },
+    groupSchedule
+  );
+  assert.deepEqual(
+    overview.rows.map((r) => r.displayBrandName),
+    ['BORNERS', 'FUKAI', 'AKUSHA', 'LISCANI', 'НА ТЕЛЕ']
+  );
+  assert.ok(
+    overview.unifiedGroupCalculatedNeedRub! <= overview.sumOfBrandPeaksRub,
+    'Потребность группы по совокупному календарю не превышает сумму отдельных пиков брендов'
+  );
+});
+
+test('194. v14 Чистота основного экрана: отсутствие ROI / Cash ROI в основном шаблоне InvestmentSchedulePanel и наличие раздела «Подробная аналитика»', () => {
+  const panelCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/InvestmentScheduleModalAndPanel.tsx'),
+    'utf8'
+  );
+  assert.equal(
+    panelCode.includes('Cash ROI') || panelCode.includes('ROI ×'),
+    false,
+    'Основной интерфейс InvestmentSchedulePanel не выводит ROI и Cash ROI на главный экран'
+  );
+  assert.ok(panelCode.includes('1. План продаж'));
+  assert.ok(panelCode.includes('2. Стоимость закупок'));
+  assert.ok(panelCode.includes('3. Максимальная потребность в своих деньгах'));
+  assert.ok(panelCode.includes('4. Реинвестирование'));
+  assert.ok(panelCode.includes('Когда и сколько вложить'));
+  assert.ok(panelCode.includes('Изменить план инвестиций'));
+  assert.ok(panelCode.includes('Что нужно сделать'));
+  assert.ok(panelCode.includes('Свободные деньги бизнеса'));
+  assert.ok(panelCode.includes('Сравнить с исходным планом'));
+  assert.ok(panelCode.includes('Подробная аналитика'));
+});
+
 
 
 
