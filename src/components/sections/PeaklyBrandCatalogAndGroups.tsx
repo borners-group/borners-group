@@ -29,6 +29,8 @@ import {
   ACTING_2027_SCENARIO_ID,
   getActingSkuByWbOrVendor,
 } from '@/lib/actingAssortment2027';
+import { useInvestmentSchedule } from '@/lib/useInvestmentSchedule';
+import { InvestmentScheduleModal } from '@/components/sections/InvestmentScheduleModalAndPanel';
 import {
   CanonicalBrandCode,
   CustomBatchPeriodDef,
@@ -642,14 +644,9 @@ export function PeaklyMasterCabinetsSummary({
   const [financeParams, setFinanceParams] = useState<{
     initialCashMln: number;
     wbLagMonths: number;
-  }>(() => {
-    const saved = safeGetStorageJson<{ initialCashMln?: number; wbLagMonths?: number }>(
-      'borners_finance_contour_params_v1'
-    );
-    return {
-      initialCashMln: typeof saved?.initialCashMln === 'number' ? saved.initialCashMln : 0,
-      wbLagMonths: typeof saved?.wbLagMonths === 'number' ? saved.wbLagMonths : 0,
-    };
+  }>({
+    initialCashMln: 0,
+    wbLagMonths: 0,
   });
 
   useEffect(() => {
@@ -666,6 +663,7 @@ export function PeaklyMasterCabinetsSummary({
           : { initialCashMln: nextCash, wbLagMonths: nextLag }
       );
     };
+    syncFinanceParams();
     window.addEventListener('borners-finance-params-changed', syncFinanceParams);
     window.addEventListener('storage', syncFinanceParams);
     return () => {
@@ -723,6 +721,44 @@ export function PeaklyMasterCabinetsSummary({
       ? multiBrandSummary.brands.find((b) => b.brandCode === normalizedSelectedBrand) || null
       : null;
   const gt = selectedBrandRow || holdingTotal;
+
+  const [investmentModalOpen, setInvestmentModalOpen] = useState(false);
+  const [investmentModalFocusOpKey, setInvestmentModalFocusOpKey] = useState<string | null>(null);
+
+  const activeScenarioForInv = useMemo(() => {
+    if (selectedBrandRow && typeof selectedBrandRow.selectedScenarioId === 'number') {
+      const found = scenarios.find(
+        (s) => s.id === selectedBrandRow.selectedScenarioId && !s.isArchived
+      );
+      if (found) return found;
+    }
+    return scenarios.find((s) => s.id === 1 && !s.isArchived) || scenarios[0];
+  }, [selectedBrandRow, scenarios]);
+
+  const { schedule: invSchedule } = useInvestmentSchedule({
+    models: models || [],
+    scenarios,
+    activeScenario: activeScenarioForInv,
+    brandFilter: normalizedSelectedBrand,
+    selectedScenarioByBrand: selectedScenarioByBrand as Partial<
+      Record<CanonicalBrandCode | 'LISCANI', number | null>
+    >,
+  });
+  const hasLiveInvSchedule = Boolean(models && models.length > 0 && activeScenarioForInv);
+  const effectiveWbUnspecified = hasLiveInvSchedule
+    ? !invSchedule.wbPayoutScheduleSpecified
+    : wbLagUnspecified;
+  const effectiveTotalProcRub = hasLiveInvSchedule
+    ? invSchedule.totalProcurementCostRub
+    : gt.totalProcurementBudgetRub;
+  const effectiveOwnMoneyPeakRub = hasLiveInvSchedule
+    ? invSchedule.maxOwnMoneyNeededRub
+    : gt.verifiedOwnMoneyRequiredRub;
+  const effectiveReinvestedRub = hasLiveInvSchedule
+    ? invSchedule.reinvestedFromSalesRub
+    : gt.verifiedOwnMoneyRequiredRub !== null
+    ? Math.max(0, gt.totalProcurementBudgetRub - gt.verifiedOwnMoneyRequiredRub)
+    : null;
 
   const activeBrandsCount = multiBrandSummary.brands.filter(
     (b) => b.hasScenario && b.hasModels
@@ -956,17 +992,20 @@ export function PeaklyMasterCabinetsSummary({
   // Мультипликатор отдачи на собственный капитал
   const ownCapitalRoiMult = useMemo(() => {
     if (
-      gt.verifiedOwnMoneyRequiredRub !== null &&
-      gt.verifiedOwnMoneyRequiredRub > 0 &&
+      effectiveOwnMoneyPeakRub !== null &&
+      effectiveOwnMoneyPeakRub > 0 &&
       gt.annualEstimatedOperatingProfitRub > 0
     ) {
-      return Math.round((gt.annualEstimatedOperatingProfitRub / gt.verifiedOwnMoneyRequiredRub) * 10) / 10;
+      return Math.round((gt.annualEstimatedOperatingProfitRub / effectiveOwnMoneyPeakRub) * 10) / 10;
     }
     return null;
-  }, [gt.verifiedOwnMoneyRequiredRub, gt.annualEstimatedOperatingProfitRub]);
+  }, [effectiveOwnMoneyPeakRub, gt.annualEstimatedOperatingProfitRub]);
 
   // Доля закупок из оборотной выручки WB
   const selfFundedProcurementPct = useMemo(() => {
+    if (hasLiveInvSchedule) {
+      return invSchedule.reinvestedSharePct;
+    }
     if (gt.totalProcurementBudgetRub <= 0) return 0;
     if (
       gt.verifiedOwnMoneyRequiredRub !== null &&
@@ -977,7 +1016,7 @@ export function PeaklyMasterCabinetsSummary({
     }
     if (gt.verifiedOwnMoneyRequiredRub === 0) return 100;
     return 0;
-  }, [gt.totalProcurementBudgetRub, gt.verifiedOwnMoneyRequiredRub]);
+  }, [hasLiveInvSchedule, invSchedule.reinvestedSharePct, gt.totalProcurementBudgetRub, gt.verifiedOwnMoneyRequiredRub]);
 
   const cogsPct = useMemo(() => {
     if (gt.annualRevenueRub > 0) {
@@ -1477,82 +1516,79 @@ export function PeaklyMasterCabinetsSummary({
               </p>
             </div>
 
-            {/* 3 архитектурные колонки-опоры с 1px hairline-разделителями */}
+            {/* 3 основных показателя Главного экрана по ТЗ (Общая стоимость закупок / Максимальная потребность в собственных деньгах / Реинвестирование) */}
             <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#E4E1DA] dark:divide-[#282724] border-t border-[#E4E1DA] dark:border-[#282724] pt-5">
+              {/* Показатель 1: Общая стоимость закупок */}
               <div className="pb-4 sm:pb-0 sm:pr-5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-                    1. Выручка за 2027 год
+                    1. Общая стоимость закупок
                   </span>
                   <span className="font-mono text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]">
-                    {gt.modelsCount} SKU
+                    {hasLiveInvSchedule && invSchedule.batchesTotalCount > 0
+                      ? `${invSchedule.batchesTotalCount} парт. · ${gt.modelsCount} SKU`
+                      : `${gt.modelsCount} SKU`}
                   </span>
                 </div>
-                <div className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]">
-                  {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто'}
+                <div
+                  data-testid="home-hero-total-procurement"
+                  className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                >
+                  {hasFinance && hasCost ? formatMln(effectiveTotalProcRub) : 'Скрыто'}
                 </div>
                 <div className="mt-1 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                  Пик декабря:{' '}
+                  Выручка за 2027:{' '}
                   <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                    {hasFinance ? formatMln(gt.decemberRevenueRub) : 'Скрыто'}
+                    {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто'}
                   </strong>
                 </div>
               </div>
 
-              <div className="py-4 sm:py-0 sm:px-5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-                    2. Приходит со счёта WB
-                  </span>
-                  <span className="font-mono text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]">
-                    за вычетом WB
-                  </span>
-                </div>
-                <div className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]">
-                  {hasFinance ? formatMln(trendChartData.totalPayoutYearRub) : 'Скрыто'}
-                </div>
-                <div className="mt-1 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                  После комиссии и логистики WB
-                </div>
-              </div>
-
+              {/* Показатель 2: Максимальная потребность в собственных деньгах */}
               <div
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!hasFinance || !hasCost) return;
                   setTrendChartMode('ownMoneyPeak');
-                  setSelectedTrendMonthIdx(gt.peakMonthIdx ?? 0);
+                  setSelectedTrendMonthIdx(
+                    hasLiveInvSchedule
+                      ? invSchedule.peakShortageMonthIdx
+                      : gt.peakMonthIdx ?? 0
+                  );
                 }}
                 title="Нажмите, чтобы показать кривую «Пик своих денег» на графике 12 мес."
-                className="pt-4 sm:pt-0 sm:pl-5 rounded-r-lg cursor-pointer transition-colors hover:bg-[#FAF9F6]/70 dark:hover:bg-[#1D1C1A]/70"
+                className="py-4 sm:py-0 sm:px-5 cursor-pointer transition-colors hover:bg-[#FAF9F6]/70 dark:hover:bg-[#1D1C1A]/70"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-                    3. Пик своих денег
+                    2. Максимальная потребность в собственных деньгах
                   </span>
-                  <span className="font-mono text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0]">
+                  <span className="font-mono text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] shrink-0">
                     {!hasFinance || !hasCost
                       ? 'Скрыто'
                       : !hasPortfolioActivity
                       ? '0 SKU'
-                      : wbLagUnspecified
+                      : effectiveWbUnspecified
                       ? 'Лаг WB?'
                       : ownCapitalRoiMult
                       ? `ROI ×${ownCapitalRoiMult.toFixed(1).replace('.', ',')}`
-                      : 'Реинвест'}
+                      : 'Из оборота'}
                   </span>
                 </div>
-                <div className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]">
+                <div
+                  data-testid="home-hero-max-own-money"
+                  className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                >
                   {!hasFinance || !hasCost
                     ? 'Скрыто'
                     : !hasPortfolioActivity
                     ? '0,00 млн ₽'
-                    : gt.verifiedOwnMoneyRequiredRub !== null
-                    ? gt.verifiedOwnMoneyRequiredRub > 0
-                      ? formatMln(gt.verifiedOwnMoneyRequiredRub)
-                      : 'Из оборота'
-                    : wbLagUnspecified
+                    : effectiveWbUnspecified
                     ? 'Лаг WB не задан'
+                    : effectiveOwnMoneyPeakRub !== null
+                    ? effectiveOwnMoneyPeakRub > 0
+                      ? formatMln(effectiveOwnMoneyPeakRub)
+                      : '0 ₽ (из оборота)'
                     : 'Из оборота'}
                 </div>
                 <div className="mt-1 text-[11.5px] text-[#5C5953] dark:text-[#9A968E] leading-snug">
@@ -1560,22 +1596,112 @@ export function PeaklyMasterCabinetsSummary({
                     <span>Доступ к себестоимости и финансам ограничен</span>
                   ) : !hasPortfolioActivity ? (
                     <span>План продаж и закупок не запущен</span>
-                  ) : wbLagUnspecified ? (
-                    <span className="text-rose-700 dark:text-rose-400">Укажите лаг выплат WB в 04 · Финансы</span>
+                  ) : effectiveWbUnspecified ? (
+                    <span className="text-rose-700 dark:text-rose-400">
+                      Укажите срок получения денег от WB
+                    </span>
                   ) : (
                     <>
                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#141413] dark:bg-[#F5F4F0] mr-1.5 align-middle" />
-                      Пик в {gt.peakMonthLabel || 'Янв'} 2027{' '}
-                      <span className="text-[#15803D] dark:text-emerald-400 font-medium">
-                        ·{' '}
-                        {gt.selfFundingMonthLabel && (gt.verifiedOwnMoneyRequiredRub ?? 0) > 0
-                          ? `с ${gt.selfFundingMonthLabel} — в плюс с WB`
-                          : `${selfFundedProcurementPct}% партий с WB`}
-                      </span>
+                      {hasLiveInvSchedule && invSchedule.peakShortageDateHumanRu
+                        ? `Пик: ${invSchedule.peakShortageDateHumanRu}`
+                        : `Пик в ${gt.peakMonthLabel || 'Янв'} 2027`}
+                      {hasLiveInvSchedule && invSchedule.minCashReserveRub > 0
+                        ? ` · резерв ${formatMln(invSchedule.minCashReserveRub)}`
+                        : ''}
                     </>
                   )}
                 </div>
               </div>
+
+              {/* Показатель 3: Реинвестирование */}
+              <div className="pt-4 sm:pt-0 sm:pl-5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
+                    3. Реинвестирование
+                  </span>
+                  <span className="font-mono text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#15803D] dark:text-emerald-400">
+                    {!hasFinance || !hasCost
+                      ? 'Скрыто'
+                      : effectiveWbUnspecified
+                      ? '—'
+                      : `${selfFundedProcurementPct}% закупок`}
+                  </span>
+                </div>
+                <div
+                  data-testid="home-hero-reinvestment"
+                  className="mt-1.5 font-mono text-xl sm:text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-[#15803D] dark:text-emerald-400"
+                >
+                  {!hasFinance || !hasCost
+                    ? 'Скрыто'
+                    : effectiveWbUnspecified
+                    ? 'Лаг WB не задан'
+                    : effectiveReinvestedRub !== null
+                    ? formatMln(effectiveReinvestedRub)
+                    : '0,00 млн ₽'}
+                </div>
+                <div className="mt-1 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+                  {!hasFinance || !hasCost
+                    ? 'Доступ по роли'
+                    : effectiveWbUnspecified
+                    ? 'Требуется график поступлений WB'
+                    : hasLiveInvSchedule
+                    ? `Покрыто с продаж WB (${invSchedule.batchesFundedBySalesCount} из ${invSchedule.batchesTotalCount} парт.)`
+                    : 'Сумма закупок из поступлений WB'}
+                </div>
+              </div>
+            </div>
+
+            {/* Кнопка «График инвестиций» + компактный блок «Ближайший платёж: дата, сумма и назначение» (Раздел 2 ТЗ) */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#E4E1DA] dark:border-[#282724]"
+            >
+              <button
+                type="button"
+                data-testid="open-investment-schedule-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInvestmentModalFocusOpKey(null);
+                  setInvestmentModalOpen(true);
+                }}
+                className="h-9 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-xs font-medium inline-flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                <span>График инвестиций</span>
+              </button>
+
+              {hasFinance && hasCost && invSchedule.nextUpcomingPayment ? (
+                <button
+                  type="button"
+                  data-testid="home-nearest-payment-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInvestmentModalFocusOpKey(invSchedule.nextUpcomingPayment!.opKey);
+                    setInvestmentModalOpen(true);
+                  }}
+                  className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] text-left text-xs transition-colors cursor-pointer"
+                >
+                  <span className="text-[#5C5953] dark:text-[#9A968E]">Ближайший платёж:</span>
+                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                    {invSchedule.nextUpcomingPayment.dateHumanRu}
+                  </strong>
+                  <span className="text-[#5C5953]">·</span>
+                  <strong className="font-mono text-[#B91C1C] dark:text-rose-400">
+                    {formatMln(invSchedule.nextUpcomingPayment.amountRub)}
+                  </strong>
+                  <span className="text-[#5C5953]">·</span>
+                  <span className="text-[#141413] dark:text-[#F5F4F0] font-medium truncate max-w-[260px]">
+                    {invSchedule.nextUpcomingPayment.purposeLabel}
+                  </span>
+                </button>
+              ) : (
+                <span className="text-xs text-[#5C5953] dark:text-[#9A968E]">
+                  {hasFinance && hasCost
+                    ? 'Нет запланированных неоплаченных платежей'
+                    : 'Детализация платежей доступна по роли'}
+                </span>
+              )}
             </div>
           </div>
 
@@ -3319,6 +3445,38 @@ export function PeaklyMasterCabinetsSummary({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Модальное окно «График инвестиций» прямо на Главном экране без утяжеления навигации */}
+      {hasLiveInvSchedule && (
+        <InvestmentScheduleModal
+          open={investmentModalOpen}
+          onClose={() => setInvestmentModalOpen(false)}
+          models={models || []}
+          scenarios={scenarios}
+          activeScenario={activeScenarioForInv}
+          brandFilter={normalizedSelectedBrand}
+          selectedScenarioByBrand={
+            selectedScenarioByBrand as Partial<
+              Record<CanonicalBrandCode | 'LISCANI', number | null>
+            >
+          }
+          onSelectBrandFilter={onSelectBrandFilter}
+          onSelectScenarioId={onSelectActiveScenarioId}
+          onOpenBatchInProcurement={(mId, bCode) => {
+            try {
+              window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
+              window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
+              window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
+            } catch {
+              // ignore
+            }
+            if (bCode) onSelectBrandFilter(bCode);
+            setInvestmentModalOpen(false);
+            navigateTo('roadmap-tasks');
+          }}
+          initialFocusOpKey={investmentModalFocusOpKey}
+        />
       )}
     </div>
   );

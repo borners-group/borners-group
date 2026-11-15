@@ -248,6 +248,7 @@ export function useLiveScenarioPortfolio() {
           deletedScenarioIds: getDeletedScenariosRegistry(),
           financeContourParams: safeGetStorageJson('borners_finance_contour_params_v1'),
           productGroups: safeGetStorageJson('borners_product_groups_v1'),
+          investmentLedger: safeGetStorageJson('borners_investment_ledger_v1'),
         });
       };
 
@@ -575,6 +576,11 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson('borners_product_groups_v1', cloud.productGroups);
       }
 
+      if (isCloudNewer && cloud.investmentLedger && typeof cloud.investmentLedger === 'object') {
+        safeSetStorageJson('borners_investment_ledger_v1', cloud.investmentLedger);
+        emitWindowSync('borners-investment-ledger-changed');
+      }
+
       if (mergeRes.shouldPushLocalToCloud || (forcePushLocal && Boolean(rawLocalUpdatedAtIso))) {
         scheduleCompleteCloudPush({ models: mergeRes.models, scenarios: nextScen }, true, true);
       } else if (cloud.updatedAtIso) {
@@ -777,6 +783,7 @@ export function useLiveScenarioPortfolio() {
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('borners-force-cloud-sync', handleForceCloudSync);
     window.addEventListener('borners-finance-params-changed', handleFinanceParamsEdited);
+    window.addEventListener('borners-investment-ledger-changed', handleFinanceParamsEdited);
 
     return () => {
       cancelled = true;
@@ -802,6 +809,7 @@ export function useLiveScenarioPortfolio() {
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('borners-force-cloud-sync', handleForceCloudSync);
       window.removeEventListener('borners-finance-params-changed', handleFinanceParamsEdited);
+      window.removeEventListener('borners-investment-ledger-changed', handleFinanceParamsEdited);
     };
   }, [syncFromStorage, scheduleCompleteCloudPush, emitWindowSync, applyCloudSnapshotPayload]);
 

@@ -8793,7 +8793,8 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
   );
 
   assert.equal(
-    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+      nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
       nextConfigCode.includes('borners-2027-natele-lab-v9'),
@@ -8849,7 +8850,8 @@ test('124. v10 Архитектурная дизайн-система COS / Ramp
     'globals.css обязан задавать тёплый архитектурный камень #F6F5F2, антрацит #141413 и var(--font-mono) для .font-mono'
   );
   assert.equal(
-    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+      nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10'),
     true,
@@ -9863,10 +9865,11 @@ test('170. v11 Дыхабельные мокасины AKUSHA (AKU-028..031, buy
   assert.equal(sumMocRev, 1685 * 5490);
 });
 
-test('171. v11/v12 Релизный идентификатор borners-2027-cloud-sync-v12 в next.config.ts', () => {
+test('171. v11/v12/v13 Актуальный релизный идентификатор в next.config.ts', () => {
   const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
   assert.equal(
-    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+    nextConfigCode.includes('borners-2027-investment-schedule-v13') ||
+      nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
       nextConfigCode.includes('borners-2027-sales-integrity-v11'),
     true,
     'next.config.ts обязан экспортировать актуальный buildId'
@@ -10103,15 +10106,793 @@ test('177. v12 Живая синхронизация (Realtime + pagehide flush 
   );
 });
 
-test('178. v12 Релизный идентификатор borners-2027-cloud-sync-v12 и проброс NEXT_PUBLIC_SUPABASE_URL в next.config.ts', () => {
+test('178. v13 Релизный идентификатор borners-2027-investment-schedule-v13 и проброс NEXT_PUBLIC_SUPABASE_URL в next.config.ts', () => {
   const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
   assert.equal(
-    nextConfigCode.includes('borners-2027-cloud-sync-v12') &&
+    nextConfigCode.includes('borners-2027-investment-schedule-v13') &&
       nextConfigCode.includes('https://ocdmyldosplufhhwrrwq.supabase.co') &&
       nextConfigCode.includes('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     true,
-    'next.config.ts обязан экспортировать buildId borners-2027-cloud-sync-v12 и конфигурацию Supabase'
+    'next.config.ts обязан экспортировать buildId borners-2027-investment-schedule-v13 и конфигурацию Supabase'
   );
+});
+
+test('179. v13 ТЗ Тест 1: Переносим платёж фабрике на другой месяц — финансовый график, реинвестирование и потребность в собственных деньгах пересчитываются', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const bornersModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseLedger = createDefaultInvestmentLedgerState();
+  const baseSchedule = computeInvestmentSchedule({
+    models: bornersModels,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: baseLedger,
+  });
+
+  assert.ok(baseSchedule.totalProcurementCostRub > 0, 'Общая стоимость закупок > 0');
+  assert.ok(baseSchedule.maxOwnMoneyNeededRub !== null && baseSchedule.maxOwnMoneyNeededRub > 0);
+  assert.ok(baseSchedule.nextUpcomingPayment !== null, 'Ближайший платёж определён');
+
+  // Находим крупный платёж фабрике в январе (индекс 0) и переносим его на июль (2027-07-25), когда на счёте уже накоплены выплаты WB
+  const janFactoryEvent = baseSchedule.allEvents.find(
+    (e) => e.type === 'factory_payment' && e.calendarMonthIdx === 0 && e.outflowRub > 500_000
+  )!;
+  assert.ok(janFactoryEvent, 'В январе должен быть стартовый платёж фабрике');
+
+  const movedLedger = createDefaultInvestmentLedgerState();
+  movedLedger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {
+      [janFactoryEvent.opKey]: {
+        opKey: janFactoryEvent.opKey,
+        batchKey: janFactoryEvent.batchKey || '',
+        customDateIso: '2027-07-25',
+        updatedAtIso: '2026-11-15T12:00:00.000Z',
+        updatedBy: 'Тест 1',
+      },
+    },
+    batchOverrides: {},
+    plannedCapitalInjections: [],
+    plannedOtherOperations: [],
+  };
+
+  const movedSchedule = computeInvestmentSchedule({
+    models: bornersModels,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: movedLedger,
+  });
+
+  // 1) Общая стоимость закупок при переносе даты не меняется, но календарь платежей меняется точно на сумму платежа
+  assert.equal(movedSchedule.totalProcurementCostRub, baseSchedule.totalProcurementCostRub);
+  assert.equal(
+    movedSchedule.monthlyCalendarRows[0]!.factoryOutflowsRub,
+    baseSchedule.monthlyCalendarRows[0]!.factoryOutflowsRub - janFactoryEvent.outflowRub
+  );
+  assert.equal(
+    movedSchedule.monthlyCalendarRows[6]!.factoryOutflowsRub,
+    baseSchedule.monthlyCalendarRows[6]!.factoryOutflowsRub + janFactoryEvent.outflowRub
+  );
+  // 2) За счёт переноса на июль платёж покрывается свободными поступлениями от продаж WB -> реинвестирование растёт, а пик собственных денег снижается!
+  assert.ok(
+    (movedSchedule.reinvestedFromSalesRub || 0) > (baseSchedule.reinvestedFromSalesRub || 0),
+    'При переносе платежа на месяц с накопленной выручкой WB реинвестирование должно вырасти'
+  );
+  assert.ok(
+    (movedSchedule.maxOwnMoneyNeededRub || 0) < (baseSchedule.maxOwnMoneyNeededRub || 0),
+    'Потребность в собственных деньгах должна уменьшиться после переноса раннего платежа'
+  );
+});
+
+test('180. v13 ТЗ Тест 2: Увеличиваем объём продаж — пересчитываются рекомендованные партии, платежи фабрикам и необходимые инвестиции', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const baseModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseRes = computeInvestmentSchedule({
+    models: baseModels,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  // Удваиваем плановые продажи по всем моделям сценария №1
+  const doubledModels = baseModels.map((m) => {
+    const p1 = m.plansByScenario[1];
+    if (!p1) return m;
+    return {
+      ...m,
+      plansByScenario: {
+        ...m.plansByScenario,
+        1: {
+          ...p1,
+          monthlyPacks: p1.monthlyPacks.map((v) => Math.round(v * 2)),
+          monthlyRevenuesRubOverride: undefined,
+        },
+      },
+    };
+  });
+
+  const doubledRes = computeInvestmentSchedule({
+    models: doubledModels,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  assert.ok(
+    doubledRes.totalProcurementCostRub > baseRes.totalProcurementCostRub,
+    'При росте продаж растут рекомендованные закупочные партии и их бюджет'
+  );
+  const baseOutflows = baseRes.monthlyCalendarRows.reduce((s, r) => s + r.factoryOutflowsRub, 0);
+  const doubledOutflows = doubledRes.monthlyCalendarRows.reduce(
+    (s, r) => s + r.factoryOutflowsRub,
+    0
+  );
+  assert.ok(doubledOutflows > baseOutflows, 'Сумма платежей фабрикам увеличивается');
+  assert.ok(
+    (doubledRes.maxOwnMoneyNeededRub || 0) > (baseRes.maxOwnMoneyNeededRub || 0),
+    'Максимальная потребность в собственных инвестициях пересчитывается в сторону роста'
+  );
+});
+
+test('181. v13 ТЗ Тест 3: Изменяем сроки выплат WB — обновляется возможность реинвестирования и максимальная потребность в собственных деньгах (а при незаданном сроке выводится честное предупреждение)', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const ledger0 = createDefaultInvestmentLedgerState();
+  ledger0.globalSettings.wbPayoutDelayDays = 0;
+
+  const ledger60 = createDefaultInvestmentLedgerState();
+  ledger60.globalSettings.wbPayoutDelayDays = 60;
+
+  const ledgerUnset = createDefaultInvestmentLedgerState();
+  ledgerUnset.globalSettings.wbPayoutScheduleSpecified = false;
+
+  const res0 = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger0,
+  });
+  const res60 = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger60,
+  });
+  const resUnset = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledgerUnset,
+  });
+
+  assert.ok(
+    res60.totalWbCashInflowRub < res0.totalWbCashInflowRub,
+    'При задержке выплат WB +60 дней в рамках 2027 года на счёт успевает поступить меньше выручки'
+  );
+  assert.ok(
+    (res60.reinvestedFromSalesRub || 0) <= (res0.reinvestedFromSalesRub || 0) &&
+      (res60.maxOwnMoneyNeededRub || 0) > (res0.maxOwnMoneyNeededRub || 0),
+    'При увеличении задержки WB возможность реинвестирования снижается, а потребность в собственных деньгах растёт'
+  );
+
+  // Проверка требования Раздела 6 ТЗ: если исходные данные не заполнены — предупреждение вместо выдуманной суммы!
+  assert.equal(resUnset.maxOwnMoneyNeededRub, null);
+  assert.equal(resUnset.reinvestedFromSalesRub, null);
+  assert.equal(
+    resUnset.dataWarnings.some((w) => w.code === 'wb_schedule_unspecified'),
+    true,
+    'Обязано формироваться предупреждение wb_schedule_unspecified'
+  );
+});
+
+test('182. v13 ТЗ Тест 4: Добавляем собственные инвестиции по датам — система точно показывает, хватает ли денег на последующие платежи', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  const fullNeedRub = baseRes.additionalOwnMoneyStillNeededRub!;
+  assert.ok(fullNeedRub > 20_000_000);
+  assert.equal(baseRes.isAddedCapitalSufficientForSubsequentPayments, false);
+
+  // Шаг А: вносим частичную инвестицию 15 млн ₽ до первого платежа
+  const earliestDate = baseRes.datesRequiringOwnInjection[0]!.dateIso;
+  const partialLedger = createDefaultInvestmentLedgerState();
+  partialLedger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {},
+    batchOverrides: {},
+    plannedCapitalInjections: [
+      {
+        id: 'inj-part-1',
+        dateIso: earliestDate,
+        amountRub: 15_000_000,
+        title: 'Транш учредителя №1',
+        status: 'Запланировано',
+        brandCode: 'BORNERS',
+        updatedAtIso: '2026-11-15T12:00:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    ],
+    plannedOtherOperations: [],
+  };
+
+  const partialRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: partialLedger,
+  });
+
+  assert.equal(
+    partialRes.additionalOwnMoneyStillNeededRub,
+    fullNeedRub - 15_000_000,
+    'Непокрытая потребность должна уменьшиться ровно на 15 000 000 ₽'
+  );
+  assert.equal(
+    partialRes.isAddedCapitalSufficientForSubsequentPayments,
+    false,
+    'Система честно показывает, что 15 млн ₽ пока недостаточно на все последующие платежи'
+  );
+
+  // Шаг Б: вносим полную сумму до первого платежа -> денег полностью хватает на все последующие партии!
+  const fullLedger = createDefaultInvestmentLedgerState();
+  fullLedger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {},
+    batchOverrides: {},
+    plannedCapitalInjections: [
+      {
+        id: 'inj-full',
+        dateIso: earliestDate,
+        amountRub: fullNeedRub,
+        title: 'Полное финансирование инвестплана',
+        status: 'Утверждено',
+        brandCode: 'BORNERS',
+        updatedAtIso: '2026-11-15T12:05:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    ],
+    plannedOtherOperations: [],
+  };
+
+  const fullRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: fullLedger,
+  });
+
+  assert.equal(fullRes.additionalOwnMoneyStillNeededRub, 0);
+  assert.equal(fullRes.datesRequiringOwnInjection.length, 0);
+  assert.equal(
+    fullRes.isAddedCapitalSufficientForSubsequentPayments,
+    true,
+    'При достаточном вложении система подтверждает 100% обеспеченность последующих платежей'
+  );
+});
+
+test('183. v13 ТЗ Тест 5: Переключаем сценарий — получаем другой прогноз закупок и платежей, НЕ изменяя утверждённые заказы и сохраняя ручные правки каждого сценария изолированно', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const s2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+
+  const rawModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  // Утверждаем реальный заказ фабрике (PO) по первой модели BORNERS — он обязан остаться общим и неизменным во всех сценариях!
+  const targetModel = ensureModelUnifiedV11(rawModels.find((m) => m.code === 'BRN-001-SC')!);
+  const initPlan = computeProcurementPlan(targetModel, s1);
+  const firstBatch = initPlan.recommendedBatches[0]!;
+  const approvedModel = approveRecommendedBatch(
+    targetModel,
+    firstBatch,
+    'Владелец'
+  );
+
+  const modelsWithApprovedPo = rawModels.map((m) =>
+    m.id === approvedModel.id ? approvedModel : m
+  );
+
+  // Добавляем ручную плановую корректировку ТОЛЬКО в Сценарий №1 (BORNERS:1)
+  const ledger = createDefaultInvestmentLedgerState();
+  ledger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {},
+    batchOverrides: {},
+    plannedCapitalInjections: [],
+    plannedOtherOperations: [
+      {
+        id: 'op-s1-only',
+        kind: 'expense',
+        category: 'marketing_ext',
+        dateIso: '2027-03-10',
+        amountRub: 2_500_000,
+        title: 'Тестовая съёмка только для Сценария №1',
+        status: 'Запланировано',
+        brandCode: 'BORNERS',
+        updatedAtIso: '2026-11-15T12:00:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    ],
+  };
+
+  const resS1 = computeInvestmentSchedule({
+    models: modelsWithApprovedPo,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+  const resS2 = computeInvestmentSchedule({
+    models: modelsWithApprovedPo,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s2,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+
+  // 1) Утверждённый заказ фабрике (PO) одинаков и не затронут переключением сценария!
+  assert.ok(resS1.approvedProcurementCostRub > 0);
+  assert.equal(
+    resS2.approvedProcurementCostRub,
+    resS1.approvedProcurementCostRub,
+    'Утверждённые заказы фабрикам (PO) обязаны оставаться общими и неизменными при переключении сценария'
+  );
+
+  // 2) Прогнозные плановые закупки во 2-м сценарии отличаются от 1-го сценария
+  assert.notEqual(
+    resS2.plannedProcurementCostRub,
+    resS1.plannedProcurementCostRub,
+    'Прогнозные плановые партии обновляются под выбранный сценарий продаж'
+  );
+
+  // 3) Сценарная плановая операция Сценария №1 осталась в Сценарии №1 и не утекла во 2-й сценарий
+  assert.equal(resS1.totalOtherExpensesRub, 2_500_000);
+  assert.equal(resS2.totalOtherExpensesRub, 0);
+});
+
+test('184. v13 ТЗ Тест 6: Сохранение при перезагрузке страницы (localStorage) и сквозная облачная синхронизация investmentLedger в Supabase', async () => {
+  const {
+    STORAGE_KEY_INVESTMENT_LEDGER,
+    createDefaultInvestmentLedgerState,
+    loadInvestmentLedgerState,
+    saveInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const store = new Map<string, string>();
+  const prevWin = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    },
+    dispatchEvent: () => true,
+  };
+
+  try {
+    const state = createDefaultInvestmentLedgerState();
+    state.globalSettings.initialCashRub = 12_500_000;
+    state.globalSettings.minCashReserveRub = 3_000_000;
+    state.globalSettings.wbPayoutDelayDays = 14;
+    state.scenarioPlans['BORNERS:1'] = {
+      paymentOverrides: {
+        'test-op::prepay': {
+          opKey: 'test-op::prepay',
+          batchKey: 'test-op',
+          customDateIso: '2027-04-18',
+          customAmountRub: 4_200_000,
+          updatedAtIso: '2026-11-15T14:00:00.000Z',
+          updatedBy: 'Владелец',
+        },
+      },
+      batchOverrides: {},
+      plannedCapitalInjections: [],
+      plannedOtherOperations: [],
+    };
+
+    saveInvestmentLedgerState(state);
+    assert.equal(store.has(STORAGE_KEY_INVESTMENT_LEDGER), true);
+
+    // Имитируем перезагрузку страницы (F5) -> чтение заново из хранилища
+    const reloaded = loadInvestmentLedgerState();
+    assert.equal(reloaded.globalSettings.initialCashRub, 12_500_000);
+    assert.equal(reloaded.globalSettings.minCashReserveRub, 3_000_000);
+    assert.equal(reloaded.globalSettings.wbPayoutDelayDays, 14);
+    assert.equal(
+      reloaded.scenarioPlans['BORNERS:1']?.paymentOverrides['test-op::prepay']?.customDateIso,
+      '2027-04-18'
+    );
+    assert.equal(
+      reloaded.scenarioPlans['BORNERS:1']?.paymentOverrides['test-op::prepay']?.customAmountRub,
+      4_200_000
+    );
+  } finally {
+    if (prevWin === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = prevWin;
+    }
+  }
+
+  // Проверяем также, что облачный пакет Supabase включает investmentLedger
+  const supaSyncSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/supabaseCloudSync.ts'),
+    'utf8'
+  );
+  const liveHookSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+  assert.ok(
+    supaSyncSrc.includes('investmentLedger') &&
+      supaSyncSrc.includes('borners_investment_ledger_v1') &&
+      liveHookSrc.includes('borners-investment-ledger-changed'),
+    'Облачная синхронизация Supabase обязана передавать и принимать borners_investment_ledger_v1 между всеми устройствами'
+  );
+});
+
+test('185. v13 Дробление одного платежа на несколько траншей (splitTranches) и изменение условий аванса/доплаты фабрике', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  const targetEv = baseRes.allEvents.find(
+    (e) => e.type === 'factory_payment' && e.outflowRub >= 1_000_000
+  )!;
+  const totalAmt = targetEv.outflowRub;
+  const t1 = Math.round(totalAmt * 0.3);
+  const t2 = Math.round(totalAmt * 0.3);
+  const t3 = totalAmt - t1 - t2;
+
+  const splitLedger = createDefaultInvestmentLedgerState();
+  splitLedger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {
+      [targetEv.opKey]: {
+        opKey: targetEv.opKey,
+        batchKey: targetEv.batchKey || '',
+        splitTranches: [
+          { id: 'tr-1', dateIso: '2027-01-10', amountRub: t1, label: 'Транш 1', status: 'Оплачено' },
+          { id: 'tr-2', dateIso: '2027-04-15', amountRub: t2, label: 'Транш 2', status: 'Утверждено' },
+          { id: 'tr-3', dateIso: '2027-08-20', amountRub: t3, label: 'Транш 3', status: 'Запланировано' },
+        ],
+        updatedAtIso: '2026-11-15T14:30:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    },
+    batchOverrides: {},
+    plannedCapitalInjections: [],
+    plannedOtherOperations: [],
+  };
+
+  const splitRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: splitLedger,
+  });
+
+  const trancheEvents = splitRes.allEvents.filter((e) => e.opKey === targetEv.opKey);
+  assert.equal(trancheEvents.length, 3, 'Платёж должен быть разбит ровно на 3 датированных транша');
+  assert.equal(
+    trancheEvents.reduce((s, e) => s + e.outflowRub, 0),
+    totalAmt,
+    'Сумма траншей равна сумме исходного платежа'
+  );
+  assert.equal(trancheEvents[0]!.isFactual, true, '1-й транш имеет фактический статус Оплачено');
+  assert.ok(
+    trancheEvents[2]!.reinvestedFromSalesRub > 0,
+    'Августовский 3-й транш финансируется за счёт реинвестирования с продаж WB'
+  );
+});
+
+test('186. v13 Контроль дефицита товара (SupplyDeficitWarning) при переносе даты самой поставки партии', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const baseRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  const earlyBatch = baseRes.batchesCatalog.find(
+    (b) => !b.isApprovedPo && b.firstCoveredMonthIdx <= 2 && b.packsQty > 500
+  )!;
+  assert.ok(earlyBatch, 'Найдена ранняя закупочная партия Q1');
+
+  const shiftedLedger = createDefaultInvestmentLedgerState();
+  shiftedLedger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {},
+    batchOverrides: {
+      [earlyBatch.batchKey]: {
+        batchKey: earlyBatch.batchKey,
+        customArrivalDateIso: '2027-11-28',
+        updatedAtIso: '2026-11-15T15:00:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    },
+    plannedCapitalInjections: [],
+    plannedOtherOperations: [],
+  };
+
+  const shiftedRes = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: shiftedLedger,
+  });
+
+  assert.ok(
+    shiftedRes.supplyDeficitWarnings.length >= 1,
+    'Перенос ранней поставки на ноябрь обязан выявлять дефицит товара'
+  );
+  assert.ok(shiftedRes.supplyDeficitWarnings[0]!.deficitPacks > 0);
+  assert.equal(
+    shiftedRes.dataWarnings.some((w) => w.code === 'supply_deficit'),
+    true,
+    'В предупреждениях графика инвестиций должен отображаться риск дефицита товара'
+  );
+});
+
+test('187. v13 Неснижаемый денежный резерв и расчёт капитала всей группы BORNERS GROUP из единого денежного потока по 5 брендам (BORNERS, FUKAI, AKUSHA, LISCANI, НА ТЕЛЕ)', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { INITIAL_CONCEPTS } = await import('../src/lib/initial-data.ts');
+  const { syncAllBrandConceptsToScenarioPortfolio } = await import(
+    '../src/lib/rndCatalogSync.ts'
+  );
+
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const basePortfolio = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const fullPortfolio = syncAllBrandConceptsToScenarioPortfolio(
+    INITIAL_CONCEPTS,
+    'NA_TELE',
+    basePortfolio,
+    allScenarios
+  ).models;
+
+  const selectedByBrand = {
+    BORNERS: 1,
+    FUKAI: ACTING_2027_SCENARIO_ID,
+    AKUSHA: AKUSHA_2027_SCENARIO_DEF.id,
+    LISKANI: LISKANI_2027_SCENARIO_DEF.id,
+    NA_TELE: 2,
+  } as const;
+
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const zeroReserveLedger = createDefaultInvestmentLedgerState();
+  const reserve5mLedger = createDefaultInvestmentLedgerState();
+  reserve5mLedger.globalSettings.minCashReserveRub = 5_000_000;
+
+  const groupZeroReserve = computeInvestmentSchedule({
+    models: fullPortfolio,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'ALL',
+    selectedScenarioByBrand: selectedByBrand,
+    ledgerState: zeroReserveLedger,
+  });
+  const groupWith5mReserve = computeInvestmentSchedule({
+    models: fullPortfolio,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'ALL',
+    selectedScenarioByBrand: selectedByBrand,
+    ledgerState: reserve5mLedger,
+  });
+
+  // 1) Неснижаемый резерв 5 млн ₽ увеличивает максимальную потребность в собственных деньгах ровно на 5 млн ₽
+  assert.equal(
+    groupWith5mReserve.maxOwnMoneyNeededRub! - groupZeroReserve.maxOwnMoneyNeededRub!,
+    5_000_000
+  );
+
+  // 2) Проверяем расчёт по каждому из 5 брендов и сравниваем сумму их индивидуальных пиков с единым потоком группы (Раздел 7 ТЗ)
+  let sumOfIndividualBrandPeaks = 0;
+  let sumOfIndividualBrandProcurements = 0;
+  for (const bCode of ['BORNERS', 'FUKAI', 'AKUSHA', 'LISKANI', 'NA_TELE'] as const) {
+    const bScenId = selectedByBrand[bCode];
+    const bScen = allScenarios.find((s) => s.id === bScenId)!;
+    const bRes = computeInvestmentSchedule({
+      models: fullPortfolio,
+      scenarios: allScenarios,
+      activeScenario: bScen,
+      brandFilter: bCode,
+      selectedScenarioByBrand: selectedByBrand,
+      ledgerState: zeroReserveLedger,
+    });
+    assert.ok(bRes.totalProcurementCostRub >= 0, `Расчёт работает для бренда ${bCode}`);
+    sumOfIndividualBrandPeaks += bRes.maxOwnMoneyNeededRub || 0;
+    sumOfIndividualBrandProcurements += bRes.totalProcurementCostRub;
+  }
+
+  assert.equal(
+    groupZeroReserve.totalProcurementCostRub,
+    sumOfIndividualBrandProcurements,
+    'Суммарная стоимость закупок BORNERS GROUP равна сумме закупок выбранных сценариев 5 брендов без дублей'
+  );
+  assert.ok(
+    (groupZeroReserve.maxOwnMoneyNeededRub || 0) <= sumOfIndividualBrandPeaks,
+    'Потребность в капитале всей группы считается из единого денежного потока и не превышает простую сумму пиков брендов'
+  );
+});
+
+test('188. v13 Кнопка «Вернуть расчёт по плану» с предварительным просмотром изменений и защитой утверждённых/оплаченных операций', async () => {
+  const {
+    applyResetScenarioToAutoPlan,
+    computeInvestmentSchedule,
+    computeResetToAutoPlanPreview,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const models = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+  ];
+
+  const autoSchedule = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+  const factoryEvents = autoSchedule.allEvents.filter((e) => e.type === 'factory_payment');
+  const plannedOp = factoryEvents[0]!;
+  const approvedOp = factoryEvents[1]!;
+
+  const ledger = createDefaultInvestmentLedgerState();
+  // 1) Плановая сценарная корректировка (должна попасть в предпросмотр и сброситься)
+  ledger.scenarioPlans['BORNERS:1'] = {
+    paymentOverrides: {
+      [plannedOp.opKey]: {
+        opKey: plannedOp.opKey,
+        batchKey: plannedOp.batchKey || '',
+        customDateIso: '2027-06-15',
+        status: 'Запланировано',
+        updatedAtIso: '2026-11-15T16:00:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    },
+    batchOverrides: {},
+    plannedCapitalInjections: [
+      {
+        id: 'temp-inj',
+        dateIso: '2027-02-01',
+        amountRub: 5_000_000,
+        title: 'Черновой транш',
+        status: 'Запланировано',
+        brandCode: 'BORNERS',
+        updatedAtIso: '2026-11-15T16:00:00.000Z',
+        updatedBy: 'Владелец',
+      },
+    ],
+    plannedOtherOperations: [],
+  };
+  // 2) Утверждённая операция в sharedCommitted (НЕ должна сбрасываться автоматически!)
+  ledger.sharedCommitted.committedPaymentOverrides[approvedOp.opKey] = {
+    opKey: approvedOp.opKey,
+    batchKey: approvedOp.batchKey || '',
+    customDateIso: '2027-03-22',
+    status: 'Утверждено',
+    updatedAtIso: '2026-11-15T16:01:00.000Z',
+    updatedBy: 'Владелец',
+  };
+
+  const modifiedSchedule = computeInvestmentSchedule({
+    models,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+
+  const preview = computeResetToAutoPlanPreview(modifiedSchedule, ledger);
+  assert.equal(preview.willResetCount, 2, 'В предпросмотр попадают ровно 2 плановые корректировки');
+  assert.ok(preview.preservedLockedCount >= 1, 'Утверждённая операция отмечена как защищённая');
+
+  const afterResetLedger = applyResetScenarioToAutoPlan(ledger, modifiedSchedule, 'Владелец');
+  assert.equal(afterResetLedger.scenarioPlans['BORNERS:1'], undefined);
+  assert.equal(
+    afterResetLedger.sharedCommitted.committedPaymentOverrides[approvedOp.opKey]?.customDateIso,
+    '2027-03-22',
+    'Утверждённая операция полностью сохранена после возврата расчёта по плану'
+  );
+  assert.equal(afterResetLedger.auditHistory[0]?.actionType, 'reset_to_auto');
 });
 
 

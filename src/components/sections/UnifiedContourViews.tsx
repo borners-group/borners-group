@@ -65,6 +65,11 @@ import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurement
 import { PeakOwnMoneyChartPanel } from '@/components/sections/PeakOwnMoneyChartPanel';
 import { RoadmapTasksView } from '@/components/sections/ManagementAndSystemViews';
 import { FinanceView } from '@/components/sections/FinanceAndImportViews';
+import { useInvestmentSchedule } from '@/lib/useInvestmentSchedule';
+import {
+  InvestmentScheduleModal,
+  InvestmentSchedulePanel,
+} from '@/components/sections/InvestmentScheduleModalAndPanel';
 
 interface StoredFinanceContourParams {
   initialCashMln?: number;
@@ -1462,6 +1467,15 @@ export function ProcurementContourView() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
+      const focusSku = window.sessionStorage.getItem('borners_focus_procurement_sku_id');
+      if (focusSku) {
+        setSubTab('batches');
+        setWavesCalendarOpen(false);
+        setScenarioDrawerTab('none');
+        setHoldingScopeMode(false);
+        setSelectedSkuId(focusSku);
+        window.sessionStorage.removeItem('borners_focus_procurement_sku_id');
+      }
       const requested = window.sessionStorage.getItem('borners_open_procurement_view_mode');
       if (requested === 'summary') {
         setSubTab('batches');
@@ -1500,6 +1514,20 @@ export function ProcurementContourView() {
   );
 
   const isHoldingAllBrandsActive = brandFilter === 'ALL' && holdingScopeMode;
+  const [procInvModalOpen, setProcInvModalOpen] = useState(false);
+  const [procInvFocusOpKey, setProcInvFocusOpKey] = useState<string | null>(null);
+
+  const procInvHook = useInvestmentSchedule({
+    models: models.length > 0 ? models : scenarioAllEligibleModels,
+    scenarios,
+    activeScenario: currentScenario,
+    brandFilter: isHoldingAllBrandsActive ? 'ALL' : brandFilter,
+    selectedScenarioByBrand,
+    includeGroupPortfolioInS1,
+    explicitInitialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+    explicitWbLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+    explicitWbScheduleSpecified: wbLagMonths >= 0,
+  });
 
   const multiBrandSummary = useMemo(
     () =>
@@ -1635,49 +1663,67 @@ export function ProcurementContourView() {
   );
 
   const investmentSummary = useMemo(() => {
-    if (!isHoldingAllBrandsActive) return singleScenarioInvestmentSummary;
-    const gt = multiBrandSummary.groupTotal;
+    const base = !isHoldingAllBrandsActive
+      ? singleScenarioInvestmentSummary
+      : (() => {
+          const gt = multiBrandSummary.groupTotal;
+          return {
+            ...singleScenarioInvestmentSummary,
+            modelsCount: gt.modelsCount,
+            annualRevenueRub: gt.annualRevenueRub,
+            decemberRevenueRub: gt.decemberRevenueRub,
+            annualDemandPacks: procData.annualDemandPacks,
+            annualDemandUnits: procData.annualDemandUnits,
+            totalProcurementPacks: procData.totalScenarioPacks,
+            totalProcurementUnits: procData.totalScenarioUnits,
+            totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
+            annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
+            annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
+            firstWavePacks: procData.firstWavePacks,
+            firstWaveUnits: procData.firstWaveUnits,
+            firstWaveStartBudgetRub: gt.firstWaveStartBudgetRub,
+            firstWavePrepaymentRub: gt.firstWavePrepaymentRub,
+            firstWaveBalanceRub: Math.max(0, gt.firstWaveStartBudgetRub - gt.firstWavePrepaymentRub),
+            peakWorkingCapitalRub: gt.peakWorkingCapitalRub,
+            netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
+            verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+            peakMonthIdx: gt.peakMonthIdx,
+            peakMonthLabel: gt.peakMonthLabel,
+            peakPhase: gt.peakPhase,
+            peakPhaseLabelRu: gt.peakPhaseLabelRu,
+            peakWindowHumanRu: gt.peakWindowHumanRu,
+            monthsInDeficitCount: gt.monthsInDeficitCount,
+            openingBalanceAtPeakMonthRub: gt.openingBalanceAtPeakMonthRub,
+            prepayInPeakMonthRub: gt.prepayInPeakMonthRub,
+            balancePayInPeakMonthRub: gt.balancePayInPeakMonthRub,
+            wbInflowInPeakMonthRub: gt.wbInflowInPeakMonthRub,
+            endOfPeakMonthBalanceRub: gt.endOfPeakMonthBalanceRub,
+            selfFundingMonthIdx: gt.selfFundingMonthIdx,
+            selfFundingMonthLabel: gt.selfFundingMonthLabel,
+            yearEndCashBalanceRub: gt.yearEndCashBalanceRub,
+            monthlyRows: gt.monthlyRows,
+          };
+        })();
+
+    const invS = procInvHook.schedule;
     return {
-      ...singleScenarioInvestmentSummary,
-      modelsCount: gt.modelsCount,
-      annualRevenueRub: gt.annualRevenueRub,
-      decemberRevenueRub: gt.decemberRevenueRub,
-      annualDemandPacks: procData.annualDemandPacks,
-      annualDemandUnits: procData.annualDemandUnits,
-      totalProcurementPacks: procData.totalScenarioPacks,
-      totalProcurementUnits: procData.totalScenarioUnits,
-      totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
-      annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
-      annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
-      firstWavePacks: procData.firstWavePacks,
-      firstWaveUnits: procData.firstWaveUnits,
-      firstWaveStartBudgetRub: gt.firstWaveStartBudgetRub,
-      firstWavePrepaymentRub: gt.firstWavePrepaymentRub,
-      firstWaveBalanceRub: Math.max(0, gt.firstWaveStartBudgetRub - gt.firstWavePrepaymentRub),
-      peakWorkingCapitalRub: gt.peakWorkingCapitalRub,
-      netOwnMoneyRequiredRub: gt.netOwnMoneyRequiredRub,
-      verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
-      peakMonthIdx: gt.peakMonthIdx,
-      peakMonthLabel: gt.peakMonthLabel,
-      peakPhase: gt.peakPhase,
-      peakPhaseLabelRu: gt.peakPhaseLabelRu,
-      peakWindowHumanRu: gt.peakWindowHumanRu,
-      monthsInDeficitCount: gt.monthsInDeficitCount,
-      openingBalanceAtPeakMonthRub: gt.openingBalanceAtPeakMonthRub,
-      prepayInPeakMonthRub: gt.prepayInPeakMonthRub,
-      balancePayInPeakMonthRub: gt.balancePayInPeakMonthRub,
-      wbInflowInPeakMonthRub: gt.wbInflowInPeakMonthRub,
-      endOfPeakMonthBalanceRub: gt.endOfPeakMonthBalanceRub,
-      selfFundingMonthIdx: gt.selfFundingMonthIdx,
-      selfFundingMonthLabel: gt.selfFundingMonthLabel,
-      yearEndCashBalanceRub: gt.yearEndCashBalanceRub,
-      monthlyRows: gt.monthlyRows,
+      ...base,
+      wbPayoutScheduleSpecified: invS.wbPayoutScheduleSpecified,
+      initialCashOnHandRub: invS.initialCashRub,
+      totalProcurementBudgetRub: invS.totalProcurementCostRub,
+      peakWorkingCapitalRub:
+        invS.grossOwnCapitalPeakFromZeroRub ?? base.peakWorkingCapitalRub,
+      netOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub ?? 0,
+      verifiedOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub,
+      peakMonthIdx: invS.peakShortageMonthIdx,
+      peakMonthLabel: invS.peakShortageMonthLabel,
     };
   }, [
     isHoldingAllBrandsActive,
     singleScenarioInvestmentSummary,
     multiBrandSummary.groupTotal,
     procData,
+    procInvHook.schedule,
   ]);
 
   const wavesSummary = useMemo(
@@ -2161,6 +2207,29 @@ export function ProcurementContourView() {
             </div>
           )}
 
+          {subTab === 'batches' && scopedModelEntries.length > 0 && hasFinance && hasCost && (
+            <button
+              type="button"
+              data-testid="procurement-open-investment-schedule-btn"
+              onClick={() => {
+                setProcInvFocusOpKey(procInvHook.schedule.nextUpcomingPayment?.opKey || null);
+                setProcInvModalOpen(true);
+              }}
+              className="h-8 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] px-3 text-[11.5px] font-semibold text-white dark:text-[#141413] hover:opacity-90 inline-flex items-center gap-1.5 cursor-pointer"
+              title="Открыть календарь инвестиций, реинвестирования WB и платежей фабрикам по датам"
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+              <span>График инвестиций</span>
+              {procInvHook.schedule.nextUpcomingPayment && (
+                <span className="hidden xl:inline font-mono text-[10.5px] opacity-80">
+                  · {procInvHook.schedule.nextUpcomingPayment.dateIso.slice(8, 10)}.
+                  {procInvHook.schedule.nextUpcomingPayment.dateIso.slice(5, 7)} (
+                  {formatMln(procInvHook.schedule.nextUpcomingPayment.amountRub)})
+                </span>
+              )}
+            </button>
+          )}
+
           {subTab === 'batches' && scopedModelEntries.length > 0 && (
             <button
               type="button"
@@ -2569,7 +2638,7 @@ export function ProcurementContourView() {
                   </div>
 
                   {/* Подробный интерактивный график «Пик своих денег» и помесячная сверка */}
-                  <div className="p-4 bg-[#FAF9F6]/50">
+                  <div className="p-4 bg-[#FAF9F6]/50 space-y-4">
                     <PeakOwnMoneyChartPanel
                       investmentSummary={investmentSummary}
                       wavesSummary={wavesSummary}
@@ -2588,6 +2657,37 @@ export function ProcurementContourView() {
                         setWbLagMonths((prev) => (prev < 0 ? 0 : -1))
                       }
                       compact
+                    />
+
+                    <InvestmentSchedulePanel
+                      models={models.length > 0 ? models : scenarioAllEligibleModels}
+                      scenarios={scenarios}
+                      activeScenario={currentScenario}
+                      brandFilter={isHoldingAllBrandsActive ? 'ALL' : brandFilter}
+                      selectedScenarioByBrand={selectedScenarioByBrand}
+                      includeGroupPortfolioInS1={includeGroupPortfolioInS1}
+                      onSelectBrandFilter={(b: string) => {
+                        setBrandFilter(b);
+                        if (b === 'ALL') setHoldingScopeMode(true);
+                        else setHoldingScopeMode(false);
+                      }}
+                      onSelectScenarioId={(scId: number, bOvr?: string) =>
+                        setSelectedScenarioId(
+                          scId,
+                          bOvr ||
+                            (!isHoldingAllBrandsActive && brandFilter !== 'ALL'
+                              ? brandFilter
+                              : undefined)
+                        )
+                      }
+                      onOpenBatchInProcurement={(mId, bCode) => {
+                        if (bCode) setBrandFilter(bCode);
+                        setHoldingScopeMode(false);
+                        setSubTab('batches');
+                        setWavesCalendarOpen(false);
+                        setScenarioDrawerTab('none');
+                        setSelectedSkuId(mId);
+                      }}
                     />
                   </div>
                 </div>
@@ -4054,6 +4154,39 @@ export function ProcurementContourView() {
           })()}
         </>
       )}
+
+      <InvestmentScheduleModal
+        open={procInvModalOpen}
+        onClose={() => setProcInvModalOpen(false)}
+        models={models.length > 0 ? models : scenarioAllEligibleModels}
+        scenarios={scenarios}
+        activeScenario={currentScenario}
+        brandFilter={isHoldingAllBrandsActive ? 'ALL' : brandFilter}
+        selectedScenarioByBrand={selectedScenarioByBrand}
+        includeGroupPortfolioInS1={includeGroupPortfolioInS1}
+        onSelectBrandFilter={(b: string) => {
+          setBrandFilter(b);
+          if (b === 'ALL') setHoldingScopeMode(true);
+          else setHoldingScopeMode(false);
+        }}
+        onSelectScenarioId={(scId: number, bOvr?: string) =>
+          setSelectedScenarioId(
+            scId,
+            bOvr ||
+              (!isHoldingAllBrandsActive && brandFilter !== 'ALL' ? brandFilter : undefined)
+          )
+        }
+        onOpenBatchInProcurement={(mId, bCode) => {
+          if (bCode) setBrandFilter(bCode);
+          setHoldingScopeMode(false);
+          setSubTab('batches');
+          setWavesCalendarOpen(false);
+          setScenarioDrawerTab('none');
+          setSelectedSkuId(mId);
+          setProcInvModalOpen(false);
+        }}
+        initialFocusOpKey={procInvFocusOpKey}
+      />
     </div>
   );
 }
@@ -4077,6 +4210,7 @@ export function FinanceContourView() {
     eligibleModels,
     totals,
     applyIndustryNormsToAllModels,
+    updateBatchFactoryTerms,
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
@@ -4170,6 +4304,18 @@ export function FinanceContourView() {
 
   const isHoldingAllBrands = brandFilter === 'ALL';
   const holdingSourceModels = models.length > 0 ? models : scenarioAllEligibleModels;
+
+  const finInvHook = useInvestmentSchedule({
+    models: holdingSourceModels,
+    scenarios,
+    activeScenario: currentScenario,
+    brandFilter: isHoldingAllBrands ? 'ALL' : brandFilter,
+    selectedScenarioByBrand,
+    includeGroupPortfolioInS1,
+    explicitInitialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
+    explicitWbLagMonths: wbLagMonths < 0 ? null : wbLagMonths,
+    explicitWbScheduleSpecified: wbLagMonths >= 0,
+  });
 
   const singleScenarioInvestmentSummary = useMemo(
     () =>
@@ -4354,41 +4500,54 @@ export function FinanceContourView() {
     };
   }, [scopedFinanceEntries]);
 
-  const investmentSummary = useMemo(
-    () =>
-      isHoldingAllBrands
-        ? {
-            ...brandsReport.groupTotal,
-            peakMonthIdx: holdingSummary.groupTotal.peakMonthIdx,
-            peakMonthLabel: holdingSummary.groupTotal.peakMonthLabel,
-            peakPhase: holdingSummary.groupTotal.peakPhase,
-            peakPhaseLabelRu: holdingSummary.groupTotal.peakPhaseLabelRu,
-            peakWindowHumanRu: holdingSummary.groupTotal.peakWindowHumanRu,
-            monthsInDeficitCount: holdingSummary.groupTotal.monthsInDeficitCount,
-            openingBalanceAtPeakMonthRub:
-              holdingSummary.groupTotal.openingBalanceAtPeakMonthRub,
-            prepayInPeakMonthRub: holdingSummary.groupTotal.prepayInPeakMonthRub,
-            balancePayInPeakMonthRub: holdingSummary.groupTotal.balancePayInPeakMonthRub,
-            wbInflowInPeakMonthRub: holdingSummary.groupTotal.wbInflowInPeakMonthRub,
-            endOfPeakMonthBalanceRub: holdingSummary.groupTotal.endOfPeakMonthBalanceRub,
-            selfFundingMonthIdx: holdingSummary.groupTotal.selfFundingMonthIdx,
-            selfFundingMonthLabel: holdingSummary.groupTotal.selfFundingMonthLabel,
-            yearEndCashBalanceRub: holdingSummary.groupTotal.yearEndCashBalanceRub,
-            monthlyRows: holdingSummary.groupTotal.monthlyRows,
-            firstWavePacks:
-              brandsReport.groupTotal.firstWavePacks > 0
-                ? brandsReport.groupTotal.firstWavePacks
-                : finSummary.totalFirstWavePacks,
-          }
-        : singleScenarioInvestmentSummary,
-    [
-      isHoldingAllBrands,
-      brandsReport.groupTotal,
-      holdingSummary.groupTotal,
-      finSummary.totalFirstWavePacks,
-      singleScenarioInvestmentSummary,
-    ]
-  );
+  const investmentSummary = useMemo(() => {
+    const base = isHoldingAllBrands
+      ? {
+          ...brandsReport.groupTotal,
+          peakMonthIdx: holdingSummary.groupTotal.peakMonthIdx,
+          peakMonthLabel: holdingSummary.groupTotal.peakMonthLabel,
+          peakPhase: holdingSummary.groupTotal.peakPhase,
+          peakPhaseLabelRu: holdingSummary.groupTotal.peakPhaseLabelRu,
+          peakWindowHumanRu: holdingSummary.groupTotal.peakWindowHumanRu,
+          monthsInDeficitCount: holdingSummary.groupTotal.monthsInDeficitCount,
+          openingBalanceAtPeakMonthRub:
+            holdingSummary.groupTotal.openingBalanceAtPeakMonthRub,
+          prepayInPeakMonthRub: holdingSummary.groupTotal.prepayInPeakMonthRub,
+          balancePayInPeakMonthRub: holdingSummary.groupTotal.balancePayInPeakMonthRub,
+          wbInflowInPeakMonthRub: holdingSummary.groupTotal.wbInflowInPeakMonthRub,
+          endOfPeakMonthBalanceRub: holdingSummary.groupTotal.endOfPeakMonthBalanceRub,
+          selfFundingMonthIdx: holdingSummary.groupTotal.selfFundingMonthIdx,
+          selfFundingMonthLabel: holdingSummary.groupTotal.selfFundingMonthLabel,
+          yearEndCashBalanceRub: holdingSummary.groupTotal.yearEndCashBalanceRub,
+          monthlyRows: holdingSummary.groupTotal.monthlyRows,
+          firstWavePacks:
+            brandsReport.groupTotal.firstWavePacks > 0
+              ? brandsReport.groupTotal.firstWavePacks
+              : finSummary.totalFirstWavePacks,
+        }
+      : singleScenarioInvestmentSummary;
+
+    const invS = finInvHook.schedule;
+    return {
+      ...base,
+      wbPayoutScheduleSpecified: invS.wbPayoutScheduleSpecified,
+      initialCashOnHandRub: invS.initialCashRub,
+      totalProcurementBudgetRub: invS.totalProcurementCostRub,
+      peakWorkingCapitalRub:
+        invS.grossOwnCapitalPeakFromZeroRub ?? base.peakWorkingCapitalRub,
+      netOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub ?? 0,
+      verifiedOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub,
+      peakMonthIdx: invS.peakShortageMonthIdx,
+      peakMonthLabel: invS.peakShortageMonthLabel,
+    };
+  }, [
+    isHoldingAllBrands,
+    brandsReport.groupTotal,
+    holdingSummary.groupTotal,
+    finSummary.totalFirstWavePacks,
+    singleScenarioInvestmentSummary,
+    finInvHook.schedule,
+  ]);
 
   const financeWavesSummary = useMemo(
     () =>
@@ -5108,6 +5267,36 @@ export function FinanceContourView() {
               setWbLagMonths((prev) => (prev < 0 ? 0 : -1))
             }
           />
+
+          {/* 02.Б · ГРАФИК ИНВЕСТИЦИЙ, РЕИНВЕСТИРОВАНИЕ С ПРОДАЖ WB И КАЛЕНДАРЬ ПЛАТЕЖЕЙ ПО ДАТАМ */}
+          <div id="finance-investment-schedule-anchor">
+            <InvestmentSchedulePanel
+              models={holdingSourceModels}
+              scenarios={scenarios}
+              activeScenario={currentScenario}
+              brandFilter={isHoldingAllBrands ? 'ALL' : brandFilter}
+              selectedScenarioByBrand={selectedScenarioByBrand}
+              includeGroupPortfolioInS1={includeGroupPortfolioInS1}
+              onSelectBrandFilter={(b: string) => setBrandFilter(b)}
+              onSelectScenarioId={(scId: number, bOvr?: string) =>
+                setSelectedScenarioId(
+                  scId,
+                  bOvr || (!isHoldingAllBrands ? brandFilter : undefined)
+                )
+              }
+              onOpenBatchInProcurement={(mId, bCode) => {
+                try {
+                  window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
+                  window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
+                  window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
+                } catch {
+                  // ignore
+                }
+                if (bCode) setBrandFilter(bCode);
+                navigateTo('roadmap-tasks');
+              }}
+            />
+          </div>
 
           {/* 03 · Юнит-экономика по моделям */}
           <section className="rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">

@@ -1279,6 +1279,8 @@ export async function resetPortfolioStorageToDemoDefaults(): Promise<void> {
       STORAGE_KEY_SCENARIO_BY_BRAND,
       STORAGE_KEY_ACTIVE_SCENARIO_ID,
       STORAGE_KEY_S1_GROUP_PORTFOLIO,
+      'borners_investment_ledger_v1',
+      'borners_finance_contour_params_v1',
     ];
     for (const k of keysToClear) {
       try {

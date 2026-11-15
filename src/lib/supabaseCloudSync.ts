@@ -29,6 +29,7 @@ export interface CloudPortfolioCorePayload {
   customBrands?: string[];
   financeContourParams?: unknown;
   productGroups?: unknown;
+  investmentLedger?: unknown;
   updatedAtIso: string;
 }
 
@@ -295,6 +296,10 @@ export async function pushPortfolioCoreToSupabase(
         input.productGroups !== undefined
           ? input.productGroups
           : readWindowStorageJsonSafe('borners_product_groups_v1'),
+      investmentLedger:
+        input.investmentLedger !== undefined
+          ? input.investmentLedger
+          : readWindowStorageJsonSafe('borners_investment_ledger_v1'),
       models: compactModels,
       updatedAtIso: nowIso,
     };
