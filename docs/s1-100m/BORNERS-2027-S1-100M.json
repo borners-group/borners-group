@@ -1,0 +1,2235 @@
+{
+  "scenario_id": "BORNERS-2027-S1-100M",
+  "title": "План роста — Декабрь 2027 / 100 млн ₽ в месяц (Сценарий №1)",
+  "control_totals": {
+    "scenarioCode": "BORNERS-2027-S1-100M",
+    "targetMonthLabel": "Декабрь 2027",
+    "targetMonthlyRevenueMln": 100,
+    "decemberTotalRevenueMln": 100.15,
+    "decemberTotalRevenueRub": 100154901,
+    "decemberNewModelsRevenueMln": 85.11,
+    "decemberNewModelsRevenueRub": 85114000,
+    "decemberNewModelsSets": 41400,
+    "decemberActingBornersRevenueMln": 15.04,
+    "decemberActingBornersRevenueRub": 15040901,
+    "annualTotalRevenueMln": 606.37,
+    "annualTotalRevenueRub": 606372182,
+    "annualNewModelsRevenueRub": 429193640,
+    "annualActingBornersRevenueRub": 177178542,
+    "newVariantsCount": 16,
+    "confirmedActingSkusCount": 5,
+    "unverifiedActingSkusCount": 2,
+    "monthlyTotalRevenueMln": [
+      14.2,
+      16.6,
+      19.3,
+      26.9,
+      32.8,
+      43.2,
+      51,
+      60.2,
+      71.5,
+      80.7,
+      89.7,
+      100.2
+    ],
+    "familyDecemberSummary": [
+      {
+        "familyCode": "COLOR 4 PACK",
+        "label": "001 · ЯРКИЕ (COLOR 4 PACK)",
+        "launchLabel": "Старт янв",
+        "decemberSets": 4800,
+        "decemberRevenueMln": 11.95,
+        "variantsCount": 2
+      },
+      {
+        "familyCode": "RIB CORE",
+        "label": "002 · RIB CORE",
+        "launchLabel": "Старт мар",
+        "decemberSets": 3800,
+        "decemberRevenueMln": 6.84,
+        "variantsCount": 1
+      },
+      {
+        "familyCode": "FAMILY 4 PACK",
+        "label": "003 · FAMILY / однотонные",
+        "launchLabel": "Старт янв",
+        "decemberSets": 3000,
+        "decemberRevenueMln": 5.97,
+        "variantsCount": 1
+      },
+      {
+        "familyCode": "DAILY",
+        "label": "004 · DAILY (7 палитр)",
+        "launchLabel": "Старт мар *",
+        "decemberSets": 19100,
+        "decemberRevenueMln": 38.01,
+        "variantsCount": 7
+      },
+      {
+        "familyCode": "BRIEF A",
+        "label": "005 · BRIEF A (4 палитры)",
+        "launchLabel": "Старт апр",
+        "decemberSets": 6400,
+        "decemberRevenueMln": 15.94,
+        "variantsCount": 4
+      },
+      {
+        "familyCode": "WOVEN 2PACK",
+        "label": "006 · Полосатые семейники / 2PACK",
+        "launchLabel": "Старт апр",
+        "decemberSets": 4300,
+        "decemberRevenueMln": 6.41,
+        "variantsCount": 1
+      }
+    ]
+  },
+  "confirmed_acting_skus": [
+    {
+      "vendor_sku": "Borners2",
+      "wb_sku": "244995893",
+      "included_in_borners_target": true,
+      "december_revenue_rub": 6391581,
+      "annual_revenue_rub": 75277608,
+      "annual_buyouts_sets": 58803,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 5799,
+          "buyouts_sets": 4709,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1211,
+          "revenue_rub": 5702599,
+          "cost_of_goods_rub": 1924521
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 6267,
+          "buyouts_sets": 5089,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1223,
+          "revenue_rub": 6223847,
+          "cost_of_goods_rub": 2079823
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 5742,
+          "buyouts_sets": 4663,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1235,
+          "revenue_rub": 5758805,
+          "cost_of_goods_rub": 1905721
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 6204,
+          "buyouts_sets": 5038,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1248,
+          "revenue_rub": 6287424,
+          "cost_of_goods_rub": 2058980
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 5485,
+          "buyouts_sets": 4454,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1260,
+          "revenue_rub": 5612040,
+          "cost_of_goods_rub": 1820305
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 6360,
+          "buyouts_sets": 5164,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1273,
+          "revenue_rub": 6573772,
+          "cost_of_goods_rub": 2110475
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 5951,
+          "buyouts_sets": 4832,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1286,
+          "revenue_rub": 6213952,
+          "cost_of_goods_rub": 1974790
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 5963,
+          "buyouts_sets": 4842,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1298,
+          "revenue_rub": 6284916,
+          "cost_of_goods_rub": 1978877
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 6623,
+          "buyouts_sets": 5378,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1311,
+          "revenue_rub": 7050558,
+          "cost_of_goods_rub": 2197935
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 6342,
+          "buyouts_sets": 5150,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1324,
+          "revenue_rub": 6818600,
+          "cost_of_goods_rub": 2104754
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 5854,
+          "buyouts_sets": 4753,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1338,
+          "revenue_rub": 6359514,
+          "cost_of_goods_rub": 1942504
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 5826,
+          "buyouts_sets": 4731,
+          "buyout_rate": 0.812,
+          "realization_price_rub": 1351,
+          "revenue_rub": 6391581,
+          "cost_of_goods_rub": 1933512
+        }
+      ]
+    },
+    {
+      "vendor_sku": "1art-borners",
+      "wb_sku": "440758616",
+      "included_in_borners_target": true,
+      "december_revenue_rub": 2971360,
+      "annual_revenue_rub": 35007152,
+      "annual_buyouts_sets": 32986,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 3211,
+          "buyouts_sets": 2642,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1004,
+          "revenue_rub": 2652568,
+          "cost_of_goods_rub": 1079759
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 3469,
+          "buyouts_sets": 2854,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1014,
+          "revenue_rub": 2893956,
+          "cost_of_goods_rub": 1166401
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 3179,
+          "buyouts_sets": 2615,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1024,
+          "revenue_rub": 2677760,
+          "cost_of_goods_rub": 1068724
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 3435,
+          "buyouts_sets": 2826,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1034,
+          "revenue_rub": 2922084,
+          "cost_of_goods_rub": 1154958
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 3036,
+          "buyouts_sets": 2498,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1045,
+          "revenue_rub": 2610410,
+          "cost_of_goods_rub": 1020908
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 3522,
+          "buyouts_sets": 2898,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1055,
+          "revenue_rub": 3057390,
+          "cost_of_goods_rub": 1184384
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 3295,
+          "buyouts_sets": 2711,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1066,
+          "revenue_rub": 2889926,
+          "cost_of_goods_rub": 1107959
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 3302,
+          "buyouts_sets": 2717,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1076,
+          "revenue_rub": 2923492,
+          "cost_of_goods_rub": 1110411
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 3667,
+          "buyouts_sets": 3017,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1087,
+          "revenue_rub": 3279479,
+          "cost_of_goods_rub": 1233018
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 3510,
+          "buyouts_sets": 2888,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1098,
+          "revenue_rub": 3171024,
+          "cost_of_goods_rub": 1180297
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 3242,
+          "buyouts_sets": 2667,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1109,
+          "revenue_rub": 2957703,
+          "cost_of_goods_rub": 1089976
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 3225,
+          "buyouts_sets": 2653,
+          "buyout_rate": 0.8227,
+          "realization_price_rub": 1120,
+          "revenue_rub": 2971360,
+          "cost_of_goods_rub": 1084255
+        }
+      ]
+    },
+    {
+      "vendor_sku": "borners4",
+      "wb_sku": "439426186",
+      "included_in_borners_target": true,
+      "december_revenue_rub": 2929842,
+      "annual_revenue_rub": 34518273,
+      "annual_buyouts_sets": 31094,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 3024,
+          "buyouts_sets": 2490,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1050,
+          "revenue_rub": 2614500,
+          "cost_of_goods_rub": 1017638
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 3267,
+          "buyouts_sets": 2690,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1061,
+          "revenue_rub": 2854090,
+          "cost_of_goods_rub": 1099376
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 2994,
+          "buyouts_sets": 2466,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1071,
+          "revenue_rub": 2641086,
+          "cost_of_goods_rub": 1007830
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 3235,
+          "buyouts_sets": 2664,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1082,
+          "revenue_rub": 2882448,
+          "cost_of_goods_rub": 1088750
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 2859,
+          "buyouts_sets": 2354,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1093,
+          "revenue_rub": 2572922,
+          "cost_of_goods_rub": 962056
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 3317,
+          "buyouts_sets": 2732,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1104,
+          "revenue_rub": 3016128,
+          "cost_of_goods_rub": 1116541
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 3103,
+          "buyouts_sets": 2555,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1115,
+          "revenue_rub": 2848825,
+          "cost_of_goods_rub": 1044203
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 3109,
+          "buyouts_sets": 2560,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1126,
+          "revenue_rub": 2882560,
+          "cost_of_goods_rub": 1046246
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 3453,
+          "buyouts_sets": 2844,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1137,
+          "revenue_rub": 3233628,
+          "cost_of_goods_rub": 1162314
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 3307,
+          "buyouts_sets": 2723,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1148,
+          "revenue_rub": 3126004,
+          "cost_of_goods_rub": 1112863
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 3053,
+          "buyouts_sets": 2514,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1160,
+          "revenue_rub": 2916240,
+          "cost_of_goods_rub": 1027447
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 3038,
+          "buyouts_sets": 2502,
+          "buyout_rate": 0.8235,
+          "realization_price_rub": 1171,
+          "revenue_rub": 2929842,
+          "cost_of_goods_rub": 1022542
+        }
+      ]
+    },
+    {
+      "vendor_sku": "2art-borners",
+      "wb_sku": "440759654",
+      "included_in_borners_target": true,
+      "december_revenue_rub": 1651110,
+      "annual_revenue_rub": 19459414,
+      "annual_buyouts_sets": 17529,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 1671,
+          "buyouts_sets": 1404,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1050,
+          "revenue_rub": 1474200,
+          "cost_of_goods_rub": 573801
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 1805,
+          "buyouts_sets": 1516,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1061,
+          "revenue_rub": 1608476,
+          "cost_of_goods_rub": 619574
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 1654,
+          "buyouts_sets": 1389,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1071,
+          "revenue_rub": 1487619,
+          "cost_of_goods_rub": 567670
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 1788,
+          "buyouts_sets": 1502,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1082,
+          "revenue_rub": 1625164,
+          "cost_of_goods_rub": 613852
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 1581,
+          "buyouts_sets": 1328,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1093,
+          "revenue_rub": 1451504,
+          "cost_of_goods_rub": 542740
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 1833,
+          "buyouts_sets": 1540,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1104,
+          "revenue_rub": 1700160,
+          "cost_of_goods_rub": 629383
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 1715,
+          "buyouts_sets": 1441,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1115,
+          "revenue_rub": 1606715,
+          "cost_of_goods_rub": 588922
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 1718,
+          "buyouts_sets": 1443,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1126,
+          "revenue_rub": 1624818,
+          "cost_of_goods_rub": 589740
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 1909,
+          "buyouts_sets": 1604,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1137,
+          "revenue_rub": 1823748,
+          "cost_of_goods_rub": 655539
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 1827,
+          "buyouts_sets": 1535,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1148,
+          "revenue_rub": 1762180,
+          "cost_of_goods_rub": 627339
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 1687,
+          "buyouts_sets": 1417,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1160,
+          "revenue_rub": 1643720,
+          "cost_of_goods_rub": 579114
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 1679,
+          "buyouts_sets": 1410,
+          "buyout_rate": 0.84,
+          "realization_price_rub": 1171,
+          "revenue_rub": 1651110,
+          "cost_of_goods_rub": 576253
+        }
+      ]
+    },
+    {
+      "vendor_sku": "borners3",
+      "wb_sku": "257807266",
+      "included_in_borners_target": true,
+      "december_revenue_rub": 1097008,
+      "annual_revenue_rub": 12916095,
+      "annual_buyouts_sets": 12569,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 1223,
+          "buyouts_sets": 1006,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 972,
+          "revenue_rub": 977832,
+          "cost_of_goods_rub": 322232
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 1322,
+          "buyouts_sets": 1088,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 982,
+          "revenue_rub": 1068416,
+          "cost_of_goods_rub": 348497
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 1211,
+          "buyouts_sets": 996,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 992,
+          "revenue_rub": 988032,
+          "cost_of_goods_rub": 319029
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 1309,
+          "buyouts_sets": 1077,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1001,
+          "revenue_rub": 1078077,
+          "cost_of_goods_rub": 344974
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 1157,
+          "buyouts_sets": 952,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1011,
+          "revenue_rub": 962472,
+          "cost_of_goods_rub": 304935
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 1342,
+          "buyouts_sets": 1104,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1022,
+          "revenue_rub": 1128288,
+          "cost_of_goods_rub": 353622
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 1256,
+          "buyouts_sets": 1033,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1032,
+          "revenue_rub": 1066056,
+          "cost_of_goods_rub": 330880
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 1258,
+          "buyouts_sets": 1035,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1042,
+          "revenue_rub": 1078470,
+          "cost_of_goods_rub": 331521
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 1397,
+          "buyouts_sets": 1149,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1053,
+          "revenue_rub": 1209897,
+          "cost_of_goods_rub": 368036
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 1338,
+          "buyouts_sets": 1101,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1063,
+          "revenue_rub": 1170363,
+          "cost_of_goods_rub": 352661
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 1235,
+          "buyouts_sets": 1016,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1074,
+          "revenue_rub": 1091184,
+          "cost_of_goods_rub": 325435
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 1230,
+          "buyouts_sets": 1012,
+          "buyout_rate": 0.8228,
+          "realization_price_rub": 1084,
+          "revenue_rub": 1097008,
+          "cost_of_goods_rub": 324154
+        }
+      ]
+    }
+  ],
+  "unverified_acting_skus": [
+    {
+      "vendor_sku": "435tru",
+      "wb_sku": "86205435",
+      "included_in_borners_target": false,
+      "status_note": "Бренд не подтверждён — не в цели BORNERS",
+      "december_revenue_rub": 3866601,
+      "annual_revenue_rub": 45542259,
+      "annual_buyouts_sets": 35311,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 3260,
+          "buyouts_sets": 2828,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1220,
+          "revenue_rub": 3450160,
+          "cost_of_goods_rub": 1201504
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 3523,
+          "buyouts_sets": 3056,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1232,
+          "revenue_rub": 3764992,
+          "cost_of_goods_rub": 1298372
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 3227,
+          "buyouts_sets": 2799,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1245,
+          "revenue_rub": 3484755,
+          "cost_of_goods_rub": 1189183
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 3488,
+          "buyouts_sets": 3025,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1257,
+          "revenue_rub": 3802425,
+          "cost_of_goods_rub": 1285202
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 3082,
+          "buyouts_sets": 2673,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1270,
+          "revenue_rub": 3394710,
+          "cost_of_goods_rub": 1135651
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 3576,
+          "buyouts_sets": 3102,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1282,
+          "revenue_rub": 3976764,
+          "cost_of_goods_rub": 1317916
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 3346,
+          "buyouts_sets": 2902,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1295,
+          "revenue_rub": 3758090,
+          "cost_of_goods_rub": 1232944
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 3352,
+          "buyouts_sets": 2908,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1308,
+          "revenue_rub": 3803664,
+          "cost_of_goods_rub": 1235493
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 3724,
+          "buyouts_sets": 3230,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1321,
+          "revenue_rub": 4266830,
+          "cost_of_goods_rub": 1372298
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 3565,
+          "buyouts_sets": 3092,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1334,
+          "revenue_rub": 4124728,
+          "cost_of_goods_rub": 1313667
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 3291,
+          "buyouts_sets": 2855,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1348,
+          "revenue_rub": 3848540,
+          "cost_of_goods_rub": 1212975
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 3275,
+          "buyouts_sets": 2841,
+          "buyout_rate": 0.8674,
+          "realization_price_rub": 1361,
+          "revenue_rub": 3866601,
+          "cost_of_goods_rub": 1207027
+        }
+      ]
+    },
+    {
+      "vendor_sku": "4351877",
+      "wb_sku": "72302360",
+      "included_in_borners_target": false,
+      "status_note": "Бренд не подтверждён — не в цели BORNERS",
+      "december_revenue_rub": 3821850,
+      "annual_revenue_rub": 45011142,
+      "annual_buyouts_sets": 35421,
+      "monthly": [
+        {
+          "month": 1,
+          "period": "2027-01",
+          "orders_sets": 3218,
+          "buyouts_sets": 2837,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1202,
+          "revenue_rub": 3410074,
+          "cost_of_goods_rub": 1205328
+        },
+        {
+          "month": 2,
+          "period": "2027-02",
+          "orders_sets": 3477,
+          "buyouts_sets": 3065,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1214,
+          "revenue_rub": 3720910,
+          "cost_of_goods_rub": 1302196
+        },
+        {
+          "month": 3,
+          "period": "2027-03",
+          "orders_sets": 3187,
+          "buyouts_sets": 2809,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1226,
+          "revenue_rub": 3443834,
+          "cost_of_goods_rub": 1193432
+        },
+        {
+          "month": 4,
+          "period": "2027-04",
+          "orders_sets": 3443,
+          "buyouts_sets": 3035,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1238,
+          "revenue_rub": 3757330,
+          "cost_of_goods_rub": 1289450
+        },
+        {
+          "month": 5,
+          "period": "2027-05",
+          "orders_sets": 3043,
+          "buyouts_sets": 2682,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1251,
+          "revenue_rub": 3355182,
+          "cost_of_goods_rub": 1139475
+        },
+        {
+          "month": 6,
+          "period": "2027-06",
+          "orders_sets": 3530,
+          "buyouts_sets": 3112,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1263,
+          "revenue_rub": 3930456,
+          "cost_of_goods_rub": 1322164
+        },
+        {
+          "month": 7,
+          "period": "2027-07",
+          "orders_sets": 3302,
+          "buyouts_sets": 2911,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1276,
+          "revenue_rub": 3714436,
+          "cost_of_goods_rub": 1236767
+        },
+        {
+          "month": 8,
+          "period": "2027-08",
+          "orders_sets": 3309,
+          "buyouts_sets": 2917,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1289,
+          "revenue_rub": 3760013,
+          "cost_of_goods_rub": 1239317
+        },
+        {
+          "month": 9,
+          "period": "2027-09",
+          "orders_sets": 3674,
+          "buyouts_sets": 3239,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1302,
+          "revenue_rub": 4217178,
+          "cost_of_goods_rub": 1376122
+        },
+        {
+          "month": 10,
+          "period": "2027-10",
+          "orders_sets": 3518,
+          "buyouts_sets": 3101,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1315,
+          "revenue_rub": 4077815,
+          "cost_of_goods_rub": 1317491
+        },
+        {
+          "month": 11,
+          "period": "2027-11",
+          "orders_sets": 3248,
+          "buyouts_sets": 2863,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1328,
+          "revenue_rub": 3802064,
+          "cost_of_goods_rub": 1216374
+        },
+        {
+          "month": 12,
+          "period": "2027-12",
+          "orders_sets": 3233,
+          "buyouts_sets": 2850,
+          "buyout_rate": 0.8815,
+          "realization_price_rub": 1341,
+          "revenue_rub": 3821850,
+          "cost_of_goods_rub": 1210851
+        }
+      ]
+    }
+  ],
+  "new_variants": [
+    {
+      "variantId": "BRN-001-SC",
+      "modelId": "BRN-001",
+      "familyCode": "COLOR 4 PACK",
+      "title": "001 · ЯРКИЕ / Sorbet Club",
+      "paletteTitle": "Sorbet Club (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 0,
+      "launchMonthLabel": "январь 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 600,
+      "unitCostLabel": "600 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Высокий",
+      "techPdfFilename": "BORNERS_001_FACTORY_PRODUCT_CARD_v2(1).pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-001-SC.pdf",
+      "specSummary": "COLOR 4 PACK · Палитра Sorbet Club · Жаккардовый пояс BORNERS тон в тон · 4 шт. в комплекте.",
+      "imageUrl": "images/products/s1-100m/BRN-001-SC.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-001-SC.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Персиковый сорбет",
+          "pantone": "PANTONE 15-1520 TCX *",
+          "hex": "#E59B8C"
+        },
+        {
+          "nameRu": "Лавандовый голубой",
+          "pantone": "PANTONE 15-3920 TCX *",
+          "hex": "#8CA3D8"
+        },
+        {
+          "nameRu": "Манговый жёлтый",
+          "pantone": "PANTONE 14-0952 TCX *",
+          "hex": "#E4AC3E"
+        },
+        {
+          "nameRu": "Мятный бирюзовый",
+          "pantone": "PANTONE 15-5728 TCX *",
+          "hex": "#54C49F"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        115,
+        271,
+        448,
+        640,
+        844,
+        1058,
+        1281,
+        1512,
+        1750,
+        1994,
+        2244,
+        2500
+      ],
+      "monthlyRevenueMln": [
+        0.29,
+        0.67,
+        1.12,
+        1.59,
+        2.1,
+        2.63,
+        3.19,
+        3.76,
+        4.36,
+        4.97,
+        5.59,
+        6.22
+      ],
+      "decemberBuyoutsSets": 2500,
+      "decemberRevenueMln": 6.22,
+      "annualRevenueMln": 36.5
+    },
+    {
+      "variantId": "BRN-001-RV",
+      "modelId": "BRN-001",
+      "familyCode": "COLOR 4 PACK",
+      "title": "001 · ЯРКИЕ / Riviera",
+      "paletteTitle": "Riviera (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 0,
+      "launchMonthLabel": "январь 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 600,
+      "unitCostLabel": "600 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Высокий",
+      "techPdfFilename": "BORNERS_001_FACTORY_PRODUCT_CARD_v2(1).pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-001-RV.pdf",
+      "specSummary": "COLOR 4 PACK · Палитра Riviera · Жаккардовый пояс BORNERS тон в тон · 4 шт. в комплекте.",
+      "imageUrl": "images/products/s1-100m/BRN-001-RV.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-001-RV.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Терракотовый коралл",
+          "pantone": "PANTONE 16-1348 TCX *",
+          "hex": "#E58A54"
+        },
+        {
+          "nameRu": "Морская лагуна",
+          "pantone": "PANTONE 16-5421 TCX *",
+          "hex": "#4AA89E"
+        },
+        {
+          "nameRu": "Песочный солнечный",
+          "pantone": "PANTONE 14-0848 TCX *",
+          "hex": "#E1B559"
+        },
+        {
+          "nameRu": "Лазурный Ривьера",
+          "pantone": "PANTONE 17-4037 TCX *",
+          "hex": "#6380BC"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        106,
+        249,
+        412,
+        589,
+        777,
+        974,
+        1179,
+        1391,
+        1610,
+        1835,
+        2065,
+        2300
+      ],
+      "monthlyRevenueMln": [
+        0.26,
+        0.62,
+        1.03,
+        1.47,
+        1.93,
+        2.43,
+        2.94,
+        3.46,
+        4.01,
+        4.57,
+        5.14,
+        5.73
+      ],
+      "decemberBuyoutsSets": 2300,
+      "decemberRevenueMln": 5.73,
+      "annualRevenueMln": 33.58
+    },
+    {
+      "variantId": "BRN-002",
+      "modelId": "BRN-002",
+      "familyCode": "RIB CORE",
+      "title": "002 · RIB CORE",
+      "paletteTitle": "RIB CORE — Рубчик (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1800,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 525,
+      "unitCostLabel": "500–550 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "BORNERS_RIB_CORE_PROTOTYPE_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-002.pdf",
+      "specSummary": "Рубчик / жаккард BORNERS тон в тон / 4 шт. Старт продаж: март 2027.",
+      "imageUrl": "images/products/s1-100m/BRN-002.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-002.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Тёплый бежевый меланж",
+          "pantone": "PANTONE 14-1107 TCX *",
+          "hex": "#BDB4A8"
+        },
+        {
+          "nameRu": "Глубокий индиго",
+          "pantone": "PANTONE 19-4027 TCX *",
+          "hex": "#384D6B"
+        },
+        {
+          "nameRu": "Графитовый уголь",
+          "pantone": "PANTONE 19-3908 TCX *",
+          "hex": "#4B4B4A"
+        },
+        {
+          "nameRu": "Дымчатый шалфей",
+          "pantone": "PANTONE 16-4706 TCX *",
+          "hex": "#8FA2A5"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        219,
+        516,
+        854,
+        1220,
+        1609,
+        2017,
+        2442,
+        2881,
+        3335,
+        3800
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.39,
+        0.93,
+        1.54,
+        2.2,
+        2.9,
+        3.63,
+        4.4,
+        5.19,
+        6,
+        6.84
+      ],
+      "decemberBuyoutsSets": 3800,
+      "decemberRevenueMln": 6.84,
+      "annualRevenueMln": 34.01
+    },
+    {
+      "variantId": "BRN-003",
+      "modelId": "BRN-003",
+      "familyCode": "FAMILY 4 PACK",
+      "title": "003 · FAMILY / однотонные",
+      "paletteTitle": "FAMILY 4 PACK — однотонные (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 0,
+      "launchMonthLabel": "январь 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 625,
+      "unitCostLabel": "600–650 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Средний",
+      "techPdfFilename": "BORNERS_FAMILY_CARD_RU.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-003.pdf",
+      "specSummary": "FAMILY 4 PACK · Однотонные семейники свободного кроя с центральной нашивкой BORNERS и пуговицами · 4 шт.",
+      "imageUrl": "images/products/s1-100m/BRN-003.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-003.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Чёрный классический",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        },
+        {
+          "nameRu": "Серо-стальной",
+          "pantone": "PANTONE 17-3914 TCX *",
+          "hex": "#6F7685"
+        },
+        {
+          "nameRu": "Тёмно-синий Navy",
+          "pantone": "PANTONE 19-4024 TCX *",
+          "hex": "#262D47"
+        },
+        {
+          "nameRu": "Деним голубой",
+          "pantone": "PANTONE 17-4028 TCX *",
+          "hex": "#4B6B8E"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        138,
+        325,
+        538,
+        768,
+        1013,
+        1270,
+        1538,
+        1815,
+        2100,
+        2393,
+        2693,
+        3000
+      ],
+      "monthlyRevenueMln": [
+        0.27,
+        0.65,
+        1.07,
+        1.53,
+        2.02,
+        2.53,
+        3.06,
+        3.61,
+        4.18,
+        4.76,
+        5.36,
+        5.97
+      ],
+      "decemberBuyoutsSets": 3000,
+      "decemberRevenueMln": 5.97,
+      "annualRevenueMln": 35.01
+    },
+    {
+      "variantId": "BRN-DLY-01",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Тёмная база",
+      "paletteTitle": "01 · Тёмная база (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "01_Тёмная_база_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-01.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-01.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-01.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Глубокий графит",
+          "pantone": "По техкарте 01_Тёмная_база *",
+          "hex": "#2B2C2B"
+        },
+        {
+          "nameRu": "Тёмно-синий Midnight",
+          "pantone": "По техкарте 01_Тёмная_база *",
+          "hex": "#232B3A"
+        },
+        {
+          "nameRu": "Хвойный изумруд",
+          "pantone": "По техкарте 01_Тёмная_база *",
+          "hex": "#213B2D"
+        },
+        {
+          "nameRu": "Горький шоколад",
+          "pantone": "По техкарте 01_Тёмная_база *",
+          "hex": "#382E26"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        259,
+        612,
+        1011,
+        1445,
+        1905,
+        2388,
+        2892,
+        3412,
+        3949,
+        4500
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.52,
+        1.22,
+        2.01,
+        2.88,
+        3.79,
+        4.75,
+        5.76,
+        6.79,
+        7.86,
+        8.96
+      ],
+      "decemberBuyoutsSets": 4500,
+      "decemberRevenueMln": 8.96,
+      "annualRevenueMln": 44.52
+    },
+    {
+      "variantId": "BRN-DLY-02",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Хвойный лес",
+      "paletteTitle": "02 · Хвойный лес (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "02_Хвойный_лес_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-02.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-02.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-02.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Тёмная хвоя",
+          "pantone": "По техкарте 02_Хвойный_лес *",
+          "hex": "#283930"
+        },
+        {
+          "nameRu": "Лесной мох",
+          "pantone": "По техкарте 02_Хвойный_лес *",
+          "hex": "#4B5343"
+        },
+        {
+          "nameRu": "Северный кедр",
+          "pantone": "По техкарте 02_Хвойный_лес *",
+          "hex": "#2A3F42"
+        },
+        {
+          "nameRu": "Мокрый базальт",
+          "pantone": "По техкарте 02_Хвойный_лес *",
+          "hex": "#333635"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        178,
+        421,
+        697,
+        995,
+        1312,
+        1645,
+        1992,
+        2351,
+        2720,
+        3100
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.35,
+        0.84,
+        1.39,
+        1.98,
+        2.61,
+        3.27,
+        3.96,
+        4.68,
+        5.41,
+        6.17
+      ],
+      "decemberBuyoutsSets": 3100,
+      "decemberRevenueMln": 6.17,
+      "annualRevenueMln": 30.67
+    },
+    {
+      "variantId": "BRN-DLY-03",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Тёплые оттенки",
+      "paletteTitle": "03 · Тёплые оттенки (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "03_Тёплые_оттенки_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-03.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-03.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-03.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Кофейный брауни",
+          "pantone": "По техкарте 03_Тёплые_оттенки *",
+          "hex": "#3D2B27"
+        },
+        {
+          "nameRu": "Тёмный эспрессо",
+          "pantone": "По техкарте 03_Тёплые_оттенки *",
+          "hex": "#332C2E"
+        },
+        {
+          "nameRu": "Тёплый тауп",
+          "pantone": "По техкарте 03_Тёплые_оттенки *",
+          "hex": "#AFA69B"
+        },
+        {
+          "nameRu": "Миндальное молоко",
+          "pantone": "По техкарте 03_Тёплые_оттенки *",
+          "hex": "#D8CFC4"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        127,
+        299,
+        494,
+        706,
+        931,
+        1168,
+        1414,
+        1668,
+        1931,
+        2200
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.25,
+        0.6,
+        0.98,
+        1.4,
+        1.85,
+        2.32,
+        2.81,
+        3.32,
+        3.84,
+        4.38
+      ],
+      "decemberBuyoutsSets": 2200,
+      "decemberRevenueMln": 4.38,
+      "annualRevenueMln": 21.77
+    },
+    {
+      "variantId": "BRN-DLY-04",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Холодные оттенки",
+      "paletteTitle": "04 · Холодные оттенки (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "04_Холодные_оттенки_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-04.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-04.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-04.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Глубокий океан",
+          "pantone": "По техкарте 04_Холодные_оттенки *",
+          "hex": "#232B3A"
+        },
+        {
+          "nameRu": "Северный фьорд",
+          "pantone": "По техкарте 04_Холодные_оттенки *",
+          "hex": "#263D3D"
+        },
+        {
+          "nameRu": "Ледяной серый",
+          "pantone": "По техкарте 04_Холодные_оттенки *",
+          "hex": "#9EA8B0"
+        },
+        {
+          "nameRu": "Антрацит",
+          "pantone": "По техкарте 04_Холодные_оттенки *",
+          "hex": "#2F3032"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        184,
+        435,
+        719,
+        1027,
+        1355,
+        1698,
+        2056,
+        2427,
+        2808,
+        3200
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.37,
+        0.87,
+        1.43,
+        2.04,
+        2.7,
+        3.38,
+        4.09,
+        4.83,
+        5.59,
+        6.37
+      ],
+      "decemberBuyoutsSets": 3200,
+      "decemberRevenueMln": 6.37,
+      "annualRevenueMln": 31.66
+    },
+    {
+      "variantId": "BRN-DLY-05",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Классический микс",
+      "paletteTitle": "05 · Классический микс (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "05_Классический_микс_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-05.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-05.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-05.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Чёрный оникс",
+          "pantone": "По техкарте 05_Классический_микс *",
+          "hex": "#2A2B2A"
+        },
+        {
+          "nameRu": "Классический синий",
+          "pantone": "По техкарте 05_Классический_микс *",
+          "hex": "#262E3F"
+        },
+        {
+          "nameRu": "Каменный беж",
+          "pantone": "По техкарте 05_Классический_микс *",
+          "hex": "#ADA398"
+        },
+        {
+          "nameRu": "Светлый айвори",
+          "pantone": "По техкарте 05_Классический_микс *",
+          "hex": "#DCD5CA"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        161,
+        381,
+        629,
+        899,
+        1185,
+        1486,
+        1799,
+        2123,
+        2457,
+        2800
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.32,
+        0.76,
+        1.25,
+        1.79,
+        2.36,
+        2.96,
+        3.58,
+        4.22,
+        4.89,
+        5.57
+      ],
+      "decemberBuyoutsSets": 2800,
+      "decemberRevenueMln": 5.57,
+      "annualRevenueMln": 27.7
+    },
+    {
+      "variantId": "BRN-DLY-06",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Сумерки",
+      "paletteTitle": "06 · Сумерки (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "06_Сумерки_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-06.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-06.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-06.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Тёмный сливовый",
+          "pantone": "По техкарте 06_Сумерки *",
+          "hex": "#34292E"
+        },
+        {
+          "nameRu": "Древесный мускат",
+          "pantone": "По техкарте 06_Сумерки *",
+          "hex": "#3D302A"
+        },
+        {
+          "nameRu": "Ночной индиго",
+          "pantone": "По техкарте 06_Сумерки *",
+          "hex": "#232B3A"
+        },
+        {
+          "nameRu": "Туманный голубой",
+          "pantone": "По техкарте 06_Сумерки *",
+          "hex": "#9DA7B0"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        104,
+        245,
+        404,
+        578,
+        762,
+        955,
+        1157,
+        1365,
+        1580,
+        1800
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.21,
+        0.49,
+        0.8,
+        1.15,
+        1.52,
+        1.9,
+        2.3,
+        2.72,
+        3.14,
+        3.58
+      ],
+      "decemberBuyoutsSets": 1800,
+      "decemberRevenueMln": 3.58,
+      "annualRevenueMln": 17.81
+    },
+    {
+      "variantId": "BRN-DLY-07",
+      "modelId": "BRN-004",
+      "familyCode": "DAILY",
+      "title": "004 · DAILY / Светлый микс",
+      "paletteTitle": "07 · Светлый микс (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 1990,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 2,
+      "launchMonthLabel": "март * 2027",
+      "isLaunchDateHypothesis": true,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Высший",
+      "techPdfFilename": "07_Светлый_микс_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-DLY-07.pdf",
+      "specSummary": "Ткань 95/5; матовый пояс 35 мм без надписей; цвета по PDF.",
+      "imageUrl": "images/products/s1-100m/BRN-DLY-07.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-DLY-07.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Молочный крем",
+          "pantone": "По техкарте 07_Светлый_микс *",
+          "hex": "#DDD6CA"
+        },
+        {
+          "nameRu": "Песочный кашемир",
+          "pantone": "По техкарте 07_Светлый_микс *",
+          "hex": "#AFA69B"
+        },
+        {
+          "nameRu": "Светлый серо-голубой",
+          "pantone": "По техкарте 07_Светлый_микс *",
+          "hex": "#9EA8B0"
+        },
+        {
+          "nameRu": "Глубокий шалфей",
+          "pantone": "По техкарте 07_Светлый_микс *",
+          "hex": "#38463B"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        86,
+        204,
+        337,
+        482,
+        635,
+        796,
+        964,
+        1137,
+        1316,
+        1500
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0.17,
+        0.41,
+        0.67,
+        0.96,
+        1.26,
+        1.58,
+        1.92,
+        2.26,
+        2.62,
+        2.98
+      ],
+      "decemberBuyoutsSets": 1500,
+      "decemberRevenueMln": 2.98,
+      "annualRevenueMln": 14.84
+    },
+    {
+      "variantId": "BRN-BRF-A-01",
+      "modelId": "BRN-005",
+      "familyCode": "BRIEF A",
+      "title": "005 · BRIEF / Чёрный × 4",
+      "paletteTitle": "01 · Чёрный × 4 (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 3,
+      "launchMonthLabel": "апрель 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 620,
+      "unitCostLabel": "620 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "01_Чёрный_4шт_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-BRF-A-01.pdf",
+      "specSummary": "Пояс 32 мм; ровно 3 BORNERS на переднем участке. Старт продаж: апрель 2027.",
+      "imageUrl": "images/products/s1-100m/BRN-BRF-A-01.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-BRF-A-01.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Чёрный уголь #1",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        },
+        {
+          "nameRu": "Чёрный уголь #2",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        },
+        {
+          "nameRu": "Чёрный уголь #3",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        },
+        {
+          "nameRu": "Чёрный уголь #4",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        0,
+        131,
+        310,
+        512,
+        732,
+        965,
+        1210,
+        1465,
+        1728,
+        2000
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0,
+        0.33,
+        0.77,
+        1.27,
+        1.82,
+        2.4,
+        3.01,
+        3.65,
+        4.3,
+        4.98
+      ],
+      "decemberBuyoutsSets": 2000,
+      "decemberRevenueMln": 4.98,
+      "annualRevenueMln": 22.54
+    },
+    {
+      "variantId": "BRN-BRF-A-02",
+      "modelId": "BRN-005",
+      "familyCode": "BRIEF A",
+      "title": "005 · BRIEF / Белый × 4",
+      "paletteTitle": "02 · Белый × 4 (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 3,
+      "launchMonthLabel": "апрель 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 620,
+      "unitCostLabel": "620 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "02_Белый_4шт_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-BRF-A-02.pdf",
+      "specSummary": "Пояс 32 мм; ровно 3 BORNERS на переднем участке. Старт продаж: апрель 2027.",
+      "imageUrl": "images/products/s1-100m/BRN-BRF-A-02.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-BRF-A-02.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Белый оптический #1",
+          "pantone": "PANTONE 11-0601 TCX *",
+          "hex": "#F3F2EE"
+        },
+        {
+          "nameRu": "Белый оптический #2",
+          "pantone": "PANTONE 11-0601 TCX *",
+          "hex": "#F3F2EE"
+        },
+        {
+          "nameRu": "Белый оптический #3",
+          "pantone": "PANTONE 11-0601 TCX *",
+          "hex": "#F3F2EE"
+        },
+        {
+          "nameRu": "Белый оптический #4",
+          "pantone": "PANTONE 11-0601 TCX *",
+          "hex": "#F3F2EE"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        0,
+        105,
+        248,
+        410,
+        585,
+        772,
+        968,
+        1172,
+        1383,
+        1600
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0,
+        0.26,
+        0.62,
+        1.02,
+        1.46,
+        1.92,
+        2.41,
+        2.92,
+        3.44,
+        3.98
+      ],
+      "decemberBuyoutsSets": 1600,
+      "decemberRevenueMln": 3.98,
+      "annualRevenueMln": 18.04
+    },
+    {
+      "variantId": "BRN-BRF-A-03",
+      "modelId": "BRN-005",
+      "familyCode": "BRIEF A",
+      "title": "005 · BRIEF / Тёмный микс",
+      "paletteTitle": "03 · Тёмный микс (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 3,
+      "launchMonthLabel": "апрель 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 620,
+      "unitCostLabel": "620 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "03_Тёмный_микс_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-BRF-A-03.pdf",
+      "specSummary": "Пояс 32 мм; ровно 3 BORNERS на переднем участке. Старт продаж: апрель 2027.",
+      "imageUrl": "images/products/s1-100m/BRN-BRF-A-03.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-BRF-A-03.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Чёрный уголь",
+          "pantone": "PANTONE 19-4007 TCX *",
+          "hex": "#1B1C1E"
+        },
+        {
+          "nameRu": "Тёмный графит",
+          "pantone": "PANTONE 19-3908 TCX *",
+          "hex": "#3B3C3E"
+        },
+        {
+          "nameRu": "Хвойный изумруд",
+          "pantone": "PANTONE 19-5420 TCX *",
+          "hex": "#1E382D"
+        },
+        {
+          "nameRu": "Глубокий Navy",
+          "pantone": "PANTONE 19-4024 TCX *",
+          "hex": "#1E273B"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        0,
+        108,
+        256,
+        423,
+        604,
+        796,
+        998,
+        1208,
+        1426,
+        1650
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0,
+        0.27,
+        0.64,
+        1.05,
+        1.5,
+        1.98,
+        2.49,
+        3.01,
+        3.55,
+        4.11
+      ],
+      "decemberBuyoutsSets": 1650,
+      "decemberRevenueMln": 4.11,
+      "annualRevenueMln": 18.6
+    },
+    {
+      "variantId": "BRN-BRF-A-04",
+      "modelId": "BRN-005",
+      "familyCode": "BRIEF A",
+      "title": "005 · BRIEF / Светлый микс",
+      "paletteTitle": "04 · Светлый микс (4 шт.)",
+      "unitsInPack": 4,
+      "plannedPriceRub": 2490,
+      "isPriceHypothesis": false,
+      "launchMonthIdx": 3,
+      "launchMonthLabel": "апрель 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 620,
+      "unitCostLabel": "620 ₽ / комплект",
+      "isCostConfirmed": true,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "04_Светлый_микс_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-BRF-A-04.pdf",
+      "specSummary": "Пояс 32 мм; ровно 3 BORNERS на переднем участке. Старт продаж: апрель 2027.",
+      "imageUrl": "images/products/s1-100m/BRN-BRF-A-04.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-BRF-A-04.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Молочно-белый",
+          "pantone": "PANTONE 11-0602 TCX *",
+          "hex": "#ECEAE4"
+        },
+        {
+          "nameRu": "Светло-серый жемчуг",
+          "pantone": "PANTONE 14-4102 TCX *",
+          "hex": "#C7C9CB"
+        },
+        {
+          "nameRu": "Небесно-голубой лёд",
+          "pantone": "PANTONE 15-4008 TCX *",
+          "hex": "#9BB0C1"
+        },
+        {
+          "nameRu": "Песочный беж",
+          "pantone": "PANTONE 14-1108 TCX *",
+          "hex": "#C5B9AC"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        0,
+        75,
+        178,
+        294,
+        421,
+        555,
+        696,
+        842,
+        994,
+        1150
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0,
+        0.19,
+        0.44,
+        0.73,
+        1.05,
+        1.38,
+        1.73,
+        2.1,
+        2.48,
+        2.86
+      ],
+      "decemberBuyoutsSets": 1150,
+      "decemberRevenueMln": 2.86,
+      "annualRevenueMln": 12.96
+    },
+    {
+      "variantId": "BRN-WVN-01",
+      "modelId": "BRN-006",
+      "familyCode": "WOVEN 2PACK",
+      "title": "006 · Полосатые семейники / 2PACK",
+      "paletteTitle": "WOVEN 2PACK — Синий + Оливковый (2 шт.)",
+      "unitsInPack": 2,
+      "plannedPriceRub": 1490,
+      "isPriceHypothesis": true,
+      "launchMonthIdx": 3,
+      "launchMonthLabel": "апрель 2027",
+      "isLaunchDateHypothesis": false,
+      "unitCostRub": 0,
+      "unitCostLabel": "не указана",
+      "isCostConfirmed": false,
+      "priorityLabel": "Не указан",
+      "techPdfFilename": "01_Семейники_2PACK_техкарта_RU_CN.pdf",
+      "techPdfStaticUrl": "docs/s1-100m/original_tech_pdfs/BRN-WVN-01.pdf",
+      "specSummary": "Поплин 100% хлопок; закрытый пояс; старт с апреля. Синий + оливковый: 2PACK; красный — только вариант котировки фабрики для 3PACK.",
+      "imageUrl": "images/products/s1-100m/BRN-WVN-01.jpg",
+      "galleryUrls": [
+        "images/products/s1-100m/BRN-WVN-01.jpg",
+        "images/products/s1-100m/BRN-WVN-01-blue.jpg",
+        "images/products/s1-100m/BRN-WVN-01-olive.jpg",
+        "images/products/s1-100m/BRN-WVN-01-red.jpg"
+      ],
+      "colors": [
+        {
+          "nameRu": "Синяя полоска (входит в 2PACK)",
+          "pantone": "По техкарте WOVEN 2PACK *",
+          "hex": "#96AABF"
+        },
+        {
+          "nameRu": "Оливковая полоска (входит в 2PACK)",
+          "pantone": "По техкарте WOVEN 2PACK *",
+          "hex": "#9EB3A7"
+        },
+        {
+          "nameRu": "Красная полоска (только для расчёта 3PACK)",
+          "pantone": "Котировка фабрики 3PACK *",
+          "hex": "#C7A3A1"
+        }
+      ],
+      "monthlyBuyoutsSets": [
+        0,
+        0,
+        0,
+        282,
+        666,
+        1101,
+        1573,
+        2075,
+        2601,
+        3149,
+        3716,
+        4300
+      ],
+      "monthlyRevenueMln": [
+        0,
+        0,
+        0,
+        0.42,
+        0.99,
+        1.64,
+        2.34,
+        3.09,
+        3.88,
+        4.69,
+        5.54,
+        6.41
+      ],
+      "decemberBuyoutsSets": 4300,
+      "decemberRevenueMln": 6.41,
+      "annualRevenueMln": 29
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" fill="none">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="800" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#14161D"/>
+      <stop offset="100%" stop-color="#0B0C10"/>
+    </linearGradient>
+    <linearGradient id="body2" x1="210" y1="150" x2="590" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1F2433"/>
+      <stop offset="100%" stop-color="#12141C"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg2)"/>
+  <circle cx="400" cy="300" r="230" fill="#D97745" fill-opacity="0.09"/>
+  <path d="M235 165 H565 L590 448 L442 460 L400 378 L358 460 L210 448 Z" fill="url(#body2)" stroke="#2E364D" stroke-width="2"/>
+  <rect x="235" y="142" width="330" height="40" rx="4" fill="#111111" stroke="#374151"/>
+  <line x1="235" y1="176" x2="565" y2="176" stroke="#D97745" stroke-width="2.5"/>
+  <text x="400" y="166" text-anchor="middle" fill="#F7F7F5" font-family="Inter, sans-serif" font-weight="700" font-size="14" letter-spacing="9">BORNERS</text>
+  <path d="M342 182 C336 290 352 365 400 395 C448 365 464 290 458 182" stroke="#3B445E" stroke-width="2"/>
+  <rect x="44" y="40" width="190" height="28" rx="14" fill="#FFFFFF" fill-opacity="0.08"/>
+  <text x="139" y="58" text-anchor="middle" fill="#E5E7EB" font-family="Inter, sans-serif" font-size="11" font-weight="600" letter-spacing="1.2">БАЗОВЫЙ ХИТ ПРОДАЖ</text>
+  <text x="44" y="548" fill="#FFFFFF" font-family="Inter, sans-serif" font-size="18" font-weight="700">BORNERS — БАЗОВЫЕ БОКСЕРЫ МОДАЛ 2.0</text>
+  <text x="44" y="568" fill="#9CA3AF" font-family="Inter, sans-serif" font-size="12">Чёрный + Тёмно-синий · Хлопок Пима 46% / Модал 46% / Эластан 8%</text>
+</svg>
