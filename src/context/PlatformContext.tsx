@@ -74,9 +74,18 @@ import {
 } from '@/lib/safeStorage';
 import { resetPortfolioStorageToDemoDefaults } from '@/lib/portfolioPersistence';
 import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
+import {
+  SUPABASE_CONCEPT_MEDIA_PREFIX,
+  SUPABASE_WORKSPACE_KEY,
+  getLastLocalWorkspacePushIso,
+  pullPlatformWorkspaceFromSupabase,
+  pushPlatformWorkspaceToSupabase,
+  subscribeToSupabaseKvChanges,
+} from '@/lib/supabaseCloudSync';
 
 const STORAGE_KEY = 'borners_group_platform_state_ru_v9_editorial';
 const AUTH_STORAGE_KEY = 'borners_group_auth_session_ru_v4';
+const WORKSPACE_UPDATED_AT_KEY = 'borners_workspace_updated_at_v1';
 
 interface PersistedState {
   users: AppUser[];
@@ -540,10 +549,21 @@ const PlatformContext = createContext<PlatformContextValue | null>(null);
 
 export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [rawState, setRawState] = useState<PersistedState>(DEFAULT_STATE);
+  const rawStateRef = useRef(rawState);
+  rawStateRef.current = rawState;
   const mutationSeqRef = useRef(0);
+  const lastPushedWorkspaceSeqRef = useRef(0);
+  const workspaceCloudBootDoneRef = useRef(false);
   const setState: React.Dispatch<React.SetStateAction<PersistedState>> = useCallback(
     (updater) => {
       mutationSeqRef.current += 1;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          window.localStorage.setItem(WORKSPACE_UPDATED_AT_KEY, new Date().toISOString());
+        } catch {
+          // ignore
+        }
+      }
       setRawState(updater);
     },
     []
@@ -838,6 +858,179 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated || !idbRichMediaReady) return;
     void savePlatformRichStateToIdb(state.concepts, state.miroItems, state.documents);
   }, [state.concepts, state.miroItems, state.documents, hydrated, idbRichMediaReady]);
+
+  // Двусторонняя синхронизация рабочего пространства (Лаборатория R&D, Miro, 14 блоков стратегии, документы, запуски) с облаком Supabase
+  useEffect(() => {
+    if (!hydrated || !idbRichMediaReady || typeof window === 'undefined') return;
+    let cancelled = false;
+    let rtTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const pushCurrentWorkspaceNow = () => {
+      const cur = rawStateRef.current;
+      lastPushedWorkspaceSeqRef.current = mutationSeqRef.current;
+      void pushPlatformWorkspaceToSupabase({
+        concepts: cur.concepts,
+        miroItems: cur.miroItems,
+        strategies: cur.strategies,
+        documents: cur.documents,
+        launches: cur.launches,
+        campaigns: cur.campaigns,
+        deletedConceptIds: cur.deletedConceptIds || [],
+      });
+    };
+
+    const syncWorkspaceFromCloud = async (forcePushIfLocalEdited = false) => {
+      const seqBefore = mutationSeqRef.current;
+      const cloudWs = await pullPlatformWorkspaceFromSupabase();
+      if (cancelled) return;
+
+      const localIso = window.localStorage.getItem(WORKSPACE_UPDATED_AT_KEY) || '';
+      const localTs = localIso ? Date.parse(localIso) : NaN;
+
+      if (!cloudWs || !Array.isArray(cloudWs.concepts)) {
+        workspaceCloudBootDoneRef.current = true;
+        if (mutationSeqRef.current > 0 || Boolean(localIso) || forcePushIfLocalEdited) {
+          pushCurrentWorkspaceNow();
+        }
+        return;
+      }
+
+      const cloudTs = cloudWs.updatedAtIso ? Date.parse(cloudWs.updatedAtIso) : NaN;
+      const mutatedDuringPull = mutationSeqRef.current !== seqBefore;
+      const isCloudNewer =
+        !mutatedDuringPull &&
+        Number.isFinite(cloudTs) &&
+        (!Number.isFinite(localTs) || cloudTs > localTs);
+
+      if (isCloudNewer) {
+        setRawState((prev) =>
+          normalizeAndMergeHydratedPlatformState(prev, {
+            concepts: cloudWs.concepts as ProductConcept[],
+            miroItems: Array.isArray(cloudWs.miroItems)
+              ? (cloudWs.miroItems as MiroBoardItem[])
+              : undefined,
+            strategies: Array.isArray(cloudWs.strategies)
+              ? (cloudWs.strategies as StrategyBlock[])
+              : undefined,
+            documents: Array.isArray(cloudWs.documents)
+              ? (cloudWs.documents as DocumentItem[])
+              : undefined,
+            launches: Array.isArray(cloudWs.launches)
+              ? (cloudWs.launches as Launch[])
+              : undefined,
+            campaigns: Array.isArray(cloudWs.campaigns)
+              ? (cloudWs.campaigns as Campaign[])
+              : undefined,
+            deletedConceptIds: Array.isArray(cloudWs.deletedConceptIds)
+              ? cloudWs.deletedConceptIds
+              : undefined,
+          })
+        );
+        if (cloudWs.updatedAtIso) {
+          try {
+            window.localStorage.setItem(WORKSPACE_UPDATED_AT_KEY, cloudWs.updatedAtIso);
+          } catch {
+            // ignore
+          }
+        }
+        workspaceCloudBootDoneRef.current = true;
+      } else {
+        workspaceCloudBootDoneRef.current = true;
+        if (
+          mutatedDuringPull ||
+          forcePushIfLocalEdited ||
+          (Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs > cloudTs))
+        ) {
+          pushCurrentWorkspaceNow();
+        }
+      }
+    };
+
+    void syncWorkspaceFromCloud(false);
+
+    const unsubRt = subscribeToSupabaseKvChanges((key, updatedAt) => {
+      if (key !== SUPABASE_WORKSPACE_KEY && !key.startsWith(SUPABASE_CONCEPT_MEDIA_PREFIX)) {
+        return;
+      }
+      if (key === SUPABASE_WORKSPACE_KEY && updatedAt && updatedAt === getLastLocalWorkspacePushIso()) {
+        return;
+      }
+      if (rtTimer) clearTimeout(rtTimer);
+      rtTimer = setTimeout(() => {
+        rtTimer = null;
+        void syncWorkspaceFromCloud(false);
+      }, 300);
+    });
+
+    const handleForceSync = () => {
+      void syncWorkspaceFromCloud(true);
+    };
+    window.addEventListener('borners-force-cloud-sync', handleForceSync);
+
+    return () => {
+      cancelled = true;
+      if (rtTimer) clearTimeout(rtTimer);
+      unsubRt();
+      window.removeEventListener('borners-force-cloud-sync', handleForceSync);
+    };
+  }, [hydrated, idbRichMediaReady]);
+
+  useEffect(() => {
+    if (!hydrated || !idbRichMediaReady || !workspaceCloudBootDoneRef.current) return;
+    if (mutationSeqRef.current <= lastPushedWorkspaceSeqRef.current) return;
+
+    const timer = setTimeout(() => {
+      lastPushedWorkspaceSeqRef.current = mutationSeqRef.current;
+      const cur = rawStateRef.current;
+      void pushPlatformWorkspaceToSupabase({
+        concepts: cur.concepts,
+        miroItems: cur.miroItems,
+        strategies: cur.strategies,
+        documents: cur.documents,
+        launches: cur.launches,
+        campaigns: cur.campaigns,
+        deletedConceptIds: cur.deletedConceptIds || [],
+      });
+    }, 450);
+
+    const flushOnHide = () => {
+      if (mutationSeqRef.current > lastPushedWorkspaceSeqRef.current) {
+        clearTimeout(timer);
+        lastPushedWorkspaceSeqRef.current = mutationSeqRef.current;
+        const cur = rawStateRef.current;
+        void pushPlatformWorkspaceToSupabase({
+          concepts: cur.concepts,
+          miroItems: cur.miroItems,
+          strategies: cur.strategies,
+          documents: cur.documents,
+          launches: cur.launches,
+          campaigns: cur.campaigns,
+          deletedConceptIds: cur.deletedConceptIds || [],
+        });
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', flushOnHide);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pagehide', flushOnHide);
+      }
+    };
+  }, [
+    hydrated,
+    idbRichMediaReady,
+    state.concepts,
+    state.miroItems,
+    state.strategies,
+    state.documents,
+    state.launches,
+    state.campaigns,
+    state.deletedConceptIds,
+  ]);
 
   useEffect(() => {
     if (!hydrated) return;

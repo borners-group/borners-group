@@ -91,7 +91,10 @@ import {
   savePlatformRichStateToIdb,
   savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
-import { pushPortfolioCoreToSupabase } from '@/lib/supabaseCloudSync';
+import {
+  pullPreviousCloudHistorySnapshot,
+  pushPortfolioCoreToSupabase,
+} from '@/lib/supabaseCloudSync';
 
 interface NavGroup {
   groupTitle: string;
@@ -1797,10 +1800,64 @@ export function AppShell() {
                           <>
                         <div className="px-3 py-1.5 rounded-[8px] bg-[#FAF9F6] border border-[#E4E1DA] flex items-center justify-between gap-2 text-[11px]">
                           <span className="text-[#5C5953]">Хранение данных:</span>
-                          <span className="font-mono font-semibold text-[#141413]">
+                          <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-[#141413]">
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                getActiveSupabaseClient() ? 'bg-[#1D7F5F]' : 'bg-[#8D8A84]'
+                              }`}
+                            />
                             {getActiveSupabaseClient() ? 'Облако активно' : 'Локально в браузере'}
                           </span>
                         </div>
+                        {Boolean(getActiveSupabaseClient()) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('borners-force-cloud-sync'));
+                                setProfileMenuOpen(false);
+                                notify(
+                                  'success',
+                                  'Синхронизация с облаком запущена',
+                                  'Портфель SKU, цены и рабочее пространство сверены с Supabase'
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                            >
+                              <span>Синхронизировать с облаком</span>
+                              <span className="font-mono text-[10.5px] text-[#1D7F5F]">LIVE</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const cloudHist = await pullPreviousCloudHistorySnapshot();
+                                if (!cloudHist || !Array.isArray(cloudHist.models) || cloudHist.models.length === 0) {
+                                  notify(
+                                    'warning',
+                                    'Облачная история пока содержит один слепок',
+                                    'Новые точки отката сохраняются автоматически в Postgres'
+                                  );
+                                  return;
+                                }
+                                applyPortfolioBackupSnapshotToStorage(
+                                  cloudHist.models,
+                                  livePortfolio.scenarios
+                                );
+                                livePortfolio.updateModelsBatch(() => cloudHist.models);
+                                setProfileMenuOpen(false);
+                                notify(
+                                  'success',
+                                  'Восстановлен облачный слепок',
+                                  `Откат к серверной точке (${cloudHist.models.length} SKU)`
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-[9px] hover:bg-[#F6F6F4] flex items-center justify-between text-left text-[#141413] cursor-pointer"
+                            >
+                              <span>Откат к облачному слепку</span>
+                              <span className="font-mono text-[10.5px] text-[#5C5953]">DB</span>
+                            </button>
+                          </>
+                        )}
                         {(() => {
                           const rollingSnaps = getRollingLocalSnapshots();
                           const prevSnap = rollingSnaps.length > 1 ? rollingSnaps[1] : null;

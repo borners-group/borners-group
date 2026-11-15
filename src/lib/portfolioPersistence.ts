@@ -1641,8 +1641,75 @@ export function mergeCloudPortfolioSnapshot(params: {
   const isLocalNewer =
     Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
 
+  // Защита заполненных цен на моделях с исходным статусом «РРЦ уточнить» (AKU-017..020, AKU-028..031 и др.):
+  // если на победившей стороне карточка осталась с нулевой ценой и нулевой себестоимостью, а на второй стороне
+  // пользователь уже ввёл цену/себестоимость/% выкупа — сохраняем заполненные значения и поднимаем их в облако!
+  const rescueFilledEconomicsFromOther = (
+    winner: ScenarioModelSpec,
+    other: ScenarioModelSpec | undefined
+  ): { model: ScenarioModelSpec; rescued: boolean } => {
+    if (!other) return { model: winner, rescued: false };
+    const winnerUnpriced = (winner.retailPriceRub || 0) <= 0 && (winner.unitCostRub || 0) <= 0;
+    const otherHasFilledEcon =
+      (other.retailPriceRub || 0) > 0 ||
+      (other.unitCostRub || 0) > 0 ||
+      ((winner.buyoutRatePct || 0) <= 0 && (other.buyoutRatePct || 0) > 0);
+    if (!winnerUnpriced || !otherHasFilledEcon) {
+      return { model: winner, rescued: false };
+    }
+    const rescuedPrice =
+      (other.retailPriceRub || 0) > 0 ? other.retailPriceRub : winner.retailPriceRub;
+    const rescuedCost =
+      (other.unitCostRub || 0) > 0 ? other.unitCostRub : winner.unitCostRub;
+    const rescuedBuyout =
+      (winner.buyoutRatePct || 0) <= 0 && (other.buyoutRatePct || 0) > 0
+        ? other.buyoutRatePct
+        : winner.buyoutRatePct;
+
+    const mergedPlans: Record<number, ScenarioModelSpec['plansByScenario'][number]> = {
+      ...winner.plansByScenario,
+    };
+    if (rescuedPrice > 0) {
+      for (const [scenKey, pl] of Object.entries(mergedPlans)) {
+        if (!pl) continue;
+        const otherPl = other.plansByScenario?.[Number(scenKey)];
+        mergedPlans[Number(scenKey)] = {
+          ...pl,
+          monthlyPricesRub:
+            otherPl &&
+            Array.isArray(otherPl.monthlyPricesRub) &&
+            otherPl.monthlyPricesRub.some((p) => p > 0)
+              ? [...otherPl.monthlyPricesRub]
+              : Array(12).fill(rescuedPrice),
+          monthlyRevenuesRubOverride: undefined,
+        };
+      }
+    }
+
+    return {
+      model: ensureModelUnifiedV11({
+        ...winner,
+        retailPriceRub: rescuedPrice,
+        unitCostRub: rescuedCost,
+        buyoutRatePct: rescuedBuyout,
+        launchStatus:
+          rescuedPrice > 0 && rescuedCost > 0 ? 'Утверждено' : winner.launchStatus,
+        modelStageStatus:
+          rescuedPrice > 0 && rescuedCost > 0 ? 'Масштабирование' : winner.modelStageStatus,
+        plansByScenario: mergedPlans,
+      }),
+      rescued: true,
+    };
+  };
+
   if (isLocalNewer) {
-    const merged = [...cleanLocal];
+    const merged = cleanLocal.map((lm) => {
+      const cm = cleanCloud.find(
+        (x) =>
+          x.id === lm.id || x.code.trim().toUpperCase() === lm.code.trim().toUpperCase()
+      );
+      return rescueFilledEconomicsFromOther(lm, cm).model;
+    });
     for (const cm of cleanCloud) {
       const exists = merged.some(
         (m) =>
@@ -1658,8 +1725,17 @@ export function mergeCloudPortfolioSnapshot(params: {
     };
   }
 
-  const merged = [...cleanCloud];
-  let addedLocalMissingInCloud = false;
+  let rescuedFromLocalCount = 0;
+  const merged = cleanCloud.map((cm) => {
+    const lm = cleanLocal.find(
+      (x) =>
+        x.id === cm.id || x.code.trim().toUpperCase() === cm.code.trim().toUpperCase()
+    );
+    const res = rescueFilledEconomicsFromOther(cm, lm);
+    if (res.rescued) rescuedFromLocalCount += 1;
+    return res.model;
+  });
+  let addedLocalMissingInCloud = rescuedFromLocalCount > 0;
 
   for (const lm of cleanLocal) {
     const exists = merged.some(

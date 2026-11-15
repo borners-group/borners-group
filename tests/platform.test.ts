@@ -8793,7 +8793,8 @@ test('123. v9 Релизный билд borners-2027-natele-lab-v9, нормал
   );
 
   assert.equal(
-    nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
+    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+      nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10') ||
       nextConfigCode.includes('borners-2027-natele-lab-v9'),
     true,
@@ -8848,7 +8849,8 @@ test('124. v10 Архитектурная дизайн-система COS / Ramp
     'globals.css обязан задавать тёплый архитектурный камень #F6F5F2, антрацит #141413 и var(--font-mono) для .font-mono'
   );
   assert.equal(
-    nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
+    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+      nextConfigCode.includes('borners-2027-sales-integrity-v11') ||
       nextConfigCode.includes('borners-2027-editorial-ui-v10'),
     true,
     'next.config.ts обязан экспортировать актуальный релизный buildId'
@@ -9861,14 +9863,257 @@ test('170. v11 Дыхабельные мокасины AKUSHA (AKU-028..031, buy
   assert.equal(sumMocRev, 1685 * 5490);
 });
 
-test('171. v11 Релизный идентификатор borners-2027-sales-integrity-v11 в next.config.ts', () => {
+test('171. v11/v12 Релизный идентификатор borners-2027-cloud-sync-v12 в next.config.ts', () => {
   const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
   assert.equal(
-    nextConfigCode.includes('borners-2027-sales-integrity-v11'),
+    nextConfigCode.includes('borners-2027-cloud-sync-v12') ||
+      nextConfigCode.includes('borners-2027-sales-integrity-v11'),
     true,
-    'next.config.ts обязан экспортировать buildId borners-2027-sales-integrity-v11'
+    'next.config.ts обязан экспортировать актуальный buildId'
   );
 });
+
+test('172. v12 mergeCloudPortfolioSnapshot: спасение заполненных цен партнёра (AKU-017, AKU-031) даже когда облако новее по таймстампу, но содержит заводские 0 ₽', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { mergeCloudPortfolioSnapshot } = await import('../src/lib/portfolioPersistence.ts');
+
+  const aku17Base = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+  const aku31Base = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-031')!;
+  const brn01Base = ACTING_2027_SCENARIO_MODELS[0]!;
+
+  // Партнёр вчера заполнил цены AKU-017 и AKU-031 в своём браузере
+  const partnerLocalModels = [
+    { ...brn01Base, retailPriceRub: 1590 },
+    {
+      ...aku17Base,
+      retailPriceRub: 6490,
+      unitCostRub: 2150,
+      buyoutRatePct: 34,
+      plansByScenario: {
+        ...aku17Base.plansByScenario,
+        [AKUSHA_2027_SCENARIO_ID]: {
+          ...aku17Base.plansByScenario[AKUSHA_2027_SCENARIO_ID]!,
+          monthlyRetailPricesRub: Array(12).fill(6490),
+        },
+      },
+    },
+    {
+      ...aku31Base,
+      retailPriceRub: 5590,
+      unitCostRub: 1890,
+      buyoutRatePct: 35,
+    },
+  ];
+
+  // В облаке сегодня кто-то обновил BRN-001 до 1790 ₽, но AKU-017 и AKU-031 там ещё заводские (0 ₽)
+  const cloudNewerModels = [
+    { ...brn01Base, retailPriceRub: 1790 },
+    { ...aku17Base, retailPriceRub: 0, unitCostRub: 0 },
+    { ...aku31Base, retailPriceRub: 0, unitCostRub: 0 },
+  ];
+
+  const merged = mergeCloudPortfolioSnapshot({
+    localModels: partnerLocalModels,
+    cloudModels: cloudNewerModels,
+    localUpdatedAtIso: '2026-11-14T18:00:00.000Z',
+    cloudUpdatedAtIso: '2026-11-15T09:00:00.000Z',
+  });
+
+  const mBrn = merged.models.find((m) => m.code === brn01Base.code)!;
+  const mAku17 = merged.models.find((m) => m.code === 'AKU-017')!;
+  const mAku31 = merged.models.find((m) => m.code === 'AKU-031')!;
+
+  assert.equal(mBrn.retailPriceRub, 1790, 'Свежая правка BRN-001 из облака обязана сохраниться');
+  assert.equal(mAku17.retailPriceRub, 6490, 'Заполненная цена AKU-017 партнёра не должна затереться нулём');
+  assert.equal(mAku17.unitCostRub, 2150, 'Заполненная себестоимость AKU-017 партнёра обязана спастись');
+  assert.equal(mAku31.retailPriceRub, 5590, 'Заполненная цена AKU-031 партнёра обязана спастись');
+  assert.equal(mAku31.unitCostRub, 1890, 'Заполненная себестоимость AKU-031 партнёра обязана спастись');
+  assert.equal(
+    merged.shouldPushLocalToCloud,
+    true,
+    'После спасения заполненных цен система обязана сразу выгрузить объединённый слепок в Supabase'
+  );
+});
+
+test('173. v12 mergeCloudPortfolioSnapshot: честная победа более свежей цены при повторном редактировании (6490 ₽ -> 6990 ₽)', async () => {
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+  const { mergeCloudPortfolioSnapshot } = await import('../src/lib/portfolioPersistence.ts');
+  const aku17Base = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+
+  // Сценарий A: в облаке было 6490 ₽, локально обновили на 6990 ₽ позже
+  const resLocalNewer = mergeCloudPortfolioSnapshot({
+    localModels: [{ ...aku17Base, retailPriceRub: 6990, unitCostRub: 2250 }],
+    cloudModels: [{ ...aku17Base, retailPriceRub: 6490, unitCostRub: 2150 }],
+    localUpdatedAtIso: '2026-11-15T12:00:00.000Z',
+    cloudUpdatedAtIso: '2026-11-15T10:00:00.000Z',
+  });
+  assert.equal(resLocalNewer.models[0]!.retailPriceRub, 6990);
+  assert.equal(resLocalNewer.models[0]!.unitCostRub, 2250);
+  assert.equal(resLocalNewer.shouldPushLocalToCloud, true);
+
+  // Сценарий B: локально было 6490 ₽, в облаке партнёр обновил на 7290 ₽ позже
+  const resCloudNewer = mergeCloudPortfolioSnapshot({
+    localModels: [{ ...aku17Base, retailPriceRub: 6490, unitCostRub: 2150 }],
+    cloudModels: [{ ...aku17Base, retailPriceRub: 7290, unitCostRub: 2300 }],
+    localUpdatedAtIso: '2026-11-15T10:00:00.000Z',
+    cloudUpdatedAtIso: '2026-11-15T12:00:00.000Z',
+  });
+  assert.equal(resCloudNewer.models[0]!.retailPriceRub, 7290);
+  assert.equal(resCloudNewer.models[0]!.unitCostRub, 2300);
+  assert.equal(resCloudNewer.shouldPushLocalToCloud, false);
+});
+
+test('174. v12 supabase.ts: автоматическое подключение на продакшене (borners-group.github.io) и строгая изоляция песочницы в Node / localhost / WebDriver', async () => {
+  const supaMod = await import('../src/lib/supabase.ts');
+  const prevWin = (globalThis as { window?: unknown }).window;
+  const prevNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+  const setMockNavigator = (val: { webdriver: boolean }) => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: val,
+      configurable: true,
+      writable: true,
+    });
+  };
+
+  try {
+    // 1. В Node без window клиент не должен лезть в прод-базу
+    delete (globalThis as { window?: unknown }).window;
+    assert.equal(supaMod.readRuntimeSupabaseConfig(), null);
+
+    // 2. На localhost без явного флага облако изолировано
+    (globalThis as { window?: unknown }).window = {
+      location: { hostname: 'localhost' },
+      localStorage: { getItem: () => null },
+    };
+    setMockNavigator({ webdriver: false });
+    assert.equal(supaMod.readRuntimeSupabaseConfig(), null);
+
+    // 3. В Headless Chrome E2E (navigator.webdriver === true) облако изолировано даже на прод-хосте
+    (globalThis as { window?: unknown }).window = {
+      location: { hostname: 'borners-group.github.io' },
+      localStorage: { getItem: () => null },
+    };
+    setMockNavigator({ webdriver: true });
+    assert.equal(supaMod.readRuntimeSupabaseConfig(), null);
+
+    // 4. В реальном браузере владельца/партнёра на borners-group.github.io облако включается автоматически!
+    setMockNavigator({ webdriver: false });
+    const prodCreds = supaMod.readRuntimeSupabaseConfig();
+    assert.ok(prodCreds, 'На borners-group.github.io учётные данные Supabase обязаны быть активны');
+    assert.equal(prodCreds!.url, 'https://ocdmyldosplufhhwrrwq.supabase.co');
+    assert.equal(prodCreds!.anonKey.startsWith('sb_publishable_'), true);
+  } finally {
+    if (prevWin === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = prevWin;
+    }
+    if (prevNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', prevNavDesc);
+    } else {
+      delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  }
+});
+
+test('175. v12 pushPlatformWorkspaceToSupabase и pullPlatformWorkspaceFromSupabase: вынос base64-фото R&D в concept_media:<id> и полное восстановление', async () => {
+  const cloudSync = await import('../src/lib/supabaseCloudSync.ts');
+  const supaSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/supabaseCloudSync.ts'), 'utf8');
+
+  assert.equal(cloudSync.SUPABASE_WORKSPACE_KEY, 'platform_workspace_v1');
+  assert.equal(cloudSync.SUPABASE_CONCEPT_MEDIA_PREFIX, 'concept_media:');
+  assert.equal(cloudSync.SUPABASE_HISTORY_TABLE, 'borners_portfolio_history');
+  assert.ok(
+    supaSrc.includes('__SUPABASE_CONCEPT_MEDIA_REF__') &&
+      supaSrc.includes('pullPreviousCloudHistorySnapshot') &&
+      supaSrc.includes('sharedKvListeners'),
+    'supabaseCloudSync обязан выносить base64-фото концептов в concept_media:, мультиплексировать Realtime-канал и поддерживать откат по истории'
+  );
+});
+
+test('176. v12 Защита от перезаписи облака при обычном клике по вкладке бренда/сценария в useLiveScenarioPortfolio', () => {
+  const liveHookSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+
+  // Вырезаем тело setSelectedScenarioId и проверяем, что внутри него НЕТ touchPortfolioUpdatedAt и scheduleCompleteCloudPush
+  const setScenStart = liveHookSrc.indexOf('const setSelectedScenarioId = useCallback(');
+  const setIncludeStart = liveHookSrc.indexOf('const setIncludeGroupPortfolioInS1 = useCallback(');
+  assert.ok(setScenStart > 0 && setIncludeStart > setScenStart);
+  const setScenBody = liveHookSrc.slice(setScenStart, setIncludeStart);
+
+  assert.equal(
+    setScenBody.includes('touchPortfolioUpdatedAt('),
+    false,
+    'setSelectedScenarioId НЕ должен обновлять таймстамп портфеля при переключении вкладки бренда'
+  );
+  assert.equal(
+    setScenBody.includes('scheduleCompleteCloudPush('),
+    false,
+    'setSelectedScenarioId НЕ должен пушить локальные дефолты в облако при переключении вкладки'
+  );
+
+  const setForBrandStart = liveHookSrc.indexOf('const setSelectedScenarioForBrand = useCallback(');
+  const updateScenStart = liveHookSrc.indexOf('const updateScenariosBatch = useCallback(');
+  assert.ok(setForBrandStart > 0 && updateScenStart > setForBrandStart);
+  const setForBrandBody = liveHookSrc.slice(setForBrandStart, updateScenStart);
+
+  assert.equal(
+    setForBrandBody.includes('scheduleCompleteCloudPush('),
+    false,
+    'setSelectedScenarioForBrand НЕ должен перезаписывать облако при локальной смене вкладки'
+  );
+});
+
+test('177. v12 Живая синхронизация (Realtime + pagehide flush + focus pull) в useLiveScenarioPortfolio и PlatformContext', () => {
+  const liveHookSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+  const ctxSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/context/PlatformContext.tsx'),
+    'utf8'
+  );
+  const shellSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+
+  assert.ok(
+    liveHookSrc.includes('subscribeToSupabaseKvChanges') &&
+      liveHookSrc.includes("window.addEventListener('pagehide', flushPendingPushOnUnload)") &&
+      liveHookSrc.includes("window.addEventListener('borners-force-cloud-sync'"),
+    'useLiveScenarioPortfolio обязан слушать Realtime-изменения, сбрасывать очередь при закрытии вкладки (pagehide) и поддерживать принудительную синхронизацию'
+  );
+  assert.ok(
+    ctxSrc.includes('pullPlatformWorkspaceFromSupabase') &&
+      ctxSrc.includes('pushPlatformWorkspaceToSupabase') &&
+      ctxSrc.includes('WORKSPACE_UPDATED_AT_KEY'),
+    'PlatformContext обязан синхронизировать R&D концепты, Miro и стратегию с Supabase'
+  );
+  assert.ok(
+    shellSrc.includes('Синхронизировать с облаком') &&
+      shellSrc.includes('Откат к облачному слепку') &&
+      shellSrc.includes('pullPreviousCloudHistorySnapshot'),
+    'AppShell обязан предоставлять кнопки живой синхронизации и отката к серверному слепку Postgres'
+  );
+});
+
+test('178. v12 Релизный идентификатор borners-2027-cloud-sync-v12 и проброс NEXT_PUBLIC_SUPABASE_URL в next.config.ts', () => {
+  const nextConfigCode = fs.readFileSync(path.join(process.cwd(), 'next.config.ts'), 'utf8');
+  assert.equal(
+    nextConfigCode.includes('borners-2027-cloud-sync-v12') &&
+      nextConfigCode.includes('https://ocdmyldosplufhhwrrwq.supabase.co') &&
+      nextConfigCode.includes('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    true,
+    'next.config.ts обязан экспортировать buildId borners-2027-cloud-sync-v12 и конфигурацию Supabase'
+  );
+});
+
 
 
 
