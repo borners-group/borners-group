@@ -177,6 +177,7 @@ export interface ScenarioModelSpec {
   };
   productionSteps: ProductionStep[];
   plansByScenario: Record<number, ScenarioCommercialPlan>;
+  updatedAtIso?: string;
 }
 
 export interface GrowthScenarioDef {
@@ -1033,13 +1034,24 @@ export function inferDefaultBuyoutRatePctForModel(
   >,
   planBuyoutRatePct?: number
 ): number {
-  if (model.buyoutRatePct === 0 || planBuyoutRatePct === 0) {
+  if (model.buyoutRatePct === 0) {
     return 0;
   }
-  if (typeof model.buyoutRatePct === 'number' && Number.isFinite(model.buyoutRatePct) && model.buyoutRatePct > 0) {
+  if (
+    typeof model.buyoutRatePct === 'number' &&
+    Number.isFinite(model.buyoutRatePct) &&
+    model.buyoutRatePct > 0
+  ) {
     return Math.min(100, Math.max(5, Math.round(model.buyoutRatePct)));
   }
-  if (typeof planBuyoutRatePct === 'number' && Number.isFinite(planBuyoutRatePct) && planBuyoutRatePct > 0) {
+  if (planBuyoutRatePct === 0) {
+    return 0;
+  }
+  if (
+    typeof planBuyoutRatePct === 'number' &&
+    Number.isFinite(planBuyoutRatePct) &&
+    planBuyoutRatePct > 0
+  ) {
     return Math.min(100, Math.max(5, Math.round(planBuyoutRatePct)));
   }
   const brandU = (model.customBrandLabel || model.brandId || '').toUpperCase();

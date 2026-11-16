@@ -377,11 +377,40 @@ export function runAkusha2027OfficialMigrationV1(): void {
     }
   }
 
-  // 3. Очищаем сохранённый список моделей от старых черновиков AKUSHA
+  // 3. Очищаем сохранённый список моделей от старых черновиков AKUSHA, спасая любые введённые пользователем цены/себестоимость/% выкупа
   const savedModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
   if (Array.isArray(savedModels) && savedModels.length > 0) {
+    const rescuedEconByCode = new Map<
+      string,
+      { price: number; cost: number; buyout: number }
+    >();
+    for (const m of savedModels) {
+      if (m && isOldDraftAkushaEntry(m) && !isLegacyPlaceholderAkusha(m)) {
+        const codeU = (m.code || '').trim().toUpperCase();
+        const pr = Math.max(0, Number(m.retailPriceRub) || 0);
+        const co = Math.max(0, Number(m.unitCostRub) || 0);
+        const bu = Math.max(0, Number(m.buyoutRatePct) || 0);
+        if (codeU && (pr > 0 || co > 0 || bu > 0)) {
+          rescuedEconByCode.set(codeU, { price: pr, cost: co, buyout: bu });
+        }
+      }
+    }
     const cleanedModels = savedModels.filter((m) => !isOldDraftAkushaEntry(m));
-    if (cleanedModels.length !== savedModels.length) {
+    if (rescuedEconByCode.size > 0) {
+      for (const officialMod of AKUSHA_2027_MODELS) {
+        const resc = rescuedEconByCode.get(officialMod.code.trim().toUpperCase());
+        if (!resc) continue;
+        cleanedModels.push(
+          ensureModelUnifiedV11({
+            ...officialMod,
+            retailPriceRub: resc.price > 0 ? resc.price : officialMod.retailPriceRub,
+            unitCostRub: resc.cost > 0 ? resc.cost : officialMod.unitCostRub,
+            buyoutRatePct: resc.buyout > 0 ? resc.buyout : officialMod.buyoutRatePct,
+          })
+        );
+      }
+    }
+    if (cleanedModels.length !== savedModels.length || rescuedEconByCode.size > 0) {
       safeSetStorageJson(STORAGE_KEY_MODELS, cleanedModels);
     }
   }
@@ -1405,6 +1434,8 @@ export interface FullPlatformBackupBundleV2 {
   selectedScenarioByBrand: Partial<Record<CanonicalBrandCode, number | null>>;
   includeGroupPortfolioInS1?: boolean;
   productGroups?: unknown;
+  investmentLedger?: unknown;
+  financeContourParams?: unknown;
   platformState?: Record<string, unknown>;
 }
 
@@ -1414,12 +1445,22 @@ export function buildFullPlatformBackupBundle(params: {
   selectedScenarioByBrand: Partial<Record<string, number | null>>;
   includeGroupPortfolioInS1?: boolean;
   productGroups?: unknown;
+  investmentLedger?: unknown;
+  financeContourParams?: unknown;
   platformState?: Record<string, unknown> | null;
 }): FullPlatformBackupBundleV2 {
   const cleanScenarios = Array.isArray(params.scenarios) ? params.scenarios : INITIAL_SCENARIOS;
   const cleanModels = Array.isArray(params.models)
     ? params.models.map((m) => ensureModelUnifiedV11(m))
     : [];
+  const resolvedLedger =
+    params.investmentLedger !== undefined
+      ? params.investmentLedger
+      : safeGetStorageJson('borners_investment_ledger_v1');
+  const resolvedFinParams =
+    params.financeContourParams !== undefined
+      ? params.financeContourParams
+      : safeGetStorageJson('borners_finance_contour_params_v1');
   return {
     exportedAt: new Date().toISOString(),
     platformVersion: 'BORNERS GROUP Strategy Platform 2027 · Full Backup v2',
@@ -1431,6 +1472,8 @@ export function buildFullPlatformBackupBundle(params: {
     ),
     includeGroupPortfolioInS1: Boolean(params.includeGroupPortfolioInS1),
     productGroups: params.productGroups ?? undefined,
+    investmentLedger: resolvedLedger ?? undefined,
+    financeContourParams: resolvedFinParams ?? undefined,
     platformState: params.platformState ?? undefined,
   };
 }
@@ -1495,6 +1538,14 @@ export function parseFullPlatformBackupBundle(rawJson: string): {
             ? parsed.includeGroupPortfolioInS1
             : false,
         productGroups: parsed.productGroups,
+        investmentLedger:
+          parsed.investmentLedger && typeof parsed.investmentLedger === 'object'
+            ? parsed.investmentLedger
+            : undefined,
+        financeContourParams:
+          parsed.financeContourParams && typeof parsed.financeContourParams === 'object'
+            ? parsed.financeContourParams
+            : undefined,
         platformState:
           parsed.platformState && typeof parsed.platformState === 'object'
             ? (parsed.platformState as Record<string, unknown>)
@@ -1643,35 +1694,58 @@ export function mergeCloudPortfolioSnapshot(params: {
   const isLocalNewer =
     Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
 
-  // Защита заполненных цен на моделях с исходным статусом «РРЦ уточнить» (AKU-017..020, AKU-028..031 и др.):
-  // если на победившей стороне карточка осталась с нулевой ценой и нулевой себестоимостью, а на второй стороне
-  // пользователь уже ввёл цену/себестоимость/% выкупа — сохраняем заполненные значения и поднимаем их в облако!
+  // Независимое по-полевое спасение заполненной экономики и планов продаж (AKU-017..031, BRN-DLY-01..07 и др.):
+  // если на победившей стороне цена ИЛИ себестоимость ИЛИ % выкупа ИЛИ план продаж сценария равен 0,
+  // а на второй стороне пользователь уже заполнил ненулевое значение — сохраняем его и поднимаем в облако!
   const rescueFilledEconomicsFromOther = (
     winner: ScenarioModelSpec,
     other: ScenarioModelSpec | undefined
   ): { model: ScenarioModelSpec; rescued: boolean } => {
     if (!other) return { model: winner, rescued: false };
-    const winnerUnpriced = (winner.retailPriceRub || 0) <= 0 && (winner.unitCostRub || 0) <= 0;
-    const otherHasFilledEcon =
-      (other.retailPriceRub || 0) > 0 ||
-      (other.unitCostRub || 0) > 0 ||
-      ((winner.buyoutRatePct || 0) <= 0 && (other.buyoutRatePct || 0) > 0);
-    if (!winnerUnpriced || !otherHasFilledEcon) {
-      return { model: winner, rescued: false };
-    }
-    const rescuedPrice =
-      (other.retailPriceRub || 0) > 0 ? other.retailPriceRub : winner.retailPriceRub;
-    const rescuedCost =
-      (other.unitCostRub || 0) > 0 ? other.unitCostRub : winner.unitCostRub;
-    const rescuedBuyout =
-      (winner.buyoutRatePct || 0) <= 0 && (other.buyoutRatePct || 0) > 0
-        ? other.buyoutRatePct
-        : winner.buyoutRatePct;
+
+    const needPriceRescue =
+      (winner.retailPriceRub || 0) <= 0 && (other.retailPriceRub || 0) > 0;
+    const needCostRescue =
+      (winner.unitCostRub || 0) <= 0 && (other.unitCostRub || 0) > 0;
+    const needBuyoutRescue =
+      (winner.buyoutRatePct || 0) <= 0 && (other.buyoutRatePct || 0) > 0;
 
     const mergedPlans: Record<number, ScenarioModelSpec['plansByScenario'][number]> = {
       ...winner.plansByScenario,
     };
-    if (rescuedPrice > 0) {
+    let rescuedSalesPlan = false;
+    if (other.plansByScenario && typeof other.plansByScenario === 'object') {
+      for (const [scenKey, otherPl] of Object.entries(other.plansByScenario)) {
+        if (!otherPl || !Array.isArray(otherPl.monthlyPacks)) continue;
+        const numKey = Number(scenKey);
+        const otherHasSales = otherPl.monthlyPacks.some((p) => (p || 0) > 0);
+        if (!otherHasSales) continue;
+        const winPl = mergedPlans[numKey];
+        const winHasSales =
+          Boolean(winPl && Array.isArray(winPl.monthlyPacks)) &&
+          winPl.monthlyPacks.some((p) => (p || 0) > 0);
+        if (!winHasSales) {
+          mergedPlans[numKey] = {
+            ...otherPl,
+            monthlyPacks: [...otherPl.monthlyPacks],
+            monthlyPricesRub: Array.isArray(otherPl.monthlyPricesRub)
+              ? [...otherPl.monthlyPricesRub]
+              : Array(12).fill(winner.retailPriceRub || other.retailPriceRub || 0),
+          };
+          rescuedSalesPlan = true;
+        }
+      }
+    }
+
+    if (!needPriceRescue && !needCostRescue && !needBuyoutRescue && !rescuedSalesPlan) {
+      return { model: winner, rescued: false };
+    }
+
+    const rescuedPrice = needPriceRescue ? other.retailPriceRub : winner.retailPriceRub;
+    const rescuedCost = needCostRescue ? other.unitCostRub : winner.unitCostRub;
+    const rescuedBuyout = needBuyoutRescue ? other.buyoutRatePct : winner.buyoutRatePct;
+
+    if (needPriceRescue && rescuedPrice > 0) {
       for (const [scenKey, pl] of Object.entries(mergedPlans)) {
         if (!pl) continue;
         const otherPl = other.plansByScenario?.[Number(scenKey)];
@@ -1689,19 +1763,38 @@ export function mergeCloudPortfolioSnapshot(params: {
     }
 
     return {
-      model: ensureModelUnifiedV11({
-        ...winner,
-        retailPriceRub: rescuedPrice,
-        unitCostRub: rescuedCost,
-        buyoutRatePct: rescuedBuyout,
-        launchStatus:
-          rescuedPrice > 0 && rescuedCost > 0 ? 'Утверждено' : winner.launchStatus,
-        modelStageStatus:
-          rescuedPrice > 0 && rescuedCost > 0 ? 'Масштабирование' : winner.modelStageStatus,
-        plansByScenario: mergedPlans,
-      }),
+      model: ensureModelUnifiedV11(
+        applyCategoryWbUnitEconomics({
+          ...winner,
+          retailPriceRub: rescuedPrice,
+          unitCostRub: rescuedCost,
+          buyoutRatePct: rescuedBuyout,
+          launchStatus:
+            rescuedPrice > 0 && rescuedCost > 0 ? 'Утверждено' : winner.launchStatus,
+          modelStageStatus:
+            rescuedPrice > 0 && rescuedCost > 0 ? 'Масштабирование' : winner.modelStageStatus,
+          plansByScenario: mergedPlans,
+        })
+      ),
       rescued: true,
     };
+  };
+
+  const resolvePerModelLocalWins = (
+    lm: ScenarioModelSpec,
+    cm: ScenarioModelSpec | undefined
+  ): boolean => {
+    if (!cm) return true;
+    const lModTs = lm.updatedAtIso ? Date.parse(lm.updatedAtIso) : NaN;
+    const cModTs = cm.updatedAtIso ? Date.parse(cm.updatedAtIso) : NaN;
+    if (Number.isFinite(lModTs) && Number.isFinite(cModTs)) {
+      if (lModTs !== cModTs) return lModTs > cModTs;
+    } else if (Number.isFinite(lModTs) && !Number.isFinite(cModTs)) {
+      if (!Number.isFinite(cloudTs) || lModTs > cloudTs) return true;
+    } else if (!Number.isFinite(lModTs) && Number.isFinite(cModTs)) {
+      if (!Number.isFinite(localTs) || cModTs > localTs) return false;
+    }
+    return isLocalNewer;
   };
 
   if (isLocalNewer) {
@@ -1710,6 +1803,9 @@ export function mergeCloudPortfolioSnapshot(params: {
         (x) =>
           x.id === lm.id || x.code.trim().toUpperCase() === lm.code.trim().toUpperCase()
       );
+      if (cm && !resolvePerModelLocalWins(lm, cm)) {
+        return rescueFilledEconomicsFromOther(cm, lm).model;
+      }
       return rescueFilledEconomicsFromOther(lm, cm).model;
     });
     for (const cm of cleanCloud) {
@@ -1733,6 +1829,10 @@ export function mergeCloudPortfolioSnapshot(params: {
       (x) =>
         x.id === cm.id || x.code.trim().toUpperCase() === cm.code.trim().toUpperCase()
     );
+    if (lm && resolvePerModelLocalWins(lm, cm)) {
+      rescuedFromLocalCount += 1;
+      return rescueFilledEconomicsFromOther(lm, cm).model;
+    }
     const res = rescueFilledEconomicsFromOther(cm, lm);
     if (res.rescued) rescuedFromLocalCount += 1;
     return res.model;

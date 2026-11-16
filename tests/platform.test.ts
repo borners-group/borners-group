@@ -11305,6 +11305,110 @@ test('194. v14 Чистота основного экрана: отсутств�
   assert.ok(panelCode.includes('Подробная аналитика'));
 });
 
+test('195. Защита цен/себестоимости/продаж от обнуления в облаке (по-модельный updatedAtIso + независимое спасение полей), авто-исцеление выкупа AKU-028..031, честный COGS по выкупам и сохранение investmentLedger в бэкапе', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { S1_100M_SCENARIO_MODELS } = await import('../src/lib/scenarioS1_100M.ts');
+  const { computeModelScenarioMetrics } = await import('../src/lib/scenarioData.ts');
+  const {
+    mergeCloudPortfolioSnapshot,
+    buildFullPlatformBackupBundle,
+    parseFullPlatformBackupBundle,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const { computeInvestmentSchedule, createDefaultInvestmentLedgerState } =
+    await import('../src/lib/investmentScheduleEngine.ts');
+
+  // 1. BRN-DLY-01 уже имеет цену 1990 ₽, но себестоимость 0 ₽: заполненная локально себестоимость 635 ₽ обязана спастись
+  const dly01Base = S1_100M_SCENARIO_MODELS.find((m) => m.code === 'BRN-DLY-01')!;
+  const aku017Base = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-017')!;
+  const aku001Base = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-001')!;
+
+  const mergedRes = mergeCloudPortfolioSnapshot({
+    localModels: [
+      { ...dly01Base, unitCostRub: 635 },
+      {
+        ...aku017Base,
+        retailPriceRub: 4990,
+        unitCostRub: 1930,
+        buyoutRatePct: 40,
+        updatedAtIso: '2026-11-16T12:08:50.000Z',
+      },
+      {
+        ...aku001Base,
+        retailPriceRub: 7500,
+        unitCostRub: 2800,
+        updatedAtIso: '2026-11-16T10:00:00.000Z',
+      },
+    ],
+    cloudModels: [
+      { ...dly01Base, unitCostRub: 0 },
+      { ...aku017Base, retailPriceRub: 0, unitCostRub: 0 },
+      {
+        ...aku001Base,
+        retailPriceRub: 7900,
+        unitCostRub: 2950,
+        updatedAtIso: '2026-11-16T12:20:00.000Z',
+      },
+    ],
+    localUpdatedAtIso: '2026-11-16T10:00:00.000Z',
+    cloudUpdatedAtIso: '2026-11-16T12:20:00.000Z',
+  });
+
+  const mergedDly01 = mergedRes.models.find((m) => m.code === 'BRN-DLY-01')!;
+  const mergedAku017 = mergedRes.models.find((m) => m.code === 'AKU-017')!;
+  const mergedAku001 = mergedRes.models.find((m) => m.code === 'AKU-001')!;
+  assert.equal(mergedDly01.unitCostRub, 635, 'Заполненная себестоимость BRN-DLY-01 при ненулевой цене обязана спастись');
+  assert.equal(mergedAku017.retailPriceRub, 4990);
+  assert.equal(mergedAku017.unitCostRub, 1930);
+  assert.equal(mergedAku001.retailPriceRub, 7900, 'Более свежая по updatedAtIso модель из облака побеждает');
+  assert.equal(mergedRes.shouldPushLocalToCloud, true);
+
+  // 2. AKU-028: если пользователь поставил model.buyoutRatePct = 39 при старом plan.buyoutRatePct = 0 -> заказы = 996 пар (не 0!)
+  const rawAku028 = AKUSHA_2027_MODELS.find((m) => m.code === 'AKU-028')!;
+  const editedAku028 = {
+    ...rawAku028,
+    retailPriceRub: 4990,
+    unitCostRub: 1990,
+    buyoutRatePct: 39,
+  };
+  const met028 = computeModelScenarioMetrics(editedAku028, AKUSHA_2027_SCENARIO_DEF);
+  assert.equal(met028.buyoutRatePct, 39);
+  assert.equal(met028.annualOrdersPacks, 996, 'Годовые заказы AKU-028 при 39% выкупа равны 996 парам');
+
+  // 3. COGS проданного товара AKUSHA в computeInvestmentSchedule считается по выкупам (+26,03 млн ₽ опер. прибыли, а не убыток)
+  const akushaSched = computeInvestmentSchedule({
+    models: AKUSHA_2027_MODELS,
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    activeScenario: AKUSHA_2027_SCENARIO_DEF,
+    brandFilter: 'AKUSHA',
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+  assert.equal(akushaSched.totalAccrualOperatingProfitRub, 26_027_726);
+
+  // 4. JSON-бэкап сохраняет и восстанавливает investmentLedger и financeContourParams
+  const sampleLedger = {
+    ...createDefaultInvestmentLedgerState(),
+    globalSettings: {
+      ...createDefaultInvestmentLedgerState().globalSettings,
+      initialCashRub: 7_500_000,
+    },
+  };
+  const bundle = buildFullPlatformBackupBundle({
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    models: AKUSHA_2027_MODELS,
+    selectedScenarioByBrand: { AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    investmentLedger: sampleLedger,
+    financeContourParams: { initialCashMln: '7.5', wbLagMonths: 1 },
+  });
+  const parsed = parseFullPlatformBackupBundle(JSON.stringify(bundle));
+  assert.equal(parsed.valid, true);
+  assert.deepEqual(
+    (parsed.bundle?.investmentLedger as typeof sampleLedger)?.globalSettings.initialCashRub,
+    7_500_000
+  );
+});
+
+
 
 
 

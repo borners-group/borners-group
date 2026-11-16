@@ -889,18 +889,52 @@ export function ensureModelUnifiedV11(rawModel: ScenarioModelSpec): ScenarioMode
         (rawModel.retailPriceRub || 0) > 0 &&
         Array.isArray(pl.monthlyPricesRub) &&
         pl.monthlyPricesRub.every((pr) => !pr);
+      const modelPositiveBuyout =
+        typeof rawModel.buyoutRatePct === 'number' &&
+        Number.isFinite(rawModel.buyoutRatePct) &&
+        rawModel.buyoutRatePct > 0
+          ? Math.min(100, Math.max(5, Math.round(rawModel.buyoutRatePct)))
+          : 0;
+      const shouldHealZeroPlanBuyout =
+        modelPositiveBuyout > 0 && pl.buyoutRatePct === 0;
+      const shouldHealZeroMonthlyOrders =
+        modelPositiveBuyout > 0 &&
+        hasPacks &&
+        (!Array.isArray(pl.monthlyOrdersPacks) ||
+          pl.monthlyOrdersPacks.every((ord) => !ord));
 
-      if (isStaleZeroRevOverride || shouldHealZeroMonthlyPrices) {
+      if (
+        isStaleZeroRevOverride ||
+        shouldHealZeroMonthlyPrices ||
+        shouldHealZeroPlanBuyout ||
+        shouldHealZeroMonthlyOrders
+      ) {
         const healedPrices = shouldHealZeroMonthlyPrices
           ? Array<number>(12).fill(rawModel.retailPriceRub)
           : pl.monthlyPricesRub;
+        const healedOrdersPacks = shouldHealZeroMonthlyOrders
+          ? pl.monthlyPacks.map((p) => {
+              const cleanPacks = Math.max(0, Math.round(p || 0));
+              if (cleanPacks <= 0) return 0;
+              if (modelPositiveBuyout >= 100) return cleanPacks;
+              return normBrand === 'AKUSHA'
+                ? Math.ceil((cleanPacks * 100) / modelPositiveBuyout)
+                : Math.round((cleanPacks * 100) / modelPositiveBuyout);
+            })
+          : pl.monthlyOrdersPacks;
         const healedOrdersRub =
-          shouldHealZeroMonthlyPrices && Array.isArray(pl.monthlyOrdersPacks)
-            ? pl.monthlyOrdersPacks.map((ord) => (ord || 0) * rawModel.retailPriceRub)
+          (shouldHealZeroMonthlyPrices || shouldHealZeroMonthlyOrders) &&
+          Array.isArray(healedOrdersPacks)
+            ? healedOrdersPacks.map(
+                (ord, idx) =>
+                  (ord || 0) * ((healedPrices?.[idx] || 0) > 0 ? healedPrices[idx] : rawModel.retailPriceRub || 0)
+              )
             : pl.monthlyOrdersRub;
         sanitizedPlansByScenario[numScId] = {
           ...pl,
+          ...(shouldHealZeroPlanBuyout ? { buyoutRatePct: modelPositiveBuyout } : {}),
           monthlyPricesRub: healedPrices,
+          ...(healedOrdersPacks ? { monthlyOrdersPacks: healedOrdersPacks } : {}),
           monthlyOrdersRub: healedOrdersRub,
           monthlyRevenuesRubOverride: isStaleZeroRevOverride
             ? undefined

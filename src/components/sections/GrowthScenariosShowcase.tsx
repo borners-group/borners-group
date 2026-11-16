@@ -136,7 +136,10 @@ import {
   serializeStructuredPlanToCsv,
   updateModelScenarioMonthBuyouts,
 } from '@/lib/unifiedBusinessEngine';
-import { touchPortfolioUpdatedAt } from '@/lib/portfolioPersistence';
+import {
+  isBrandScenarioExplicitlyNone,
+  touchPortfolioUpdatedAt,
+} from '@/lib/portfolioPersistence';
 import {
   pushModelGalleryToSupabase,
   pushPortfolioCoreToSupabase,
@@ -733,8 +736,13 @@ export function GrowthScenariosShowcase({
   const commitModels = useCallback(
     (updater: ScenarioModelSpec[] | ((prev: ScenarioModelSpec[]) => ScenarioModelSpec[])) => {
       setModels((prev) => {
-        const next = typeof updater === 'function' ? updater(prev) : updater;
+        const iso = touchPortfolioUpdatedAt();
         const prevMap = new Map(prev.map((m) => [m.id, m]));
+        const rawNext = typeof updater === 'function' ? updater(prev) : updater;
+        const next = rawNext.map((m) => {
+          const oldM = prevMap.get(m.id);
+          return !oldM || oldM !== m ? { ...m, updatedAtIso: iso } : m;
+        });
         for (const m of next) {
           const oldM = prevMap.get(m.id);
           const galChanged = !oldM || oldM.gallery !== m.gallery;
@@ -749,7 +757,6 @@ export function GrowthScenariosShowcase({
             }
           }
         }
-        touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next);
@@ -1513,11 +1520,40 @@ export function GrowthScenariosShowcase({
     return { short: 'компл.', columnTitle: 'Комплектов', priceHeader: 'Цена компл.' };
   }, [brandFilterLocal, currentScenario.ownerBrandCode, v11ScenarioSummary.eligibleModels]);
 
-  // Отфильтрованные модели для каталога на Экране №1
+  // Отфильтрованные модели для каталога на Экране №1 («Сводка» при Все (5) включает все 5 брендов по их выбранным сценариям!)
   const filteredModels = useMemo(() => {
     const basePool =
       statusFilterLocal === 'В архиве'
         ? models.filter((m) => m.launchStatus === 'В архиве')
+        : brandFilterLocal === 'ALL' && currentScenario.id !== ACTING_2027_SCENARIO_ID
+        ? models.filter((m) => {
+            if (m.launchStatus === 'В архиве') return false;
+            if (
+              ['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
+                m.id
+              ) ||
+              ['№001', '№002', '№003', '№004'].includes(m.code)
+            ) {
+              return false;
+            }
+            const mBrand = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m));
+            if (isBrandScenarioExplicitlyNone(mBrand, selectedScenarioByBrand)) {
+              return false;
+            }
+            const brandScen = resolveEffectiveScenarioForModel(
+              m,
+              scenarios,
+              selectedScenarioByBrand,
+              currentScenario,
+              includeGroupPortfolioInS1
+            );
+            return filterModelsForScenario(
+              [m],
+              brandScen,
+              includeGroupPortfolioInS1,
+              mBrand
+            ).length > 0;
+          })
         : filterModelsForScenario(
             models,
             currentScenario,
@@ -4865,7 +4901,14 @@ export function GrowthScenariosShowcase({
                       let sumDecRub = 0;
                       let sumYearRub = 0;
                       for (const m of filteredModels) {
-                        const met = computeModelScenarioMetrics(m, currentScenario);
+                        const rowEffScen = resolveEffectiveScenarioForModel(
+                          m,
+                          scenarios,
+                          selectedScenarioByBrand,
+                          currentScenario,
+                          includeGroupPortfolioInS1
+                        );
+                        const met = computeModelScenarioMetrics(m, rowEffScen);
                         sumDecPacks += met.targetMonthPacks;
                         sumDecRub += met.targetMonthRevenueRub;
                         sumYearRub += met.annualRevenueRub;

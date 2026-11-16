@@ -2010,6 +2010,28 @@ export function AppShell() {
                                     );
                                   }
                                 }
+                                if (b.investmentLedger !== undefined) {
+                                  safeSetStorageJson(
+                                    'borners_investment_ledger_v1',
+                                    b.investmentLedger
+                                  );
+                                  if (typeof window !== 'undefined') {
+                                    window.dispatchEvent(
+                                      new Event('borners-investment-ledger-changed')
+                                    );
+                                  }
+                                }
+                                if (b.financeContourParams !== undefined) {
+                                  safeSetStorageJson(
+                                    'borners_finance_contour_params_v1',
+                                    b.financeContourParams
+                                  );
+                                  if (typeof window !== 'undefined') {
+                                    window.dispatchEvent(
+                                      new Event('borners-finance-params-changed')
+                                    );
+                                  }
+                                }
                                 livePortfolio.updateModelsBatch(() => b.models);
                                 livePortfolio.updateScenariosBatch(() => b.scenarios);
                                 if (b.platformState) {

@@ -1407,7 +1407,7 @@ export function computeInvestmentSchedule(
       }
 
       const unitCost = Math.max(0, m.unitCostRub || 0);
-      totalSoldGoodsCostRub += proc.annualDemandPacks * unitCost;
+      totalSoldGoodsCostRub += proc.annualBuyoutsPacks * unitCost;
 
       for (let idx = 0; idx < 12; idx++) {
         // Фактические продажи за 2027 год не подмешиваем при прогнозе на 2028 год

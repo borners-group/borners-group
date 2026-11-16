@@ -559,6 +559,19 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedCloudMap);
         selectedScenarioByBrandRef.current = sanitizedCloudMap;
         setSelectedScenarioByBrandState(sanitizedCloudMap);
+
+        const curBrand = brandFilterRef.current;
+        const normCurBrand =
+          !curBrand || curBrand === 'ALL'
+            ? 'BORNERS'
+            : normalizePortfolioBrandCode(curBrand);
+        const nextActiveId =
+          normCurBrand !== 'ALL' ? sanitizedCloudMap[normCurBrand] : sanitizedCloudMap.BORNERS;
+        if (typeof nextActiveId === 'number') {
+          safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextActiveId);
+          setSelectedScenarioIdState(nextActiveId);
+        }
+        emitWindowSync('borners-active-scenario-changed');
       }
 
       if (isCloudNewer && typeof cloud.includeGroupPortfolioInS1 === 'boolean') {
@@ -857,17 +870,17 @@ export function useLiveScenarioPortfolio() {
           const patch: Partial<Record<CanonicalBrandCode, number | null>> = { ...prev };
           if (targetOwner && targetOwner !== 'ALL') {
             patch[targetOwner] = nextId;
+          } else if (nextId === ACTING_2027_SCENARIO_ID) {
+            // Просмотр карточки «Исходный план 2027 / ИП Нерсесянц» в режиме «Все бренды»
+            // НЕ должен перезаписывать выбранный сценарий BORNERS (Сценарий №1..3) на сводной группе!
+            patch.FUKAI = ACTING_2027_SCENARIO_ID;
           } else {
             patch.BORNERS = nextId;
             if (
-              nextId !== ACTING_2027_SCENARIO_ID &&
               nextId !== 1 &&
               (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, 'NA_TELE'))
             ) {
               patch.NA_TELE = nextId;
-            }
-            if (nextId === ACTING_2027_SCENARIO_ID) {
-              patch.FUKAI = ACTING_2027_SCENARIO_ID;
             }
           }
           const next = sanitizeSelectedScenarioByBrand(patch, scenarios);
@@ -934,7 +947,22 @@ export function useLiveScenarioPortfolio() {
     (updater: (prev: GrowthScenarioDef[]) => GrowthScenarioDef[]) => {
       localMutationSeqRef.current += 1;
       setScenarios((prev) => {
-        const next = updater(prev);
+        const rawNext = updater(prev);
+        const next = rawNext.map((s) => {
+          if (s.copiedFromScenarioId !== undefined && s.copiedFromScenarioId !== null) {
+            return s;
+          }
+          const normOwner = s.ownerBrandCode
+            ? normalizePortfolioBrandCode(s.ownerBrandCode)
+            : 'ALL';
+          if (normOwner === 'LISKANI' && s.id !== LISKANI_2027_SCENARIO_ID) {
+            return { ...s, copiedFromScenarioId: LISKANI_2027_SCENARIO_ID };
+          }
+          if (normOwner === 'AKUSHA' && s.id !== AKUSHA_2027_SCENARIO_ID) {
+            return { ...s, copiedFromScenarioId: AKUSHA_2027_SCENARIO_ID };
+          }
+          return s;
+        });
         const nextIds = new Set(next.map((s) => s.id));
         for (const s of prev) {
           if (!nextIds.has(s.id)) {
@@ -1008,8 +1036,9 @@ export function useLiveScenarioPortfolio() {
         void pushModelGalleryToSupabase(updated.id, updated.gallery);
       }
       setModels((prev) => {
-        const next = prev.map((m) => (m.id === updated.id ? updated : m));
         const iso = touchPortfolioUpdatedAt();
+        const stampedUpdated: ScenarioModelSpec = { ...updated, updatedAtIso: iso };
+        const next = prev.map((m) => (m.id === stampedUpdated.id ? stampedUpdated : m));
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next, iso);
@@ -1030,7 +1059,12 @@ export function useLiveScenarioPortfolio() {
     (updater: (prev: ScenarioModelSpec[]) => ScenarioModelSpec[]) => {
       localMutationSeqRef.current += 1;
       setModels((prev) => {
-        const next = updater(prev);
+        const prevMap = new Map(prev.map((m) => [m.id, m]));
+        const iso = touchPortfolioUpdatedAt();
+        const next = updater(prev).map((m) => {
+          const oldM = prevMap.get(m.id);
+          return !oldM || oldM !== m ? { ...m, updatedAtIso: iso } : m;
+        });
         for (const m of next) {
           if (Array.isArray(m.gallery)) {
             if (m.gallery.length === 0) {
@@ -1044,7 +1078,6 @@ export function useLiveScenarioPortfolio() {
             }
           }
         }
-        const iso = touchPortfolioUpdatedAt();
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         syncUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next, iso);
