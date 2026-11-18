@@ -3,7 +3,11 @@
 // дробление платежей на транши, контроль неснижаемого резерва, аудит правок и пересчёт дефицита при переносе поставок.
 
 import type { GrowthScenarioDef, ScenarioModelSpec } from './scenarioData.ts';
-import { getActingSkuByWbOrVendor } from './actingAssortment2027.ts';
+import {
+  ACTING_2027_SCENARIO_DEF,
+  ACTING_2027_SCENARIO_ID,
+  getActingSkuByWbOrVendor,
+} from './actingAssortment2027.ts';
 import { isUnverifiedActingSku } from './scenarioS1_100M.ts';
 import {
   BRAND_UNIT_CONFIGS,
@@ -15,6 +19,7 @@ import {
   getBrandUnitConfig,
   getPoArrivalYear,
   getScenariosForBrand,
+  isCombinedBornersFukaiFilter,
   isScenarioCompatibleWithBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
@@ -372,8 +377,8 @@ export interface PlanComparisonWithBaseline {
 
 // Раздел 10 ТЗ v14: Строка таблицы «Общая сводка группы» при выборе «Все бренды»
 export interface HoldingBrandSummaryRow {
-  brandCode: CanonicalBrandCode;
-  displayBrandName: string; // BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ
+  brandCode: CanonicalBrandCode | 'BORNERS_FUKAI';
+  displayBrandName: string; // BORNERS / FUKAI / AKUSHA / LISKANI / НА ТЕЛЕ
   scenarioId: number | null;
   scenarioName: string;
   scenarioYear: number;
@@ -392,6 +397,8 @@ export interface HoldingBrandSummaryRow {
   } | null;
 }
 
+export type HoldingBrandOverviewRow = HoldingBrandSummaryRow;
+
 export interface HoldingGroupOverviewSummary {
   rows: HoldingBrandSummaryRow[];
   sumOfBrandPeaksRub: number;
@@ -403,6 +410,7 @@ export interface ComputedInvestmentScheduleResult {
   scenarioYear: number;
   isGroupAllBrands: boolean;
   activeScopeKey: string;
+  activeScopeKeys?: string[];
   wbPayoutScheduleSpecified: boolean;
   wbPayoutDelayDays: number;
   initialCashRub: number;
@@ -953,7 +961,9 @@ function resolveScopedBrandScenarios(params: {
   scenarios: GrowthScenarioDef[];
   activeScenario: GrowthScenarioDef;
   brandFilter: string;
-  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
+  selectedScenarioByBrand?: Partial<
+    Record<CanonicalBrandCode | 'BORNERS_FUKAI' | 'LISCANI', number | null>
+  >;
   includeGroupPortfolioInS1?: boolean;
   targetYear?: 2027 | 2028;
 }): ScopedBrandScenarioInput[] {
@@ -971,6 +981,86 @@ function resolveScopedBrandScenarios(params: {
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     dedupedModels.push(ensureModelUnifiedV11(rm));
+  }
+
+  if (isCombinedBornersFukaiFilter(params.brandFilter)) {
+    const combinedResult: ScopedBrandScenarioInput[] = [];
+
+    // a) BORNERS с активным сценарием (адаптированным под targetYear)
+    const bornersCfg = BRAND_UNIT_CONFIGS.BORNERS;
+    const rawBornersModels = dedupedModels.filter((m) => matchesBrandFilter(m, 'BORNERS'));
+    const adaptedBorners = adaptScenarioForTargetYear(
+      params.activeScenario,
+      'BORNERS',
+      params.scenarios,
+      params.targetYear
+    );
+    const bornersScen = adaptedBorners.scenario;
+    const scopedBornersModels =
+      bornersScen.id === 100
+        ? rawBornersModels.filter(
+            (m) =>
+              Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+              Boolean(m.plansByScenario[100])
+          )
+        : bornersScen.id === 1 && !params.includeGroupPortfolioInS1
+        ? rawBornersModels.filter((m) => !isUnverifiedActingSku(m.code))
+        : rawBornersModels;
+
+    combinedResult.push({
+      brandCode: 'BORNERS',
+      brandTitle: bornersCfg.displayCode,
+      scenario: bornersScen,
+      scopeKey: adaptedBorners.scopeKey,
+      isProjectedYear: adaptedBorners.isProjectedYear,
+      models: scopedBornersModels,
+    });
+
+    // b) FUKAI со сценарием FUKAI (selectedScenarioByBrand?.FUKAI ?? 100)
+    const rawFukaiId = params.selectedScenarioByBrand?.FUKAI;
+    if (rawFukaiId !== null) {
+      const fukaiCfg = BRAND_UNIT_CONFIGS.FUKAI;
+      const rawFukaiModels = dedupedModels.filter((m) => matchesBrandFilter(m, 'FUKAI'));
+      const targetFukaiId =
+        rawFukaiId !== undefined && rawFukaiId !== 1 ? rawFukaiId : ACTING_2027_SCENARIO_ID;
+      const fukaiCandidate =
+        params.scenarios.find((s) => s.id === targetFukaiId && !s.isArchived) || null;
+      const baseFukaiScenario =
+        fukaiCandidate && isScenarioCompatibleWithBrand(fukaiCandidate, 'FUKAI')
+          ? fukaiCandidate
+          : params.scenarios.find((s) => s.id === ACTING_2027_SCENARIO_ID && !s.isArchived) ||
+            ACTING_2027_SCENARIO_DEF;
+      const adaptedFukai = adaptScenarioForTargetYear(
+        baseFukaiScenario,
+        'FUKAI',
+        params.scenarios,
+        params.targetYear
+      );
+      const fukaiScen = adaptedFukai.scenario;
+      const scopedFukaiModels =
+        fukaiScen.id === 100
+          ? rawFukaiModels.filter(
+              (m) =>
+                Boolean(getActingSkuByWbOrVendor(m.code, m.title)) ||
+                Boolean(m.plansByScenario[100]) ||
+                Object.values(m.plansByScenario || {}).some((pl) =>
+                  pl?.monthlyPacks?.some((p) => (p || 0) > 0)
+                )
+            )
+          : rawFukaiModels;
+      if (scopedFukaiModels.length > 0) {
+        combinedResult.push({
+          brandCode: 'FUKAI',
+          brandTitle: fukaiCfg.displayCode,
+          scenario: fukaiScen,
+          scopeKey: adaptedFukai.scopeKey,
+          isProjectedYear: adaptedFukai.isProjectedYear,
+          models: scopedFukaiModels,
+        });
+      }
+    }
+
+    return combinedResult;
   }
 
   const normFilter =
@@ -1199,13 +1289,16 @@ export interface ComputeInvestmentScheduleParams {
   scenarios: GrowthScenarioDef[];
   activeScenario: GrowthScenarioDef;
   brandFilter?: string; // 'ALL' или код бренда
-  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
+  selectedScenarioByBrand?: Partial<
+    Record<CanonicalBrandCode | 'BORNERS_FUKAI' | 'LISCANI', number | null>
+  >;
   includeGroupPortfolioInS1?: boolean;
   ledgerState?: InvestmentLedgerState;
   explicitInitialCashRub?: number;
   explicitWbLagMonths?: number | null;
   explicitWbScheduleSpecified?: boolean;
   targetYear?: 2027 | 2028;
+  combineBornersAndFukai?: boolean;
 }
 
 export function computeInvestmentSchedule(
@@ -1238,6 +1331,7 @@ export function computeInvestmentSchedule(
     wbPayoutDelayDays = params.explicitWbLagMonths * 30;
   }
 
+  const isCombinedBF = isCombinedBornersFukaiFilter(params.brandFilter);
   const normFilter =
     !params.brandFilter || params.brandFilter === 'ALL'
       ? 'ALL'
@@ -1259,7 +1353,7 @@ export function computeInvestmentSchedule(
     models: params.models,
     scenarios: params.scenarios,
     activeScenario: params.activeScenario,
-    brandFilter: normFilter,
+    brandFilter: isCombinedBF ? 'BORNERS_FUKAI' : normFilter,
     selectedScenarioByBrand: params.selectedScenarioByBrand,
     includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
     targetYear: requestedYear,
@@ -1272,6 +1366,9 @@ export function computeInvestmentSchedule(
     ? groupScopeKeyForYear
     : scopedInputs[0]?.scopeKey ||
       buildScenarioScopeKey(normFilter, params.activeScenario?.id ?? 1);
+  const combinedBfAliasScopeKey = isCombinedBF
+    ? `BORNERS_FUKAI:${params.activeScenario?.id ?? 1}${scenarioYear === 2028 ? '@2028' : ''}`
+    : null;
 
   const batchesCatalog: LinkedProcurementBatchDetails[] = [];
   const suppliersSet = new Set<string>();
@@ -1302,6 +1399,12 @@ export function computeInvestmentSchedule(
     if (isApprovedPo) return undefined;
     return (
       baseLedger.scenarioPlans[scopeKey]?.batchOverrides?.[batchKey] ||
+      (isCombinedBF
+        ? baseLedger.scenarioPlans[activeScopeKey]?.batchOverrides?.[batchKey] ||
+          (combinedBfAliasScopeKey
+            ? baseLedger.scenarioPlans[combinedBfAliasScopeKey]?.batchOverrides?.[batchKey]
+            : undefined)
+        : undefined) ||
       baseLedger.scenarioPlans[groupScopeKeyForYear]?.batchOverrides?.[batchKey]
     );
   };
@@ -1320,6 +1423,12 @@ export function computeInvestmentSchedule(
     }
     const scenOvr =
       baseLedger.scenarioPlans[scopeKey]?.paymentOverrides?.[opKey] ||
+      (isCombinedBF
+        ? baseLedger.scenarioPlans[activeScopeKey]?.paymentOverrides?.[opKey] ||
+          (combinedBfAliasScopeKey
+            ? baseLedger.scenarioPlans[combinedBfAliasScopeKey]?.paymentOverrides?.[opKey]
+            : undefined)
+        : undefined) ||
       baseLedger.scenarioPlans[groupScopeKeyForYear]?.paymentOverrides?.[opKey];
     return { override: scenOvr, isSharedCommitted: false };
   };
@@ -1943,7 +2052,11 @@ export function computeInvestmentSchedule(
           hasManualOverride: false,
           scenarioScopeKey: activeScopeKey,
           brandCode: isGroupAllBrands ? 'ALL' : scopedInputs[0]?.brandCode || 'BORNERS',
-          brandTitle: isGroupAllBrands ? 'BORNERS GROUP' : scopedInputs[0]?.brandTitle || 'BORNERS',
+          brandTitle: isGroupAllBrands
+            ? 'BORNERS GROUP'
+            : isCombinedBF
+            ? 'BORNERS / FUKAI'
+            : scopedInputs[0]?.brandTitle || 'BORNERS',
           title:
             wbPayoutDelayDays > 0
               ? `${tr.label} (лаг +${wbPayoutDelayDays} дн.)`
@@ -1968,7 +2081,20 @@ export function computeInvestmentSchedule(
   //    - сценарные плановые (для активных scopeKey)
   const activeScopeKeys = new Set<string>(scopedInputs.map((s) => s.scopeKey));
   activeScopeKeys.add(activeScopeKey);
+  if (combinedBfAliasScopeKey) activeScopeKeys.add(combinedBfAliasScopeKey);
   if (isGroupAllBrands) activeScopeKeys.add(groupScopeKeyForYear);
+
+  const matchesScopedOperationBrand = (opBrand?: string): boolean => {
+    if (isGroupAllBrands || !opBrand || opBrand === 'ALL') return true;
+    if (isCombinedBF) {
+      return (
+        opBrand === 'BORNERS' ||
+        opBrand === 'FUKAI' ||
+        isCombinedBornersFukaiFilter(opBrand)
+      );
+    }
+    return normalizePortfolioBrandCode(opBrand) === normFilter;
+  };
 
   const isDateWithinYearHorizon = (dateIso: string, isSharedRecord: boolean): boolean => {
     if (!isSharedRecord) return true;
@@ -1986,12 +2112,7 @@ export function computeInvestmentSchedule(
   const pushCapitalInjection = (inj: CapitalInjectionRecord, scopeKey: string, isShared: boolean) => {
     if (!inj || (inj.amountRub || 0) <= 0 || seenInjectionIds.has(inj.id)) return;
     if (!isDateWithinYearHorizon(inj.dateIso, isShared)) return;
-    if (
-      !isGroupAllBrands &&
-      inj.brandCode &&
-      inj.brandCode !== 'ALL' &&
-      inj.brandCode !== normFilter
-    ) {
+    if (!matchesScopedOperationBrand(inj.brandCode)) {
       return;
     }
     seenInjectionIds.add(inj.id);
@@ -2046,12 +2167,7 @@ export function computeInvestmentSchedule(
   ) => {
     if (!op || (op.amountRub || 0) <= 0 || seenOtherOpIds.has(op.id)) return;
     if (!isDateWithinYearHorizon(op.dateIso, isShared)) return;
-    if (
-      !isGroupAllBrands &&
-      op.brandCode &&
-      op.brandCode !== 'ALL' &&
-      op.brandCode !== normFilter
-    ) {
+    if (!matchesScopedOperationBrand(op.brandCode)) {
       return;
     }
     seenOtherOpIds.add(op.id);
@@ -2769,6 +2885,7 @@ export function computeInvestmentSchedule(
     scenarioYear,
     isGroupAllBrands,
     activeScopeKey,
+    activeScopeKeys: Array.from(activeScopeKeys),
     wbPayoutScheduleSpecified,
     wbPayoutDelayDays,
     initialCashRub,
@@ -2844,7 +2961,9 @@ export function computeResetToAutoPlanPreview(
     ? Object.keys(ledgerState.scenarioPlans).filter((k) =>
         schedule.scenarioYear === 2028 ? k.endsWith('@2028') : !k.endsWith('@2028')
       )
-    : Array.from(new Set([schedule.activeScopeKey, groupKey]));
+    : Array.from(
+        new Set([...(schedule.activeScopeKeys || [schedule.activeScopeKey]), groupKey])
+      );
 
   for (const sk of relevantScopes) {
     const plan = ledgerState.scenarioPlans[sk];
@@ -2952,7 +3071,9 @@ export function applyResetScenarioToAutoPlan(
     ? Object.keys(nextPlans).filter((k) =>
         schedule.scenarioYear === 2028 ? k.endsWith('@2028') : !k.endsWith('@2028')
       )
-    : Array.from(new Set([schedule.activeScopeKey, groupKey]));
+    : Array.from(
+        new Set([...(schedule.activeScopeKeys || [schedule.activeScopeKey]), groupKey])
+      );
 
   let clearedCount = 0;
   for (const sk of scopesToClear) {
@@ -3111,12 +3232,12 @@ const HOLDING_TABLE_BRAND_ORDER: {
   { code: 'BORNERS', displayName: 'BORNERS' },
   { code: 'FUKAI', displayName: 'FUKAI' },
   { code: 'AKUSHA', displayName: 'AKUSHA' },
-  { code: 'LISKANI', displayName: 'LISCANI' },
+  { code: 'LISKANI', displayName: 'LISKANI' },
   { code: 'NA_TELE', displayName: 'НА ТЕЛЕ' },
 ];
 
 /**
- * Раздел 10 ТЗ v14: Строит таблицу «Общая сводка группы» (BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ)
+ * Раздел 10 ТЗ v14: Строит таблицу «Общая сводка группы» (BORNERS / FUKAI / AKUSHA / LISKANI / НА ТЕЛЕ)
  * и сравнивает сумму индивидуальных пиков с единым совокупным денежным календарём группы.
  */
 export function computeHoldingBrandsOverviewRows(
@@ -3133,7 +3254,90 @@ export function computeHoldingBrandsOverviewRows(
   const rows: HoldingBrandSummaryRow[] = [];
   let sumOfBrandPeaksRub = 0;
 
+  if (params.combineBornersAndFukai) {
+    const availableBorners = getScenariosForBrand(params.scenarios, 'BORNERS', {
+      onlyExplicitForNewBrands: false,
+    });
+    const rawBornersId = params.selectedScenarioByBrand?.BORNERS;
+    const defaultBornersId =
+      availableBorners.find((s) => s.id === 1)?.id ?? availableBorners[0]?.id ?? null;
+    const resolvedBornersId =
+      rawBornersId === null
+        ? null
+        : rawBornersId !== undefined
+        ? rawBornersId
+        : defaultBornersId;
+
+    if (resolvedBornersId === null && params.selectedScenarioByBrand?.FUKAI === null) {
+      rows.push({
+        brandCode: 'BORNERS_FUKAI',
+        displayBrandName: 'BORNERS / FUKAI',
+        scenarioId: null,
+        scenarioName: 'Не включён в портфель',
+        scenarioYear: groupRes.scenarioYear,
+        revenueRub: 0,
+        procurementRub: 0,
+        ownMoneyNeedRub: 0,
+        remainingOwnMoneyRub: 0,
+        reinvestedRub: 0,
+        isPreliminary: false,
+        nextPayment: null,
+      });
+    } else {
+      const candBorners =
+        resolvedBornersId !== null
+          ? params.scenarios.find((s) => s.id === resolvedBornersId && !s.isArchived) || null
+          : null;
+      const bornersChosenScenario =
+        candBorners && isScenarioCompatibleWithBrand(candBorners, 'BORNERS')
+          ? candBorners
+          : defaultBornersId !== null
+          ? params.scenarios.find((s) => s.id === defaultBornersId && !s.isArchived) ||
+            params.activeScenario
+          : params.activeScenario;
+
+      const combinedSchedule = computeInvestmentSchedule({
+        ...params,
+        activeScenario: bornersChosenScenario,
+        brandFilter: 'BORNERS_FUKAI',
+      });
+
+      if (combinedSchedule.calculatedCapitalNeedRub !== null) {
+        sumOfBrandPeaksRub += combinedSchedule.calculatedCapitalNeedRub;
+      }
+
+      rows.push({
+        brandCode: 'BORNERS_FUKAI',
+        displayBrandName: 'BORNERS / FUKAI',
+        scenarioId: bornersChosenScenario.id,
+        scenarioName: bornersChosenScenario.title,
+        scenarioYear: combinedSchedule.scenarioYear,
+        revenueRub: combinedSchedule.totalGrossSalesRevenueRub,
+        procurementRub: combinedSchedule.totalProcurementCostRub,
+        ownMoneyNeedRub: combinedSchedule.calculatedCapitalNeedRub,
+        remainingOwnMoneyRub: combinedSchedule.remainingOwnMoneyNeededRub,
+        reinvestedRub: combinedSchedule.reinvestedFromSalesRub,
+        isPreliminary: combinedSchedule.isPreliminaryCalculation,
+        nextPayment: combinedSchedule.nextUpcomingPayment
+          ? {
+              dateIso: combinedSchedule.nextUpcomingPayment.dateIso,
+              dateDotRu: combinedSchedule.nextUpcomingPayment.dateDotRu,
+              dateHumanRu: combinedSchedule.nextUpcomingPayment.dateHumanRu,
+              amountRub: combinedSchedule.nextUpcomingPayment.amountRub,
+              purposeLabel: combinedSchedule.nextUpcomingPayment.purposeLabel,
+            }
+          : null,
+      });
+    }
+  }
+
   for (const item of HOLDING_TABLE_BRAND_ORDER) {
+    if (
+      params.combineBornersAndFukai &&
+      (item.code === 'BORNERS' || item.code === 'FUKAI')
+    ) {
+      continue;
+    }
     const available = getScenariosForBrand(params.scenarios, item.code, {
       onlyExplicitForNewBrands: false,
     });

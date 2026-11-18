@@ -11275,7 +11275,7 @@ test('193. v14 Разделы 7, 8, 9 и 10 ТЗ: Рекомендации «Ч�
   );
   assert.deepEqual(
     overview.rows.map((r) => r.displayBrandName),
-    ['BORNERS', 'FUKAI', 'AKUSHA', 'LISCANI', 'НА ТЕЛЕ']
+    ['BORNERS', 'FUKAI', 'AKUSHA', 'LISKANI', 'НА ТЕЛЕ']
   );
   assert.ok(
     overview.unifiedGroupCalculatedNeedRub! <= overview.sumOfBrandPeaksRub,
@@ -11406,6 +11406,136 @@ test('195. Защита цен/себестоимости/продаж от об
     (parsed.bundle?.investmentLedger as typeof sampleLedger)?.globalSettings.initialCashRub,
     7_500_000
   );
+});
+
+test('196. Единый кабинет BORNERS / FUKAI (BORNERS_FUKAI): объединение BORNERS S1 (686 284 972 ₽) + FUKAI 100 (90 553 401 ₽) = 776 838 373 ₽, сводка холдинга по 4 кабинетам (LISKANI) и защита BORNERS от сброса в 100', async () => {
+  const {
+    isCombinedBornersFukaiFilter,
+    matchesBrandFilter,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    filterModelsForScenario,
+    resolveEffectiveScenarioForModel,
+    sanitizeSelectedScenarioByBrand,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const {
+    computeHoldingBrandsOverviewRows,
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
+
+  // 1. Распознавание фильтра BORNERS_FUKAI / BORNERS / FUKAI
+  assert.equal(isCombinedBornersFukaiFilter('BORNERS_FUKAI'), true);
+  assert.equal(isCombinedBornersFukaiFilter(' borners / fukai '), true);
+  assert.equal(isCombinedBornersFukaiFilter('BORNERS/FUKAI'), true);
+  assert.equal(isCombinedBornersFukaiFilter('BORNERS'), false);
+  assert.equal(isCombinedBornersFukaiFilter('FUKAI'), false);
+  assert.equal(isCombinedBornersFukaiFilter('ALL'), false);
+
+  const allModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const s2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+
+  // 2. matchesBrandFilter и filterModelsForScenario объединяют BORNERS (21 SKU) и FUKAI (2 SKU WB: 72302360 и 86205435) без дублей
+  const combinedEligible = filterModelsForScenario(allModels, s1, false, 'BORNERS_FUKAI');
+  assert.equal(combinedEligible.length, 23);
+  assert.ok(combinedEligible.some((m) => m.code.includes('72302360') && matchesBrandFilter(m, 'BORNERS_FUKAI')));
+  assert.ok(combinedEligible.some((m) => m.code.includes('86205435') && matchesBrandFilter(m, 'BORNERS_FUKAI')));
+
+  // 3. computeInvestmentSchedule для BORNERS_FUKAI считает ровно 686 284 972 + 90 553 401 = 776 838 373 ₽
+  const ledger = createDefaultInvestmentLedgerState();
+  const bornersOnlySched = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+  const fukaiOnlySched = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: INITIAL_SCENARIOS.find((s) => s.id === ACTING_2027_SCENARIO_ID)!,
+    brandFilter: 'FUKAI',
+    ledgerState: ledger,
+  });
+  const combinedSched = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'BORNERS_FUKAI',
+    selectedScenarioByBrand: {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: 2,
+    },
+    ledgerState: ledger,
+  });
+
+  assert.equal(bornersOnlySched.totalGrossSalesRevenueRub, 686_284_972);
+  assert.equal(fukaiOnlySched.totalGrossSalesRevenueRub, 90_553_401);
+  assert.equal(combinedSched.totalGrossSalesRevenueRub, 776_838_373);
+
+  // 4. computeHoldingBrandsOverviewRows с combineBornersAndFukai: true выдаёт 4 кабинета и точное написание LISKANI
+  const overviewCombined = computeHoldingBrandsOverviewRows({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    selectedScenarioByBrand: {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: 2,
+    },
+    ledgerState: ledger,
+    combineBornersAndFukai: true,
+  });
+  assert.deepEqual(
+    overviewCombined.rows.map((r) => r.displayBrandName),
+    ['BORNERS / FUKAI', 'AKUSHA', 'LISKANI', 'НА ТЕЛЕ']
+  );
+  assert.equal(
+    overviewCombined.rows.some((r) => r.displayBrandName.includes('LISCANI')),
+    false,
+    'В сводке холдинга бренд всегда пишется LISKANI (через K)'
+  );
+  assert.equal(overviewCombined.rows[0]?.brandCode, 'BORNERS_FUKAI');
+  assert.equal(overviewCombined.rows[0]?.revenueRub, 776_838_373);
+
+  // 5. Анти-регрессия сценариев: BORNERS_FUKAI с id=2 обновляет BORNERS=2 и держит FUKAI=100, а FUKAI-модель при fallback S2 резолвит 100
+  const sanitized = sanitizeSelectedScenarioByBrand(
+    { BORNERS: 1, BORNERS_FUKAI: 2, FUKAI: 1 },
+    allScenarios
+  );
+  assert.equal(sanitized.BORNERS, 2);
+  assert.equal(sanitized.FUKAI, ACTING_2027_SCENARIO_ID);
+
+  const fukaiMod = allModels.find((m) => m.code.includes('72302360'))!;
+  const effFukaiScen = resolveEffectiveScenarioForModel(
+    fukaiMod,
+    allScenarios,
+    sanitized,
+    s2,
+    false
+  );
+  assert.equal(effFukaiScen.id, ACTING_2027_SCENARIO_ID);
 });
 
 

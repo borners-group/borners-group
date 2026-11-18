@@ -31,6 +31,7 @@ import {
   applyCategoryWbUnitEconomicsToPortfolio,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
+  isCombinedBornersFukaiFilter,
   isScenarioCompatibleWithBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
@@ -73,6 +74,7 @@ export const STORAGE_KEY_ROLLING_SNAPSHOTS = 'borners_rolling_snapshots_v1';
 export const MIGRATION_KEY_LISKANI_269_V3 = 'borners_liskani_269_official_migrated_v3';
 export const MIGRATION_KEY_AKUSHA_2027_V1 = 'borners_akusha_2027_official_migrated_v1';
 export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_repair_v1';
+export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V2 = 'borners_sales_scenario_repair_v2';
 
 export function touchPortfolioUpdatedAt(explicitIso?: string): string {
   const iso = explicitIso || new Date().toISOString();
@@ -153,9 +155,25 @@ export function sanitizeSelectedScenarioByBrand(
   savedByBrand: Partial<Record<string, number | null>> | null | undefined,
   scenarios?: GrowthScenarioDef[]
 ): Partial<Record<CanonicalBrandCode, number | null>> {
+  const rawRecord = (savedByBrand || {}) as Record<string, number | null | undefined>;
   const next: Partial<Record<CanonicalBrandCode, number | null>> = {
-    ...(savedByBrand as Partial<Record<CanonicalBrandCode, number | null>>),
+    BORNERS: rawRecord.BORNERS,
+    FUKAI: rawRecord.FUKAI,
+    AKUSHA: rawRecord.AKUSHA,
+    LISKANI: rawRecord.LISKANI ?? rawRecord.LISCANI,
+    NA_TELE: rawRecord.NA_TELE,
   };
+
+  for (const [k, val] of Object.entries(rawRecord)) {
+    if (isCombinedBornersFukaiFilter(k) && typeof val === 'number') {
+      if (val !== ACTING_2027_SCENARIO_ID || next.BORNERS === undefined) {
+        next.BORNERS = val;
+      }
+      if ([1, 2, 3].includes(val)) {
+        next.FUKAI = ACTING_2027_SCENARIO_ID;
+      }
+    }
+  }
 
   if (
     next.FUKAI === undefined ||
@@ -221,6 +239,7 @@ export function sanitizeSelectedScenarioByBrand(
 
 export function runBornersSalesScenarioRepairMigrationV1(): void {
   const alreadyMigrated = safeGetStorageJson<string>(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1);
+  const alreadyMigratedV2 = safeGetStorageJson<string>(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V2);
   const savedScenarios = safeGetStorageJson<GrowthScenarioDef[]>(STORAGE_KEY_SCENARIOS);
 
   // Постоянная защита от записи чужого сценария (202706 / 202705 / NA_TELE) в BORNERS
@@ -233,7 +252,8 @@ export function runBornersSalesScenarioRepairMigrationV1(): void {
       Array.isArray(savedScenarios) && savedScenarios.length > 0 ? savedScenarios : undefined
     );
     const shouldResetActingFromStaleBug =
-      alreadyMigrated !== '1' && sanitized.BORNERS === ACTING_2027_SCENARIO_ID;
+      (alreadyMigrated !== '1' || alreadyMigratedV2 !== '1') &&
+      sanitized.BORNERS === ACTING_2027_SCENARIO_ID;
     const finalByBrand = shouldResetActingFromStaleBug
       ? { ...sanitized, BORNERS: 1 }
       : sanitized;
@@ -257,6 +277,13 @@ export function runBornersSalesScenarioRepairMigrationV1(): void {
     } else if (alreadyMigrated !== '1' && !isScenarioCompatibleWithBrand(foundActive, 'BORNERS')) {
       safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, 1);
     }
+  }
+
+  if (alreadyMigratedV2 !== '1') {
+    if (savedActiveId === ACTING_2027_SCENARIO_ID) {
+      safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, 1);
+    }
+    safeSetStorageJson(MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V2, '1');
   }
 
   if (alreadyMigrated === '1') return;
@@ -1569,6 +1596,38 @@ export function filterModelsForScenario(
   includeGroupPortfolioInS1: boolean,
   brandFilter: string = 'ALL'
 ): ScenarioModelSpec[] {
+  if (isCombinedBornersFukaiFilter(brandFilter)) {
+    const bornersPart = filterModelsForScenario(
+      models,
+      scenario,
+      includeGroupPortfolioInS1,
+      'BORNERS'
+    );
+    const fukaiPart = models.filter(
+      (m) =>
+        Boolean(m) &&
+        m.launchStatus !== 'В архиве' &&
+        !['scen-model-001', 'scen-model-002', 'scen-model-003', 'scen-model-004'].includes(
+          m.id
+        ) &&
+        !['№001', '№002', '№003', '№004'].includes(m.code) &&
+        matchesBrandFilter(m, 'FUKAI')
+    );
+    const seen = new Set<string>();
+    const combined: ScenarioModelSpec[] = [];
+    for (const m of [...bornersPart, ...fukaiPart]) {
+      const idKey = (m.id || '').trim().toUpperCase();
+      const codeKey = (m.code || '').trim().toUpperCase();
+      if ((idKey && seen.has(`ID:${idKey}`)) || (codeKey && seen.has(`CODE:${codeKey}`))) {
+        continue;
+      }
+      if (idKey) seen.add(`ID:${idKey}`);
+      if (codeKey) seen.add(`CODE:${codeKey}`);
+      combined.push(m);
+    }
+    return combined;
+  }
+
   const isActing = scenario.id === ACTING_2027_SCENARIO_ID;
   const normFilter =
     brandFilter && brandFilter !== 'ALL'
@@ -1928,7 +1987,13 @@ export function resolveEffectiveScenarioForModel(
     if (
       modelBrand === 'BORNERS' ||
       ownerNorm === modelBrand ||
-      (fallbackScenario.id !== 1 && isScenarioCompatibleWithBrand(fallbackScenario, modelBrand))
+      (fallbackScenario.id !== 1 &&
+        isScenarioCompatibleWithBrand(fallbackScenario, modelBrand) &&
+        (modelBrand !== 'FUKAI' ||
+          fallbackScenario.id === ACTING_2027_SCENARIO_ID ||
+          Boolean(
+            model.plansByScenario[fallbackScenario.id]?.monthlyPacks?.some((p) => (p || 0) > 0)
+          )))
     ) {
       return fallbackScenario;
     }

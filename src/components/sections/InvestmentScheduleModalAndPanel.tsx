@@ -36,6 +36,7 @@ import {
 import {
   type CapitalInjectionRecord,
   type ChronologicalCashEvent,
+  type ComputedInvestmentScheduleResult,
   type CustomCashOperationRecord,
   type OperationPaymentStatus,
   type PaymentTrancheSpec,
@@ -121,12 +122,11 @@ export interface InvestmentSchedulePanelProps {
   onCloseModal?: () => void;
 }
 
-// Раздел 2 ТЗ: Переключатель брендов: BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ / Все бренды
-const BRAND_PILLS: { code: 'ALL' | CanonicalBrandCode; label: string }[] = [
-  { code: 'BORNERS', label: 'BORNERS' },
-  { code: 'FUKAI', label: 'FUKAI' },
+// Раздел 2 ТЗ: Переключатель брендов: BORNERS / FUKAI · AKUSHA · LISKANI · НА ТЕЛЕ · Все бренды
+const BRAND_PILLS: { code: 'ALL' | CanonicalBrandCode | 'BORNERS_FUKAI'; label: string }[] = [
+  { code: 'BORNERS_FUKAI', label: 'BORNERS / FUKAI' },
   { code: 'AKUSHA', label: 'AKUSHA' },
-  { code: 'LISKANI', label: 'LISCANI' },
+  { code: 'LISKANI', label: 'LISKANI' },
   { code: 'NA_TELE', label: 'НА ТЕЛЕ' },
   { code: 'ALL', label: 'Все бренды' },
 ];
@@ -153,8 +153,25 @@ export function InvestmentSchedulePanel({
   const hasCost = canUserViewCostPrice(currentUser);
   const authorName = currentUser?.fullName || 'Владелец';
 
-  const normBrand =
-    !brandFilter || brandFilter === 'ALL' ? 'ALL' : normalizePortfolioBrandCode(brandFilter);
+  const rawUpperBrand = (brandFilter || 'ALL').trim().toUpperCase();
+  const isRawBornersFukai =
+    rawUpperBrand === 'BORNERS_FUKAI' ||
+    rawUpperBrand === 'BORNERS / FUKAI' ||
+    rawUpperBrand === 'BORNERS+FUKAI';
+  const normBrand: 'ALL' | CanonicalBrandCode =
+    !brandFilter || rawUpperBrand === 'ALL'
+      ? 'ALL'
+      : isRawBornersFukai
+      ? 'BORNERS'
+      : normalizePortfolioBrandCode(brandFilter);
+  const isBornersFukaiScope =
+    brandFilter === 'BORNERS_FUKAI' ||
+    isRawBornersFukai ||
+    normBrand === 'BORNERS' ||
+    normBrand === 'FUKAI';
+  const scheduleBrandFilter =
+    normBrand === 'ALL' ? 'ALL' : isBornersFukaiScope ? 'BORNERS_FUKAI' : normBrand;
+
   const canEdit =
     hasFinance &&
     hasCost &&
@@ -162,6 +179,8 @@ export function InvestmentSchedulePanel({
       ? (['BORNERS', 'FUKAI', 'AKUSHA', 'LISKANI', 'NA_TELE'] as const).some((c) =>
           canUserEditBrand(currentUser, c)
         )
+      : isBornersFukaiScope
+      ? canUserEditBrand(currentUser, 'BORNERS') || canUserEditBrand(currentUser, 'FUKAI')
       : canUserEditBrand(currentUser, normBrand));
 
   const {
@@ -187,7 +206,7 @@ export function InvestmentSchedulePanel({
     models,
     scenarios,
     activeScenario,
-    brandFilter: normBrand,
+    brandFilter: scheduleBrandFilter,
     selectedScenarioByBrand,
     includeGroupPortfolioInS1,
   });
@@ -352,16 +371,40 @@ export function InvestmentSchedulePanel({
 
   const availableBrandScenarios = useMemo(() => {
     if (normBrand === 'ALL') return [];
-    return getScenariosForBrand(scenarios, normBrand, { onlyExplicitForNewBrands: false });
-  }, [scenarios, normBrand]);
+    const targetBrand: CanonicalBrandCode = isBornersFukaiScope ? 'BORNERS' : normBrand;
+    return getScenariosForBrand(scenarios, targetBrand, { onlyExplicitForNewBrands: false });
+  }, [scenarios, normBrand, isBornersFukaiScope]);
 
   const allFactoryPaymentEvents = useMemo(
     () => schedule.allEvents.filter((e) => e.type === 'factory_payment'),
     [schedule.allEvents]
   );
 
-  const handleSelectBrandPill = (code: 'ALL' | CanonicalBrandCode) => {
+  const handleSelectBrandPill = (code: 'ALL' | CanonicalBrandCode | 'BORNERS_FUKAI') => {
     if (!onSelectBrandFilter) return;
+    if (code === 'BORNERS_FUKAI' || code === 'BORNERS' || code === 'FUKAI') {
+      onSelectBrandFilter('BORNERS_FUKAI');
+      if (onSelectScenarioId) {
+        const brandScenarios = getScenariosForBrand(scenarios, 'BORNERS', {
+          onlyExplicitForNewBrands: false,
+        });
+        const savedScenId = selectedScenarioByBrand?.BORNERS ?? 1;
+        const effectiveScenId =
+          savedScenId === 100 && brandScenarios.some((s) => s.id === 1) ? 1 : savedScenId;
+        if (effectiveScenId && brandScenarios.some((s) => s.id === effectiveScenId)) {
+          onSelectScenarioId(effectiveScenId, 'BORNERS');
+        } else if (brandScenarios.some((s) => s.id === 1)) {
+          onSelectScenarioId(1, 'BORNERS');
+        } else if (
+          brandScenarios.length > 0 &&
+          !brandScenarios.some((s) => s.id === activeScenario.id)
+        ) {
+          onSelectScenarioId(brandScenarios[0].id, 'BORNERS');
+        }
+      }
+      return;
+    }
+
     onSelectBrandFilter(code);
     if (code !== 'ALL' && onSelectScenarioId) {
       const savedScenId =
@@ -401,10 +444,19 @@ export function InvestmentSchedulePanel({
 
   const handleJumpToProcurementBatch = (
     modelId: string,
-    brandCode?: CanonicalBrandCode
+    brandCode?: CanonicalBrandCode | 'BORNERS_FUKAI' | string
   ) => {
+    const resolvedBrandCode: CanonicalBrandCode | undefined =
+      !brandCode || brandCode === 'ALL'
+        ? undefined
+        : brandCode === 'BORNERS_FUKAI'
+        ? 'BORNERS'
+        : (() => {
+            const norm = normalizePortfolioBrandCode(brandCode);
+            return norm === 'ALL' ? undefined : norm;
+          })();
     if (onOpenBatchInProcurement) {
-      onOpenBatchInProcurement(modelId, brandCode);
+      onOpenBatchInProcurement(modelId, resolvedBrandCode);
       if (onCloseModal) onCloseModal();
       return;
     }
@@ -417,7 +469,7 @@ export function InvestmentSchedulePanel({
         // ignore
       }
     }
-    navigateTo('roadmap-tasks', brandCode ? { brandId: brandCode } : undefined);
+    navigateTo('roadmap-tasks', resolvedBrandCode ? { brandId: resolvedBrandCode } : undefined);
     if (onCloseModal) onCloseModal();
   };
 
@@ -657,6 +709,34 @@ export function InvestmentSchedulePanel({
       ? schedule.monthlyCalendarRows[selectedFreeCashMonthIdx] || null
       : null;
 
+  const scheduleWithPnl = schedule as ComputedInvestmentScheduleResult & {
+    totalWbDeductionsRub?: number;
+    totalSoldGoodsCostRub?: number;
+  };
+  const resolvedWbDeductionsRub =
+    typeof scheduleWithPnl.totalWbDeductionsRub === 'number'
+      ? scheduleWithPnl.totalWbDeductionsRub
+      : Math.round(schedule.totalGrossSalesRevenueRub * 0.4);
+  const resolvedNetWbProceedsRub = Math.max(
+    0,
+    schedule.totalGrossSalesRevenueRub - resolvedWbDeductionsRub
+  );
+  const resolvedSoldGoodsCostRub =
+    typeof scheduleWithPnl.totalSoldGoodsCostRub === 'number'
+      ? scheduleWithPnl.totalSoldGoodsCostRub
+      : Math.max(
+          0,
+          schedule.totalGrossSalesRevenueRub -
+            resolvedWbDeductionsRub -
+            schedule.totalAccrualOperatingProfitRub
+        );
+  const resolvedOperatingProfitRub =
+    schedule.totalAccrualOperatingProfitRub - schedule.totalOtherExpensesRub;
+  const resolvedOperatingMarginPct =
+    schedule.totalGrossSalesRevenueRub > 0
+      ? Math.round((resolvedOperatingProfitRub / schedule.totalGrossSalesRevenueRub) * 1000) / 10
+      : 0;
+
   return (
     <div
       data-testid="investment-schedule-root"
@@ -664,24 +744,27 @@ export function InvestmentSchedulePanel({
     >
       {/* РАЗДЕЛ 2 ТЗ: ВЕРХНЯЯ ПАНЕЛЬ (БРЕНД / СЦЕНАРИЙ / ГОД 2027–2028 + СТАТУС СОХРАНЕНИЯ) */}
       <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-4 py-3.5 sm:px-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             {/* 1. Бренд */}
             {onSelectBrandFilter && (
               <div
                 role="group"
                 aria-label="Выбор бренда"
-                className="inline-flex flex-wrap items-center gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
+                className="inline-flex flex-wrap items-center gap-0.5 max-w-full rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
               >
                 {BRAND_PILLS.map((bp) => {
-                  const isAct = normBrand === bp.code;
+                  const isAct =
+                    bp.code === 'BORNERS_FUKAI'
+                      ? normBrand !== 'ALL' && isBornersFukaiScope
+                      : normBrand === bp.code;
                   return (
                     <button
                       key={bp.code}
                       type="button"
                       data-testid={`fin-brand-pill-${bp.code}`}
                       onClick={() => handleSelectBrandPill(bp.code)}
-                      className={`h-7 px-2.5 rounded-md text-[12px] font-medium cursor-pointer transition-colors ${
+                      className={`h-7 px-2.5 rounded-md text-[12px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
                         isAct
                           ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
                           : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
@@ -701,11 +784,18 @@ export function InvestmentSchedulePanel({
                 <select
                   aria-label="Сценарий продаж бренда"
                   data-testid="inv-scenario-select"
-                  value={activeScenario.id}
-                  onChange={(e) =>
-                    onSelectScenarioId(Number(e.target.value), normBrand)
+                  value={
+                    availableBrandScenarios.some((sc) => sc.id === activeScenario.id)
+                      ? activeScenario.id
+                      : availableBrandScenarios[0]?.id ?? activeScenario.id
                   }
-                  className="h-9 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs font-medium text-[#141413] dark:text-[#F5F4F0]"
+                  onChange={(e) =>
+                    onSelectScenarioId(
+                      Number(e.target.value),
+                      isBornersFukaiScope ? 'BORNERS' : normBrand
+                    )
+                  }
+                  className="h-9 max-w-[260px] sm:max-w-[340px] truncate px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs font-medium text-[#141413] dark:text-[#F5F4F0]"
                 >
                   {availableBrandScenarios.map((sc) => (
                     <option key={sc.id} value={sc.id}>
@@ -716,7 +806,7 @@ export function InvestmentSchedulePanel({
               )}
 
             {normBrand === 'ALL' && (
-              <span className="inline-flex items-center h-9 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs text-[#5C5953] dark:text-[#9A968E]">
+              <span className="inline-flex items-center min-h-9 py-1 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs text-[#5C5953] dark:text-[#9A968E]">
                 Консолидированная сводка по выбранным сценариям брендов
               </span>
             )}
@@ -725,7 +815,7 @@ export function InvestmentSchedulePanel({
             <div
               role="group"
               aria-label="Год расчёта"
-              className="inline-flex items-center gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
+              className="inline-flex items-center shrink-0 gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
             >
               {([2027, 2028] as const).map((yr) => {
                 const isYr = selectedYear === yr;
@@ -909,6 +999,170 @@ export function InvestmentSchedulePanel({
             {schedule.wbPayoutScheduleSpecified
               ? `Покрыто поступлениями от продаж (${schedule.reinvestedSharePct}% закупок)`
               : 'Рассчитывается по операциям поступлений от продаж'}
+          </div>
+        </div>
+      </div>
+
+      {/* СВОДНАЯ ПОЛОСА РАСХОДОВ, УДЕРЖАНИЙ WB, СЕБЕСТОИМОСТИ И ОПЕРАЦИОННОЙ ПРИБЫЛИ */}
+      <div
+        data-testid="fin-expenses-profit-strip"
+        className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div>
+            <h3 className="text-[13.5px] sm:text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+              Расходы, удержания WB и прибыльность · {selectedYear}
+            </h3>
+            <p className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+              Удержания маркетплейса, чистые поступления на счёт, себестоимость выкупов и операционная прибыль
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit && (
+              <button
+                type="button"
+                data-testid="fin-strip-add-expense-btn"
+                onClick={() => {
+                  setShowDetailedAnalytics(true);
+                  setShowAddOperationForm(true);
+                  setOpKind('expense');
+                  if (typeof window !== 'undefined') {
+                    window.requestAnimationFrame(() => {
+                      setTimeout(() => {
+                        const el = document.getElementById('fin-custom-expenses-anchor');
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                      }, 40);
+                    });
+                  }
+                }}
+                className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] dark:hover:border-[#F5F4F0] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+              >
+                <span>+ Добавить расход (ФОТ / ДРР / прочее)</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              data-testid="fin-strip-toggle-analytics-btn"
+              onClick={() => setShowDetailedAnalytics((v) => !v)}
+              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] dark:hover:border-[#F5F4F0] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
+            >
+              <span>Подробная аналитика и P&amp;L {showDetailedAnalytics ? '▴' : '▾'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {/* 1) Удержания и расходы WB */}
+          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                Удержания и расходы WB
+              </div>
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                комиссия, логистика, ДРР
+              </div>
+              <div
+                data-testid="fin-strip-wb-deductions"
+                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              >
+                {fmtMln(resolvedWbDeductionsRub)}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+              <span>40% от выручки</span>
+              {schedule.totalOtherExpensesRub > 0 && (
+                <span className="font-mono text-amber-800 dark:text-amber-300">
+                  {' '}
+                  · + прочие расходы {fmtMln(schedule.totalOtherExpensesRub)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 2) Чистые поступления от WB */}
+          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                Чистые поступления от WB
+              </div>
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                к перечислению на счёт
+              </div>
+              <div
+                data-testid="fin-strip-wb-net-proceeds"
+                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              >
+                {fmtMln(resolvedNetWbProceedsRub)}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+              60% выручки после удержаний МП
+            </div>
+          </div>
+
+          {/* 3) Себестоимость продаж (COGS) */}
+          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                Себестоимость продаж (COGS)
+              </div>
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                себестоимость выкупленного товара
+              </div>
+              <div
+                data-testid="fin-strip-cogs"
+                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              >
+                {fmtMln(resolvedSoldGoodsCostRub)}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+              отличается от закупок на величину складского запаса
+            </div>
+          </div>
+
+          {/* 4) Операционная прибыль */}
+          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                    Операционная прибыль
+                  </div>
+                  <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                    после себестоимости и всех расходов
+                  </div>
+                </div>
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-medium border ${
+                    resolvedOperatingProfitRub >= 0
+                      ? 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-400'
+                      : 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-400'
+                  }`}
+                >
+                  {resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}% от выручки
+                </span>
+              </div>
+              <div
+                data-testid="fin-strip-operating-profit"
+                className={`mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums ${
+                  resolvedOperatingProfitRub >= 0
+                    ? 'text-[#15803D] dark:text-emerald-400'
+                    : 'text-[#B91C1C] dark:text-rose-400'
+                }`}
+              >
+                {fmtMln(resolvedOperatingProfitRub)}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+              {schedule.totalOtherExpensesRub > 0
+                ? `С учётом доп. расходов ${fmtMln(schedule.totalOtherExpensesRub)}`
+                : 'Рентабельность продаж по плану периода'}
+            </div>
           </div>
         </div>
       </div>
@@ -2538,7 +2792,7 @@ export function InvestmentSchedulePanel({
           <div className="p-5 border-t border-[#E4E1DA] dark:border-[#282724] space-y-6">
             {/* Управление дополнительными расходами (реклама, логистика, ФОТ) */}
             {canEdit && (
-              <div className="space-y-3">
+              <div id="fin-custom-expenses-anchor" className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     Дополнительные денежные операции (реклама, логистика, ФОТ и прочие расходы)

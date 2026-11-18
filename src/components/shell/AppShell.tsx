@@ -312,8 +312,19 @@ export function AppShell() {
         );
         const targetBrandSlot = modelBrandNorm === 'ALL' ? 'BORNERS' : modelBrandNorm;
         livePortfolio.setSelectedScenarioId(effSc.id, targetBrandSlot);
-        if (brandFilter !== 'ALL' && !matchesBrandFilter(targetModel, brandFilter)) {
-          setBrandFilter(targetBrandSlot as BrandFilter);
+        const matchesCurrentBrand =
+          brandFilter === 'ALL'
+            ? true
+            : brandFilter === 'BORNERS_FUKAI'
+            ? matchesBrandFilter(targetModel, 'BORNERS') ||
+              matchesBrandFilter(targetModel, 'FUKAI')
+            : matchesBrandFilter(targetModel, brandFilter);
+        if (!matchesCurrentBrand) {
+          setBrandFilter(
+            targetBrandSlot === 'BORNERS' || targetBrandSlot === 'FUKAI'
+              ? ('BORNERS_FUKAI' as BrandFilter)
+              : (targetBrandSlot as BrandFilter)
+          );
         }
       }
       try {
@@ -1196,7 +1207,11 @@ export function AppShell() {
           return false;
         }
         if (!brandFilter || brandFilter === 'ALL') return true;
-        return normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter);
+        const cBrand = normalizeLabBrandCode(c.brandId);
+        if (brandFilter === 'BORNERS_FUKAI') {
+          return cBrand === 'BORNERS' || cBrand === 'FUKAI';
+        }
+        return cBrand === normalizeLabBrandCode(brandFilter);
       }).length,
     [concepts, brandFilter, currentUser]
   );
@@ -1228,11 +1243,26 @@ export function AppShell() {
       ? 'finance'
       : 'documents';
     const isAllBrands = !brandFilter || brandFilter === 'ALL';
+    const isBornersFukai = brandFilter === 'BORNERS_FUKAI';
+    const bfHoldingModels = isBornersFukai
+      ? holdingSummary.brands
+          .filter((b) => b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI')
+          .reduce((s, b) => s + b.modelsCount, 0)
+      : 0;
+    const bfHoldingRev = isBornersFukai
+      ? holdingSummary.brands
+          .filter((b) => b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI')
+          .reduce((s, b) => s + b.annualRevenueRub, 0)
+      : 0;
     const effectiveAnnualRub = isAllBrands
       ? holdingSummary.groupTotal.annualRevenueRub
+      : isBornersFukai && livePortfolio.totals.annualRevenueRub < bfHoldingRev
+      ? bfHoldingRev
       : livePortfolio.totals.annualRevenueRub;
     const effectiveModelsCount = isAllBrands
       ? holdingSummary.groupTotal.modelsCount
+      : isBornersFukai && livePortfolio.eligibleModels.length < bfHoldingModels
+      ? bfHoldingModels
       : livePortfolio.eligibleModels.length;
     const annualMlnRounded = Math.round(effectiveAnnualRub / 1_000_000);
 
@@ -1325,6 +1355,7 @@ export function AppShell() {
     activeConceptsForBrandCount,
     brandFilter,
     currentUser,
+    holdingSummary.brands,
     holdingSummary.groupTotal.annualRevenueRub,
     holdingSummary.groupTotal.modelsCount,
     homeSubView,
@@ -1340,9 +1371,9 @@ export function AppShell() {
       <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip">
-          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-[var(--bg-card)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-2.5 sm:px-6 lg:px-8 flex items-center justify-between gap-1.5 sm:gap-3">
+          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-[var(--bg-card)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-2.5 sm:px-4 lg:px-5 2xl:px-8 flex items-center justify-between gap-1.5 sm:gap-2 2xl:gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
-            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 2xl:gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => handleGoHomeSummary('home')}
@@ -1357,20 +1388,20 @@ export function AppShell() {
                     className="h-full w-full object-contain"
                   />
                 </span>
-                <span className="hidden sm:flex flex-col">
-                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#0F172A] leading-none">
+                <span className="hidden sm:flex flex-col shrink-0">
+                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#0F172A] leading-none whitespace-nowrap">
                     BORNERS<sup className="text-[9px] font-semibold ml-0.5 text-[#64748B]">®</sup>
                   </span>
-                  <span className="text-[9.5px] font-medium text-[#64748B] mt-0.5">
+                  <span className="hidden 2xl:block text-[9.5px] font-medium text-[#64748B] mt-0.5 whitespace-nowrap">
                     Strategy · 2027
                   </span>
                 </span>
               </button>
 
-              <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block" />
+              <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block xl:hidden 2xl:block shrink-0" />
 
               {/* Кнопки Назад (←) и Вперёд (→) */}
-              <div className="hidden sm:inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
+              <div className="hidden sm:inline-flex xl:hidden 2xl:inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={goBack}
@@ -1418,19 +1449,21 @@ export function AppShell() {
               )}
 
               {/* Переключатель бренда (чистая типографика без цветных точек) */}
-              <div className="relative min-w-0" data-tour="brand-switcher">
+              <div className="relative shrink-0" data-tour="brand-switcher">
                 <button
                   type="button"
                   onClick={() => setBrandDropdownOpen(!brandDropdownOpen)}
-                  className="h-8 sm:h-8.5 px-2 sm:px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12px] sm:text-[12.5px] text-[#0F172A] inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer transition max-w-full"
+                  className="h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12px] sm:text-[12.5px] text-[#0F172A] inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer transition shrink-0 whitespace-nowrap"
                 >
-                  <span className="font-semibold truncate max-w-[82px] sm:max-w-none">
+                  <span className="font-semibold whitespace-nowrap truncate max-w-[112px] sm:max-w-none">
                     {brandFilter === 'ALL'
                       ? 'Все бренды'
+                      : brandFilter === 'BORNERS_FUKAI' ||
+                        brandFilter === 'BORNERS' ||
+                        brandFilter === 'FUKAI'
+                      ? 'BORNERS / FUKAI'
                       : brandFilter === 'NA_TELE'
                       ? 'НА ТЕЛЕ'
-                      : brandFilter === 'FUKAI'
-                      ? 'FUKAI'
                       : brandFilter === 'AKUSHA'
                       ? 'AKUSHA'
                       : brandFilter === 'LISKANI'
@@ -1476,54 +1509,81 @@ export function AppShell() {
                       </button>
 
                       {[
-                        { code: 'BORNERS', label: 'BORNERS', sub: 'Бельё · компл.' },
-                        { code: 'FUKAI', label: 'FUKAI', sub: 'База WB · компл.' },
+                        {
+                          code: 'BORNERS_FUKAI',
+                          label: 'BORNERS / FUKAI',
+                          sub: 'Бельё и база WB · компл.',
+                        },
                         { code: 'AKUSHA', label: 'AKUSHA', sub: 'Обувь · пары' },
                         { code: 'LISKANI', label: 'LISKANI', sub: 'Шторы · компл.' },
                         { code: 'NA_TELE', label: 'НА ТЕЛЕ', sub: 'База и женское' },
                       ]
-                        .filter((bItem) => canUserViewBrandConcept(currentUser, bItem.code))
+                        .filter((bItem) =>
+                          bItem.code === 'BORNERS_FUKAI'
+                            ? canUserViewBrandConcept(currentUser, 'BORNERS') ||
+                              canUserViewBrandConcept(currentUser, 'FUKAI')
+                            : canUserViewBrandConcept(currentUser, bItem.code)
+                        )
                         .map((bItem) => {
-                        const isSelected = brandFilter === bItem.code;
-                        return (
-                          <button
-                            key={bItem.code}
-                            type="button"
-                            onClick={() => {
-                              setBrandFilter(bItem.code);
-                              if (
-                                bItem.code === 'FUKAI' &&
-                                livePortfolio.selectedScenarioId === 1 &&
-                                !livePortfolio.includeGroupPortfolioInS1
-                              ) {
-                                livePortfolio.setIncludeGroupPortfolioInS1(true);
-                              }
-                              const brandScenId =
-                                livePortfolio.selectedScenarioByBrand?.[
-                                  bItem.code as 'BORNERS' | 'FUKAI' | 'AKUSHA' | 'LISKANI' | 'NA_TELE'
-                                ];
-                              if (typeof brandScenId === 'number') {
-                                livePortfolio.setSelectedScenarioId(brandScenId, bItem.code);
-                              }
-                              setBrandDropdownOpen(false);
-                            }}
-                            className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
-                              isSelected
-                                ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
-                                : 'text-[#1E293B] hover:bg-[#F8FAFC]'
-                            }`}
-                          >
-                            <span>{bItem.label}</span>
-                            <span
-                              className={`font-mono text-[10px] ${
-                                isSelected ? 'text-[#334155]' : 'text-[#64748B]'
+                          const isSelected =
+                            bItem.code === 'BORNERS_FUKAI'
+                              ? brandFilter === 'BORNERS_FUKAI' ||
+                                brandFilter === 'BORNERS' ||
+                                brandFilter === 'FUKAI'
+                              : brandFilter === bItem.code;
+                          return (
+                            <button
+                              key={bItem.code}
+                              type="button"
+                              onClick={() => {
+                                setBrandFilter(bItem.code);
+                                if (bItem.code === 'BORNERS_FUKAI') {
+                                  const bfScenId =
+                                    livePortfolio.selectedScenarioByBrand?.BORNERS &&
+                                    livePortfolio.selectedScenarioByBrand.BORNERS !== 100
+                                      ? livePortfolio.selectedScenarioByBrand.BORNERS
+                                      : 1;
+                                  if (
+                                    bfScenId === 1 &&
+                                    !livePortfolio.includeGroupPortfolioInS1
+                                  ) {
+                                    livePortfolio.setIncludeGroupPortfolioInS1(true);
+                                  }
+                                  livePortfolio.setSelectedScenarioId(
+                                    bfScenId,
+                                    'BORNERS_FUKAI'
+                                  );
+                                } else {
+                                  const brandScenId =
+                                    livePortfolio.selectedScenarioByBrand?.[
+                                      bItem.code as 'AKUSHA' | 'LISKANI' | 'NA_TELE'
+                                    ];
+                                  if (typeof brandScenId === 'number') {
+                                    livePortfolio.setSelectedScenarioId(
+                                      brandScenId,
+                                      bItem.code
+                                    );
+                                  }
+                                }
+                                setBrandDropdownOpen(false);
+                              }}
+                              className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
+                                  : 'text-[#1E293B] hover:bg-[#F8FAFC]'
                               }`}
                             >
-                              {bItem.sub}
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <span>{bItem.label}</span>
+                              <span
+                                className={`font-mono text-[10px] ${
+                                  isSelected ? 'text-[#334155]' : 'text-[#64748B]'
+                                }`}
+                              >
+                                {bItem.sub}
+                              </span>
+                            </button>
+                          );
+                        })}
                     </div>
                   </>
                 )}
@@ -1534,7 +1594,7 @@ export function AppShell() {
             <nav
               aria-label="Цепочка контуров BORNERS"
               data-tour="sidebar-nav"
-              className="hidden xl:flex items-center rounded-[11px] bg-[#EEF1F6] dark:bg-[#151A26] border border-[#D8DEE8] dark:border-[#222938] p-0.5 gap-0.5"
+              className="hidden xl:flex items-center shrink-0 rounded-[11px] bg-[#EEF1F6] dark:bg-[#151A26] border border-[#D8DEE8] dark:border-[#222938] p-0.5 gap-0.5"
             >
               {pipelineSteps.map((item, idx) => (
                 <React.Fragment key={item.key}>
@@ -1556,7 +1616,7 @@ export function AppShell() {
                       navigateTo(item.target);
                       setAtlasOpen(false);
                     }}
-                    className={`h-7.5 px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1.5 transition cursor-pointer ${
+                    className={`shrink-0 whitespace-nowrap h-7.5 px-2 2xl:px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1 2xl:gap-1.5 transition cursor-pointer ${
                       item.isActive
                         ? 'bg-white dark:bg-[#222A3D] text-[#111827] dark:text-[#F8FAFC] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.1)] border border-[#CBD5E1] dark:border-[#334155]'
                         : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC] hover:bg-white/60 dark:hover:bg-[#1E2536] font-semibold'
@@ -1564,7 +1624,7 @@ export function AppShell() {
                   >
                     {item.step && (
                       <span
-                        className={`font-mono text-[10.5px] ${
+                        className={`shrink-0 whitespace-nowrap font-mono text-[10.5px] ${
                           item.isActive
                             ? 'text-[#111827] dark:text-[#34D399]'
                             : 'text-[#64748B] dark:text-[#64748B]'
@@ -1573,10 +1633,10 @@ export function AppShell() {
                         {item.step}
                       </span>
                     )}
-                    <span>{item.label}</span>
+                    <span className="whitespace-nowrap">{item.label}</span>
                     {item.badge && (
                       <span
-                        className={`font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
+                        className={`whitespace-nowrap shrink-0 font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
                           item.isActive
                             ? 'bg-[#F1F5F9] dark:bg-[#151A26] text-[#111827] dark:text-[#F8FAFC] border border-[#CBD5E1] dark:border-[#334155]'
                             : 'bg-white dark:bg-[#121620] text-[#475569] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938]'
@@ -1591,12 +1651,12 @@ export function AppShell() {
             </nav>
 
             {/* Правая группа: Кнопка вызова Бенто-Атласа («Все разделы») + Поиск + Профиль без лишних иконок */}
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-1.5 2xl:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setAtlasOpen((v) => !v)}
                 aria-expanded={atlasOpen}
-                className={`inline-flex items-center gap-1 sm:gap-1.5 h-8 sm:h-8.5 px-2 sm:px-3.5 rounded-[9px] border text-[11.5px] sm:text-[12.5px] font-bold transition cursor-pointer ${
+                className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 sm:gap-1.5 h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3.5 rounded-[9px] border text-[11.5px] sm:text-[12.5px] font-bold transition cursor-pointer ${
                   atlasOpen
                     ? 'bg-[#F1F5F9] text-[#111827] border-[#94A3B8]'
                     : 'bg-white hover:border-[#94A3B8] text-[#1E293B] border-[#E2E8F0]'
@@ -1619,11 +1679,11 @@ export function AppShell() {
                   setSearchModalOpen(true);
                 }}
                 aria-label="Глобальный поиск"
-                className="inline-flex items-center justify-center gap-1.5 h-8 w-8 sm:h-8.5 sm:w-auto rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-0 sm:px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
+                className="shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 h-8 w-8 sm:h-8.5 sm:w-auto rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-0 sm:px-2.5 2xl:px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
               >
                 <Search className="h-3.5 w-3.5 sm:hidden" />
                 <span className="hidden sm:inline">Поиск</span>
-                <span className="hidden md:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#121620] border border-[#E2E8F0] dark:border-[#222938]">
+                <span className="hidden md:inline xl:hidden 2xl:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#121620] border border-[#E2E8F0] dark:border-[#222938]">
                   ⌘K
                 </span>
               </button>
@@ -1644,12 +1704,12 @@ export function AppShell() {
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-1.5 sm:pl-2 sm:pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-1.5 sm:px-2 2xl:pl-2 2xl:pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
                 >
-                  <span className="h-5 w-5 rounded-[5px] bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] flex items-center justify-center font-mono text-[10px] font-bold">
+                  <span className="h-5 w-5 rounded-[5px] bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] flex items-center justify-center font-mono text-[10px] font-bold shrink-0">
                     {currentUser.avatarInitials}
                   </span>
-                  <span className="hidden sm:inline text-[#1E293B]">
+                  <span className="hidden sm:inline xl:hidden 2xl:inline text-[#1E293B]">
                     {ROLE_LABELS_RU[currentUser.role]}
                   </span>
                 </button>
@@ -2853,23 +2913,23 @@ export function AppShell() {
 
         {/* УВЕДОМЛЕНИЕ О НОВОЙ ВЕРСИИ САЙТА В СТИЛЕ PEAKLY («BORNERS обновился · НОВОЕ») */}
         {updateBannerOpen && (
-          <div className="fixed bottom-5 left-5 z-50 w-[392px] max-w-[calc(100vw-2rem)]">
-            <div className="relative overflow-hidden rounded-[22px] border border-[#DCE0E8] bg-white pl-5 pr-4 pt-4 pb-4 shadow-[0_14px_38px_rgba(15,23,42,0.12)]">
+          <div className="fixed bottom-4 right-4 sm:right-5 sm:left-auto z-50 w-[340px] sm:w-[356px] max-w-[calc(100vw-2rem)]">
+            <div className="relative overflow-hidden rounded-[18px] border border-[#DCE0E8] bg-white pl-4 pr-3.5 pt-3.5 pb-3.5 shadow-[0_14px_38px_rgba(15,23,42,0.12)]">
               {/* Тёмно-синяя акцентная полоска слева как в Peakly */}
-              <div className="absolute left-0 top-3.5 bottom-3.5 w-[5px] rounded-r-full bg-[#141A29]" />
+              <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-r-full bg-[#141A29]" />
 
-              <div className="flex items-start gap-3.5">
-                <div className="h-12 w-12 shrink-0 rounded-[15px] bg-[#EEF0F5] flex items-center justify-center text-[#1E2638]">
-                  <Sparkles className="h-5 w-5 stroke-[1.8]" />
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 shrink-0 rounded-[12px] bg-[#EEF0F5] flex items-center justify-center text-[#1E2638]">
+                  <Sparkles className="h-4.5 w-4.5 stroke-[1.8]" />
                 </div>
 
-                <div className="flex-1 min-w-0 pt-0.5">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[16.5px] font-bold tracking-[-0.015em] text-[#0F141C]">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[15px] font-bold tracking-[-0.015em] text-[#0F141C]">
                         BORNERS обновился
                       </span>
-                      <span className="rounded-full bg-[#EEF0F5] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#263042]">
+                      <span className="rounded-full bg-[#EEF0F5] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#263042]">
                         НОВОЕ
                       </span>
                     </div>
@@ -2878,21 +2938,21 @@ export function AppShell() {
                       type="button"
                       onClick={handleDismissUpdateBanner}
                       aria-label="Закрыть уведомление об обновлении"
-                      className="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[#4A5568] hover:bg-[#F1F5F9] hover:text-[#0F141C] transition cursor-pointer"
+                      className="h-6.5 w-6.5 shrink-0 rounded-full flex items-center justify-center text-[#4A5568] hover:bg-[#F1F5F9] hover:text-[#0F141C] transition cursor-pointer"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
 
-                  <p className="mt-1 text-[13.5px] leading-[1.35] text-[#4A5568]">
+                  <p className="mt-0.5 text-[12.5px] leading-[1.35] text-[#4A5568]">
                     Выпустили техническое обновление. Обновите страницу, чтобы применить свежую версию.
                   </p>
                 </div>
               </div>
 
               {updateDetailsOpen && (
-                <div className="mt-3.5 rounded-[14px] border border-[#E2E6EE] bg-[#F8FAFC] p-3 text-[12px] text-[#334155] space-y-1.5">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#0F141C]">
+                <div className="mt-3 rounded-[12px] border border-[#E2E6EE] bg-[#F8FAFC] p-2.5 text-[11.5px] text-[#334155] space-y-1.5">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-[#0F141C]">
                     Что вошло в обновление:
                   </div>
                   <ul className="space-y-1 list-disc pl-4">
@@ -2905,15 +2965,15 @@ export function AppShell() {
                 </div>
               )}
 
-              <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setUpdateDetailsOpen((v) => !v)}
-                  className="h-11 rounded-full bg-[#0F141C] hover:bg-[#1E2638] text-white text-[14px] font-semibold inline-flex items-center justify-center gap-2 transition cursor-pointer"
+                  className="h-9.5 rounded-full bg-[#0F141C] hover:bg-[#1E2638] text-white text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <span>{updateDetailsOpen ? 'Скрыть детали' : 'Что нового'}</span>
                   <ArrowRight
-                    className={`h-4 w-4 transition-transform ${
+                    className={`h-3.5 w-3.5 transition-transform ${
                       updateDetailsOpen ? '-rotate-90' : ''
                     }`}
                   />
@@ -2922,16 +2982,20 @@ export function AppShell() {
                 <button
                   type="button"
                   onClick={handleApplySiteUpdate}
-                  className="h-11 rounded-full bg-white hover:bg-[#F8FAFC] border border-[#CFD6E0] text-[#0F141C] text-[14px] font-semibold inline-flex items-center justify-center gap-2 transition cursor-pointer"
+                  className="h-9.5 rounded-full bg-white hover:bg-[#F8FAFC] border border-[#CFD6E0] text-[#0F141C] text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <RotateCcw className="h-3.5 w-3.5" />
                   <span>Обновить</span>
                 </button>
               </div>
             </div>
           </div>
         )}
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 max-w-[340px] w-auto pointer-events-none">
+        <div
+          className={`fixed right-4 z-50 flex flex-col items-end gap-2 max-w-[340px] w-auto pointer-events-none ${
+            updateBannerOpen ? 'bottom-44' : 'bottom-4'
+          }`}
+        >
           {toasts.map((t) => {
             const isWarn = t.type === 'warning';
             const isErr = t.type === 'error';

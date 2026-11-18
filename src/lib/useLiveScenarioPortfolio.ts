@@ -41,6 +41,7 @@ import {
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   groupRecommendedBatchesByFactory,
+  isCombinedBornersFukaiFilter,
   isScenarioCompatibleWithBrand,
   launchAllEmptyCabinetsInHolding,
   launchBrandStarterMatrix,
@@ -132,6 +133,7 @@ export {
   getPortfolioUpdatedAt,
   hydratePortfolioModelsFromStorage,
   isBrandScenarioExplicitlyNone,
+  isCombinedBornersFukaiFilter,
   isModelMarkedDeleted,
   isStalePre2027AkushaDraft,
   markModelAsDeletedInStorage,
@@ -826,6 +828,30 @@ export function useLiveScenarioPortfolio() {
     };
   }, [syncFromStorage, scheduleCompleteCloudPush, emitWindowSync, applyCloudSnapshotPayload]);
 
+  useEffect(() => {
+    if (!brandFilter || brandFilter === 'ALL') return;
+    const isBornersOrCombined =
+      brandFilter.trim().toUpperCase() === 'BORNERS' ||
+      isCombinedBornersFukaiFilter(brandFilter);
+    if (isBornersOrCombined) {
+      const bornersId = selectedScenarioByBrand.BORNERS;
+      if (
+        typeof bornersId === 'number' &&
+        bornersId !== ACTING_2027_SCENARIO_ID &&
+        selectedScenarioId === ACTING_2027_SCENARIO_ID
+      ) {
+        setSelectedScenarioIdState(bornersId);
+        safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, bornersId);
+      } else if (typeof bornersId === 'number') {
+        const directScen = scenarios.find((s) => s.id === selectedScenarioId && !s.isArchived);
+        if (!directScen || !isScenarioCompatibleWithBrand(directScen, 'BORNERS')) {
+          setSelectedScenarioIdState(bornersId);
+          safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, bornersId);
+        }
+      }
+    }
+  }, [brandFilter, selectedScenarioByBrand.BORNERS, selectedScenarioId, scenarios]);
+
   const setSelectedScenarioId = useCallback(
     (nextId: number, explicitBrandOverride?: string) => {
       // Переключение вкладки бренда/сценария — это локальная навигация интерфейса,
@@ -834,9 +860,51 @@ export function useLiveScenarioPortfolio() {
       safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextId);
       const targetScenario = scenarios.find((s) => s.id === nextId);
       const effectiveBrand =
-        explicitBrandOverride !== undefined ? explicitBrandOverride : brandFilter;
+        explicitBrandOverride !== undefined ? explicitBrandOverride : brandFilterRef.current;
 
-      if (effectiveBrand && effectiveBrand !== 'ALL') {
+      if (isCombinedBornersFukaiFilter(effectiveBrand)) {
+        const targetOwner =
+          targetScenario?.ownerBrandCode && targetScenario.ownerBrandCode !== 'ALL'
+            ? normalizePortfolioBrandCode(targetScenario.ownerBrandCode)
+            : null;
+        if (targetOwner && targetOwner !== 'BORNERS' && targetOwner !== 'FUKAI') {
+          if (!targetScenario || isScenarioCompatibleWithBrand(targetScenario, targetOwner)) {
+            setSelectedScenarioByBrandState((prev) => {
+              const next = sanitizeSelectedScenarioByBrand(
+                { ...prev, [targetOwner]: nextId },
+                scenarios
+              );
+              selectedScenarioByBrandRef.current = next;
+              safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+              return next;
+            });
+          }
+        } else if (
+          !targetScenario ||
+          isScenarioCompatibleWithBrand(targetScenario, 'BORNERS')
+        ) {
+          setSelectedScenarioByBrandState((prev) => {
+            const prevBorners = prev.BORNERS;
+            const shouldProtectBornersFromImplicit100 =
+              nextId === ACTING_2027_SCENARIO_ID &&
+              explicitBrandOverride === undefined &&
+              typeof prevBorners === 'number' &&
+              prevBorners !== ACTING_2027_SCENARIO_ID;
+            const patch: Partial<Record<CanonicalBrandCode, number | null>> = {
+              ...prev,
+              BORNERS: shouldProtectBornersFromImplicit100 ? prevBorners : nextId,
+              FUKAI:
+                [1, 2, 3].includes(nextId) || nextId === ACTING_2027_SCENARIO_ID
+                  ? ACTING_2027_SCENARIO_ID
+                  : prev.FUKAI ?? ACTING_2027_SCENARIO_ID,
+            };
+            const next = sanitizeSelectedScenarioByBrand(patch, scenarios);
+            selectedScenarioByBrandRef.current = next;
+            safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
+            return next;
+          });
+        }
+      } else if (effectiveBrand && effectiveBrand !== 'ALL') {
         const normCode = normalizePortfolioBrandCode(effectiveBrand);
         if (normCode !== 'ALL') {
           const targetOwner =
@@ -851,10 +919,16 @@ export function useLiveScenarioPortfolio() {
             isScenarioCompatibleWithBrand(targetScenario, safeBrandSlot)
           ) {
             setSelectedScenarioByBrandState((prev) => {
-              const next = sanitizeSelectedScenarioByBrand(
-                { ...prev, [safeBrandSlot]: nextId },
-                scenarios
-              );
+              const shouldProtectBornersFromImplicit100 =
+                safeBrandSlot === 'BORNERS' &&
+                nextId === ACTING_2027_SCENARIO_ID &&
+                explicitBrandOverride === undefined &&
+                typeof prev.BORNERS === 'number' &&
+                prev.BORNERS !== ACTING_2027_SCENARIO_ID;
+              const patch = shouldProtectBornersFromImplicit100
+                ? { ...prev, FUKAI: ACTING_2027_SCENARIO_ID }
+                : { ...prev, [safeBrandSlot]: nextId };
+              const next = sanitizeSelectedScenarioByBrand(patch, scenarios);
               selectedScenarioByBrandRef.current = next;
               safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
               return next;
@@ -891,7 +965,7 @@ export function useLiveScenarioPortfolio() {
       }
       dispatchCrossHookEvent('borners-active-scenario-changed');
     },
-    [brandFilter, scenarios, dispatchCrossHookEvent]
+    [scenarios, dispatchCrossHookEvent]
   );
 
   const setIncludeGroupPortfolioInS1 = useCallback(
@@ -908,7 +982,8 @@ export function useLiveScenarioPortfolio() {
 
   const setSelectedScenarioForBrand = useCallback(
     (brandInput: string, scenarioId: number | null) => {
-      const code = normalizePortfolioBrandCode(brandInput);
+      const isCombinedBF = isCombinedBornersFukaiFilter(brandInput);
+      const code = isCombinedBF ? 'BORNERS' : normalizePortfolioBrandCode(brandInput);
       if (code === 'ALL') return;
       if (scenarioId !== null) {
         const targetScen = scenarios.find((s) => s.id === scenarioId);
@@ -926,10 +1001,14 @@ export function useLiveScenarioPortfolio() {
         safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, scenarioId);
       }
       setSelectedScenarioByBrandState((prev) => {
-        const next = sanitizeSelectedScenarioByBrand(
-          { ...prev, [code]: scenarioId },
-          scenarios
-        );
+        const patch: Partial<Record<CanonicalBrandCode, number | null>> = {
+          ...prev,
+          [code]: scenarioId,
+        };
+        if (isCombinedBF && scenarioId !== null && [1, 2, 3].includes(scenarioId)) {
+          patch.FUKAI = ACTING_2027_SCENARIO_ID;
+        }
+        const next = sanitizeSelectedScenarioByBrand(patch, scenarios);
         selectedScenarioByBrandRef.current = next;
         safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, next);
         if (typeof window !== 'undefined') {
@@ -1208,10 +1287,29 @@ export function useLiveScenarioPortfolio() {
     [models, currentScenario, includeGroupPortfolioInS1, brandFilter]
   );
 
-  const factoryGroupsCount = useMemo(
-    () => groupRecommendedBatchesByFactory(eligibleModels, currentScenario).length,
-    [eligibleModels, currentScenario]
-  );
+  const fukaiEffectiveScenario = useMemo(() => {
+    const fukaiId = selectedScenarioByBrand.FUKAI ?? ACTING_2027_SCENARIO_ID;
+    return (
+      scenarios.find((s) => s.id === fukaiId && !s.isArchived) ||
+      scenarios.find((s) => s.id === ACTING_2027_SCENARIO_ID && !s.isArchived) ||
+      ACTING_2027_SCENARIO_DEF
+    );
+  }, [scenarios, selectedScenarioByBrand.FUKAI]);
+
+  const factoryGroupsCount = useMemo(() => {
+    if (!isCombinedBornersFukaiFilter(brandFilter)) {
+      return groupRecommendedBatchesByFactory(eligibleModels, currentScenario).length;
+    }
+    const bornersModels = eligibleModels.filter((m) => !matchesBrandFilter(m, 'FUKAI'));
+    const fukaiModels = eligibleModels.filter((m) => matchesBrandFilter(m, 'FUKAI'));
+    const gBorners = groupRecommendedBatchesByFactory(bornersModels, currentScenario);
+    const gFukai = groupRecommendedBatchesByFactory(fukaiModels, fukaiEffectiveScenario);
+    const uniqueKeys = new Set<string>();
+    for (const g of [...gBorners, ...gFukai]) {
+      uniqueKeys.add(`${g.factoryName}__${g.orderMonthLabel}`);
+    }
+    return uniqueKeys.size;
+  }, [eligibleModels, currentScenario, brandFilter, fukaiEffectiveScenario]);
 
   const totals = useMemo(() => {
     let annualRevenueRub = 0;
@@ -1226,9 +1324,13 @@ export function useLiveScenarioPortfolio() {
     const monthlyPacks = Array(12).fill(0) as number[];
     const monthlyOrdersRub = Array(12).fill(0) as number[];
     const monthlyOrdersPacks = Array(12).fill(0) as number[];
+    const isCombinedBF = isCombinedBornersFukaiFilter(brandFilter);
 
     for (const m of eligibleModels) {
-      const met = computeModelScenarioMetrics(m, currentScenario);
+      let met = computeModelScenarioMetrics(m, currentScenario);
+      if (isCombinedBF && matchesBrandFilter(m, 'FUKAI') && met.annualPacks <= 0) {
+        met = computeModelScenarioMetrics(m, fukaiEffectiveScenario);
+      }
       annualRevenueRub += met.annualRevenueRub;
       decRevenueRub += met.targetMonthRevenueRub;
       annualPacks += met.annualPacks;
@@ -1259,7 +1361,7 @@ export function useLiveScenarioPortfolio() {
       monthlyOrdersRub,
       monthlyOrdersPacks,
     };
-  }, [eligibleModels, currentScenario]);
+  }, [eligibleModels, currentScenario, brandFilter, fukaiEffectiveScenario]);
 
   const applyIndustryNormsToAllModels = useCallback(
     (fillMissingCost: boolean = true) => {

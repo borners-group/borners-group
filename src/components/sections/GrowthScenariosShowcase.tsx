@@ -204,6 +204,12 @@ export function GrowthScenariosShowcase({
   const canEditBrandCode = useCallback(
     (bInput?: string) => {
       if (!bInput || bInput === 'ALL') return canEditAllBrands;
+      if (bInput === 'BORNERS_FUKAI') {
+        return (
+          canUserEditBrand(currentUser, 'BORNERS') ||
+          canUserEditBrand(currentUser, 'FUKAI')
+        );
+      }
       const norm = normalizePortfolioBrandCode(bInput);
       if (norm === 'ALL') return canEditAllBrands;
       return canUserEditBrand(currentUser, norm);
@@ -1239,6 +1245,21 @@ export function GrowthScenariosShowcase({
     ]
   );
 
+  const filterShowcaseModels = useCallback(
+    (
+      pool: ScenarioModelSpec[],
+      sc: GrowthScenarioDef,
+      incGroup: boolean,
+      bf: string
+    ) =>
+      bf === 'BORNERS_FUKAI'
+        ? filterModelsForScenario(pool, sc, true, 'ALL').filter(
+            (m) => matchesBrandFilter(m, 'BORNERS') || matchesBrandFilter(m, 'FUKAI')
+          )
+        : filterModelsForScenario(pool, sc, incGroup, bf),
+    []
+  );
+
   // Расчёт показателей каждого сценария снизу вверх из планов моделей (п. 8 ТЗ)
   const scenarioAggregates = useMemo(() => {
     const map: Record<
@@ -1269,7 +1290,7 @@ export function GrowthScenariosShowcase({
     > = {};
 
     for (const sc of scenarios) {
-      const eligibleModels = filterModelsForScenario(
+      const eligibleModels = filterShowcaseModels(
         models,
         sc,
         includeGroupPortfolioInS1,
@@ -1377,14 +1398,14 @@ export function GrowthScenariosShowcase({
       };
     }
     return map;
-  }, [scenarios, models, includeGroupPortfolioInS1, brandFilterLocal]);
+  }, [scenarios, models, includeGroupPortfolioInS1, brandFilterLocal, filterShowcaseModels]);
 
   const currentAgg =
     scenarioAggregates[currentScenario.id] || scenarioAggregates[1];
 
   // Сводка ТЗ v1.1 по выбранному сценарию: Партии закупок, Капитал, Честный P&L и Риски
   const v11ScenarioSummary = useMemo(() => {
-    const eligible = filterModelsForScenario(
+    const eligible = filterShowcaseModels(
       models,
       currentScenario,
       includeGroupPortfolioInS1,
@@ -1486,7 +1507,15 @@ export function GrowthScenariosShowcase({
       brandsReport,
       multiBrandSummary,
     };
-  }, [models, scenarios, currentScenario, includeGroupPortfolioInS1, selectedScenarioByBrand, brandFilterLocal]);
+  }, [
+    models,
+    scenarios,
+    currentScenario,
+    includeGroupPortfolioInS1,
+    selectedScenarioByBrand,
+    brandFilterLocal,
+    filterShowcaseModels,
+  ]);
 
   const activeBrandUnits = useMemo(() => {
     const effectiveCode: CanonicalBrandCode | 'ALL' =
@@ -1554,7 +1583,7 @@ export function GrowthScenariosShowcase({
               mBrand
             ).length > 0;
           })
-        : filterModelsForScenario(
+        : filterShowcaseModels(
             models,
             currentScenario,
             includeGroupPortfolioInS1,
@@ -1618,6 +1647,9 @@ export function GrowthScenariosShowcase({
     searchQuery,
     sortBy,
     hasFinance,
+    scenarios,
+    selectedScenarioByBrand,
+    filterShowcaseModels,
   ]);
 
   // Единая синхронизация модели сценария с основным Каталогом моделей (SKU)
@@ -2518,7 +2550,7 @@ export function GrowthScenariosShowcase({
                 onOpenStudioCanvas={onOpenStudioCanvas}
                 onSelectBrandFilter={(bCode) => {
                   if (
-                    bCode === 'FUKAI' &&
+                    (bCode === 'FUKAI' || bCode === 'BORNERS_FUKAI') &&
                     currentScenario.id === 1 &&
                     !includeGroupPortfolioInS1
                   ) {
@@ -2590,13 +2622,13 @@ export function GrowthScenariosShowcase({
                         setSelectedScenarioId(bornersScenId);
                       }
                     }}
-                    className={`h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                    className={`shrink-0 whitespace-nowrap h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
                       brandFilterLocal === 'ALL'
                         ? 'bg-[#2C3444] text-white border-[#2C3444]'
                         : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white'
                     }`}
                   >
-                    <span>Все (5)</span>
+                    <span>Все бренды</span>
                     <span className="font-mono text-[10.5px] opacity-80">
                       {hasFinance
                         ? `${(
@@ -2609,48 +2641,110 @@ export function GrowthScenariosShowcase({
                     </span>
                   </button>
 
-                  {v11ScenarioSummary.multiBrandSummary.brands.map((b) => {
-                    const isSel =
-                      brandFilterLocal !== 'ALL' &&
-                      normalizePortfolioBrandCode(brandFilterLocal) === b.brandCode;
-                    return (
-                      <button
-                        key={b.brandCode}
-                        type="button"
-                        onClick={() => {
-                          if (isSel) {
-                            setBrandFilterLocal('ALL');
-                            setBrandFilter('ALL');
-                            const bornersScenId =
-                              v11ScenarioSummary.multiBrandSummary.brands.find(
-                                (x) => x.brandCode === 'BORNERS'
-                              )?.selectedScenarioId;
-                            if (bornersScenId) {
-                              setSelectedScenarioId(bornersScenId);
-                            }
-                          } else {
-                            setBrandFilterLocal(b.brandCode);
-                            setBrandFilter(b.brandCode);
-                            if (b.selectedScenarioId !== null) {
-                              setSelectedScenarioId(b.selectedScenarioId);
-                            }
-                          }
-                        }}
-                        className={`h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
-                          isSel
-                            ? 'bg-[#2C3444] text-white border-[#2C3444]'
-                            : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white'
-                        }`}
-                      >
-                        <span className="font-bold">{b.displayCode}</span>
-                        <span className="font-mono text-[10.5px] opacity-80">
-                          {hasFinance && b.annualRevenueRub > 0
-                            ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
-                            : `${b.modelsCount} SKU`}
-                        </span>
-                      </button>
+                  {(() => {
+                    const allBrands = v11ScenarioSummary.multiBrandSummary.brands;
+                    const bfRows = allBrands.filter(
+                      (x) =>
+                        x.brandCode === 'BORNERS' ||
+                        x.brandCode === 'FUKAI' ||
+                        (x.brandCode as string) === 'BORNERS_FUKAI'
                     );
-                  })}
+                    const otherRows = allBrands.filter(
+                      (x) =>
+                        x.brandCode !== 'BORNERS' &&
+                        x.brandCode !== 'FUKAI' &&
+                        (x.brandCode as string) !== 'BORNERS_FUKAI'
+                    );
+                    const bornersMain =
+                      bfRows.find((x) => x.brandCode === 'BORNERS') || bfRows[0];
+                    const unifiedPills: {
+                      code: string;
+                      displayLabel: string;
+                      annualRevenueRub: number;
+                      modelsCount: number;
+                      selectedScenarioId: number | null;
+                    }[] = [];
+                    if (bfRows.length > 0) {
+                      unifiedPills.push({
+                        code: 'BORNERS_FUKAI',
+                        displayLabel: 'BORNERS / FUKAI',
+                        annualRevenueRub: bfRows.reduce((s, r) => s + r.annualRevenueRub, 0),
+                        modelsCount: bfRows.reduce((s, r) => s + r.modelsCount, 0),
+                        selectedScenarioId:
+                          bornersMain?.selectedScenarioId &&
+                          bornersMain.selectedScenarioId !== 100
+                            ? bornersMain.selectedScenarioId
+                            : 1,
+                      });
+                    }
+                    for (const r of otherRows) {
+                      unifiedPills.push({
+                        code: r.brandCode,
+                        displayLabel:
+                          r.brandCode === 'LISKANI'
+                            ? 'LISKANI'
+                            : r.brandCode === 'NA_TELE'
+                            ? 'НА ТЕЛЕ'
+                            : r.displayCode,
+                        annualRevenueRub: r.annualRevenueRub,
+                        modelsCount: r.modelsCount,
+                        selectedScenarioId: r.selectedScenarioId,
+                      });
+                    }
+                    return unifiedPills.map((b) => {
+                      const isSel =
+                        b.code === 'BORNERS_FUKAI'
+                          ? brandFilterLocal === 'BORNERS_FUKAI' ||
+                            brandFilterLocal === 'BORNERS' ||
+                            brandFilterLocal === 'FUKAI'
+                          : brandFilterLocal !== 'ALL' &&
+                            normalizePortfolioBrandCode(brandFilterLocal) === b.code;
+                      return (
+                        <button
+                          key={b.code}
+                          type="button"
+                          onClick={() => {
+                            if (isSel) {
+                              setBrandFilterLocal('ALL');
+                              setBrandFilter('ALL');
+                              const bornersScenId =
+                                v11ScenarioSummary.multiBrandSummary.brands.find(
+                                  (x) => x.brandCode === 'BORNERS'
+                                )?.selectedScenarioId;
+                              if (bornersScenId) {
+                                setSelectedScenarioId(bornersScenId);
+                              }
+                            } else {
+                              if (
+                                b.code === 'BORNERS_FUKAI' &&
+                                (b.selectedScenarioId ?? 1) === 1 &&
+                                !includeGroupPortfolioInS1
+                              ) {
+                                setIncludeGroupPortfolioInS1(true);
+                              }
+                              setBrandFilterLocal(b.code);
+                              setBrandFilter(b.code);
+                              if (b.selectedScenarioId !== null) {
+                                setSelectedScenarioId(b.selectedScenarioId, b.code);
+                              }
+                            }
+                          }}
+                          className={`shrink-0 whitespace-nowrap h-7.5 px-2.5 rounded-[8px] text-[11.5px] font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border ${
+                            isSel
+                              ? 'bg-[#2C3444] text-white border-[#2C3444]'
+                              : 'bg-[#F8FAFC] text-[#334155] border-[#DCE2EC] hover:bg-white'
+                          }`}
+                        >
+                          <span className="font-bold">{b.displayLabel}</span>
+                          <span className="font-mono text-[10.5px] opacity-80">
+                            {hasFinance && b.annualRevenueRub > 0
+                              ? `${(b.annualRevenueRub / 1_000_000).toFixed(1).replace('.', ',')} млн`
+                              : `${b.modelsCount} SKU`}
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 text-[11.5px]">
@@ -3262,11 +3356,26 @@ export function GrowthScenariosShowcase({
               ).length > 0) &&
               (() => {
                 const mbSummary = v11ScenarioSummary.multiBrandSummary;
+                const isBornersFukaiFilter = brandFilterLocal === 'BORNERS_FUKAI';
                 const activeBrandNorm = normalizePortfolioBrandCode(brandFilterLocal);
-                const selectedBrandRow =
-                  activeBrandNorm !== 'ALL'
-                    ? mbSummary.brands.find((r) => r.brandCode === activeBrandNorm)
-                    : null;
+                const selectedBrandRow = isBornersFukaiFilter
+                  ? null
+                  : activeBrandNorm !== 'ALL'
+                  ? mbSummary.brands.find((r) => r.brandCode === activeBrandNorm)
+                  : null;
+                const bfChartRows = isBornersFukaiFilter
+                  ? mbSummary.brands.filter(
+                      (r) =>
+                        r.brandCode === 'BORNERS' ||
+                        r.brandCode === 'FUKAI' ||
+                        (r.brandCode as string) === 'BORNERS_FUKAI'
+                    )
+                  : [];
+                const bfAnnualRev = bfChartRows.reduce((s, r) => s + r.annualRevenueRub, 0);
+                const bfAnnualProfit = bfChartRows.reduce(
+                  (s, r) => s + r.annualEstimatedOperatingProfitRub,
+                  0
+                );
 
                 const effectiveChartMetric:
                   | 'revenue'
@@ -3291,7 +3400,9 @@ export function GrowthScenariosShowcase({
                     : 0.4;
 
                 const brandMarginRatio =
-                  selectedBrandRow && selectedBrandRow.annualRevenueRub > 0
+                  isBornersFukaiFilter && bfAnnualRev > 0
+                    ? bfAnnualProfit / bfAnnualRev
+                    : selectedBrandRow && selectedBrandRow.annualRevenueRub > 0
                     ? selectedBrandRow.annualEstimatedOperatingProfitRub /
                       selectedBrandRow.annualRevenueRub
                     : groupMarginRatio;
@@ -3329,6 +3440,40 @@ export function GrowthScenariosShowcase({
 
                 const monthlySeries = MONTHS_SHORT_RU.map((mName, idx) => {
                   const packs = monthlyPacksArr[idx] || 0;
+                  if (isBornersFukaiFilter) {
+                    const invRow = v11ScenarioSummary.investmentSummary.monthlyRows[idx];
+                    const combinedSalesRub =
+                      invRow?.grossSalesRub ??
+                      bfChartRows.reduce(
+                        (s, r) => s + (r.monthlyRows[idx]?.grossSalesRub || 0),
+                        0
+                      );
+                    const combinedOutflowRub =
+                      invRow?.factoryTotalOutflowRub ??
+                      bfChartRows.reduce(
+                        (s, r) => s + (r.monthlyRows[idx]?.factoryTotalOutflowRub || 0),
+                        0
+                      );
+                    const revMln = combinedSalesRub / 1_000_000;
+                    const profMln = revMln * brandMarginRatio;
+                    const procMln = combinedOutflowRub / 1_000_000;
+                    return {
+                      monthLabel: mName,
+                      revenueRub: combinedSalesRub,
+                      revenueMln: revMln,
+                      profitMln: profMln,
+                      factoryOutflowMln: procMln,
+                      packs,
+                      activeValMln:
+                        effectiveChartMetric === 'packs'
+                          ? packs
+                          : effectiveChartMetric === 'profit'
+                          ? profMln
+                          : effectiveChartMetric === 'procurement'
+                          ? procMln
+                          : revMln,
+                    };
+                  }
                   if (selectedBrandRow && selectedBrandRow.monthlyRows[idx]) {
                     const mm = selectedBrandRow.monthlyRows[idx];
                     const revMln = mm.grossSalesRub / 1_000_000;
@@ -3388,12 +3533,41 @@ export function GrowthScenariosShowcase({
                 const selPt =
                   monthlySeries[selectedChartMonthIdx] || monthlySeries[11];
 
-                const brandMonthBreakdown = mbSummary.brands
-                  .map((r) => ({
-                    code: r.displayCode,
-                    revMln: (r.monthlyRows[selectedChartMonthIdx]?.grossSalesRub || 0) / 1_000_000,
-                  }))
-                  .filter((b) => b.revMln > 0.01);
+                const brandMonthBreakdown = (() => {
+                  const bfRevMln =
+                    mbSummary.brands
+                      .filter(
+                        (r) =>
+                          r.brandCode === 'BORNERS' ||
+                          r.brandCode === 'FUKAI' ||
+                          (r.brandCode as string) === 'BORNERS_FUKAI'
+                      )
+                      .reduce(
+                        (s, r) =>
+                          s + (r.monthlyRows[selectedChartMonthIdx]?.grossSalesRub || 0),
+                        0
+                      ) / 1_000_000;
+                  const others = mbSummary.brands
+                    .filter(
+                      (r) =>
+                        r.brandCode !== 'BORNERS' &&
+                        r.brandCode !== 'FUKAI' &&
+                        (r.brandCode as string) !== 'BORNERS_FUKAI'
+                    )
+                    .map((r) => ({
+                      code:
+                        r.brandCode === 'LISKANI'
+                          ? 'LISKANI'
+                          : r.brandCode === 'NA_TELE'
+                          ? 'НА ТЕЛЕ'
+                          : r.displayCode,
+                      revMln:
+                        (r.monthlyRows[selectedChartMonthIdx]?.grossSalesRub || 0) / 1_000_000,
+                    }));
+                  return [{ code: 'BORNERS / FUKAI', revMln: bfRevMln }, ...others].filter(
+                    (b) => b.revMln > 0.01
+                  );
+                })();
 
                 // Геометрия плавной кубической кривой Безье (SVG Area + Spline) по 12 точкам
                 const svgW = 1200;
@@ -4025,15 +4199,23 @@ export function GrowthScenariosShowcase({
                             <tr
                               key={b.brandCode}
                               onClick={() => {
-                                setBrandFilterLocal(b.brandCode);
-                                setBrandFilter(b.brandCode);
+                                const uiCode =
+                                  b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'
+                                    ? 'BORNERS_FUKAI'
+                                    : b.brandCode;
+                                setBrandFilterLocal(uiCode);
+                                setBrandFilter(uiCode);
                                 if (b.selectedScenarioId !== null) {
                                   setSelectedScenarioId(b.selectedScenarioId);
                                 }
                               }}
                               title={`Открыть бренд ${b.brandTitle}`}
                               className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
-                                brandFilterLocal === b.brandCode ? 'bg-amber-50/70' : ''
+                                brandFilterLocal === b.brandCode ||
+                                (brandFilterLocal === 'BORNERS_FUKAI' &&
+                                  (b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'))
+                                  ? 'bg-amber-50/70'
+                                  : ''
                               }`}
                             >
                               <td className="py-2 px-3 font-bold text-[#141413]">
@@ -4474,7 +4656,14 @@ export function GrowthScenariosShowcase({
                         }}
                         className="h-6 px-2.5 rounded-[7px] bg-[#2C3444] text-white text-[11px] font-semibold cursor-pointer transition hover:bg-[#1E2430]"
                       >
-                        {brandFilterLocal === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilterLocal} · Сбросить ×
+                        {brandFilterLocal === 'BORNERS_FUKAI' ||
+                        brandFilterLocal === 'BORNERS' ||
+                        brandFilterLocal === 'FUKAI'
+                          ? 'BORNERS / FUKAI'
+                          : brandFilterLocal === 'NA_TELE'
+                          ? 'НА ТЕЛЕ'
+                          : brandFilterLocal}{' '}
+                        · Сбросить ×
                       </button>
                     )}
                   </div>
@@ -4557,9 +4746,15 @@ export function GrowthScenariosShowcase({
                     onClick={() => {
                       if (
                         brandFilterLocal !== 'ALL' &&
-                        canUserEditBrand(currentUser, brandFilterLocal)
+                        canEditBrandCode(brandFilterLocal)
                       ) {
-                        setDraftBrand(brandFilterLocal);
+                        const targetDraft =
+                          brandFilterLocal === 'BORNERS_FUKAI'
+                            ? canUserEditBrand(currentUser, 'BORNERS')
+                              ? 'BORNERS'
+                              : 'FUKAI'
+                            : brandFilterLocal;
+                        setDraftBrand(targetDraft);
                       } else if (!canUserEditBrand(currentUser, draftBrand)) {
                         setDraftBrand(editableBrands[0] || 'BORNERS');
                       }
@@ -4665,7 +4860,7 @@ export function GrowthScenariosShowcase({
                   multiBrandSummary={v11ScenarioSummary.multiBrandSummary}
                   onSelectBrandFilter={(bCode) => {
                     if (
-                      bCode === 'FUKAI' &&
+                      (bCode === 'FUKAI' || bCode === 'BORNERS_FUKAI') &&
                       currentScenario.id === 1 &&
                       !includeGroupPortfolioInS1
                     ) {

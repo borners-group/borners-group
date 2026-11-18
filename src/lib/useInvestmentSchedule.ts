@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { GrowthScenarioDef, ScenarioModelSpec } from '@/lib/scenarioData';
-import type { CanonicalBrandCode } from '@/lib/unifiedBusinessEngine';
+import {
+  type CanonicalBrandCode,
+  isCombinedBornersFukaiFilter,
+  normalizePortfolioBrandCode,
+} from '@/lib/unifiedBusinessEngine';
 import {
   type BatchTermsManualOverride,
   type CapitalInjectionRecord,
@@ -34,12 +38,22 @@ export interface UseInvestmentScheduleParams {
   scenarios: GrowthScenarioDef[];
   activeScenario: GrowthScenarioDef;
   brandFilter?: string;
-  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
+  selectedScenarioByBrand?: Partial<
+    Record<CanonicalBrandCode | 'BORNERS_FUKAI' | 'LISCANI', number | null>
+  >;
   includeGroupPortfolioInS1?: boolean;
   explicitInitialCashRub?: number;
   explicitWbLagMonths?: number | null;
   explicitWbScheduleSpecified?: boolean;
   targetYear?: 2027 | 2028;
+}
+
+function normalizeScopeKeyForLedger(rawScopeKey: string | undefined, fallbackScopeKey: string): string {
+  if (!rawScopeKey || rawScopeKey === 'SHARED') return fallbackScopeKey;
+  if (/^BORNERS_FUKAI:/i.test(rawScopeKey)) {
+    return rawScopeKey.replace(/^BORNERS_FUKAI:/i, 'BORNERS:');
+  }
+  return rawScopeKey;
 }
 
 export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
@@ -164,6 +178,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         explicitWbLagMonths: params.explicitWbLagMonths,
         explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
         targetYear: params.targetYear,
+        combineBornersAndFukai: true,
       },
       schedule
     );
@@ -186,14 +201,21 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     const list: CapitalInjectionRecord[] = [];
     const seen = new Set<string>();
     const groupKey = schedule.scenarioYear === 2028 ? 'GROUP:ALL@2028' : 'GROUP:ALL';
+    const isCombinedBF = isCombinedBornersFukaiFilter(params.brandFilter);
+    const normFilter =
+      !params.brandFilter || params.brandFilter === 'ALL'
+        ? 'ALL'
+        : normalizePortfolioBrandCode(params.brandFilter);
     for (const inj of ledgerState.sharedCommitted.committedCapitalInjections || []) {
-      if (
-        !schedule.isGroupAllBrands &&
-        inj.brandCode &&
-        inj.brandCode !== 'ALL' &&
-        inj.brandCode !== params.brandFilter
-      ) {
-        continue;
+      if (!schedule.isGroupAllBrands && inj.brandCode && inj.brandCode !== 'ALL') {
+        const matchesBrand = isCombinedBF
+          ? inj.brandCode === 'BORNERS' ||
+            inj.brandCode === 'FUKAI' ||
+            isCombinedBornersFukaiFilter(inj.brandCode)
+          : normalizePortfolioBrandCode(inj.brandCode) === normFilter;
+        if (!matchesBrand) {
+          continue;
+        }
       }
       const m = (inj.dateIso || '').trim().match(/^(\d{4})-(\d{2})/);
       if (m) {
@@ -212,7 +234,9 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       ? Object.keys(ledgerState.scenarioPlans).filter((k) =>
           schedule.scenarioYear === 2028 ? k.endsWith('@2028') : !k.endsWith('@2028')
         )
-      : Array.from(new Set([schedule.activeScopeKey, groupKey]));
+      : Array.from(
+          new Set([...(schedule.activeScopeKeys || [schedule.activeScopeKey]), groupKey])
+        );
     for (const sk of scopes) {
       for (const inj of ledgerState.scenarioPlans[sk]?.plannedCapitalInjections || []) {
         if (!seen.has(inj.id)) {
@@ -226,6 +250,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     ledgerState,
     params.brandFilter,
     schedule.activeScopeKey,
+    schedule.activeScopeKeys,
     schedule.isGroupAllBrands,
     schedule.scenarioYear,
   ]);
@@ -323,10 +348,10 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     }) => {
       const author = input.author || 'Владелец';
       const current = loadInvestmentLedgerState();
-      const targetScope =
-        input.scenarioScopeKey && input.scenarioScopeKey !== 'SHARED'
-          ? input.scenarioScopeKey
-          : schedule.activeScopeKey;
+      const targetScope = normalizeScopeKeyForLedger(
+        input.scenarioScopeKey,
+        schedule.activeScopeKey
+      );
 
       const existingCommitted = current.sharedCommitted.committedPaymentOverrides[input.opKey];
       const existingScen = current.scenarioPlans[targetScope]?.paymentOverrides?.[input.opKey];
@@ -445,10 +470,10 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     }) => {
       const author = input.author || 'Владелец';
       const current = loadInvestmentLedgerState();
-      const targetScope =
-        input.scenarioScopeKey && input.scenarioScopeKey !== 'SHARED'
-          ? input.scenarioScopeKey
-          : schedule.activeScopeKey;
+      const targetScope = normalizeScopeKeyForLedger(
+        input.scenarioScopeKey,
+        schedule.activeScopeKey
+      );
 
       const existingCommitted = current.sharedCommitted.committedBatchOverrides[input.batchKey];
       const existingScen = current.scenarioPlans[targetScope]?.batchOverrides?.[input.batchKey];
@@ -583,7 +608,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       author = 'Владелец'
     ) => {
       const current = loadInvestmentLedgerState();
-      const targetScope = scopeKey || schedule.activeScopeKey;
+      const targetScope = normalizeScopeKeyForLedger(scopeKey, schedule.activeScopeKey);
       const record: CapitalInjectionRecord = {
         ...item,
         amountRub: Math.max(0, Math.round(item.amountRub)),
@@ -674,7 +699,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       author = 'Владелец'
     ) => {
       const current = loadInvestmentLedgerState();
-      const targetScope = scopeKey || schedule.activeScopeKey;
+      const targetScope = normalizeScopeKeyForLedger(scopeKey, schedule.activeScopeKey);
       const record: CustomCashOperationRecord = {
         ...item,
         amountRub: Math.max(0, Math.round(item.amountRub)),

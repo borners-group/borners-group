@@ -39,7 +39,9 @@ import {
   CustomBatchPeriodDef,
   DEFAULT_QUARTERLY_BATCH_PERIODS,
   MultiBrandPortfolioSummaryResult,
+  MultiBrandRowSummary,
   RecommendedProcurementBatch,
+  ScenarioMonthlyCashflowRow,
   approveRecommendedBatch,
   computeMultiBrandPortfolioSummary,
   computePortfolioProcurementWavesSummary,
@@ -153,9 +155,12 @@ export function BrandCabinetsMatrixTable({
               const unitCfg = getBrandUnitConfig(b.brandCode);
               const brandScenarios = getScenariosForBrand(scenarios, b.brandCode);
               const accent = getModelBrandAccentStyles(b.brandCode);
+              const upperActiveFilter = (activeBrandFilter || 'ALL').trim().toUpperCase();
               const isSelectedBrand =
-                activeBrandFilter !== 'ALL' &&
-                normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode;
+                upperActiveFilter !== 'ALL' &&
+                (upperActiveFilter === 'BORNERS_FUKAI' || upperActiveFilter === 'BORNERS / FUKAI'
+                  ? b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'
+                  : normalizePortfolioBrandCode(activeBrandFilter) === b.brandCode);
               const isActive = b.hasScenario && b.hasModels;
               const canEditBrandRow = canUserEditBrand(currentUser, b.brandCode);
               const rndCount = concepts.filter(
@@ -454,7 +459,7 @@ export function BrandCabinetsMatrixTable({
               <td className="py-3 px-4" colSpan={2}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="uppercase tracking-wider text-[10.5px] text-[#475569]">
-                    Итого по холдингу (5 кабинетов)
+                    Итого по холдингу (все кабинеты группы)
                   </span>
                   <span className="px-2 py-0.5 rounded-[5px] bg-white border border-[#CBD5E1] font-mono text-[10px] text-[#334155]">
                     {gt.modelsCount} SKU
@@ -469,19 +474,7 @@ export function BrandCabinetsMatrixTable({
                       className="px-2.5 py-0.5 rounded-[6px] bg-[#141413] hover:bg-[#2A2927] text-white text-[10.5px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1"
                     >
                       <ArrowUpRight className="w-3 h-3" strokeWidth={1.5} />
-                      <span>Подключить все 5 кабинетов</span>
-                    </button>
-                  )}
-                  {canEditAllStarter && activeCount > 2 && onResetStarterCabinets && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onResetStarterCabinets();
-                      }}
-                      className="px-2 py-0.5 rounded-[6px] bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] text-[#475569] text-[10.5px] font-semibold transition cursor-pointer"
-                    >
-                      ↺ Вернуть 2 базовых кабинета
+                      <span>Все кабинеты группы</span>
                     </button>
                   )}
                 </div>
@@ -717,18 +710,157 @@ export function PeaklyMasterCabinetsSummary({
   const [waterfallViewMode, setWaterfallViewMode] = useState<'pnl' | 'brands'>('pnl');
 
   const holdingTotal = multiBrandSummary.groupTotal;
-  const normalizedSelectedBrand =
-    activeBrandFilter === 'ALL' ? 'ALL' : normalizePortfolioBrandCode(activeBrandFilter);
-  const selectedBrandRow =
-    normalizedSelectedBrand !== 'ALL'
-      ? multiBrandSummary.brands.find((b) => b.brandCode === normalizedSelectedBrand) || null
-      : null;
+  const rawUpperActiveFilter = (activeBrandFilter || 'ALL').trim().toUpperCase();
+  const isBornersFukaiSelected =
+    rawUpperActiveFilter === 'BORNERS_FUKAI' ||
+    rawUpperActiveFilter === 'BORNERS / FUKAI' ||
+    rawUpperActiveFilter === 'BORNERS+FUKAI' ||
+    rawUpperActiveFilter === 'BORNERS' ||
+    rawUpperActiveFilter === 'FUKAI';
+  const normalizedSelectedBrand: 'ALL' | CanonicalBrandCode | 'BORNERS_FUKAI' =
+    !activeBrandFilter || rawUpperActiveFilter === 'ALL'
+      ? 'ALL'
+      : isBornersFukaiSelected
+      ? 'BORNERS_FUKAI'
+      : normalizePortfolioBrandCode(activeBrandFilter);
+
+  const selectedBrandRow = useMemo<MultiBrandRowSummary | null>(() => {
+    if (normalizedSelectedBrand === 'ALL') return null;
+    if (normalizedSelectedBrand === 'BORNERS_FUKAI') {
+      const bornersRow = multiBrandSummary.brands.find((b) => b.brandCode === 'BORNERS') || null;
+      const fukaiRow = multiBrandSummary.brands.find((b) => b.brandCode === 'FUKAI') || null;
+      if (!bornersRow && !fukaiRow) return null;
+      const base = (bornersRow || fukaiRow)!;
+      const combinedMonthlyRows: ScenarioMonthlyCashflowRow[] = Array.from(
+        { length: 12 },
+        (_, idx) => {
+          const mb = bornersRow?.monthlyRows?.[idx];
+          const mf = fukaiRow?.monthlyRows?.[idx];
+          const baseM = mb || mf;
+          if (!baseM) {
+            return {
+              monthIdx: idx,
+              monthLabel: MONTHS_SHORT_RU[idx] || String(idx + 1),
+              grossSalesRub: 0,
+              wbDeductionsAndAdsRub: 0,
+              wbNetInflowRub: 0,
+              factoryPrepaymentOutflowRub: 0,
+              factoryBalanceOutflowRub: 0,
+              factoryTotalOutflowRub: 0,
+              netMonthlyCashflowRub: 0,
+              openingCashBalanceRub: 0,
+              intraMonthLowBalanceRub: 0,
+              ownMoneyInWorkPeakRub: 0,
+              ownMoneyInWorkEndRub: 0,
+              cumulativeCashBalanceRub: 0,
+              isPeakDeficitMonth: false,
+              isIntraMonthPeak: false,
+              isSelfFundingCrossoverMonth: false,
+            };
+          }
+          return {
+            ...baseM,
+            grossSalesRub: (mb?.grossSalesRub || 0) + (mf?.grossSalesRub || 0),
+            wbDeductionsAndAdsRub:
+              (mb?.wbDeductionsAndAdsRub || 0) + (mf?.wbDeductionsAndAdsRub || 0),
+            wbNetInflowRub: (mb?.wbNetInflowRub || 0) + (mf?.wbNetInflowRub || 0),
+            factoryPrepaymentOutflowRub:
+              (mb?.factoryPrepaymentOutflowRub || 0) + (mf?.factoryPrepaymentOutflowRub || 0),
+            factoryBalanceOutflowRub:
+              (mb?.factoryBalanceOutflowRub || 0) + (mf?.factoryBalanceOutflowRub || 0),
+            factoryTotalOutflowRub:
+              (mb?.factoryTotalOutflowRub || 0) + (mf?.factoryTotalOutflowRub || 0),
+            netMonthlyCashflowRub:
+              (mb?.netMonthlyCashflowRub || 0) + (mf?.netMonthlyCashflowRub || 0),
+            openingCashBalanceRub:
+              (mb?.openingCashBalanceRub || 0) + (mf?.openingCashBalanceRub || 0),
+            intraMonthLowBalanceRub:
+              (mb?.intraMonthLowBalanceRub || 0) + (mf?.intraMonthLowBalanceRub || 0),
+            ownMoneyInWorkPeakRub:
+              (mb?.ownMoneyInWorkPeakRub || 0) + (mf?.ownMoneyInWorkPeakRub || 0),
+            ownMoneyInWorkEndRub:
+              (mb?.ownMoneyInWorkEndRub || 0) + (mf?.ownMoneyInWorkEndRub || 0),
+            cumulativeCashBalanceRub:
+              (mb?.cumulativeCashBalanceRub || 0) + (mf?.cumulativeCashBalanceRub || 0),
+          };
+        }
+      );
+      const verifiedNeed =
+        bornersRow?.verifiedOwnMoneyRequiredRub !== null ||
+        fukaiRow?.verifiedOwnMoneyRequiredRub !== null
+          ? (bornersRow?.verifiedOwnMoneyRequiredRub || 0) +
+            (fukaiRow?.verifiedOwnMoneyRequiredRub || 0)
+          : null;
+      return {
+        ...base,
+        brandCode: 'BORNERS',
+        displayCode: 'BORNERS / FUKAI' as MultiBrandRowSummary['displayCode'],
+        brandTitle: 'BORNERS / FUKAI',
+        hasScenario: Boolean(bornersRow?.hasScenario || fukaiRow?.hasScenario),
+        hasModels: Boolean(bornersRow?.hasModels || fukaiRow?.hasModels),
+        modelsCount: (bornersRow?.modelsCount || 0) + (fukaiRow?.modelsCount || 0),
+        annualRevenueRub: (bornersRow?.annualRevenueRub || 0) + (fukaiRow?.annualRevenueRub || 0),
+        decemberRevenueRub:
+          (bornersRow?.decemberRevenueRub || 0) + (fukaiRow?.decemberRevenueRub || 0),
+        totalProcurementQuantity:
+          (bornersRow?.totalProcurementQuantity || 0) +
+          (fukaiRow?.totalProcurementQuantity || 0),
+        totalProcurementSecondaryQuantity:
+          (bornersRow?.totalProcurementSecondaryQuantity || 0) +
+          (fukaiRow?.totalProcurementSecondaryQuantity || 0),
+        totalProcurementBudgetRub:
+          (bornersRow?.totalProcurementBudgetRub || 0) +
+          (fukaiRow?.totalProcurementBudgetRub || 0),
+        firstWaveStartBudgetRub:
+          (bornersRow?.firstWaveStartBudgetRub || 0) +
+          (fukaiRow?.firstWaveStartBudgetRub || 0),
+        firstWavePrepaymentRub:
+          (bornersRow?.firstWavePrepaymentRub || 0) +
+          (fukaiRow?.firstWavePrepaymentRub || 0),
+        peakWorkingCapitalRub:
+          (bornersRow?.peakWorkingCapitalRub || 0) + (fukaiRow?.peakWorkingCapitalRub || 0),
+        verifiedOwnMoneyRequiredRub: verifiedNeed,
+        annualSoldGoodsCostRub:
+          (bornersRow?.annualSoldGoodsCostRub || 0) + (fukaiRow?.annualSoldGoodsCostRub || 0),
+        annualEstimatedOperatingProfitRub:
+          (bornersRow?.annualEstimatedOperatingProfitRub || 0) +
+          (fukaiRow?.annualEstimatedOperatingProfitRub || 0),
+        monthlyRows: combinedMonthlyRows,
+      };
+    }
+    return multiBrandSummary.brands.find((b) => b.brandCode === normalizedSelectedBrand) || null;
+  }, [multiBrandSummary.brands, normalizedSelectedBrand]);
   const gt = selectedBrandRow || holdingTotal;
 
   const [investmentModalOpen, setInvestmentModalOpen] = useState(false);
   const [investmentModalFocusOpKey, setInvestmentModalFocusOpKey] = useState<string | null>(null);
 
   const activeScenarioForInv = useMemo(() => {
+    if (normalizedSelectedBrand === 'BORNERS_FUKAI') {
+      const explicitBornersScenId = selectedScenarioByBrand?.BORNERS;
+      if (typeof explicitBornersScenId === 'number') {
+        if (explicitBornersScenId === 1) {
+          const scen1 = scenarios.find((s) => s.id === 1 && !s.isArchived);
+          if (scen1) return scen1;
+        }
+        const explicitFound = scenarios.find(
+          (s) => s.id === explicitBornersScenId && !s.isArchived
+        );
+        if (explicitFound) return explicitFound;
+      }
+      const bornersRow = multiBrandSummary.brands.find((b) => b.brandCode === 'BORNERS');
+      if (
+        bornersRow &&
+        typeof bornersRow.selectedScenarioId === 'number' &&
+        bornersRow.selectedScenarioId !== 100
+      ) {
+        const found = scenarios.find(
+          (s) => s.id === bornersRow.selectedScenarioId && !s.isArchived
+        );
+        if (found) return found;
+      }
+      return scenarios.find((s) => s.id === 1 && !s.isArchived) || scenarios[0];
+    }
     if (selectedBrandRow && typeof selectedBrandRow.selectedScenarioId === 'number') {
       const found = scenarios.find(
         (s) => s.id === selectedBrandRow.selectedScenarioId && !s.isArchived
@@ -736,7 +868,13 @@ export function PeaklyMasterCabinetsSummary({
       if (found) return found;
     }
     return scenarios.find((s) => s.id === 1 && !s.isArchived) || scenarios[0];
-  }, [selectedBrandRow, scenarios]);
+  }, [
+    normalizedSelectedBrand,
+    selectedScenarioByBrand,
+    multiBrandSummary.brands,
+    selectedBrandRow,
+    scenarios,
+  ]);
 
   const { schedule: invSchedule } = useInvestmentSchedule({
     models: models || [],
@@ -763,9 +901,18 @@ export function PeaklyMasterCabinetsSummary({
     ? Math.max(0, gt.totalProcurementBudgetRub - gt.verifiedOwnMoneyRequiredRub)
     : null;
 
-  const activeBrandsCount = multiBrandSummary.brands.filter(
-    (b) => b.hasScenario && b.hasModels
-  ).length;
+  const activeUnifiedCabinetsCount = useMemo(() => {
+    const isAct = (code: CanonicalBrandCode) => {
+      const r = multiBrandSummary.brands.find((b) => b.brandCode === code);
+      return Boolean(r && r.hasScenario && r.hasModels);
+    };
+    let count = 0;
+    if (isAct('BORNERS') || isAct('FUKAI')) count += 1;
+    if (isAct('AKUSHA')) count += 1;
+    if (isAct('LISKANI')) count += 1;
+    if (isAct('NA_TELE')) count += 1;
+    return count;
+  }, [multiBrandSummary.brands]);
   const groupMarginPct =
     gt.annualRevenueRub > 0
       ? Math.round((gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub) * 1000) / 10
@@ -1202,7 +1349,12 @@ export function PeaklyMasterCabinetsSummary({
 
       const entries: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] = [];
       for (const bRow of multiBrandSummary.brands) {
-        if (normalizedSelectedBrand !== 'ALL' && bRow.brandCode !== normalizedSelectedBrand) {
+        if (
+          normalizedSelectedBrand !== 'ALL' &&
+          (normalizedSelectedBrand === 'BORNERS_FUKAI'
+            ? bRow.brandCode !== 'BORNERS' && bRow.brandCode !== 'FUKAI'
+            : bRow.brandCode !== normalizedSelectedBrand)
+        ) {
           continue;
         }
         if (!bRow.hasScenario || !bRow.hasModels || bRow.selectedScenarioId === null) {
@@ -1295,7 +1447,7 @@ export function PeaklyMasterCabinetsSummary({
     <div className="space-y-6">
       {/* 0. СТРОКА ЗАГОЛОВКА И ФИЛЬТРА КАБИНЕТОВ */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-[18px] sm:text-[20px] font-semibold tracking-[-0.02em] text-[#141413] dark:text-[#F5F4F0] leading-tight">
             {selectedBrandRow
               ? `Кабинет ${selectedBrandRow.displayCode} · Финансовый обзор`
@@ -1304,32 +1456,21 @@ export function PeaklyMasterCabinetsSummary({
           <p className="text-[12px] text-[#5C5953] dark:text-[#9A968E] mt-0.5">
             {selectedBrandRow
               ? `${selectedBrandRow.modelsCount} SKU · план 2027 года`
-              : `Консолидация ${activeBrandsCount} активных из 5 кабинетов холдинга · 2027`}
+              : `Консолидация ${activeUnifiedCabinetsCount} активных из 4 кабинетов группы · 2027`}
           </p>
         </div>
 
         {/* Действия заголовка Главного экрана */}
-        <div className="flex flex-wrap items-center gap-2">
-          {canEditAllStarter && activeBrandsCount < 5 && onLaunchAllCabinets && (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {canEditAllStarter && activeUnifiedCabinetsCount < 4 && onLaunchAllCabinets && (
             <button
               type="button"
               onClick={onLaunchAllCabinets}
-              title="В 1 клик запустить стартовые матрицы AKUSHA, LISKANI и НА ТЕЛЕ в сводке холдинга"
-              className="h-9 px-3 rounded-lg bg-white dark:bg-[#151514] hover:border-[#141413] dark:hover:border-[#5C5953] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              title="В 1 клик подключить все кабинеты группы (BORNERS / FUKAI, AKUSHA, LISKANI и НА ТЕЛЕ)"
+              className="h-9 px-3 rounded-lg bg-white dark:bg-[#151514] hover:border-[#141413] dark:hover:border-[#5C5953] border border-[#E4E1DA] dark:border-[#282724] text-[#141413] dark:text-[#F5F4F0] text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer inline-flex items-center gap-1.5"
             >
               <Layers className="w-3.5 h-3.5" strokeWidth={1.5} />
-              <span>Все 5 кабинетов</span>
-            </button>
-          )}
-
-          {canEditAllStarter && activeBrandsCount > 3 && onResetStarterCabinets && (
-            <button
-              type="button"
-              onClick={onResetStarterCabinets}
-              title="Вернуть эталонную сводку из 3 действующих кабинетов (BORNERS + FUKAI + LISKANI)"
-              className="h-9 px-2.5 rounded-lg bg-white dark:bg-[#151514] hover:bg-[#FAF9F6] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] text-[11.5px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1"
-            >
-              <span>↺ 3 базовых</span>
+              <span>Все 4 кабинета</span>
             </button>
           )}
 
@@ -1344,7 +1485,7 @@ export function PeaklyMasterCabinetsSummary({
                 setInvestmentModalOpen(true);
               }
             }}
-            className="h-9 px-3.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[#141413] dark:text-[#F5F4F0] text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            className="h-9 px-3.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[#141413] dark:text-[#F5F4F0] text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer inline-flex items-center gap-1.5"
           >
             <Calendar className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span>Календарь инвестиций</span>
@@ -1354,7 +1495,7 @@ export function PeaklyMasterCabinetsSummary({
             <button
               type="button"
               onClick={onOpenStrategySummary}
-              className="h-9 px-3.5 rounded-lg bg-[#141413] hover:bg-[#2A2927] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[12px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              className="h-9 px-3.5 rounded-lg bg-[#141413] hover:bg-[#2A2927] dark:bg-[#F5F4F0] dark:hover:bg-[#E4E1DA] text-white dark:text-[#141413] text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer inline-flex items-center gap-1.5"
             >
               <span>Сводка и 4 сценария</span>
               <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -3537,7 +3678,7 @@ export function PeaklyCatalogGroupsAndBrandsView({
 
   // Режим отображения:
   // 'groups' = Группы товаров (папки с раскрытием и настройками, как на 2-м скрине)
-  // 'brands' = Раздельные каталоги по брендам (BORNERS / НА ТЕЛЕ / FUKAI / AKUSHA / LISCANI)
+  // 'brands' = Раздельные каталоги по брендам (BORNERS / НА ТЕЛЕ / FUKAI / AKUSHA / LISKANI)
   // 'grid'   = Плитка карточек
   const [displayMode, setDisplayMode] = useState<'groups' | 'brands' | 'grid'>('groups');
 

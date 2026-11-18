@@ -218,6 +218,8 @@ export function ProductCatalogView() {
       ? (['BORNERS', 'FUKAI', 'NA_TELE', 'AKUSHA', 'LISKANI'] as const).some((c) =>
           canUserEditBrand(currentUser, c)
         )
+      : brandFilter === 'BORNERS_FUKAI'
+      ? canUserEditBrand(currentUser, 'BORNERS') || canUserEditBrand(currentUser, 'FUKAI')
       : canUserEditBrand(
           currentUser,
           normalizePortfolioBrandCode(brandFilter) === 'ALL'
@@ -287,7 +289,10 @@ export function ProductCatalogView() {
       includeGroupPortfolioInS1
     );
     const explicitlyNone =
-      isBrandScenarioExplicitlyNone(brandFilter, selectedScenarioByBrand) ||
+      (brandFilter === 'BORNERS_FUKAI'
+        ? isBrandScenarioExplicitlyNone('BORNERS', selectedScenarioByBrand) &&
+          isBrandScenarioExplicitlyNone('FUKAI', selectedScenarioByBrand)
+        : isBrandScenarioExplicitlyNone(brandFilter, selectedScenarioByBrand)) ||
       isBrandScenarioExplicitlyNone(modBrandCode, selectedScenarioByBrand);
     return {
       modBrandCode,
@@ -302,7 +307,11 @@ export function ProductCatalogView() {
       concepts.filter((c) => {
         if (c.isArchived || ['REJECTED', 'CANCELLED'].includes(c.stage)) return false;
         if (!brandFilter || brandFilter === 'ALL') return true;
-        return normalizeLabBrandCode(c.brandId) === normalizeLabBrandCode(brandFilter);
+        const cBrand = normalizeLabBrandCode(c.brandId);
+        if (brandFilter === 'BORNERS_FUKAI') {
+          return cBrand === 'BORNERS' || cBrand === 'FUKAI';
+        }
+        return cBrand === normalizeLabBrandCode(brandFilter);
       }),
     [concepts, brandFilter]
   );
@@ -701,7 +710,10 @@ export function ProductCatalogView() {
       scenarioModels.filter(
         (m) =>
           m.launchStatus !== 'В архиве' &&
-          (brandFilter === 'ALL' || matchesBrandFilter(m, brandFilter))
+          (brandFilter === 'ALL' ||
+            (brandFilter === 'BORNERS_FUKAI'
+              ? matchesBrandFilter(m, 'BORNERS') || matchesBrandFilter(m, 'FUKAI')
+              : matchesBrandFilter(m, brandFilter)))
       ),
     [scenarioModels, brandFilter]
   );
@@ -754,6 +766,9 @@ export function ProductCatalogView() {
       ALL: active.length,
       BORNERS: active.filter((m) => matchesBrandFilter(m, 'BORNERS')).length,
       FUKAI: active.filter((m) => matchesBrandFilter(m, 'FUKAI')).length,
+      BORNERS_FUKAI: active.filter(
+        (m) => matchesBrandFilter(m, 'BORNERS') || matchesBrandFilter(m, 'FUKAI')
+      ).length,
       AKUSHA: active.filter((m) => matchesBrandFilter(m, 'AKUSHA')).length,
       LISKANI: active.filter((m) => matchesBrandFilter(m, 'LISKANI')).length,
       NA_TELE: active.filter((m) => matchesBrandFilter(m, 'NA_TELE')).length,
@@ -838,13 +853,17 @@ export function ProductCatalogView() {
                 'BORNERS'
             );
             if (targetBrand !== 'ALL') {
-              setBrandFilter(targetBrand);
+              const uiBrand =
+                targetBrand === 'BORNERS' || targetBrand === 'FUKAI'
+                  ? 'BORNERS_FUKAI'
+                  : targetBrand;
+              setBrandFilter(uiBrand);
               setSelectedScenarioId(modelEffectiveScenario.id, targetBrand);
               if (isBrandScenarioExplicitlyNone(targetBrand, selectedScenarioByBrand)) {
                 setSelectedScenarioForBrand(targetBrand, modelEffectiveScenario.id);
               }
               navigateTo('launch-calendar', {
-                brandId: targetBrand,
+                brandId: uiBrand,
                 scenarioModelId: activePassportModel.id,
               });
             } else {
@@ -1031,8 +1050,11 @@ export function ProductCatalogView() {
             {(
               [
                 { code: 'ALL', label: 'Все бренды', count: countsByBrand.ALL },
-                { code: 'BORNERS', label: 'BORNERS', count: countsByBrand.BORNERS },
-                { code: 'FUKAI', label: 'FUKAI', count: countsByBrand.FUKAI },
+                {
+                  code: 'BORNERS_FUKAI',
+                  label: 'BORNERS / FUKAI',
+                  count: countsByBrand.BORNERS_FUKAI,
+                },
                 { code: 'AKUSHA', label: 'AKUSHA', count: countsByBrand.AKUSHA },
                 { code: 'LISKANI', label: 'LISKANI', count: countsByBrand.LISKANI },
                 { code: 'NA_TELE', label: 'НА ТЕЛЕ', count: countsByBrand.NA_TELE },
@@ -1041,6 +1063,10 @@ export function ProductCatalogView() {
               const isAct =
                 b.code === 'ALL'
                   ? brandFilter === 'ALL'
+                  : b.code === 'BORNERS_FUKAI'
+                  ? brandFilter === 'BORNERS_FUKAI' ||
+                    brandFilter === 'BORNERS' ||
+                    brandFilter === 'FUKAI'
                   : normalizePortfolioBrandCode(brandFilter) === b.code;
               return (
                 <button
@@ -1048,7 +1074,14 @@ export function ProductCatalogView() {
                   type="button"
                   onClick={() => {
                     setBrandFilter(b.code);
-                    if (b.code !== 'ALL') {
+                    if (b.code === 'BORNERS_FUKAI') {
+                      const bfScenId =
+                        selectedScenarioByBrand.BORNERS &&
+                        selectedScenarioByBrand.BORNERS !== 100
+                          ? selectedScenarioByBrand.BORNERS
+                          : 1;
+                      setSelectedScenarioId(bfScenId, 'BORNERS_FUKAI');
+                    } else if (b.code !== 'ALL') {
                       const targetScenId = selectedScenarioByBrand[b.code];
                       if (typeof targetScenId === 'number') {
                         setSelectedScenarioId(targetScenId, b.code);
@@ -1060,7 +1093,7 @@ export function ProductCatalogView() {
                       }
                     }
                   }}
-                  className={`h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                  className={`shrink-0 whitespace-nowrap h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
                     isAct
                       ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] border-[#141413] dark:border-[#F5F4F0]'
                       : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-white dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
@@ -1254,7 +1287,13 @@ export function ProductCatalogView() {
               <p className="text-[13px] text-[#5C5953] dark:text-[#9E9A92] max-w-lg mx-auto">
                 Добавьте новую модель для бренда{' '}
                 <strong>
-                  {brandFilter === 'ALL' ? 'холдинга' : formatLabBrandLabel(brandFilter)}
+                  {brandFilter === 'ALL'
+                    ? 'холдинга'
+                    : brandFilter === 'BORNERS_FUKAI' ||
+                      brandFilter === 'BORNERS' ||
+                      brandFilter === 'FUKAI'
+                    ? 'BORNERS / FUKAI'
+                    : formatLabBrandLabel(brandFilter)}
                 </strong>
                 , перенесите готовые карточки из «Лаборатории R&D» в 1 клик или разверните стартовую матрицу.
               </p>

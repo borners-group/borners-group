@@ -139,6 +139,87 @@ function resolveModelBrandForRbac(model: ScenarioModelSpec): string {
   return norm === 'ALL' ? 'BORNERS' : norm;
 }
 
+function formatContourBrandFilterLabel(bf?: string | null): string {
+  if (!bf || bf === 'ALL') return 'Все бренды';
+  const upper = bf.trim().toUpperCase();
+  if (upper === 'BORNERS_FUKAI' || upper === 'BORNERS' || upper === 'FUKAI') {
+    return 'BORNERS / FUKAI';
+  }
+  if (upper === 'NA_TELE' || upper === 'НА ТЕЛЕ') return 'НА ТЕЛЕ';
+  if (upper === 'LISKANI' || upper === 'LISCANI' || upper === 'ЛИСКАНИ') return 'LISKANI';
+  return formatLabBrandLabel(bf);
+}
+
+function resolveContourScopedEntries(params: {
+  isHoldingAllBrands: boolean;
+  brandFilter: string;
+  eligibleModels: ScenarioModelSpec[];
+  models: ScenarioModelSpec[];
+  scenarios: GrowthScenarioDef[];
+  selectedScenarioByBrand: Partial<Record<string, number | null>>;
+  currentScenario: GrowthScenarioDef;
+  multiBrandSummary: ReturnType<typeof computeMultiBrandPortfolioSummary>;
+}): { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] {
+  const {
+    isHoldingAllBrands,
+    brandFilter,
+    eligibleModels,
+    models,
+    scenarios,
+    selectedScenarioByBrand,
+    currentScenario,
+    multiBrandSummary,
+  } = params;
+  if (isHoldingAllBrands) {
+    const holdingList = buildHoldingScopedModelEntries(
+      models,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      multiBrandSummary
+    );
+    return holdingList.length > 0
+      ? holdingList
+      : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+  }
+  if (brandFilter === 'BORNERS_FUKAI') {
+    const hasFukaiInEligible = eligibleModels.some((m) => matchesBrandFilter(m, 'FUKAI'));
+    if (hasFukaiInEligible) {
+      return eligibleModels
+        .filter((m) => matchesBrandFilter(m, 'BORNERS') || matchesBrandFilter(m, 'FUKAI'))
+        .map((m) => ({ model: m, scenario: currentScenario }));
+    }
+    const seen = new Set<string>();
+    const combined: { model: ScenarioModelSpec; scenario: GrowthScenarioDef }[] = [];
+    for (const m of eligibleModels) {
+      if (matchesBrandFilter(m, 'BORNERS') || matchesBrandFilter(m, 'FUKAI')) {
+        seen.add(m.id || m.code);
+        combined.push({ model: m, scenario: currentScenario });
+      }
+    }
+    const holdingList = buildHoldingScopedModelEntries(
+      models,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      multiBrandSummary
+    );
+    for (const entry of holdingList) {
+      const key = entry.model.id || entry.model.code;
+      if (seen.has(key)) continue;
+      if (
+        matchesBrandFilter(entry.model, 'BORNERS') ||
+        matchesBrandFilter(entry.model, 'FUKAI')
+      ) {
+        seen.add(key);
+        combined.push(entry);
+      }
+    }
+    return combined;
+  }
+  return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
+}
+
 function getModelProductionProfileFull(model: ScenarioModelSpec) {
   return getBrandProductionProfile(
     detectModelBrandPortfolioLabel(model) || model.brandId,
@@ -393,8 +474,8 @@ function ScenarioContourHeader({
                     setBrandFilter(ownerNorm);
                     onSelectScenario(sc.id, ownerNorm);
                   } else if (brandFilter === 'LISKANI' || brandFilter === 'AKUSHA') {
-                    setBrandFilter('BORNERS');
-                    onSelectScenario(sc.id, 'BORNERS');
+                    setBrandFilter('BORNERS_FUKAI');
+                    onSelectScenario(sc.id, 'BORNERS_FUKAI');
                   } else if (brandFilter !== 'ALL') {
                     onSelectScenario(sc.id, brandFilter);
                   } else {
@@ -421,7 +502,7 @@ function ScenarioContourHeader({
           {brandFilter !== 'ALL' && (
             <div className="inline-flex items-center gap-2 h-8.5 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
               <span>
-                Бренд: {formatLabBrandLabel(brandFilter)} ({eligibleCount} SKU)
+                Бренд: {formatContourBrandFilterLabel(brandFilter)} ({eligibleCount} SKU)
               </span>
               <button
                 type="button"
@@ -446,7 +527,9 @@ function ScenarioContourHeader({
           )}
 
           {selectedScenarioId === 1 &&
-            (brandFilter === 'BORNERS' || brandFilter === 'FUKAI') && (
+            (brandFilter === 'BORNERS_FUKAI' ||
+              brandFilter === 'BORNERS' ||
+              brandFilter === 'FUKAI') && (
               <div className="inline-flex items-center rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] p-1 text-[11.5px]">
                 <button
                   type="button"
@@ -555,32 +638,32 @@ export function SalesMatrixContourView() {
     [models, scenarios, selectedScenarioByBrand]
   );
 
-  const scopedEntries = useMemo(() => {
-    if (!isHoldingAllBrandsActive) {
-      return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
-    }
-    const holdingList = buildHoldingScopedModelEntries(
+  const scopedEntries = useMemo(
+    () =>
+      resolveContourScopedEntries({
+        isHoldingAllBrands: isHoldingAllBrandsActive,
+        brandFilter,
+        eligibleModels,
+        models,
+        scenarios,
+        selectedScenarioByBrand,
+        currentScenario,
+        multiBrandSummary,
+      }),
+    [
+      isHoldingAllBrandsActive,
+      brandFilter,
+      eligibleModels,
+      currentScenario,
       models,
       scenarios,
       selectedScenarioByBrand,
-      currentScenario,
-      multiBrandSummary
-    );
-    return holdingList.length > 0
-      ? holdingList
-      : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
-  }, [
-    isHoldingAllBrandsActive,
-    eligibleModels,
-    currentScenario,
-    models,
-    scenarios,
-    selectedScenarioByBrand,
-    multiBrandSummary,
-  ]);
+      multiBrandSummary,
+    ]
+  );
 
   const effectiveTotals = useMemo(() => {
-    if (!isHoldingAllBrandsActive) return totals;
+    if (!isHoldingAllBrandsActive && brandFilter !== 'BORNERS_FUKAI') return totals;
     const monthlyRevRub = Array(12).fill(0) as number[];
     const monthlyPacks = Array(12).fill(0) as number[];
     let annualRevenueRub = 0;
@@ -612,7 +695,7 @@ export function SalesMatrixContourView() {
       annualOrdersPacks,
       annualOrdersRub,
     };
-  }, [isHoldingAllBrandsActive, totals, scopedEntries]);
+  }, [isHoldingAllBrandsActive, brandFilter, totals, scopedEntries]);
 
   const visibleEntries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -946,7 +1029,7 @@ export function SalesMatrixContourView() {
         <div className="rounded-[14px] bg-white dark:bg-[#121620] border border-[#D8D7CF] dark:border-[#222938] p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1 max-w-2xl">
             <div className="text-[14.5px] font-bold text-[#141413] dark:text-[#EDF0F7]">
-              В сценарии «{currentScenario.title}» пока нет моделей бренда {formatLabBrandLabel(brandFilter)}
+              В сценарии «{currentScenario.title}» пока нет моделей бренда {formatContourBrandFilterLabel(brandFilter)}
             </div>
             <p className="text-[12.5px] text-[#5E5D58] dark:text-[#94A3B8]">
               {brandFilter === 'NA_TELE'
@@ -1002,7 +1085,9 @@ export function SalesMatrixContourView() {
                 {hasFinance ? 'Переключить на Сценарий №2 · 150 млн' : 'Переключить на Сценарий №2'}
               </button>
             )}
-            {brandFilter === 'FUKAI' && selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
+            {(brandFilter === 'FUKAI' || brandFilter === 'BORNERS_FUKAI') &&
+              selectedScenarioId === 1 &&
+              !includeGroupPortfolioInS1 && (
               <button
                 type="button"
                 onClick={() => setIncludeGroupPortfolioInS1(true)}
@@ -1539,29 +1624,29 @@ export function ProcurementContourView() {
     [models, scenarios, selectedScenarioByBrand, initialCashMln, wbLagMonths]
   );
 
-  const scopedModelEntries = useMemo(() => {
-    if (!isHoldingAllBrandsActive) {
-      return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
-    }
-    const list = buildHoldingScopedModelEntries(
-      models,
-      scenarios,
-      selectedScenarioByBrand,
+  const scopedModelEntries = useMemo(
+    () =>
+      resolveContourScopedEntries({
+        isHoldingAllBrands: isHoldingAllBrandsActive,
+        brandFilter,
+        eligibleModels,
+        models,
+        scenarios,
+        selectedScenarioByBrand,
+        currentScenario,
+        multiBrandSummary,
+      }),
+    [
+      isHoldingAllBrandsActive,
+      brandFilter,
+      eligibleModels,
       currentScenario,
-      multiBrandSummary
-    );
-    return list.length > 0
-      ? list
-      : eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
-  }, [
-    isHoldingAllBrandsActive,
-    eligibleModels,
-    currentScenario,
-    multiBrandSummary,
-    selectedScenarioByBrand,
-    scenarios,
-    models,
-  ]);
+      multiBrandSummary,
+      selectedScenarioByBrand,
+      scenarios,
+      models,
+    ]
+  );
 
   const procData = useMemo(() => {
     let approvedCount = 0;
@@ -1740,6 +1825,8 @@ export function ProcurementContourView() {
     const sourceModels = models.length > 0 ? models : scenarioAllEligibleModels;
     const effectiveSelectedByBrand = isHoldingAllBrandsActive
       ? selectedScenarioByBrand
+      : brandFilter === 'BORNERS_FUKAI'
+      ? { ...selectedScenarioByBrand, BORNERS: currentScenario.id }
       : { ...selectedScenarioByBrand, [brandFilter]: currentScenario.id };
     const baseReport = computeGroupBrandsInvestmentReport(sourceModels, currentScenario, {
       initialCashRub: Math.round((Number(initialCashMln) || 0) * 1_000_000),
@@ -1750,26 +1837,36 @@ export function ProcurementContourView() {
     });
     if (!isHoldingAllBrandsActive) {
       if (brandFilter !== 'ALL') {
-        const scopedRows = baseReport.brands.filter((b) => b.brandCode === brandFilter);
+        const scopedRows = baseReport.brands.filter((b) =>
+          brandFilter === 'BORNERS_FUKAI'
+            ? b.brandCode === 'BORNERS' ||
+              b.brandCode === 'FUKAI' ||
+              (b.brandCode as string) === 'BORNERS_FUKAI'
+            : b.brandCode === brandFilter
+        );
         const row = scopedRows[0];
+        const sumNum = (fn: (r: (typeof scopedRows)[number]) => number) =>
+          scopedRows.reduce((s, r) => s + (fn(r) || 0), 0);
         return {
           brands: scopedRows,
           groupTotal: row
             ? {
                 ...baseReport.groupTotal,
-                modelsCount: row.modelsCount,
-                annualRevenueRub: row.annualRevenueRub,
-                decemberRevenueRub: row.decemberRevenueRub,
-                annualDemandPacks: row.annualDemandPacks,
-                totalProcurementPacks: row.totalProcurementPacks,
-                totalProcurementUnits: row.totalProcurementUnits,
-                totalProcurementBudgetRub: row.totalProcurementBudgetRub,
-                annualSoldGoodsCostRub: row.annualSoldGoodsCostRub,
-                annualEstimatedOperatingProfitRub: row.annualEstimatedOperatingProfitRub,
-                firstWaveStartBudgetRub: row.firstWaveStartBudgetRub,
-                firstWavePrepaymentRub: row.firstWavePrepaymentRub,
-                peakWorkingCapitalRub: row.peakWorkingCapitalRub,
-                netOwnMoneyRequiredRub: row.peakWorkingCapitalRub,
+                modelsCount: sumNum((r) => r.modelsCount),
+                annualRevenueRub: sumNum((r) => r.annualRevenueRub),
+                decemberRevenueRub: sumNum((r) => r.decemberRevenueRub),
+                annualDemandPacks: sumNum((r) => r.annualDemandPacks),
+                totalProcurementPacks: sumNum((r) => r.totalProcurementPacks),
+                totalProcurementUnits: sumNum((r) => r.totalProcurementUnits),
+                totalProcurementBudgetRub: sumNum((r) => r.totalProcurementBudgetRub),
+                annualSoldGoodsCostRub: sumNum((r) => r.annualSoldGoodsCostRub),
+                annualEstimatedOperatingProfitRub: sumNum(
+                  (r) => r.annualEstimatedOperatingProfitRub
+                ),
+                firstWaveStartBudgetRub: sumNum((r) => r.firstWaveStartBudgetRub),
+                firstWavePrepaymentRub: sumNum((r) => r.firstWavePrepaymentRub),
+                peakWorkingCapitalRub: sumNum((r) => r.peakWorkingCapitalRub),
+                netOwnMoneyRequiredRub: sumNum((r) => r.peakWorkingCapitalRub),
                 peakMonthIdx: row.peakMonthIdx,
                 peakMonthLabel: row.peakMonthLabel,
                 selfFundingMonthLabel: row.selfFundingMonthLabel,
@@ -2124,7 +2221,7 @@ export function ProcurementContourView() {
               className="h-7.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11.5px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer inline-flex items-center gap-1.5"
               title="Сбросить фильтр бренда и показать все модели сценария"
             >
-              <span>{brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}</span>
+              <span>{formatContourBrandFilterLabel(brandFilter)}</span>
               <span className="font-bold">×</span>
             </button>
           )}
@@ -2186,8 +2283,8 @@ export function ProcurementContourView() {
                         setBrandFilter(ownerNorm);
                         setSelectedScenarioId(sc.id, ownerNorm);
                       } else if (brandFilter === 'LISKANI' || brandFilter === 'AKUSHA') {
-                        setBrandFilter('BORNERS');
-                        setSelectedScenarioId(sc.id, 'BORNERS');
+                        setBrandFilter('BORNERS_FUKAI');
+                        setSelectedScenarioId(sc.id, 'BORNERS_FUKAI');
                       } else if (brandFilter !== 'ALL') {
                         setSelectedScenarioId(sc.id, brandFilter);
                       } else {
@@ -2250,11 +2347,11 @@ export function ProcurementContourView() {
         <div className="rounded-xl border border-[#E4E1DA] bg-white p-6 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
           <div className="max-w-2xl space-y-3">
             <span className="inline-flex items-center rounded-md bg-[#FAF9F6] border border-[#E4E1DA] px-2.5 py-1 font-mono text-[10.5px] font-medium uppercase tracking-wider text-[#5C5953]">
-              Фильтр бренда: {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}
+              Фильтр бренда: {formatContourBrandFilterLabel(brandFilter)}
             </span>
             <h3 className="text-[18px] font-semibold text-[#141413]">
               В сценарии «{currentScenario.title}» нет моделей бренда «
-              {brandFilter === 'NA_TELE' ? 'НА ТЕЛЕ' : brandFilter}»
+              {formatContourBrandFilterLabel(brandFilter)}»
             </h3>
             <p className="text-[13.5px] leading-relaxed text-[#5C5953]">
               {hasFinance
@@ -2715,9 +2812,19 @@ export function ProcurementContourView() {
                         {brandsReport.brands.map((b) => (
                           <tr
                             key={b.brandCode}
-                            onClick={() => setBrandFilter(b.brandCode)}
+                            onClick={() =>
+                              setBrandFilter(
+                                b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'
+                                  ? 'BORNERS_FUKAI'
+                                  : b.brandCode
+                              )
+                            }
                             className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
-                              brandFilter === b.brandCode ? 'bg-amber-50/60 font-semibold' : ''
+                              brandFilter === b.brandCode ||
+                              (brandFilter === 'BORNERS_FUKAI' &&
+                                (b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'))
+                                ? 'bg-amber-50/60 font-semibold'
+                                : ''
                             }`}
                           >
                             <td className="py-2.5 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
@@ -2792,7 +2899,7 @@ export function ProcurementContourView() {
                         >
                           <td className="py-3 px-3">
                             {!isHoldingAllBrandsActive && brandFilter !== 'ALL'
-                              ? `ИТОГО (${formatLabBrandLabel(brandFilter)})`
+                              ? `ИТОГО (${formatContourBrandFilterLabel(brandFilter)})`
                               : 'ИТОГО ПО ГРУППЕ (без дублей)'}
                           </td>
                           <td className="py-3 px-2.5 text-right font-mono">
@@ -2866,34 +2973,98 @@ export function ProcurementContourView() {
                         Все бренды холдинга ({multiBrandSummary.groupTotal.modelsCount} мод. ·{' '}
                         {formatCostMln(multiBrandSummary.groupTotal.totalProcurementBudgetRub)})
                       </button>
-                      {multiBrandSummary.brands
-                        .filter((b) => b.hasScenario && b.hasModels && b.modelsCount > 0)
-                        .map((b) => {
-                          const isBrActive = !isHoldingAllBrandsActive && brandFilter === b.brandCode;
+                      {(() => {
+                        const activeBrands = multiBrandSummary.brands.filter(
+                          (b) => b.hasScenario && b.hasModels && b.modelsCount > 0
+                        );
+                        const bfBrands = activeBrands.filter(
+                          (b) =>
+                            b.brandCode === 'BORNERS' ||
+                            b.brandCode === 'FUKAI' ||
+                            (b.brandCode as string) === 'BORNERS_FUKAI'
+                        );
+                        const otherBrands = activeBrands.filter(
+                          (b) =>
+                            b.brandCode !== 'BORNERS' &&
+                            b.brandCode !== 'FUKAI' &&
+                            (b.brandCode as string) !== 'BORNERS_FUKAI'
+                        );
+                        const pillItems: {
+                          code: string;
+                          label: string;
+                          modelsCount: number;
+                          totalProcurementBudgetRub: number;
+                          selectedScenarioId: number | null;
+                        }[] = [];
+                        if (bfBrands.length > 0) {
+                          const bMain = bfBrands.find((b) => b.brandCode === 'BORNERS') || bfBrands[0];
+                          pillItems.push({
+                            code: 'BORNERS_FUKAI',
+                            label: 'BORNERS / FUKAI',
+                            modelsCount: bfBrands.reduce((s, x) => s + x.modelsCount, 0),
+                            totalProcurementBudgetRub: bfBrands.reduce(
+                              (s, x) => s + x.totalProcurementBudgetRub,
+                              0
+                            ),
+                            selectedScenarioId:
+                              bMain?.selectedScenarioId && bMain.selectedScenarioId !== 100
+                                ? bMain.selectedScenarioId
+                                : 1,
+                          });
+                        }
+                        for (const b of otherBrands) {
+                          pillItems.push({
+                            code: b.brandCode,
+                            label:
+                              b.brandCode === 'LISKANI'
+                                ? 'LISKANI'
+                                : b.brandCode === 'NA_TELE'
+                                ? 'НА ТЕЛЕ'
+                                : b.displayCode,
+                            modelsCount: b.modelsCount,
+                            totalProcurementBudgetRub: b.totalProcurementBudgetRub,
+                            selectedScenarioId: b.selectedScenarioId,
+                          });
+                        }
+                        return pillItems.map((b) => {
+                          const isBrActive =
+                            !isHoldingAllBrandsActive &&
+                            (b.code === 'BORNERS_FUKAI'
+                              ? brandFilter === 'BORNERS_FUKAI' ||
+                                brandFilter === 'BORNERS' ||
+                                brandFilter === 'FUKAI'
+                              : brandFilter === b.code);
                           return (
                             <button
-                              key={b.brandCode}
+                              key={b.code}
                               type="button"
                               onClick={() => {
                                 setHoldingScopeMode(false);
                                 setSelectedCategoryFilter('ALL');
-                                setBrandFilter(b.brandCode);
-                                if (b.selectedScenarioId !== null) {
-                                  setSelectedScenarioId(b.selectedScenarioId, b.brandCode);
+                                setBrandFilter(b.code);
+                                if (b.code === 'BORNERS_FUKAI') {
+                                  const scId = b.selectedScenarioId ?? 1;
+                                  if (scId === 1 && !includeGroupPortfolioInS1) {
+                                    setIncludeGroupPortfolioInS1(true);
+                                  }
+                                  setSelectedScenarioId(scId, 'BORNERS_FUKAI');
+                                } else if (b.selectedScenarioId !== null) {
+                                  setSelectedScenarioId(b.selectedScenarioId, b.code);
                                 }
                               }}
-                              className={`h-7.5 px-3 rounded-lg text-[11.5px] font-semibold transition cursor-pointer ${
+                              className={`shrink-0 whitespace-nowrap h-7.5 px-3 rounded-lg text-[11.5px] font-semibold transition cursor-pointer ${
                                 isBrActive
                                   ? 'bg-emerald-600 text-white shadow-2xs'
                                   : 'bg-[#F1F5F9] text-[#334155] hover:bg-[#E2E8F0]'
                               }`}
                             >
-                              {b.displayCode} ({b.modelsCount} мод.
-                              {b.brandCode === 'LISKANI' ? ' · 269 разм.' : ''} ·{' '}
+                              {b.label} ({b.modelsCount} мод.
+                              {b.code === 'LISKANI' ? ' · 269 разм.' : ''} ·{' '}
                               {formatCostMln(b.totalProcurementBudgetRub)})
                             </button>
                           );
-                        })}
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -4300,6 +4471,8 @@ export function FinanceContourView() {
       ? ['BORNERS', 'FUKAI', 'NA_TELE', 'AKUSHA', 'LISKANI'].some((code) =>
           canUserEditBrand(currentUser, code)
         )
+      : brandFilter === 'BORNERS_FUKAI'
+      ? canUserEditBrand(currentUser, 'BORNERS') || canUserEditBrand(currentUser, 'FUKAI')
       : canUserEditBrand(currentUser, brandFilter);
 
   const isHoldingAllBrands = brandFilter === 'ALL';
@@ -4351,6 +4524,8 @@ export function FinanceContourView() {
   const brandsReport = useMemo(() => {
     const effectiveSelectedByBrand = isHoldingAllBrands
       ? selectedScenarioByBrand
+      : brandFilter === 'BORNERS_FUKAI'
+      ? { ...selectedScenarioByBrand, BORNERS: currentScenario.id }
       : { ...selectedScenarioByBrand, [brandFilter]: currentScenario.id };
     const fullReport = computeGroupBrandsInvestmentReport(
       holdingSourceModels,
@@ -4364,26 +4539,36 @@ export function FinanceContourView() {
       }
     );
     if (isHoldingAllBrands) return fullReport;
-    const scopedBrands = fullReport.brands.filter((b) => b.brandCode === brandFilter);
+    const scopedBrands = fullReport.brands.filter((b) =>
+      brandFilter === 'BORNERS_FUKAI'
+        ? b.brandCode === 'BORNERS' ||
+          b.brandCode === 'FUKAI' ||
+          (b.brandCode as string) === 'BORNERS_FUKAI'
+        : b.brandCode === brandFilter
+    );
     const activeBrandRow = scopedBrands[0];
+    const sumNum = (fn: (r: (typeof scopedBrands)[number]) => number) =>
+      scopedBrands.reduce((s, r) => s + (fn(r) || 0), 0);
     return {
       brands: scopedBrands,
       groupTotal: activeBrandRow
         ? {
             ...fullReport.groupTotal,
-            modelsCount: activeBrandRow.modelsCount,
-            annualRevenueRub: activeBrandRow.annualRevenueRub,
-            decemberRevenueRub: activeBrandRow.decemberRevenueRub,
-            annualDemandPacks: activeBrandRow.annualDemandPacks,
-            totalProcurementPacks: activeBrandRow.totalProcurementPacks,
-            totalProcurementUnits: activeBrandRow.totalProcurementUnits,
-            totalProcurementBudgetRub: activeBrandRow.totalProcurementBudgetRub,
-            annualSoldGoodsCostRub: activeBrandRow.annualSoldGoodsCostRub,
-            annualEstimatedOperatingProfitRub: activeBrandRow.annualEstimatedOperatingProfitRub,
-            firstWaveStartBudgetRub: activeBrandRow.firstWaveStartBudgetRub,
-            firstWavePrepaymentRub: activeBrandRow.firstWavePrepaymentRub,
-            peakWorkingCapitalRub: activeBrandRow.peakWorkingCapitalRub,
-            netOwnMoneyRequiredRub: activeBrandRow.peakWorkingCapitalRub,
+            modelsCount: sumNum((r) => r.modelsCount),
+            annualRevenueRub: sumNum((r) => r.annualRevenueRub),
+            decemberRevenueRub: sumNum((r) => r.decemberRevenueRub),
+            annualDemandPacks: sumNum((r) => r.annualDemandPacks),
+            totalProcurementPacks: sumNum((r) => r.totalProcurementPacks),
+            totalProcurementUnits: sumNum((r) => r.totalProcurementUnits),
+            totalProcurementBudgetRub: sumNum((r) => r.totalProcurementBudgetRub),
+            annualSoldGoodsCostRub: sumNum((r) => r.annualSoldGoodsCostRub),
+            annualEstimatedOperatingProfitRub: sumNum(
+              (r) => r.annualEstimatedOperatingProfitRub
+            ),
+            firstWaveStartBudgetRub: sumNum((r) => r.firstWaveStartBudgetRub),
+            firstWavePrepaymentRub: sumNum((r) => r.firstWavePrepaymentRub),
+            peakWorkingCapitalRub: sumNum((r) => r.peakWorkingCapitalRub),
+            netOwnMoneyRequiredRub: sumNum((r) => r.peakWorkingCapitalRub),
             peakMonthIdx: activeBrandRow.peakMonthIdx,
             peakMonthLabel: activeBrandRow.peakMonthLabel,
             selfFundingMonthLabel: activeBrandRow.selfFundingMonthLabel,
@@ -4401,26 +4586,29 @@ export function FinanceContourView() {
     selectedScenarioByBrand,
   ]);
 
-  const scopedFinanceEntries = useMemo(() => {
-    if (isHoldingAllBrands) {
-      return buildHoldingScopedModelEntries(
-        holdingSourceModels,
+  const scopedFinanceEntries = useMemo(
+    () =>
+      resolveContourScopedEntries({
+        isHoldingAllBrands,
+        brandFilter,
+        eligibleModels,
+        models: holdingSourceModels,
         scenarios,
         selectedScenarioByBrand,
         currentScenario,
-        holdingSummary
-      );
-    }
-    return eligibleModels.map((m) => ({ model: m, scenario: currentScenario }));
-  }, [
-    isHoldingAllBrands,
-    holdingSourceModels,
-    scenarios,
-    selectedScenarioByBrand,
-    currentScenario,
-    holdingSummary,
-    eligibleModels,
-  ]);
+        multiBrandSummary: holdingSummary,
+      }),
+    [
+      isHoldingAllBrands,
+      brandFilter,
+      holdingSourceModels,
+      scenarios,
+      selectedScenarioByBrand,
+      currentScenario,
+      holdingSummary,
+      eligibleModels,
+    ]
+  );
 
   const finSummary = useMemo(() => {
     let totalCogsRub = 0;
@@ -4561,6 +4749,8 @@ export function FinanceContourView() {
 
   const effectiveAnnualRevenueRub = isHoldingAllBrands
     ? holdingSummary.groupTotal.annualRevenueRub
+    : brandFilter === 'BORNERS_FUKAI'
+    ? Math.max(totals.annualRevenueRub, brandsReport.groupTotal.annualRevenueRub)
     : totals.annualRevenueRub;
 
   if (!hasFinance) {
@@ -4627,7 +4817,7 @@ export function FinanceContourView() {
             <div className="rounded-[14px] bg-white border border-[#D8D7CF] p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1 max-w-2xl">
                 <div className="text-[14.5px] font-bold text-[#141413]">
-                  В сценарии «{currentScenario.title}» нет моделей выбранного бренда ({brandFilter})
+                  В сценарии «{currentScenario.title}» нет моделей выбранного бренда ({formatContourBrandFilterLabel(brandFilter)})
                 </div>
                 <p className="text-[12.5px] text-[#5E5D58]">
                   {brandFilter === 'NA_TELE'
@@ -4682,7 +4872,9 @@ export function FinanceContourView() {
                     Переключить на Сценарий №2 · 150 млн
                   </button>
                 )}
-                {brandFilter === 'FUKAI' && selectedScenarioId === 1 && !includeGroupPortfolioInS1 && (
+                {(brandFilter === 'FUKAI' || brandFilter === 'BORNERS_FUKAI') &&
+              selectedScenarioId === 1 &&
+              !includeGroupPortfolioInS1 && (
                   <button
                     type="button"
                     onClick={() => setIncludeGroupPortfolioInS1(true)}
@@ -5085,7 +5277,7 @@ export function FinanceContourView() {
                   onClick={() => setBrandFilter('ALL')}
                   className="rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 cursor-pointer"
                 >
-                  Сбросить фильтр бренда ({brandFilter}) ×
+                  Сбросить фильтр бренда ({formatContourBrandFilterLabel(brandFilter)}) ×
                 </button>
               )}
             </div>
@@ -5120,10 +5312,18 @@ export function FinanceContourView() {
                         if (mb && typeof mb.selectedScenarioId === 'number') {
                           setSelectedScenarioId(mb.selectedScenarioId, b.brandCode);
                         }
-                        setBrandFilter(b.brandCode);
+                        setBrandFilter(
+                          b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'
+                            ? 'BORNERS_FUKAI'
+                            : b.brandCode
+                        );
                       }}
                       className={`hover:bg-[#FAFAF7] cursor-pointer transition ${
-                        brandFilter === b.brandCode ? 'bg-amber-50/60 font-semibold' : ''
+                        brandFilter === b.brandCode ||
+                        (brandFilter === 'BORNERS_FUKAI' &&
+                          (b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'))
+                          ? 'bg-amber-50/60 font-semibold'
+                          : ''
                       }`}
                     >
                       <td className="py-2.5 px-3.5 font-bold text-[#141413]">{b.brandTitle}</td>
@@ -5209,7 +5409,7 @@ export function FinanceContourView() {
                     <td className="py-3 px-3.5">
                       {isHoldingAllBrands
                         ? 'ИТОГО ПО ГРУППЕ (без дублей)'
-                        : `ИТОГО (${formatLabBrandLabel(brandFilter)})`}
+                        : `ИТОГО (${formatContourBrandFilterLabel(brandFilter)})`}
                     </td>
                     <td className="py-3 px-2.5 text-right font-mono">
                       {brandsReport.groupTotal.modelsCount}

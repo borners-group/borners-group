@@ -2662,11 +2662,27 @@ export function detectModelBrandPortfolioLabel(
   return 'BORNERS';
 }
 
+export function isCombinedBornersFukaiFilter(brandInput?: string | null): boolean {
+  if (!brandInput) return false;
+  const upper = brandInput.trim().toUpperCase();
+  if (
+    upper === 'BORNERS_FUKAI' ||
+    upper === 'BORNERS / FUKAI' ||
+    upper === 'BORNERS/FUKAI'
+  ) {
+    return true;
+  }
+  return upper.replace(/\s+/g, '') === 'BORNERS/FUKAI';
+}
+
 export function matchesBrandFilter(
   model: ScenarioModelSpec,
   brandFilter: string
 ): boolean {
   if (!brandFilter || brandFilter === 'ALL') return true;
+  if (isCombinedBornersFukaiFilter(brandFilter)) {
+    return matchesBrandFilter(model, 'BORNERS') || matchesBrandFilter(model, 'FUKAI');
+  }
   const portfolioBrand = detectModelBrandPortfolioLabel(model).trim();
   const upperBrand = portfolioBrand.toUpperCase();
   const upperFilter = brandFilter.trim().toUpperCase();
@@ -4126,7 +4142,7 @@ export function normalizePortfolioBrandCode(
   if (!brandInput) return 'ALL';
   const upper = brandInput.trim().toUpperCase();
   if (upper === 'ALL' || upper === 'ВСЕ БРЕНДЫ') return 'ALL';
-  if (upper === 'BORNERS') return 'BORNERS';
+  if (upper === 'BORNERS' || isCombinedBornersFukaiFilter(upper)) return 'BORNERS';
   if (upper === 'FUKAI' || upper === 'ПОДТВЕРДИТЬ БРЕНД') return 'FUKAI';
   if (upper === 'AKUSHA' || upper === 'АКУША') return 'AKUSHA';
   if (
@@ -4171,6 +4187,7 @@ export function getScenariosForBrand(
   options?: { yearFilter?: number | 'ALL'; onlyExplicitForNewBrands?: boolean }
 ): GrowthScenarioDef[] {
   const activeScenarios = scenarios.filter((s) => !s.isArchived);
+  const isCombinedBF = isCombinedBornersFukaiFilter(brandFilter);
   const normBrand = normalizePortfolioBrandCode(brandFilter);
   const yearFilter = options?.yearFilter ?? 'ALL';
   const onlyExplicit = options?.onlyExplicitForNewBrands ?? false;
@@ -4181,6 +4198,7 @@ export function getScenariosForBrand(
       ? normalizePortfolioBrandCode(s.ownerBrandCode)
       : 'BORNERS';
     if (s.ownerBrandCode === 'ALL') return !onlyExplicit;
+    if (isCombinedBF && (owner === 'BORNERS' || owner === 'FUKAI')) return true;
     if (owner === normBrand) return true;
     // Для BORNERS и FUKAI базовые сценарии 100, 1, 2, 3 доступны по умолчанию
     if (!s.ownerBrandCode && (normBrand === 'BORNERS' || normBrand === 'FUKAI')) {
@@ -4210,6 +4228,12 @@ export function isScenarioCompatibleWithBrand(
   brandInput: string
 ): boolean {
   if (!scenario || scenario.isArchived) return false;
+  if (isCombinedBornersFukaiFilter(brandInput)) {
+    return (
+      isScenarioCompatibleWithBrand(scenario, 'BORNERS') ||
+      isScenarioCompatibleWithBrand(scenario, 'FUKAI')
+    );
+  }
   const normBrand = normalizePortfolioBrandCode(brandInput);
   if (normBrand === 'ALL') {
     if (!scenario.ownerBrandCode || scenario.ownerBrandCode === 'ALL') return true;
