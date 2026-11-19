@@ -16,7 +16,6 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
-  Lock,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -281,23 +280,46 @@ export function useAuthContext(): AuthContextValue {
   };
 }
 
+const AUTH_BRAND_MARKS = [
+  { label: 'BORNERS / FUKAI', accentVar: 'var(--accent-borners, #1C1B18)' },
+  { label: 'AKUSHA', accentVar: 'var(--accent-akusha, #D95D39)' },
+  { label: 'LISKANI', accentVar: 'var(--accent-liskani, #0F766E)' },
+  { label: 'НА ТЕЛЕ', accentVar: 'var(--accent-natele, #B07D4F)' },
+] as const;
+
 function AuthLoadingScreen() {
   return (
     <div
       data-testid="borners-auth-loading"
-      className="min-h-screen w-full bg-[#F6F5F2] text-[#141413] flex items-center justify-center px-4 py-10"
+      className="relative min-h-screen w-full overflow-hidden bg-[#F6F5F2] text-[#141413] flex items-center justify-center px-4 py-10"
     >
-      <div className="w-full max-w-[400px] bg-white rounded-2xl border border-neutral-200/80 shadow-[0_12px_40px_rgba(20,20,19,0.06)] p-8 text-center">
-        <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-[#141413] text-white">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 0%, rgba(15, 118, 110, 0.05), transparent 55%)',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[0.35]"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(20, 20, 19, 0.14) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
+      <div className="relative z-10 w-full max-w-[400px] rounded-2xl bg-white border border-[#141413]/[0.08] dark:border-white/[0.09] shadow-[0_1px_3px_rgba(20,20,19,0.04),0_20px_50px_-20px_rgba(20,20,19,0.14)] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-[#141413] dark:bg-[#22211E] text-[#FAF9F6] shadow-[0_2px_10px_rgba(20,20,19,0.18)] ring-1 ring-inset ring-white/10 dark:ring-white/15">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8D8A84]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#78756E]">
           BORNERS GROUP
         </p>
-        <h1 className="mt-1.5 text-lg font-semibold tracking-tight text-[#141413]">
-          Проверка защищённого доступа
+        <h1 className="mt-1.5 text-[18px] font-semibold tracking-[-0.02em] text-[#141413]">
+          Проверка доступа
         </h1>
-        <p className="mt-2 text-sm text-[#6E6C66]">
+        <p className="mt-1.5 text-[13.5px] text-[#5C5953]">
           Сверяем сессию и права участника компании...
         </p>
       </div>
@@ -341,33 +363,64 @@ function AuthLoginScreen() {
   return (
     <div
       data-testid="borners-auth-gate"
-      className="min-h-screen w-full bg-[#F6F5F2] text-[#141413] flex items-center justify-center px-4 py-10"
+      className="relative min-h-screen w-full overflow-hidden bg-[#F6F5F2] text-[#141413] flex items-center justify-center px-4 py-10"
     >
-      <div className="w-full max-w-[430px] bg-white rounded-2xl border border-neutral-200/80 shadow-[0_16px_48px_rgba(20,20,19,0.07)] p-7 sm:p-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#141413] text-white">
-            <Lock className="h-4 w-4" />
+      {/* Архитектурное верхнее свечение и едва заметная сетка точек */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 0%, rgba(15, 118, 110, 0.05), transparent 55%)',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[0.35]"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(20, 20, 19, 0.14) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-[440px] rounded-2xl bg-white border border-[#141413]/[0.08] dark:border-white/[0.09] shadow-[0_1px_3px_rgba(20,20,19,0.04),0_20px_50px_-20px_rgba(20,20,19,0.14)] p-8 sm:p-9">
+        {/* Верхняя бренд-панель с монограммой */}
+        <div className="flex items-center gap-3.5">
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#141413] dark:bg-[#22211E] text-[#FAF9F6] shadow-[0_2px_10px_rgba(20,20,19,0.18)] ring-1 ring-inset ring-white/10 dark:ring-white/15">
+            <span className="text-[19px] font-semibold tracking-[-0.03em] leading-none select-none">
+              B
+            </span>
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white ring-1 ring-[#141413]/10 shadow-2xs"
+            >
+              <ShieldCheck className="h-3 w-3 text-[#0F766E]" />
+            </span>
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8D8A84]">
-              Strategy Platform · 2027–2028
+            <div className="text-[12.5px] font-semibold tracking-[0.08em] text-[#141413] leading-tight">
+              BORNERS GROUP
+            </div>
+            <p className="mt-0.5 text-[10.5px] font-medium uppercase tracking-[0.14em] text-[#78756E] whitespace-nowrap">
+              STRATEGY PLATFORM · 2027–2028
             </p>
-            <h1 className="text-base sm:text-[17px] font-semibold tracking-tight text-[#141413]">
-              BORNERS GROUP · Защищённый доступ
-            </h1>
           </div>
         </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-[#6E6C66]">
-          Введите корпоративный email и пароль для входа в рабочий контур продаж, закупок и
-          финансового планирования.
-        </p>
+        <div className="mt-6">
+          <h1 className="text-[22px] sm:text-[24px] font-semibold tracking-[-0.028em] text-[#141413] leading-tight whitespace-nowrap">
+            Вход в платформу
+          </h1>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-[#5C5953]">
+            Единая система продаж, закупок и инвестиций
+          </p>
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           <div>
             <label
               htmlFor="borners-auth-email"
-              className="block text-xs font-medium text-[#3F3E3B] mb-1.5"
+              className="block text-[12px] font-medium text-[#3F3E3B] mb-1.5"
             >
               Корпоративный email
             </label>
@@ -388,14 +441,14 @@ function AuthLoginScreen() {
                 }
               }}
               placeholder="name@borners.ru"
-              className="w-full rounded-xl border border-neutral-200/90 bg-[#FAFAF8] px-3.5 py-2.5 text-sm text-[#141413] placeholder:text-[#A3A09A] outline-none transition focus:border-[#141413] focus:bg-white focus:ring-2 focus:ring-[#141413]/10 disabled:opacity-60"
+              className="w-full h-11 rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] px-3.5 text-[14px] text-[#141413] placeholder:text-[#9E9A91] outline-none transition focus:bg-white focus:border-[#141413]/45 focus:ring-4 focus:ring-[#141413]/[0.06] disabled:opacity-60"
             />
           </div>
 
           <div>
             <label
               htmlFor="borners-auth-password"
-              className="block text-xs font-medium text-[#3F3E3B] mb-1.5"
+              className="block text-[12px] font-medium text-[#3F3E3B] mb-1.5"
             >
               Пароль
             </label>
@@ -416,14 +469,14 @@ function AuthLoginScreen() {
                   }
                 }}
                 placeholder="••••••••"
-                className="w-full rounded-xl border border-neutral-200/90 bg-[#FAFAF8] pl-3.5 pr-10 py-2.5 text-sm text-[#141413] placeholder:text-[#A3A09A] outline-none transition focus:border-[#141413] focus:bg-white focus:ring-2 focus:ring-[#141413]/10 disabled:opacity-60"
+                className="w-full h-11 rounded-xl bg-[#FAF9F6] border border-[#E4E1DA] pl-3.5 pr-11 text-[14px] text-[#141413] placeholder:text-[#9E9A91] outline-none transition focus:bg-white focus:border-[#141413]/45 focus:ring-4 focus:ring-[#141413]/[0.06] disabled:opacity-60"
               />
               <button
                 type="button"
                 tabIndex={0}
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#8D8A84] hover:bg-neutral-100 hover:text-[#141413] transition"
+                className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-[#8D8A84] hover:bg-[#EFEDE8] hover:text-[#141413] transition cursor-pointer"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -443,7 +496,7 @@ function AuthLoginScreen() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#141413] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#2A2A28] active:scale-[0.995] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full h-11 flex items-center justify-center gap-2 rounded-xl bg-[#141413] hover:bg-[#262522] px-4 text-[14px] font-medium text-white shadow-sm transition active:scale-[0.995] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {submitting ? (
               <>
@@ -456,9 +509,27 @@ function AuthLoginScreen() {
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-neutral-200/80 flex items-start gap-2 text-xs text-[#6E6C66]">
-          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-[#1D7F5F]" />
-          <span>Доступ открыт только авторизованным участникам BORNERS GROUP (RLS)</span>
+        <div className="mt-7 pt-5 border-t border-[#E4E1DA] space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            {AUTH_BRAND_MARKS.map((item) => (
+              <span
+                key={item.label}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#5C5953] whitespace-nowrap"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-[6px] w-[6px] rounded-full shrink-0"
+                  style={{ backgroundColor: item.accentVar }}
+                />
+                <span>{item.label}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 text-[11.5px] text-[#6E6C66]">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-[#15803D]" />
+            <span>Защищённый контур BORNERS GROUP (RLS)</span>
+          </div>
         </div>
       </div>
     </div>

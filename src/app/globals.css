@@ -22,6 +22,10 @@ html:not([data-ui="classic"]) {
   --bg-dark-block: #141413;
   --brand-borners: #141413;
   --brand-natele: #5C5953;
+  --accent-borners: #1C1B18;
+  --accent-akusha: #D95D39;
+  --accent-liskani: #0F766E;
+  --accent-natele: #B07D4F;
   --status-success: #15803D;
   --status-warning: #B45309;
   --status-error: #B91C1C;
@@ -37,6 +41,10 @@ html.dark:not([data-ui="classic"]) {
   --border-color: #282724;
   --border-strong: #383632;
   --bg-dark-block: #22211E;
+  --accent-borners: #E5E2DC;
+  --accent-akusha: #F07C58;
+  --accent-liskani: #2DD4BF;
+  --accent-natele: #D4A373;
 }
 
 /* Мгновенный откат в 1 клик к классическому стилю v9 (Peakly Cool Slate & Obsidian) */
@@ -52,6 +60,10 @@ html[data-ui="classic"] {
   --bg-dark-block: #0F172A;
   --brand-borners: #1E293B;
   --brand-natele: #475569;
+  --accent-borners: #1C1B18;
+  --accent-akusha: #D95D39;
+  --accent-liskani: #0F766E;
+  --accent-natele: #B07D4F;
   --status-success: #10B981;
   --status-warning: #F59E0B;
   --status-error: #EF4444;
@@ -67,6 +79,10 @@ html.dark[data-ui="classic"] {
   --border-color: #222938;
   --border-strong: #2E374B;
   --bg-dark-block: #181D2A;
+  --accent-borners: #E5E2DC;
+  --accent-akusha: #F07C58;
+  --accent-liskani: #2DD4BF;
+  --accent-natele: #D4A373;
 }
 
 html {
@@ -93,13 +109,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* В архитектурном режиме (COS / Ramp) включаем настоящий технический моноширинный шрифт JetBrains Mono для SKU, партий PO и рублей */
+/* В архитектурном режиме (COS / Ramp) включаем настоящий технический моноширинный шрифт JetBrains Mono для SKU, партий PO и технических кодов (без перечёркнутых нулей) */
 html:not([data-ui="classic"]) .font-mono,
 html:not([data-ui="classic"]) code,
 html:not([data-ui="classic"]) kbd {
   font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "zero" 1;
+  font-feature-settings: "tnum" 1;
   letter-spacing: -0.02em;
 }
 
@@ -107,6 +123,44 @@ html[data-ui="classic"] .font-mono {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* Редакционная финансовая типографика для ключевых KPI и денежных сумм (Ramp / Apple Finance) */
+.font-display-num {
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.03em;
+}
+
+/* Деликатная поверхность карточек в стиле Apple Finance / Ramp */
+.card-elevated {
+  background-color: var(--bg-card);
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.03), 0 6px 20px -10px rgba(20, 20, 19, 0.07);
+  transition: border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.card-elevated-interactive:hover {
+  border-color: rgba(20, 20, 19, 0.16);
+  box-shadow: 0 2px 6px rgba(20, 20, 19, 0.05), 0 12px 28px -12px rgba(20, 20, 19, 0.12);
+}
+
+html.dark .card-elevated {
+  background-color: #151514;
+  border: 1px solid rgba(242, 240, 236, 0.09);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.38), 0 10px 26px -12px rgba(0, 0, 0, 0.62);
+}
+
+html.dark[data-ui="classic"] .card-elevated {
+  background-color: var(--bg-card);
+}
+
+html.dark .card-elevated-interactive:hover {
+  border-color: rgba(242, 240, 236, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.48), 0 16px 34px -12px rgba(0, 0, 0, 0.72);
 }
 
 .font-serif-editorial {
@@ -223,8 +277,32 @@ table thead tr {
   border-bottom: 1px solid var(--border-color) !important;
 }
 
+table tbody tr {
+  transition: background-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 table tbody tr + tr {
   border-top: 1px solid var(--border-color);
+}
+
+html:not([data-ui="classic"]):not(.dark) table thead tr {
+  border-bottom-color: rgba(20, 20, 19, 0.09) !important;
+}
+
+html:not([data-ui="classic"]):not(.dark) table tbody tr + tr {
+  border-top-color: rgba(20, 20, 19, 0.07);
+}
+
+html:not([data-ui="classic"]):not(.dark) table tbody tr:hover {
+  background-color: rgba(20, 20, 19, 0.022);
+}
+
+html.dark:not([data-ui="classic"]) table tbody tr + tr {
+  border-top-color: rgba(242, 240, 236, 0.07);
+}
+
+html.dark:not([data-ui="classic"]) table tbody tr:hover {
+  background-color: rgba(242, 240, 236, 0.03);
 }
 
 /* Мягкие деликатные 1px рамки вместо тяжёлых 1.5px/2px границ */
@@ -265,6 +343,31 @@ html.dark .bg-\[\#FDFBF7\],
 html.dark .bg-\[\#FAF9F7\],
 html.dark .bg-\[\#FCFBF9\] {
   background-color: var(--bg-card) !important;
+}
+
+html.dark:not([data-ui="classic"]) .bg-white\/88 {
+  background-color: rgba(21, 21, 20, 0.88) !important;
+}
+
+html.dark[data-ui="classic"] .bg-white\/88 {
+  background-color: rgba(18, 22, 32, 0.9) !important;
+}
+
+html.dark .bg-\[\#F1EFE9\],
+html.dark .bg-\[\#F1EFE9\]\/90 {
+  background-color: var(--bg-subtle) !important;
+}
+
+html.dark:not([data-ui="classic"]) .dark\:bg-\[\#151A26\] {
+  background-color: #1A1917 !important;
+}
+
+html.dark:not([data-ui="classic"]) .dark\:bg-\[\#222A3D\] {
+  background-color: #262522 !important;
+}
+
+html.dark:not([data-ui="classic"]) .dark\:hover\:bg-\[\#1E2536\]:hover {
+  background-color: #22211E !important;
 }
 
 html.dark .bg-\[\#F8FAFC\],
@@ -594,6 +697,7 @@ html.dark .text-\[\#2E6B4E\] {
 html.dark .border-\[\#E2E8F0\],
 html.dark .border-\[\#E2E6EE\],
 html.dark .border-\[\#E4E1DA\],
+html.dark .border-\[\#E6E3DC\],
 html.dark .border-\[\#D2CEC4\],
 html.dark .border-\[\#DCE2EC\],
 html.dark .border-\[\#DCE0E8\],
@@ -834,6 +938,16 @@ html.dark .border-\[\#E8D2B0\],
 html.dark .border-\[\#EAD8BC\],
 html.dark .border-amber-300 {
   border-color: rgba(245, 158, 11, 0.32) !important;
+}
+
+html.dark button.borners-update-pill-cta {
+  background-color: #F6F5F2 !important;
+  color: #141413 !important;
+}
+
+html.dark button.borners-update-pill-cta:hover {
+  background-color: #FFFFFF !important;
+  color: #141413 !important;
 }
 
 /* ─── Спокойная архитектурная глубина в editorial VS классические эффекты в classic ─── */

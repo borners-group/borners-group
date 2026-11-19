@@ -4,9 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  ArrowUpRight,
   BarChart3,
-  Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -53,28 +51,180 @@ import {
 } from '@/lib/investmentScheduleEngine';
 import { useInvestmentSchedule } from '@/lib/useInvestmentSchedule';
 
-function fmtMln(valRub: number): string {
+function splitMoneyParts(
+  valRub: number,
+  opts?: { signed?: boolean; approx?: boolean }
+): { sign: string; num: string; unit: string } {
   const abs = Math.abs(valRub);
-  if (abs === 0) return '0,00 млн ₽';
-  if (abs < 100_000) {
-    return `${Math.round(valRub).toLocaleString('ru-RU')} ₽`;
+  const approxPrefix = opts?.approx ? '~' : '';
+  if (abs === 0) {
+    return { sign: approxPrefix, num: '0,00', unit: 'млн ₽' };
   }
-  const sign = valRub < 0 ? '−' : '';
-  return `${sign}${(abs / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
+  const rawSign = valRub < 0 ? '−' : opts?.signed && valRub > 0 ? '+' : '';
+  if (abs < 100_000) {
+    const intStr = String(Math.round(abs)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return { sign: `${approxPrefix}${rawSign}`, num: intStr, unit: '₽' };
+  }
+  const [intPart, decPart] = (abs / 1_000_000).toFixed(2).split('.');
+  const groupedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return {
+    sign: `${approxPrefix}${rawSign}`,
+    num: `${groupedInt},${decPart}`,
+    unit: 'млн ₽',
+  };
+}
+
+function fmtMln(valRub: number): string {
+  const { sign, num, unit } = splitMoneyParts(valRub);
+  return `${sign}${num} ${unit}`;
 }
 
 function fmtSignedDeltaMln(valRub: number): string {
   if (Math.abs(valRub) < 1_000) return '0 ₽';
-  const sign = valRub > 0 ? '+' : '−';
-  const abs = Math.abs(valRub);
-  if (abs < 100_000) {
-    return `${sign}${Math.round(abs).toLocaleString('ru-RU')} ₽`;
-  }
-  return `${sign}${(abs / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
+  const { sign, num, unit } = splitMoneyParts(valRub, { signed: true });
+  return `${sign}${num} ${unit}`;
 }
 
 function fmtRub(valRub: number): string {
-  return `${Math.round(valRub).toLocaleString('ru-RU')} ₽`;
+  const sign = valRub < 0 ? '−' : '';
+  const intStr = String(Math.round(Math.abs(valRub))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return `${sign}${intStr} ₽`;
+}
+
+function MoneyFigure({
+  valueRub,
+  className = '',
+  unitClassName = '',
+  signed = false,
+  approx = false,
+  title,
+}: {
+  valueRub: number;
+  className?: string;
+  unitClassName?: string;
+  signed?: boolean;
+  approx?: boolean;
+  title?: string;
+}) {
+  const { sign, num, unit } = splitMoneyParts(valueRub, { signed, approx });
+  return (
+    <span
+      title={title}
+      className={`font-display-num tabular-nums whitespace-nowrap inline-flex items-baseline ${className}`}
+    >
+      <span>
+        {sign}
+        {num}
+      </span>
+      <span
+        className={`text-[0.54em] font-medium text-[#7A766E] dark:text-[#8E8A82] ml-1 whitespace-nowrap tracking-normal ${unitClassName}`}
+      >
+        {unit}
+      </span>
+    </span>
+  );
+}
+
+const BRAND_DOT_STYLE: Record<
+  string,
+  {
+    dotClass: string;
+    activeDotClass: string;
+    monogramBg: string;
+    monogramText: string;
+    monogramBorder: string;
+  }
+> = {
+  BORNERS_FUKAI: {
+    dotClass: 'bg-[#1C1B18] dark:bg-[#E5E2DC]',
+    activeDotClass: 'bg-white/90',
+    monogramBg: 'bg-[#F3F1EC] dark:bg-[#23221F]',
+    monogramText: 'text-[#1C1B18] dark:text-[#E5E2DC]',
+    monogramBorder: 'border-[#E2DED5] dark:border-[#34322E]',
+  },
+  BORNERS: {
+    dotClass: 'bg-[#1C1B18] dark:bg-[#E5E2DC]',
+    activeDotClass: 'bg-white/90',
+    monogramBg: 'bg-[#F3F1EC] dark:bg-[#23221F]',
+    monogramText: 'text-[#1C1B18] dark:text-[#E5E2DC]',
+    monogramBorder: 'border-[#E2DED5] dark:border-[#34322E]',
+  },
+  FUKAI: {
+    dotClass: 'bg-[#1C1B18] dark:bg-[#E5E2DC]',
+    activeDotClass: 'bg-white/90',
+    monogramBg: 'bg-[#F3F1EC] dark:bg-[#23221F]',
+    monogramText: 'text-[#1C1B18] dark:text-[#E5E2DC]',
+    monogramBorder: 'border-[#E2DED5] dark:border-[#34322E]',
+  },
+  AKUSHA: {
+    dotClass: 'bg-[#D95D39]',
+    activeDotClass: 'bg-[#EE7754]',
+    monogramBg: 'bg-[#FDF1EC] dark:bg-[#2C1C17]',
+    monogramText: 'text-[#B84523] dark:text-[#F09A7E]',
+    monogramBorder: 'border-[#F3D4C8] dark:border-[#4A2D23]',
+  },
+  LISKANI: {
+    dotClass: 'bg-[#0F766E]',
+    activeDotClass: 'bg-[#2DD4BF]',
+    monogramBg: 'bg-[#ECF6F5] dark:bg-[#142927]',
+    monogramText: 'text-[#0F766E] dark:text-[#5EEAD4]',
+    monogramBorder: 'border-[#CBE6E3] dark:border-[#224542]',
+  },
+  NA_TELE: {
+    dotClass: 'bg-[#B07D4F]',
+    activeDotClass: 'bg-[#D6A373]',
+    monogramBg: 'bg-[#F9F3EC] dark:bg-[#292119]',
+    monogramText: 'text-[#8C6038] dark:text-[#DDB38A]',
+    monogramBorder: 'border-[#EADBC9] dark:border-[#433528]',
+  },
+};
+
+function getBrandVisual(brandCode?: string | null) {
+  const key = (brandCode || '').trim().toUpperCase();
+  if (key === 'BORNERS / FUKAI' || key === 'BORNERS+FUKAI') {
+    return BRAND_DOT_STYLE.BORNERS_FUKAI;
+  }
+  return BRAND_DOT_STYLE[key] || BRAND_DOT_STYLE.BORNERS_FUKAI;
+}
+
+function getBrandShortLabel(brandCode?: string | null): string {
+  const key = (brandCode || '').trim().toUpperCase();
+  if (key === 'BORNERS_FUKAI' || key === 'BORNERS / FUKAI') return 'BORNERS / FUKAI';
+  if (key === 'BORNERS') return 'BORNERS';
+  if (key === 'FUKAI') return 'FUKAI';
+  if (key === 'AKUSHA') return 'AKUSHA';
+  if (key === 'LISKANI') return 'LISKANI';
+  if (key === 'NA_TELE') return 'НА ТЕЛЕ';
+  return key;
+}
+
+function getProductMonogram(title: string, code?: string): string {
+  const cleanTitle = (title || '').replace(/[«»"'()[\]]/g, ' ').trim();
+  const stopWords = new Set([
+    'и',
+    'в',
+    'на',
+    'с',
+    'для',
+    'по',
+    'из',
+    'от',
+    'к',
+    'комплект',
+    'набор',
+  ]);
+  const words = cleanTitle
+    .split(/[\s\-_/]+/)
+    .filter((w) => w.length > 0 && !stopWords.has(w.toLowerCase()));
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  if (words.length === 1 && words[0].length >= 2) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  const cleanCode = (code || '').replace(/[^A-Za-zА-Яа-я0-9]/g, '');
+  if (cleanCode.length >= 2) return cleanCode.slice(0, 2).toUpperCase();
+  return 'SK';
 }
 
 function pluralizeBatchesRu(count: number): string {
@@ -106,10 +256,12 @@ function SkuPaymentThumbnail({
   src,
   alt,
   code,
+  brandCode,
 }: {
   src?: string;
   alt: string;
   code?: string;
+  brandCode?: string;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
 
@@ -124,21 +276,24 @@ function SkuPaymentThumbnail({
         alt={alt}
         loading="lazy"
         onError={() => setImgFailed(true)}
-        className="h-14 w-12 rounded-lg object-cover border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] shrink-0"
+        className="h-12 w-12 rounded-xl object-cover ring-1 ring-black/[0.08] dark:ring-white/[0.1] bg-[#FAF9F6] dark:bg-[#1D1C1A] shrink-0"
       />
     );
   }
 
+  const brandVis = getBrandVisual(brandCode);
+  const initials = getProductMonogram(alt, code);
+
   return (
     <div
       aria-label={`SKU ${code || alt}`}
-      className="h-14 w-12 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] shrink-0 flex flex-col items-center justify-center text-center px-1 select-none"
+      className={`h-12 w-12 rounded-xl border shrink-0 flex flex-col items-center justify-center text-center px-1 select-none ${brandVis.monogramBg} ${brandVis.monogramBorder} ${brandVis.monogramText}`}
     >
-      <span className="font-mono text-[9.5px] font-semibold tracking-wider text-[#5C5953] dark:text-[#9A968E]">
-        SKU
+      <span className="text-[12.5px] font-semibold tracking-tight leading-none">
+        {initials}
       </span>
       {code && (
-        <span className="font-mono text-[8.5px] text-[#78746C] truncate max-w-full">
+        <span className="mt-1 font-mono text-[8px] opacity-65 truncate max-w-full leading-none">
           {code.slice(0, 6)}
         </span>
       )}
@@ -613,6 +768,29 @@ export function InvestmentSchedulePanel({
       null
     );
   }, [schedule.whenAndHowMuchRows]);
+
+  const secondaryRecommendations = useMemo(() => {
+    return schedule.recommendations.filter((rec) => {
+      if (rec.actionTarget === 'focus_payment_date' && nextRequiredCashRow) return false;
+      if (
+        (rec.actionTarget === 'open_missing_cost_sku' ||
+          rec.actionTarget === 'open_investment_settings') &&
+        (schedule.isPreliminaryCalculation || !schedule.isProfitComplete)
+      ) {
+        return false;
+      }
+      if (rec.severity === 'success' && (nextRequiredCashRow || schedule.nextUpcomingPayment)) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    schedule.recommendations,
+    schedule.isPreliminaryCalculation,
+    schedule.isProfitComplete,
+    schedule.nextUpcomingPayment,
+    nextRequiredCashRow,
+  ]);
 
   // Данные для графика «Свободные деньги бизнеса» (Раздел 8) — объявлено до раннего return по правилам React Hooks
   const maxAbsFreeCash = useMemo(() => {
@@ -1124,40 +1302,99 @@ export function InvestmentSchedulePanel({
       ? Math.round((resolvedOperatingProfitRub / schedule.totalGrossSalesRevenueRub) * 1000) / 10
       : 0;
 
+  const grossRevRub = schedule.totalGrossSalesRevenueRub;
+  const wbSharePct =
+    grossRevRub > 0
+      ? Math.max(0, Math.min(100, Math.round((resolvedWbDeductionsRub / grossRevRub) * 1000) / 10))
+      : 0;
+  const cogsSharePct =
+    grossRevRub > 0
+      ? Math.max(0, Math.min(100, Math.round((resolvedSoldGoodsCostRub / grossRevRub) * 1000) / 10))
+      : 0;
+  const taxOpexSharePct =
+    grossRevRub > 0
+      ? Math.max(0, Math.min(100, Math.round((resolvedTaxAndOpexTotalRub / grossRevRub) * 1000) / 10))
+      : 0;
+  const profitPositiveRub = Math.max(0, resolvedOperatingProfitRub);
+  const profitSharePct =
+    grossRevRub > 0
+      ? Math.max(0, Math.min(100, Math.round((profitPositiveRub / grossRevRub) * 1000) / 10))
+      : 0;
+  const revenueBarSum = wbSharePct + cogsSharePct + taxOpexSharePct + profitSharePct;
+  const revenueBarNorm = revenueBarSum > 0 ? 100 / revenueBarSum : 0;
+  const barWbWidthPct = wbSharePct * revenueBarNorm;
+  const barCogsWidthPct = cogsSharePct * revenueBarNorm;
+  const barTaxOpexWidthPct = taxOpexSharePct * revenueBarNorm;
+  const barProfitWidthPct = profitSharePct * revenueBarNorm;
+
+  const showPreliminaryNoticeStrip =
+    schedule.isPreliminaryCalculation || !schedule.isProfitComplete;
+
+  const requiredCapitalRub = schedule.calculatedCapitalNeedRub ?? 0;
+  const factualFundedSharePct =
+    requiredCapitalRub > 0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round((schedule.factualOwnMoneyContributedRub / requiredCapitalRub) * 100)
+          )
+        )
+      : 100;
+  const plannedFundedSharePct =
+    requiredCapitalRub > 0
+      ? Math.min(
+          100 - factualFundedSharePct,
+          Math.max(
+            0,
+            Math.round((schedule.plannedOwnMoneyInjectionsRub / requiredCapitalRub) * 100)
+          )
+        )
+      : 0;
+
   return (
     <div
       data-testid="investment-schedule-root"
       className="space-y-5"
     >
-      {/* РАЗДЕЛ 2 ТЗ: ВЕРХНЯЯ ПАНЕЛЬ (БРЕНД / СЦЕНАРИЙ / ГОД 2027–2028 + СТАТУС СОХРАНЕНИЯ) */}
-      <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-4 py-3.5 sm:px-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+      {/* РАЗДЕЛ 2 ТЗ: ЕДИНАЯ СПОКОЙНАЯ ПАНЕЛЬ ФИЛЬТРОВ (БРЕНД / СЦЕНАРИЙ / ГОД 2027–2028 + СТАТУС) */}
+      <div className="rounded-2xl bg-white dark:bg-[#151514] border border-[#141413]/[0.08] dark:border-[#282724] p-2.5 sm:px-3.5 shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            {/* 1. Бренд */}
+            {/* 1. Бренд с фирменными цветными точками */}
             {onSelectBrandFilter && (
               <div
                 role="group"
                 aria-label="Выбор бренда"
-                className="inline-flex flex-wrap items-center gap-0.5 max-w-full rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
+                className="inline-flex flex-wrap items-center gap-0.5 max-w-full rounded-xl bg-[#F3F1EC] dark:bg-[#1D1C1A] p-1 border border-[#141413]/[0.05] dark:border-[#282724]"
               >
                 {BRAND_PILLS.map((bp) => {
                   const isAct =
                     bp.code === 'BORNERS_FUKAI'
                       ? normBrand !== 'ALL' && isBornersFukaiScope
                       : normBrand === bp.code;
+                  const brandVis = bp.code !== 'ALL' ? getBrandVisual(bp.code) : null;
                   return (
                     <button
                       key={bp.code}
                       type="button"
                       data-testid={`fin-brand-pill-${bp.code}`}
                       onClick={() => handleSelectBrandPill(bp.code)}
-                      className={`h-7 px-2.5 rounded-md text-[12px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`h-8 px-3 rounded-lg text-[12.5px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
                         isAct
-                          ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
-                          : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
+                          ? 'bg-[#141413] text-white shadow-[0_1px_2px_rgba(20,20,19,0.12)]'
+                          : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0] hover:bg-white/60 dark:hover:bg-white/[0.04]'
                       }`}
                     >
-                      {bp.label}
+                      {brandVis && (
+                        <span
+                          aria-hidden="true"
+                          className={`h-[7px] w-[7px] rounded-full shrink-0 ${
+                            isAct ? brandVis.activeDotClass : brandVis.dotClass
+                          }`}
+                        />
+                      )}
+                      <span>{bp.label}</span>
                     </button>
                   );
                 })}
@@ -1182,7 +1419,7 @@ export function InvestmentSchedulePanel({
                       isBornersFukaiScope ? 'BORNERS' : normBrand
                     )
                   }
-                  className="h-9 max-w-[260px] sm:max-w-[340px] truncate px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs font-medium text-[#141413] dark:text-[#F5F4F0]"
+                  className="h-9 max-w-[260px] sm:max-w-[330px] truncate px-3 rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#C8C3B8] text-[12.5px] font-medium text-[#141413] dark:text-[#F5F4F0] transition-colors"
                 >
                   {availableBrandScenarios.map((sc) => (
                     <option key={sc.id} value={sc.id}>
@@ -1193,8 +1430,8 @@ export function InvestmentSchedulePanel({
               )}
 
             {normBrand === 'ALL' && (
-              <span className="inline-flex items-center min-h-9 py-1 px-3 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-xs text-[#5C5953] dark:text-[#9A968E]">
-                Консолидированная сводка по выбранным сценариям брендов
+              <span className="inline-flex items-center h-9 px-3 rounded-xl bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#ECEAE3] dark:border-[#282724] text-[12px] text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                Сводка по сценариям брендов
               </span>
             )}
 
@@ -1202,7 +1439,7 @@ export function InvestmentSchedulePanel({
             <div
               role="group"
               aria-label="Год расчёта"
-              className="inline-flex items-center shrink-0 gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724]"
+              className="inline-flex items-center shrink-0 gap-0.5 rounded-xl bg-[#F3F1EC] dark:bg-[#1D1C1A] p-1 border border-[#141413]/[0.05] dark:border-[#282724]"
             >
               {([2027, 2028] as const).map((yr) => {
                 const isYr = selectedYear === yr;
@@ -1212,10 +1449,10 @@ export function InvestmentSchedulePanel({
                     type="button"
                     data-testid={`fin-year-${yr}`}
                     onClick={() => setSelectedYear(yr, authorName)}
-                    className={`h-7 px-2.5 rounded-md font-mono text-[12px] font-medium cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg font-display-num tabular-nums text-[12.5px] font-medium cursor-pointer transition-all ${
                       isYr
-                        ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
-                        : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413]'
+                        ? 'bg-[#141413] text-white shadow-[0_1px_2px_rgba(20,20,19,0.12)]'
+                        : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                     }`}
                   >
                     {yr}
@@ -1225,23 +1462,33 @@ export function InvestmentSchedulePanel({
             </div>
           </div>
 
-          {/* Статус сохранения между устройствами (Раздел 11) + управление окном */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Правая группа: статус сохранения, защищённые операции, история */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {schedule.lockedOperationsCount > 0 && (
+              <span
+                title={`Утверждённых и фактических операций: ${schedule.lockedOperationsCount}`}
+                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg bg-[#EAF6F0] dark:bg-emerald-500/12 text-[11.5px] font-display-num font-medium text-[#0F766E] dark:text-emerald-400 whitespace-nowrap"
+              >
+                <Lock className="h-3 w-3" />
+                <span>{schedule.lockedOperationsCount}</span>
+              </span>
+            )}
+
             <span
               data-testid="fin-save-status"
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E]"
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[11.5px] text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap"
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  saveStatus === 'saving' ? 'bg-amber-500 animate-pulse' : 'bg-[#15803D]'
+                  saveStatus === 'saving' ? 'bg-amber-500 animate-pulse' : 'bg-[#0F766E] dark:bg-emerald-400'
                 }`}
               />
               <span>
                 {saveStatus === 'saving'
-                  ? 'Сохранение...'
+                  ? 'Сохранение…'
                   : saveStatus === 'saved_cloud'
                   ? 'Сохранено'
-                  : 'Сохранено локально'}
+                  : 'Локально'}
               </span>
             </span>
 
@@ -1249,10 +1496,13 @@ export function InvestmentSchedulePanel({
               type="button"
               data-testid="btn-audit-history"
               onClick={() => setShowHistoryDrawer((v) => !v)}
-              className="h-8 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-[#141413] dark:text-[#F5F4F0] text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="h-8 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] text-[#3D3A36] dark:text-[#F5F4F0] text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
             >
-              <History className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.5} />
-              <span>История ({ledgerState.auditHistory.length})</span>
+              <History className="h-3.5 w-3.5 text-[#7A766E]" strokeWidth={1.6} />
+              <span>История</span>
+              <span className="font-display-num tabular-nums text-[#7A766E] dark:text-[#9A968E]">
+                {ledgerState.auditHistory.length}
+              </span>
             </button>
 
             {isModal && onCloseModal && (
@@ -1267,90 +1517,132 @@ export function InvestmentSchedulePanel({
             )}
           </div>
         </div>
-
-        {/* Компактная цепочка логики раздела */}
-        <div className="mt-2.5 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-          <span>
-            Сколько продаём → Сколько закупаем → Когда нужны деньги → Что оплачивается из продаж → Сколько своих средств вложить
-          </span>
-          {schedule.lockedOperationsCount > 0 && (
-            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-[#15803D] dark:text-emerald-400">
-              <Lock className="h-3 w-3" />
-              <span>Утверждённых и фактических операций: {schedule.lockedOperationsCount}</span>
-            </span>
-          )}
-        </div>
       </div>
+
+      {/* ЕДИНАЯ СПОКОЙНАЯ ПОЛОСА ПРЕДВАРИТЕЛЬНОГО РАСЧЁТА (ВМЕСТО 6 ДУБЛИРУЮЩИХСЯ ОРАНЖЕВЫХ БАННЕРОВ) */}
+      {showPreliminaryNoticeStrip && (
+        <div
+          data-testid="fin-preliminary-badge"
+          title={schedule.incompleteDataReasons.map((r) => r.label).join('; ')}
+          className="rounded-xl bg-[#FDF8EE] dark:bg-amber-500/[0.09] border border-[#EED9B3] dark:border-amber-500/25 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-2.5 min-w-0 text-[12.5px] text-[#7A4B16] dark:text-amber-200/90">
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 rounded-full bg-[#D97706] shrink-0"
+            />
+            <p className="leading-snug">
+              <span className="font-semibold text-[#5C360D] dark:text-amber-200">
+                Предварительный расчёт
+              </span>
+              <span className="mx-1.5 text-[#C8A66E] dark:text-amber-400/50">·</span>
+              <span>
+                {!schedule.wbPayoutScheduleSpecified
+                  ? 'Укажите срок поступления выручки от Wildberries для расчёта потребности в капитале'
+                  : schedule.missingCostModelsCount > 0
+                  ? `У ${schedule.missingCostModelsCount} моделей не заполнена себестоимость — они исключены из реинвестирования и прибыли`
+                  : schedule.profitIncompleteReason ||
+                    schedule.incompleteDataReasons.map((r) => r.label).join('; ') ||
+                    'Часть исходных параметров ещё не заполнена'}
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="fin-what-to-fill-btn"
+            onClick={handleOpenWhatToFill}
+            className="h-7.5 px-3 rounded-lg bg-white dark:bg-[#1D1C1A] border border-[#E6C994] dark:border-amber-500/35 hover:border-[#B45309] dark:hover:border-amber-400 text-[12px] font-medium text-[#7A4B16] dark:text-amber-200 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer shadow-[0_1px_1px_rgba(122,75,22,0.05)] transition-colors"
+          >
+            <span>Заполнить данные</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* СКВОЗНОЙ ПЕРЕНОС 2027 → 2028 (СТР. 8 И ТЕСТ 10 ТЗ v1.0) */}
       {selectedYear === 2028 && schedule.yearBoundaryCarryover && (
         <div
           data-testid="fin-carryover-2027-2028-bar"
-          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#191816] px-4 py-3 sm:px-5 shadow-[0_1px_2px_rgba(20,20,19,0.03)] space-y-2.5"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#191816] px-4 py-3.5 sm:px-5 shadow-[0_1px_2px_rgba(20,20,19,0.03)] space-y-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#141413] dark:bg-[#F5F4F0] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-white dark:text-[#141413]">
+            <div className="inline-flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#141413] px-2.5 py-1 font-display-num text-[11px] font-medium text-white">
                 <Layers className="h-3 w-3" />
-                <span>Переход 31.12.2027 → 01.01.2028</span>
+                <span>31.12.2027 → 01.01.2028</span>
               </span>
-              <span className="text-xs font-medium text-[#141413] dark:text-[#F5F4F0]">
+              <span className="text-[12.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
                 Переходящие остатки, выплаты WB и обязательства из 2027 года
               </span>
             </div>
-            <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            <span className="text-[11.5px] text-[#7A766E] dark:text-[#9A968E]">
               {schedule.yearBoundaryCarryover.carriedOverCashAppliedToStart
-                ? 'Стартовый кэш 2028 автоматически перенесён с 31.12.2027'
+                ? 'Стартовый кэш 2028 перенесён с 31.12.2027'
                 : 'Задан ручной стартовый кэш 2028'}
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 text-xs">
-            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                Склад и возвраты в пути на 31.12.2027
+            <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] px-3.5 py-2.5">
+              <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E]">
+                Склад и возвраты на 31.12.2027
               </div>
-              <div className="mt-0.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+              <div className="mt-1 font-display-num tabular-nums text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap">
                 {schedule.yearBoundaryCarryover.carriedOverStockUnitsFrom2027.toLocaleString('ru-RU')} ед.
                 {schedule.yearBoundaryCarryover.carriedOverReturnsInTransitUnitsFrom2027 > 0 && (
-                  <span className="ml-1.5 text-[11px] font-normal text-[#5C5953]">
-                    (+{schedule.yearBoundaryCarryover.carriedOverReturnsInTransitUnitsFrom2027.toLocaleString('ru-RU')} в возврате)
+                  <span className="ml-1.5 text-[11px] font-normal text-[#7A766E]">
+                    (+{schedule.yearBoundaryCarryover.carriedOverReturnsInTransitUnitsFrom2027.toLocaleString('ru-RU')} возвр.)
                   </span>
                 )}
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] px-3.5 py-2.5">
+              <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E]">
                 Переходящий остаток денег
               </div>
-              <div className="mt-0.5 font-mono font-semibold text-[#15803D] dark:text-emerald-400">
-                {fmtMln(schedule.yearBoundaryCarryover.carriedOverCashFrom2027Rub)}
+              <div className="mt-1">
+                <MoneyFigure
+                  valueRub={schedule.yearBoundaryCarryover.carriedOverCashFrom2027Rub}
+                  className="text-[14px] font-semibold text-[#0F766E] dark:text-emerald-400"
+                  unitClassName="!text-[#0F766E]/70 dark:!text-emerald-400/70"
+                />
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] px-3.5 py-2.5">
+              <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E]">
                 Декабрьские выплаты WB (в янв. 2028)
               </div>
-              <div className="mt-0.5 font-mono font-semibold text-[#15803D] dark:text-emerald-400">
-                +{fmtMln(schedule.yearBoundaryCarryover.carriedOverWbPayoutsFromDec2027Rub)}
-                <span className="ml-1.5 text-[10.5px] font-normal text-[#5C5953]">
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <MoneyFigure
+                  valueRub={schedule.yearBoundaryCarryover.carriedOverWbPayoutsFromDec2027Rub}
+                  signed
+                  className="text-[14px] font-semibold text-[#0F766E] dark:text-emerald-400"
+                  unitClassName="!text-[#0F766E]/70 dark:!text-emerald-400/70"
+                />
+                <span className="text-[11px] text-[#7A766E] whitespace-nowrap">
                   ({schedule.yearBoundaryCarryover.carriedOverWbPayoutsEventsCount} выпл.)
                 </span>
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] px-3.5 py-2.5">
+              <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E]">
                 Переходящие доплаты фабрикам
               </div>
-              <div className="mt-0.5 font-mono font-semibold text-[#B91C1C] dark:text-rose-400">
-                {schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub > 0
-                  ? `−${fmtMln(schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub)}`
-                  : '0,00 млн ₽'}
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <MoneyFigure
+                  valueRub={
+                    schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub > 0
+                      ? -schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub
+                      : 0
+                  }
+                  className="text-[14px] font-semibold text-[#B91C1C] dark:text-rose-400"
+                  unitClassName="!text-[#B91C1C]/70 dark:!text-rose-400/70"
+                />
                 {schedule.yearBoundaryCarryover.carriedOverPayablesEventsCount > 0 && (
-                  <span className="ml-1.5 text-[10.5px] font-normal text-[#5C5953]">
+                  <span className="text-[11px] text-[#7A766E] whitespace-nowrap">
                     ({schedule.yearBoundaryCarryover.carriedOverPayablesEventsCount} плат.)
                   </span>
                 )}
@@ -1360,32 +1652,47 @@ export function InvestmentSchedulePanel({
         </div>
       )}
 
-      {/* РАЗДЕЛ 3 ТЗ: ГЛАВНЫЙ ЭКРАН — ЧЕТЫРЕ ОСНОВНЫХ ПОКАЗАТЕЛЯ */}
+      {/* РАЗДЕЛ 3 ТЗ: ГЛАВНЫЙ ЭКРАН — ЧЕТЫРЕ ОСНОВНЫХ ПОКАЗАТЕЛЯ (ИДЕАЛЬНОЕ ВЫРАВНИВАНИЕ БАЗОВОЙ ЛИНИИ) */}
       <div
         data-testid="fin-four-main-kpis"
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5"
+        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
       >
         {/* 1. План продаж */}
-        <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] flex flex-col justify-between">
+        <div
+          title="1. План продаж"
+          aria-label="1. План продаж"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] flex flex-col justify-between min-h-[154px]"
+        >
           <div>
-            <div className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-              1. План продаж
+            <div className="h-5 flex items-center justify-between gap-2 text-[12.5px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+              <span className="truncate">План продаж</span>
+              <span className="font-display-num text-[11px] text-[#9A958C] dark:text-[#78746C]">
+                {selectedYear}
+              </span>
             </div>
             <div
               data-testid="fin-kpi-sales-plan"
-              className="mt-2 font-mono text-2xl sm:text-[26px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              className="mt-4 text-[#141413] dark:text-[#F5F4F0]"
             >
-              {fmtMln(schedule.totalGrossSalesRevenueRub)}
+              <MoneyFigure
+                valueRub={schedule.totalGrossSalesRevenueRub}
+                title={fmtRub(schedule.totalGrossSalesRevenueRub)}
+                className="text-[28px] xl:text-[31px] font-semibold tracking-[-0.03em] leading-none"
+              />
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1.5">
+          <div className="mt-4 pt-3 border-t border-[#F0EDE6] dark:border-[#242320] text-[11.5px] text-[#6B6760] dark:text-[#9A968E]">
             {schedule.compatibleUnitsBreakdown.length === 1 ? (
               (() => {
                 const uRow = schedule.compatibleUnitsBreakdown[0]!;
                 const { shortUnit } = getCompatibleUnitShortDisplay(uRow);
                 return (
-                  <div className="font-mono text-[11.5px] text-[#141413] dark:text-[#F5F4F0]">
-                    {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit} / план · {selectedYear} г.
+                  <div className="whitespace-nowrap truncate">
+                    <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
+                      {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit}
+                    </span>
+                    <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                    <span>план {selectedYear}</span>
                   </div>
                 );
               })()
@@ -1399,7 +1706,7 @@ export function InvestmentSchedulePanel({
                   return (
                     <span
                       key={uRow.unitCategory}
-                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] text-[#141413] dark:text-[#F5F4F0]"
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-[#F6F5F1] dark:bg-[#1D1C1A] font-display-num tabular-nums text-[10.5px] text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap"
                     >
                       {categoryName}: {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit}
                     </span>
@@ -1407,55 +1714,64 @@ export function InvestmentSchedulePanel({
                 })}
               </div>
             ) : (
-              <div>Прогнозируемая выручка · {selectedYear} г.</div>
+              <div>Прогнозируемая выручка · {selectedYear}</div>
             )}
           </div>
         </div>
 
         {/* 2. Стоимость закупок */}
-        <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] flex flex-col justify-between">
+        <div
+          title="2. Стоимость закупок"
+          aria-label="2. Стоимость закупок"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] flex flex-col justify-between min-h-[154px]"
+        >
           <div>
-            <div className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-              2. Стоимость закупок
+            <div className="h-5 flex items-center justify-between gap-2 text-[12.5px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+              <span className="truncate">Стоимость закупок</span>
+              <span className="font-display-num text-[11px] text-[#9A958C] dark:text-[#78746C]">
+                {pluralizeBatchesRu(schedule.batchesTotalCount)}
+              </span>
             </div>
             <div
               data-testid="fin-kpi-procurement-cost"
-              className="mt-2 font-mono text-2xl sm:text-[26px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              className="mt-4 text-[#141413] dark:text-[#F5F4F0]"
             >
-              {fmtMln(schedule.totalProcurementCostRub)}
+              <MoneyFigure
+                valueRub={schedule.totalProcurementCostRub}
+                title={fmtRub(schedule.totalProcurementCostRub)}
+                className="text-[28px] xl:text-[31px] font-semibold tracking-[-0.03em] leading-none"
+              />
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
+          <div className="mt-4 pt-3 border-t border-[#F0EDE6] dark:border-[#242320] text-[11.5px] text-[#6B6760] dark:text-[#9A968E] space-y-1">
             {schedule.compatibleUnitsBreakdown.length === 1 ? (
               (() => {
                 const uRow = schedule.compatibleUnitsBreakdown[0]!;
                 const { shortUnit } = getCompatibleUnitShortDisplay(uRow);
                 return (
-                  <div className="font-mono text-[11.5px] text-[#141413] dark:text-[#F5F4F0]">
-                    {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit} ·{' '}
-                    {pluralizeBatchesRu(schedule.batchesTotalCount)}
+                  <div className="whitespace-nowrap truncate">
+                    <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
+                      {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit}
+                    </span>
+                    <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                    <span>{pluralizeBatchesRu(schedule.batchesTotalCount)}</span>
                   </div>
                 );
               })()
             ) : schedule.compatibleUnitsBreakdown.length > 1 ? (
-              <>
-                <div className="flex flex-wrap items-center gap-1">
-                  {schedule.compatibleUnitsBreakdown.map((uRow) => {
-                    const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
-                    return (
-                      <span
-                        key={uRow.unitCategory}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] text-[#141413] dark:text-[#F5F4F0]"
-                      >
-                        {categoryName}: {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit}
-                      </span>
-                    );
-                  })}
-                </div>
-                <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                  Всего {pluralizeBatchesRu(schedule.batchesTotalCount)} за период
-                </div>
-              </>
+              <div className="flex flex-wrap items-center gap-1">
+                {schedule.compatibleUnitsBreakdown.map((uRow) => {
+                  const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                  return (
+                    <span
+                      key={uRow.unitCategory}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-[#F6F5F1] dark:bg-[#1D1C1A] font-display-num tabular-nums text-[10.5px] text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap"
+                    >
+                      {categoryName}: {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit}
+                    </span>
+                  );
+                })}
+              </div>
             ) : (
               <div>{pluralizeBatchesRu(schedule.batchesTotalCount)} за период</div>
             )}
@@ -1463,53 +1779,61 @@ export function InvestmentSchedulePanel({
         </div>
 
         {/* 3. Максимальная потребность в своих деньгах */}
-        <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] flex flex-col justify-between">
+        <div
+          title="3. Максимальная потребность в своих деньгах"
+          aria-label="3. Максимальная потребность в своих деньгах"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] flex flex-col justify-between min-h-[154px]"
+        >
           <div>
-            <div className="flex items-start justify-between gap-2">
-              <div className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-                3. Максимальная потребность в своих деньгах
-              </div>
-              {schedule.isPreliminaryCalculation && (
-                <span
-                  data-testid="fin-preliminary-badge"
-                  title={schedule.incompleteDataReasons.map((r) => r.label).join('; ')}
-                  className="shrink-0 rounded px-1.5 py-0.5 bg-amber-500/12 border border-amber-500/35 font-mono text-[10px] font-medium text-amber-800 dark:text-amber-300"
-                >
-                  Предварительный расчёт
-                </span>
-              )}
+            <div className="h-5 flex items-center justify-between gap-2 text-[12.5px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+              <span className="truncate">Свои деньги (пик)</span>
+              <span
+                aria-hidden="true"
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  schedule.isPreliminaryCalculation
+                    ? 'bg-[#D97706]'
+                    : (schedule.remainingOwnMoneyNeededRub ?? 0) > 0
+                    ? 'bg-[#141413] dark:bg-[#E5E2DC]'
+                    : 'bg-[#0F766E] dark:bg-emerald-400'
+                }`}
+              />
             </div>
             <div
               data-testid="fin-kpi-max-own-money"
-              className="mt-2 font-mono text-2xl sm:text-[26px] font-semibold tracking-[-0.025em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              className="mt-4 text-[#141413] dark:text-[#F5F4F0]"
             >
-              {!schedule.wbPayoutScheduleSpecified
-                ? 'Укажите срок WB'
-                : schedule.calculatedCapitalNeedRub !== null
-                ? fmtMln(schedule.calculatedCapitalNeedRub)
-                : '0,00 млн ₽'}
+              {!schedule.wbPayoutScheduleSpecified ? (
+                <span className="text-[22px] xl:text-[24px] font-semibold tracking-[-0.02em] leading-none text-[#7A766E] dark:text-[#9A968E]">
+                  Укажите срок WB
+                </span>
+              ) : (
+                <MoneyFigure
+                  valueRub={schedule.calculatedCapitalNeedRub ?? 0}
+                  title={fmtRub(schedule.calculatedCapitalNeedRub ?? 0)}
+                  className="text-[28px] xl:text-[31px] font-semibold tracking-[-0.03em] leading-none"
+                />
+              )}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
-            <div className="flex flex-wrap items-center justify-between gap-1.5">
-              <span>
-                {schedule.wbPayoutScheduleSpecified
-                  ? `Пик: ${schedule.peakShortageMonthFullRu}`
-                  : 'Требуется срок поступления выручки от WB'}
-              </span>
-              {schedule.isPreliminaryCalculation && (
-                <button
-                  type="button"
-                  data-testid="fin-what-to-fill-btn"
-                  onClick={handleOpenWhatToFill}
-                  className="text-[11px] font-medium text-amber-800 dark:text-amber-300 underline underline-offset-2 hover:opacity-80 cursor-pointer"
-                >
-                  Что заполнить →
-                </button>
+          <div className="mt-4 pt-3 border-t border-[#F0EDE6] dark:border-[#242320] text-[11.5px] text-[#6B6760] dark:text-[#9A968E] space-y-0.5">
+            <div className="truncate">
+              {schedule.wbPayoutScheduleSpecified ? (
+                <>
+                  <span>Макс. потребность</span>
+                  <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                  <span>
+                    Пик:{' '}
+                    <span className="font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
+                      {schedule.peakShortageMonthFullRu}
+                    </span>
+                  </span>
+                </>
+              ) : (
+                'Требуется срок поступления от WB'
               )}
             </div>
             {schedule.isGroupAllBrands && (
-              <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
+              <div className="text-[10.5px] text-[#8C877E] dark:text-[#8E8A82] truncate">
                 {groupCapitalMode === 'per_brand'
                   ? 'Режим: каждый бренд сам (сумма пиков)'
                   : 'Режим: общий денежный котёл группы'}
@@ -1519,80 +1843,93 @@ export function InvestmentSchedulePanel({
         </div>
 
         {/* 4. Реинвестирование */}
-        <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] flex flex-col justify-between">
+        <div
+          title="4. Реинвестирование"
+          aria-label="4. Реинвестирование"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] flex flex-col justify-between min-h-[154px]"
+        >
           <div>
-            <div className="text-[12px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-              4. Реинвестирование
+            <div className="h-5 flex items-center justify-between gap-2 text-[12.5px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+              <span className="inline-flex items-center gap-1.5 truncate">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 rounded-full bg-[#0F766E] dark:bg-emerald-400 shrink-0"
+                />
+                <span className="truncate">Реинвестирование</span>
+              </span>
+              {schedule.wbPayoutScheduleSpecified && (
+                <span className="font-display-num tabular-nums text-[11.5px] font-medium text-[#0F766E] dark:text-emerald-400">
+                  {schedule.reinvestedSharePct}%
+                </span>
+              )}
             </div>
             <div
               data-testid="inv-reinvested-value"
-              className="mt-2 font-mono text-2xl sm:text-[26px] font-semibold tracking-[-0.025em] tabular-nums text-[#15803D] dark:text-emerald-400"
+              className="mt-4 text-[#0F766E] dark:text-emerald-400"
             >
               {!schedule.wbPayoutScheduleSpecified ||
-              schedule.reinvestedFromSalesRub === null
-                ? '—'
-                : fmtMln(schedule.reinvestedFromSalesRub)}
+              schedule.reinvestedFromSalesRub === null ? (
+                <span className="font-display-num text-[28px] xl:text-[31px] font-semibold leading-none text-[#8C877E]">
+                  —
+                </span>
+              ) : (
+                <MoneyFigure
+                  valueRub={schedule.reinvestedFromSalesRub}
+                  title={fmtRub(schedule.reinvestedFromSalesRub)}
+                  className="text-[28px] xl:text-[31px] font-semibold tracking-[-0.03em] leading-none text-[#0F766E] dark:text-emerald-400"
+                  unitClassName="!text-[#0F766E]/70 dark:!text-emerald-400/70"
+                />
+              )}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
-            <div>
-              {schedule.wbPayoutScheduleSpecified
-                ? `Платежи из оборота (${schedule.reinvestedSharePct}% закупок)`
-                : 'Рассчитывается по операциям поступлений от продаж'}
+          <div className="mt-4 pt-3 border-t border-[#F0EDE6] dark:border-[#242320] text-[11.5px] text-[#6B6760] dark:text-[#9A968E] space-y-1.5">
+            {schedule.wbPayoutScheduleSpecified && (
+              <div className="h-1 w-full rounded-full bg-[#EFECE6] dark:bg-[#242320] overflow-hidden">
+                <div
+                  style={{
+                    width: `${Math.min(100, Math.max(0, schedule.reinvestedSharePct))}%`,
+                  }}
+                  className="h-full rounded-full bg-[#0F766E] dark:bg-emerald-400 transition-all duration-300"
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate">
+                {schedule.wbPayoutScheduleSpecified
+                  ? `${schedule.reinvestedSharePct}% закупок из оборота`
+                  : 'По операциям поступлений от продаж'}
+              </span>
             </div>
             {(schedule.missingCostModelsCount > 0 ||
               schedule.excludedZeroCostWbPayoutRub > 0) && (
               <div
                 data-testid="fin-reinvest-zero-cost-note"
-                className="text-[10.5px] text-amber-800 dark:text-amber-300"
+                className="text-[10.5px] text-[#8C877E] dark:text-[#8E8A82] truncate"
+                title={`SKU без себестоимости (${schedule.missingCostModelsCount}) исключены из пула реинвестирования`}
               >
-                SKU без себестоимости ({schedule.missingCostModelsCount}) исключены из пула реинвестирования
+                Без {schedule.missingCostModelsCount} SKU без себестоимости
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* СВОДНАЯ ПОЛОСА РАСХОДОВ, УДЕРЖАНИЙ WB, НАЛОГОВ/OPEX, СЕБЕСТОИМОСТИ И ОПЕРАЦИОННОЙ ПРИБЫЛИ */}
+      {/* СВОДНАЯ КАРТОЧКА ЭКОНОМИКИ И ПРИБЫЛЬНОСТИ С ВИЗУАЛЬНОЙ ПОЛОСОЙ СТРУКТУРЫ ВЫРУЧКИ */}
       <div
         data-testid="fin-expenses-profit-strip"
-        className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
+        className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] space-y-5"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="space-y-0.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[13.5px] sm:text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                Расходы, удержания WB и ожидаемая операционная прибыль · {selectedYear}
-              </h3>
-              {!schedule.isProfitComplete && (
-                <span
-                  data-testid="fin-profit-incomplete-badge"
-                  className="inline-flex items-center gap-1 rounded px-2 py-0.5 bg-amber-500/12 border border-amber-500/35 font-mono text-[10.5px] font-medium text-amber-800 dark:text-amber-300"
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  <span>Предварительный расчёт · Расчёт неполный</span>
-                </span>
-              )}
-            </div>
-            <p className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-              {!schedule.isProfitComplete && schedule.profitIncompleteReason
-                ? schedule.profitIncompleteReason
-                : 'Удержания маркетплейса, налоги и OPEX, чистые поступления на счёт, себестоимость выкупов и операционная прибыль'}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[14.5px] font-semibold tracking-[-0.015em] text-[#141413] dark:text-[#F5F4F0]">
+              Экономика и прибыльность · {selectedYear}
+            </h3>
+            <p className="mt-0.5 text-[12px] text-[#7A766E] dark:text-[#9A968E]">
+              Распределение выручки: удержания маркетплейса, себестоимость, налоги и операционная прибыль
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {!schedule.isProfitComplete && (
-              <button
-                type="button"
-                data-testid="fin-profit-what-to-fill-btn"
-                onClick={handleOpenWhatToFill}
-                className="h-8 px-3 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-xs font-medium text-amber-900 dark:text-amber-300 inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
-              >
-                <span>Что заполнить →</span>
-              </button>
-            )}
-
             {canEdit && (
               <button
                 type="button"
@@ -1612,9 +1949,9 @@ export function InvestmentSchedulePanel({
                     });
                   }
                 }}
-                className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] dark:hover:border-[#F5F4F0] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#C8C3B8] dark:hover:border-[#3E3C37] text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
               >
-                <span>+ Добавить расход</span>
+                <span>+ Расход</span>
               </button>
             )}
 
@@ -1622,233 +1959,341 @@ export function InvestmentSchedulePanel({
               type="button"
               data-testid="fin-strip-toggle-analytics-btn"
               onClick={() => setShowDetailedAnalytics((v) => !v)}
-              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] dark:hover:border-[#F5F4F0] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
+              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] text-[12px] font-medium text-[#5C5953] hover:text-[#141413] dark:text-[#9A968E] dark:hover:text-[#F5F4F0] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
             >
-              <span>Подробная аналитика и P&amp;L {showDetailedAnalytics ? '▴' : '▾'}</span>
+              <span>Подробная аналитика {showDetailedAnalytics ? '▴' : '▾'}</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-          {/* 1) Удержания и расходы WB */}
-          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+        {/* Визуальная полоса структуры выручки (100% Revenue Waterfall Bar) */}
+        <div
+          role="img"
+          aria-label={`Структура выручки: удержания WB ${wbSharePct}%, себестоимость ${cogsSharePct}%, налоги и OPEX ${taxOpexSharePct}%, прибыль ${profitSharePct}%`}
+          className="h-2.5 w-full rounded-full bg-[#F1EFE9] dark:bg-[#23221F] overflow-hidden flex gap-[2px]"
+        >
+          {barWbWidthPct > 0 && (
+            <div
+              style={{ width: `${barWbWidthPct}%` }}
+              title={`Удержания WB: ${fmtMln(resolvedWbDeductionsRub)} (${wbSharePct.toFixed(1).replace('.', ',')}%)`}
+              className="h-full bg-[#8C877E] dark:bg-[#7A766E] first:rounded-l-full last:rounded-r-full transition-all duration-300"
+            />
+          )}
+          {barCogsWidthPct > 0 && (
+            <div
+              style={{ width: `${barCogsWidthPct}%` }}
+              title={`Себестоимость (COGS): ${fmtMln(resolvedSoldGoodsCostRub)} (${cogsSharePct.toFixed(1).replace('.', ',')}%)`}
+              className="h-full bg-[#3F3D39] dark:bg-[#B8B3A8] first:rounded-l-full last:rounded-r-full transition-all duration-300"
+            />
+          )}
+          {barTaxOpexWidthPct > 0 && (
+            <div
+              style={{ width: `${barTaxOpexWidthPct}%` }}
+              title={`Налоги и OPEX: ${fmtMln(resolvedTaxAndOpexTotalRub)} (${taxOpexSharePct.toFixed(1).replace('.', ',')}%)`}
+              className="h-full bg-[#C8965E] dark:bg-[#D4A56A] first:rounded-l-full last:rounded-r-full transition-all duration-300"
+            />
+          )}
+          {barProfitWidthPct > 0 && (
+            <div
+              style={{ width: `${barProfitWidthPct}%` }}
+              title={`Операционная прибыль: ${fmtMln(resolvedOperatingProfitRub)} (${resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}%)`}
+              className="h-full bg-[#0F766E] dark:bg-emerald-500 first:rounded-l-full last:rounded-r-full transition-all duration-300"
+            />
+          )}
+        </div>
+
+        {/* 5 чистых колонок экономики с вертикальными разделителями */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-y-5 lg:gap-y-0 lg:divide-x divide-[#EFECE6] dark:divide-[#262522]">
+          {/* 1) Удержания WB */}
+          <div className="pr-3 lg:pr-4 flex flex-col justify-between gap-2">
             <div>
-              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                Удержания и расходы WB
-              </div>
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                комиссия, логистика, ДРР, хранение
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-[#8C877E] shrink-0" />
+                <span className="truncate">Удержания WB</span>
               </div>
               <div
                 data-testid="fin-strip-wb-deductions"
-                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                className="mt-2 text-[#141413] dark:text-[#F5F4F0]"
               >
-                {fmtMln(resolvedWbDeductionsRub)}
+                <MoneyFigure
+                  valueRub={resolvedWbDeductionsRub}
+                  title={fmtRub(resolvedWbDeductionsRub)}
+                  className="text-[20px] xl:text-[21px] font-semibold tracking-[-0.025em] leading-none"
+                />
               </div>
             </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] space-y-0.5">
-              <div>{resolvedWbDeductionsPct.toFixed(1).replace('.', ',')}% от выручки</div>
+            <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E] space-y-0.5 leading-snug">
+              <div className="whitespace-nowrap">
+                <span className="font-display-num tabular-nums">{resolvedWbDeductionsPct.toFixed(1).replace('.', ',')}%</span> от выручки
+              </div>
               {resolvedReverseLogisticsRub > 0 && (
                 <div
                   data-testid="fin-strip-reverse-logistics"
-                  className="font-mono text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                  className="text-[10.5px] text-[#8C877E] dark:text-[#8E8A82] whitespace-nowrap"
                 >
-                  в т.ч. обратная логистика: {fmtMln(resolvedReverseLogisticsRub)}
+                  обр. логистика:{' '}
+                  <span className="font-display-num tabular-nums whitespace-nowrap">
+                    {fmtMln(resolvedReverseLogisticsRub)}
+                  </span>
                 </div>
               )}
             </div>
           </div>
 
           {/* 2) Налоги и OPEX */}
-          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+          <div className="pl-2 sm:pl-3 lg:px-4 flex flex-col justify-between gap-2">
             <div>
-              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                Налоги и OPEX
-              </div>
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                налог, операционные и прочие расходы
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-[#C8965E] shrink-0" />
+                <span className="truncate">Налоги и OPEX</span>
               </div>
               <div
                 data-testid="fin-strip-tax-opex"
-                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                className="mt-2 text-[#141413] dark:text-[#F5F4F0]"
               >
-                {fmtMln(resolvedTaxAndOpexTotalRub)}
+                <MoneyFigure
+                  valueRub={resolvedTaxAndOpexTotalRub}
+                  title={fmtRub(resolvedTaxAndOpexTotalRub)}
+                  className="text-[20px] xl:text-[21px] font-semibold tracking-[-0.025em] leading-none"
+                />
               </div>
             </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] space-y-0.5">
-              <div className="font-mono text-[10.5px]">
-                Налоги: {fmtMln(resolvedTaxRub)} · OPEX: {fmtMln(resolvedOpexRub)}
+            <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E] space-y-0.5 leading-snug">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="whitespace-nowrap">
+                  Налоги{' '}
+                  <span className="font-display-num tabular-nums">{fmtMln(resolvedTaxRub)}</span>
+                </span>
+                <span className="text-[#C8C3B8]">·</span>
+                <span className="whitespace-nowrap">
+                  OPEX{' '}
+                  <span className="font-display-num tabular-nums">{fmtMln(resolvedOpexRub)}</span>
+                </span>
               </div>
               {schedule.totalOtherExpensesRub > 0 && (
-                <div className="font-mono text-[10.5px] text-amber-800 dark:text-amber-300">
-                  + доп. расходы: {fmtMln(schedule.totalOtherExpensesRub)}
+                <div className="text-[10.5px] text-[#9A5B13] dark:text-amber-300 whitespace-nowrap">
+                  + доп. расходы{' '}
+                  <span className="font-display-num tabular-nums">
+                    {fmtMln(schedule.totalOtherExpensesRub)}
+                  </span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* 3) Чистые поступления от WB */}
-          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+          {/* 3) Чистые поступления WB */}
+          <div className="pr-3 lg:px-4 flex flex-col justify-between gap-2">
             <div>
-              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                Чистые поступления WB
-              </div>
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                к перечислению на счёт
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                <span
+                  aria-hidden="true"
+                  className="h-[7px] w-[7px] rounded-full border-[1.5px] border-[#8C877E] shrink-0"
+                />
+                <span className="truncate">Поступления WB</span>
               </div>
               <div
                 data-testid="fin-strip-wb-net-proceeds"
-                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                className="mt-2 text-[#141413] dark:text-[#F5F4F0]"
               >
-                {fmtMln(resolvedNetWbProceedsRub)}
+                <MoneyFigure
+                  valueRub={resolvedNetWbProceedsRub}
+                  title={fmtRub(resolvedNetWbProceedsRub)}
+                  className="text-[20px] xl:text-[21px] font-semibold tracking-[-0.025em] leading-none"
+                />
               </div>
             </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-              {resolvedNetWbProceedsPct.toFixed(1).replace('.', ',')}% выручки после удержаний МП
+            <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap leading-snug">
+              <span className="font-display-num tabular-nums">{resolvedNetWbProceedsPct.toFixed(1).replace('.', ',')}%</span> к перечислению
             </div>
           </div>
 
           {/* 4) Себестоимость продаж (COGS) */}
-          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+          <div className="pl-2 sm:pl-3 lg:px-4 flex flex-col justify-between gap-2">
             <div>
-              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                Себестоимость продаж (COGS)
-              </div>
-              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                себестоимость выкупленного товара
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                <span
+                  aria-hidden="true"
+                  className="h-[7px] w-[7px] rounded-full bg-[#3F3D39] dark:bg-[#B8B3A8] shrink-0"
+                />
+                <span className="truncate">Себестоимость (COGS)</span>
               </div>
               <div
                 data-testid="fin-strip-cogs"
-                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                className="mt-2 text-[#141413] dark:text-[#F5F4F0]"
               >
-                {fmtMln(resolvedSoldGoodsCostRub)}
+                <MoneyFigure
+                  valueRub={resolvedSoldGoodsCostRub}
+                  title={fmtRub(resolvedSoldGoodsCostRub)}
+                  className="text-[20px] xl:text-[21px] font-semibold tracking-[-0.025em] leading-none"
+                />
               </div>
             </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            <div className="text-[11px] text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap leading-snug">
               {schedule.missingCostModelsCount > 0 ? (
-                <span className="text-amber-800 dark:text-amber-300">
-                  Не заполнена у {schedule.missingCostModelsCount} SKU
+                <span>
+                  <span className="font-display-num tabular-nums">{cogsSharePct.toFixed(1).replace('.', ',')}%</span> · без {schedule.missingCostModelsCount} SKU
                 </span>
               ) : (
-                'отличается от закупок на складской запас'
+                <span>
+                  <span className="font-display-num tabular-nums">{cogsSharePct.toFixed(1).replace('.', ',')}%</span> · по выкупам
+                </span>
               )}
             </div>
           </div>
 
-          {/* 5) Ожидаемая операционная прибыль и рентабельность */}
-          <div
-            className={`sm:col-span-2 xl:col-span-1 rounded-lg border p-3.5 flex flex-col justify-between gap-2 ${
-              !schedule.isProfitComplete
-                ? 'border-amber-500/40 bg-amber-500/[0.06] dark:bg-amber-500/10'
-                : 'border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A]'
-            }`}
-          >
+          {/* 5) Ожидаемая операционная прибыль (спокойная светлая/изумрудная колонка без оранжевого шума) */}
+          <div className="col-span-2 lg:col-span-1 pt-4 lg:pt-0 border-t lg:border-t-0 border-[#EFECE6] dark:border-[#262522] lg:pl-4 flex flex-col justify-between gap-2">
             <div>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                    Ожидаемая опер. прибыль
-                  </div>
-                  <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                    {!schedule.isProfitComplete
-                      ? 'предварительно (неполные данные)'
-                      : 'после себестоимости, налогов и OPEX'}
-                  </div>
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap">
+                  <span
+                    aria-hidden="true"
+                    className={`h-[7px] w-[7px] rounded-full shrink-0 ${
+                      !schedule.isProfitComplete
+                        ? 'bg-[#C8965E]'
+                        : resolvedOperatingProfitRub >= 0
+                        ? 'bg-[#0F766E] dark:bg-emerald-400'
+                        : 'bg-[#B91C1C]'
+                    }`}
+                  />
+                  <span>Ожидаемая прибыль</span>
                 </div>
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-medium border ${
-                    !schedule.isProfitComplete
-                      ? 'bg-amber-500/15 border-amber-500/35 text-amber-900 dark:text-amber-300'
-                      : resolvedOperatingProfitRub >= 0
-                      ? 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-400'
-                      : 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-400'
-                  }`}
-                >
-                  {!schedule.isProfitComplete ? '~' : ''}
-                  {resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}%
-                </span>
               </div>
               <div
                 data-testid="fin-strip-operating-profit"
-                className={`mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums ${
+                className="mt-2"
+              >
+                <MoneyFigure
+                  valueRub={resolvedOperatingProfitRub}
+                  approx={!schedule.isProfitComplete}
+                  title={fmtRub(resolvedOperatingProfitRub)}
+                  className={`text-[20px] xl:text-[21px] font-semibold tracking-[-0.025em] leading-none ${
+                    !schedule.isProfitComplete
+                      ? 'text-[#9A5B13] dark:text-amber-300'
+                      : resolvedOperatingProfitRub >= 0
+                      ? 'text-[#0F766E] dark:text-emerald-400'
+                      : 'text-[#B91C1C] dark:text-rose-400'
+                  }`}
+                  unitClassName={
+                    !schedule.isProfitComplete
+                      ? '!text-[#9A5B13]/70 dark:!text-amber-300/70'
+                      : resolvedOperatingProfitRub >= 0
+                      ? '!text-[#0F766E]/70 dark:!text-emerald-400/70'
+                      : '!text-[#B91C1C]/70 dark:!text-rose-400/70'
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] leading-snug">
+              <span
+                className={`inline-flex items-center px-1.5 py-0.5 rounded-md font-display-num tabular-nums text-[11px] font-semibold whitespace-nowrap ${
                   !schedule.isProfitComplete
-                    ? 'text-amber-900 dark:text-amber-300'
+                    ? 'bg-[#FDF5E6] dark:bg-amber-500/15 text-[#9A5B13] dark:text-amber-300'
                     : resolvedOperatingProfitRub >= 0
-                    ? 'text-[#15803D] dark:text-emerald-400'
-                    : 'text-[#B91C1C] dark:text-rose-400'
+                    ? 'bg-[#EAF6F0] dark:bg-emerald-500/15 text-[#0F766E] dark:text-emerald-400'
+                    : 'bg-rose-50 dark:bg-rose-500/15 text-[#B91C1C] dark:text-rose-400'
                 }`}
               >
                 {!schedule.isProfitComplete ? '~' : ''}
-                {fmtMln(resolvedOperatingProfitRub)}
-              </div>
-            </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                {resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}%
+              </span>
+
               {!schedule.isProfitComplete ? (
-                <span className="text-amber-800 dark:text-amber-300">
-                  Предварительно — заполните недостающие данные
-                </span>
+                <>
+                  <span
+                    data-testid="fin-profit-incomplete-badge"
+                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-[#F5F2EB] dark:bg-[#23221F] text-[10.5px] font-medium text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap"
+                  >
+                    Предварительно
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="fin-profit-what-to-fill-btn"
+                    onClick={handleOpenWhatToFill}
+                    className="text-[11px] text-[#7A766E] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0] underline decoration-[#D6D2C9] dark:decoration-[#3E3C37] underline-offset-2 whitespace-nowrap cursor-pointer transition-colors"
+                  >
+                    уточнить
+                  </button>
+                </>
               ) : schedule.totalOtherExpensesRub > 0 ? (
-                `С учётом доп. расходов ${fmtMln(schedule.totalOtherExpensesRub)}`
+                <span className="text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap">
+                  с доп. расходами
+                </span>
               ) : (
-                'Рентабельность продаж по плану периода'
+                <span className="text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap">
+                  маржа плана
+                </span>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* РАЗДЕЛ 7 И СТР. 3/13 ТЗ: СЛЕДУЮЩЕЕ ДЕЙСТВИЕ И «ЧТО НУЖНО СДЕЛАТЬ» */}
+      {/* РАЗДЕЛ 7 ТЗ: СФОКУСИРОВАННАЯ ПОЛОСА «СЛЕДУЮЩЕЕ ДЕЙСТВИЕ» (БЕЗ ДУБЛИРОВАНИЯ КАРТОЧЕК) */}
       {(schedule.recommendations.length > 0 ||
         nextRequiredCashRow !== null ||
         schedule.nextUpcomingPayment !== null) && (
         <div
           data-testid="fin-recommendations-block"
-          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
+          aria-label="Что нужно сделать · Следующее действие"
+          className={`card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] border-l-[3px] ${
+            nextRequiredCashRow && nextRequiredCashRow.remainingNeedRub > 0
+              ? 'border-l-[#B45309] dark:border-l-amber-500'
+              : 'border-l-[#141413] dark:border-l-[#E5E2DC]'
+          } bg-white dark:bg-[#151514] px-5 py-4 shadow-[0_1px_2px_rgba(20,20,19,0.035)]`}
         >
-          {/* Главная полоса «Следующее действие» + кнопка «Посмотреть платежи» */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E4E1DA] dark:border-[#282724]">
-            <div className="space-y-0.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  Что нужно сделать · Следующее действие
-                </span>
-                <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                  По приоритету расчёта
-                </span>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#7A766E] dark:text-[#9A968E]">
+                Следующее действие
               </div>
               {nextRequiredCashRow ? (
-                <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-                  Ближайшая дата финансирования:{' '}
-                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
-                    {nextRequiredCashRow.dateDotRu}
-                  </strong>{' '}
-                  ·{' '}
-                  <strong className="font-mono text-[#B91C1C] dark:text-rose-400">
-                    {fmtMln(
+                <p className="text-[14px] sm:text-[15px] font-medium text-[#141413] dark:text-[#F5F4F0] leading-snug">
+                  К{' '}
+                  <span className="font-semibold">
+                    {nextRequiredCashRow.dateHumanRu || nextRequiredCashRow.dateDotRu}
+                  </span>{' '}
+                  подготовить{' '}
+                  <MoneyFigure
+                    valueRub={
                       nextRequiredCashRow.remainingNeedRub > 0
                         ? nextRequiredCashRow.remainingNeedRub
                         : nextRequiredCashRow.calculatedNeedRub
-                    )}
-                  </strong>{' '}
-                  ({nextRequiredCashRow.purposeLabel.toLowerCase()}
-                  {nextRequiredCashRow.batchesCount > 0
-                    ? `, ${pluralizeBatchesRu(nextRequiredCashRow.batchesCount)}`
-                    : ''}
-                  )
+                    }
+                    className="font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                    unitClassName="!text-[0.82em] !text-[#5C5953] dark:!text-[#9A968E]"
+                  />
+                  <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                  <span className="text-[#5C5953] dark:text-[#9A968E] font-normal">
+                    {nextRequiredCashRow.batchesCount > 0
+                      ? pluralizeBatchesRu(nextRequiredCashRow.batchesCount)
+                      : nextRequiredCashRow.purposeLabel.toLowerCase()}
+                  </span>
                 </p>
               ) : schedule.nextUpcomingPayment ? (
-                <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-                  Ближайший плановый платёж:{' '}
-                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                <p className="text-[14px] sm:text-[15px] font-medium text-[#141413] dark:text-[#F5F4F0] leading-snug">
+                  Ближайший плановый платёж{' '}
+                  <span className="font-display-num font-semibold">
                     {schedule.nextUpcomingPayment.dateDotRu}
-                  </strong>{' '}
-                  ·{' '}
-                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
-                    {fmtMln(schedule.nextUpcomingPayment.amountRub)}
-                  </strong>{' '}
-                  ({schedule.nextUpcomingPayment.factoryName})
+                  </span>
+                  <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                  <MoneyFigure
+                    valueRub={schedule.nextUpcomingPayment.amountRub}
+                    className="font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                    unitClassName="!text-[0.82em] !text-[#5C5953] dark:!text-[#9A968E]"
+                  />
+                  <span className="mx-1.5 text-[#C8C3B8]">·</span>
+                  <span className="text-[#5C5953] dark:text-[#9A968E] font-normal">
+                    {schedule.nextUpcomingPayment.factoryName}
+                  </span>
                 </p>
-              ) : null}
+              ) : (
+                <p className="text-[14px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                  {schedule.recommendations[0]?.message ||
+                    'План финансирования сбалансирован — все закупки покрываются поступлениями'}
+                </p>
+              )}
             </div>
 
             <button
@@ -1859,54 +2304,46 @@ export function InvestmentSchedulePanel({
                   nextRequiredCashRow?.dateIso || schedule.nextUpcomingPayment?.dateIso
                 )
               }
-              className="h-9 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] hover:opacity-90 text-xs font-medium inline-flex items-center gap-2 shrink-0 cursor-pointer transition-opacity"
+              className="h-10 px-4 rounded-xl bg-[#141413] text-white hover:opacity-90 text-[13px] font-medium inline-flex items-center gap-2 shrink-0 whitespace-nowrap cursor-pointer shadow-[0_1px_2px_rgba(20,20,19,0.12)] transition-opacity"
             >
-              <Calendar className="h-3.5 w-3.5" strokeWidth={1.75} />
               <span>Посмотреть платежи</span>
-              {nextRequiredCashRow && (
-                <span className="font-mono text-[11px] opacity-80">
-                  · {nextRequiredCashRow.dateDotRu}
-                </span>
-              )}
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          {schedule.recommendations.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {schedule.recommendations.slice(0, 3).map((rec) => {
-                const badgeCls =
+          {/* Дополнительные недублирующиеся сигналы (например, риск дефицита товара) */}
+          {secondaryRecommendations.length > 0 && (
+            <div className="mt-3.5 pt-3 border-t border-[#F0EDE6] dark:border-[#242320] space-y-2">
+              {secondaryRecommendations.slice(0, 3).map((rec) => {
+                const dotCls =
                   rec.severity === 'danger'
-                    ? 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-300'
+                    ? 'bg-[#B91C1C]'
                     : rec.severity === 'warning'
-                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-300'
-                    : 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-300';
+                    ? 'bg-[#D97706]'
+                    : 'bg-[#0F766E]';
                 return (
                   <div
                     key={rec.id}
                     data-testid={`fin-rec-card-${rec.id}`}
-                    className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2.5"
+                    className="flex flex-wrap items-center justify-between gap-2.5 text-[12.5px]"
                   >
-                    <div className="space-y-1.5">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${badgeCls}`}
-                      >
-                        {rec.categoryLabel}
+                    <div className="flex items-center gap-2 min-w-0 text-[#3D3A36] dark:text-[#D4D1CA]">
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotCls}`} />
+                      <span className="font-medium text-[#141413] dark:text-[#F5F4F0] shrink-0">
+                        {rec.categoryLabel}:
                       </span>
-                      <p className="text-xs text-[#141413] dark:text-[#F5F4F0] leading-relaxed">
+                      <span className="text-[#5C5953] dark:text-[#9A968E] truncate">
                         {rec.message}
-                      </p>
+                      </span>
                     </div>
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => handleRecommendationAction(rec)}
-                        className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                      >
-                        <span>{rec.ctaLabel}</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRecommendationAction(rec)}
+                      className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0] hover:underline inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <span>{rec.ctaLabel}</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
                   </div>
                 );
               })}
@@ -1915,41 +2352,41 @@ export function InvestmentSchedulePanel({
         </div>
       )}
 
-      {/* РАЗДЕЛ 10 И СТР. 4 / ТЕСТ 09 ТЗ: ОБЩАЯ СВОДКА ГРУППЫ (при выборе «Все бренды») */}
+      {/* РАЗДЕЛ 10 ТЗ: СПОКОЙНАЯ ОБЩАЯ СВОДКА ГРУППЫ (ПРИ ВЫБОРЕ «ВСЕ БРЕНДЫ») */}
       {normBrand === 'ALL' && holdingOverview && (
         <div
           data-testid="fin-holding-overview-section"
-          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
+          className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] space-y-4"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1 max-w-2xl">
-              <h3 className="text-[14.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+              <h3 className="text-[15px] font-semibold tracking-[-0.015em] text-[#141413] dark:text-[#F5F4F0]">
                 Общая сводка группы · {selectedYear}
               </h3>
               <p
                 data-testid="fin-group-capital-mode-caption"
-                className="text-xs text-[#5C5953] dark:text-[#9A968E] leading-relaxed"
+                className="text-[12px] text-[#7A766E] dark:text-[#9A968E] leading-relaxed"
               >
                 {groupCapitalMode === 'common_pool'
-                  ? `ИТОГО ГРУППА: денежный календарь объединён, пик НЕ складывается по брендам (экономия общего котла: −${fmtMln(
+                  ? `Объединённый денежный календарь: пик не суммируется по брендам · экономия котла −${fmtMln(
                       schedule.commonPoolSavingsRub
-                    )}; начальный остаток и резерв учтены 1 раз).`
-                  : `Режим: каждый бренд финансируется автономно (сумма отдельных пиков по брендам; общий котёл сэкономил бы ${fmtMln(
+                    )}.`
+                  : `Автономное финансирование брендов: сумма отдельных пиков · потенциал общего котла −${fmtMln(
                       schedule.commonPoolSavingsRub
-                    )}; начальный остаток и резерв учтены 1 раз).`}
+                    )}.`}
               </p>
             </div>
 
-            {/* Переключатель 2 режимов капитала группы (Тест 09 ТЗ v1.0) */}
+            {/* Apple-style segmented toggle для режимов капитала группы */}
             <div
               role="group"
               aria-label="Режим расчёта капитала группы"
               data-testid="group-capital-mode-toggle"
-              className="inline-flex flex-wrap items-center gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724] shrink-0"
+              className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-[#EFECE6] dark:bg-[#1D1C1A] p-1 shrink-0"
             >
               {(
                 [
-                  { mode: 'common_pool' as GroupCapitalMode, label: 'Общий денежный котёл группы' },
+                  { mode: 'common_pool' as GroupCapitalMode, label: 'Общий денежный котёл' },
                   { mode: 'per_brand' as GroupCapitalMode, label: 'Каждый бренд сам' },
                 ] as const
               ).map((opt) => {
@@ -1960,10 +2397,10 @@ export function InvestmentSchedulePanel({
                     type="button"
                     data-testid={`group-capital-mode-${opt.mode}`}
                     onClick={() => setGroupCapitalMode(opt.mode, authorName)}
-                    className={`h-7.5 px-3 rounded-md text-[11.5px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
-                        : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
+                        ? 'bg-white dark:bg-[#2C2B28] text-[#141413] dark:text-[#F5F4F0] shadow-[0_1px_2px_rgba(20,20,19,0.08)]'
+                        : 'text-[#6B6760] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
                     }`}
                   >
                     {opt.label}
@@ -1973,22 +2410,22 @@ export function InvestmentSchedulePanel({
             </div>
           </div>
 
-          {/* Раздельные совместимые физические единицы (без смешивания пар и комплектов!) */}
+          {/* Раздельные совместимые физические единицы + экономия общего котла */}
           {schedule.compatibleUnitsBreakdown.length > 0 && (
             <div
               data-testid="fin-group-compatible-units"
-              className="flex flex-wrap items-center justify-between gap-2 pt-0.5"
+              className="flex flex-wrap items-center justify-between gap-2"
             >
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                  Объём продаж по типам единиц:
+                <span className="text-[11.5px] text-[#7A766E] dark:text-[#9A968E]">
+                  Объём продаж:
                 </span>
                 {schedule.compatibleUnitsBreakdown.map((uRow) => {
                   const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
                   return (
                     <span
                       key={uRow.unitCategory}
-                      className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0]"
+                      className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F6F5F1] dark:bg-[#1D1C1A] font-display-num tabular-nums text-[11.5px] font-medium text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap"
                     >
                       {categoryName}: {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit}
                     </span>
@@ -1997,101 +2434,120 @@ export function InvestmentSchedulePanel({
               </div>
 
               {schedule.commonPoolSavingsRub > 0 && (
-                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11px] font-medium text-[#15803D] dark:text-emerald-400">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#EAF6F0] dark:bg-emerald-500/12 font-display-num tabular-nums text-[11.5px] font-medium text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                   {groupCapitalMode === 'common_pool'
-                    ? `Экономия общего котла: −${fmtMln(schedule.commonPoolSavingsRub)}`
-                    : `Потенциал общего котла: −${fmtMln(schedule.commonPoolSavingsRub)}`}
+                    ? `Экономия котла: −${fmtMln(schedule.commonPoolSavingsRub)}`
+                    : `Потенциал котла: −${fmtMln(schedule.commonPoolSavingsRub)}`}
                 </span>
               )}
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
+          <div className="overflow-x-auto rounded-xl border border-[#ECEAE3] dark:border-[#262522]">
             <table
               data-testid="fin-holding-overview-table"
-              className="w-full min-w-[680px] border-collapse text-left text-xs"
+              className="w-full min-w-[680px] border-collapse text-left text-[13px]"
             >
               <thead>
-                <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
-                  <th className="py-2.5 px-3.5 font-medium">Бренд и сценарий</th>
-                  <th className="py-2.5 px-3 font-medium text-right">Выручка</th>
-                  <th className="py-2.5 px-3 font-medium text-right">Закупки</th>
-                  <th className="py-2.5 px-3 font-medium text-right">Свои деньги</th>
-                  <th className="py-2.5 px-3.5 font-medium">Ближайший платёж</th>
+                <tr className="bg-[#FAF9F6] dark:bg-[#1A1917] border-b border-[#ECEAE3] dark:border-[#262522] text-[11px] uppercase tracking-[0.05em] text-[#7A766E] dark:text-[#9A968E]">
+                  <th className="py-3 px-4 font-medium">Бренд и сценарий</th>
+                  <th className="py-3 px-4 font-medium text-right">Выручка</th>
+                  <th className="py-3 px-4 font-medium text-right">Закупки</th>
+                  <th className="py-3 px-4 font-medium text-right">Свои деньги</th>
+                  <th className="py-3 px-4 font-medium">Ближайший платёж</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+              <tbody className="divide-y divide-[#F0EDE6] dark:divide-[#242320]">
                 {holdingOverview.rows.map((row) => {
                   const isUnselected = row.scenarioId === null;
+                  const brandVis = getBrandVisual(row.brandCode);
                   return (
                     <tr
                       key={row.brandCode}
                       data-testid={`fin-holding-row-${row.brandCode}`}
                       onClick={() => handleSelectBrandPill(row.brandCode)}
-                      className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
+                      className="group hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] cursor-pointer transition-colors"
                     >
-                      <td className="py-3 px-3.5">
-                        <div className="font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className={`h-2 w-2 rounded-full shrink-0 ${brandVis.dotClass}`}
+                          />
                           <span>{row.displayBrandName}</span>
-                          <ArrowUpRight className="h-3 w-3 text-[#5C5953]" />
                           {row.isPreliminary && !isUnselected && (
-                            <span className="rounded px-1.5 py-0.5 bg-amber-500/12 border border-amber-500/30 font-mono text-[9.5px] font-medium text-amber-800 dark:text-amber-300">
+                            <span className="rounded-md px-1.5 py-0.5 bg-[#FDF5E6] dark:bg-amber-500/15 text-[10px] font-medium text-[#9A5B13] dark:text-amber-300 whitespace-nowrap">
                               Предварительно
                             </span>
                           )}
+                          <ArrowRight className="h-3.5 w-3.5 text-[#7A766E] opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
                         </div>
-                        <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                        <div className="mt-0.5 pl-4 text-[11.5px] text-[#7A766E] dark:text-[#9A968E]">
                           {isUnselected ? (
-                            <span className="text-amber-800 dark:text-amber-300">
+                            <span className="text-[#9A5B13] dark:text-amber-300">
                               Не выбран · {row.scenarioYear} г.
                             </span>
                           ) : (
-                            `${row.scenarioName} · ${row.scenarioYear} г.`
+                            `${row.scenarioName} · ${row.scenarioYear}`
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                        {isUnselected
-                          ? '—'
-                          : row.revenueRub > 0
-                          ? fmtMln(row.revenueRub)
-                          : '0,00 млн ₽'}
+                      <td className="py-3.5 px-4 text-right text-[#141413] dark:text-[#F5F4F0]">
+                        {isUnselected ? (
+                          <span className="text-[#8C877E]">—</span>
+                        ) : (
+                          <MoneyFigure
+                            valueRub={row.revenueRub > 0 ? row.revenueRub : 0}
+                            className="text-[13.5px] font-medium"
+                            unitClassName="!text-[0.82em]"
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono text-[#141413] dark:text-[#F5F4F0]">
-                        {isUnselected
-                          ? '—'
-                          : row.procurementRub > 0
-                          ? fmtMln(row.procurementRub)
-                          : '0,00 млн ₽'}
+                      <td className="py-3.5 px-4 text-right text-[#3D3A36] dark:text-[#D4D1CA]">
+                        {isUnselected ? (
+                          <span className="text-[#8C877E]">—</span>
+                        ) : (
+                          <MoneyFigure
+                            valueRub={row.procurementRub > 0 ? row.procurementRub : 0}
+                            className="text-[13.5px] font-normal"
+                            unitClassName="!text-[0.82em]"
+                          />
+                        )}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                        {isUnselected || row.ownMoneyNeedRub === null
-                          ? '—'
-                          : fmtMln(row.ownMoneyNeedRub)}
+                      <td className="py-3.5 px-4 text-right text-[#141413] dark:text-[#F5F4F0]">
+                        {isUnselected || row.ownMoneyNeedRub === null ? (
+                          <span className="text-[#8C877E]">—</span>
+                        ) : (
+                          <MoneyFigure
+                            valueRub={row.ownMoneyNeedRub}
+                            className="text-[13.5px] font-semibold"
+                            unitClassName="!text-[0.82em]"
+                          />
+                        )}
                         {!isUnselected &&
                           row.remainingOwnMoneyRub !== null &&
                           row.ownMoneyNeedRub !== null &&
                           row.remainingOwnMoneyRub < row.ownMoneyNeedRub && (
-                            <div className="text-[10.5px] font-normal text-[#15803D] dark:text-emerald-400">
-                              осталось: {fmtMln(row.remainingOwnMoneyRub)}
+                            <div className="mt-0.5 text-[11px] font-display-num text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
+                              осталось {fmtMln(row.remainingOwnMoneyRub)}
                             </div>
                           )}
                       </td>
-                      <td className="py-3 px-3.5 text-[#5C5953] dark:text-[#9A968E]">
+                      <td className="py-3.5 px-4 text-[#7A766E] dark:text-[#9A968E]">
                         {isUnselected ? (
                           '—'
                         ) : row.nextPayment ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                          <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="font-display-num tabular-nums font-medium text-[#141413] dark:text-[#F5F4F0]">
                               {row.nextPayment.dateDotRu}
                             </span>
-                            <span>·</span>
-                            <span className="font-mono text-[#B91C1C] dark:text-rose-400">
+                            <span className="text-[#C8C3B8]">·</span>
+                            <span className="font-display-num tabular-nums text-[#B91C1C] dark:text-rose-400">
                               {fmtMln(row.nextPayment.amountRub)}
                             </span>
                           </div>
                         ) : (
-                          'Нет плановых платежей'
+                          <span className="text-[12px] text-[#8C877E]">Нет платежей</span>
                         )}
                       </td>
                     </tr>
@@ -2099,30 +2555,49 @@ export function InvestmentSchedulePanel({
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-t border-[#E4E1DA] dark:border-[#282724] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  <td className="py-3 px-3.5">
+                <tr className="bg-[#FAF8F4] dark:bg-[#1A1917] border-t border-[#E6E3DB] dark:border-[#282724] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                  <td className="py-3.5 px-4 text-[12.5px]">
                     {groupCapitalMode === 'per_brand'
-                      ? 'ИТОГО ГРУППА (каждый бренд сам)'
-                      : 'ИТОГО ГРУППА (общий денежный котёл)'}
+                      ? 'Итого группа · каждый бренд сам'
+                      : 'Итого группа · общий денежный котёл'}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    {fmtMln(schedule.totalGrossSalesRevenueRub)}
+                  <td className="py-3.5 px-4 text-right">
+                    <MoneyFigure
+                      valueRub={schedule.totalGrossSalesRevenueRub}
+                      className="text-[13.5px] font-semibold"
+                      unitClassName="!text-[0.82em]"
+                    />
                   </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    {fmtMln(schedule.totalProcurementCostRub)}
+                  <td className="py-3.5 px-4 text-right">
+                    <MoneyFigure
+                      valueRub={schedule.totalProcurementCostRub}
+                      className="text-[13.5px] font-semibold"
+                      unitClassName="!text-[0.82em]"
+                    />
                   </td>
                   <td
                     data-testid="fin-holding-total-own-money"
-                    className="py-3 px-3 text-right font-mono"
+                    className="py-3.5 px-4 text-right"
                   >
-                    {schedule.calculatedCapitalNeedRub !== null
-                      ? fmtMln(schedule.calculatedCapitalNeedRub)
-                      : '—'}
+                    {schedule.calculatedCapitalNeedRub !== null ? (
+                      <MoneyFigure
+                        valueRub={schedule.calculatedCapitalNeedRub}
+                        className="text-[13.5px] font-semibold"
+                        unitClassName="!text-[0.82em]"
+                      />
+                    ) : (
+                      '—'
+                    )}
                   </td>
-                  <td className="py-3 px-3.5 font-normal text-[#5C5953] dark:text-[#9A968E]">
-                    {schedule.nextUpcomingPayment
-                      ? `${schedule.nextUpcomingPayment.dateDotRu} · ${fmtMln(schedule.nextUpcomingPayment.amountRub)}`
-                      : '—'}
+                  <td className="py-3.5 px-4 font-normal text-[12.5px] text-[#6B6760] dark:text-[#9A968E] whitespace-nowrap">
+                    {schedule.nextUpcomingPayment ? (
+                      <span className="font-display-num tabular-nums">
+                        {schedule.nextUpcomingPayment.dateDotRu} ·{' '}
+                        {fmtMln(schedule.nextUpcomingPayment.amountRub)}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                 </tr>
               </tfoot>
@@ -2131,69 +2606,86 @@ export function InvestmentSchedulePanel({
         </div>
       )}
 
-      {/* РАЗДЕЛ 5 И РАЗДЕЛ 9 ТЗ: ПЛАН VS ФАКТ КАПИТАЛА + ПРОГНОЗ ВОЗВРАТА ВЛОЖЕННОГО + КНОПКИ УПРАВЛЕНИЯ */}
-      <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          {/* Три раздельных показателя финансирования: План vs Факт (Стр. 5 и Тест 06 ТЗ v1.0) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 flex-1 min-w-[280px]">
+      {/* РАЗДЕЛ 5 И РАЗДЕЛ 9 ТЗ: СВОДКА ФИНАНСИРОВАНИЯ + ПОЛОСА ПРОГРЕССА + ВОЗВРАТ КАПИТАЛА */}
+      <div className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {/* Три показателя финансирования: План vs Факт */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 flex-1 min-w-[280px]">
             <div>
-              <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+              <div className="text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E]">
                 Своих требуется
               </div>
               <div
                 data-testid="fin-cap-calculated"
-                className="mt-0.5 font-mono text-base sm:text-lg font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                className="mt-1.5 text-[#141413] dark:text-[#F5F4F0]"
               >
-                {schedule.calculatedCapitalNeedRub !== null
-                  ? fmtMln(schedule.calculatedCapitalNeedRub)
-                  : '—'}
+                {schedule.calculatedCapitalNeedRub !== null ? (
+                  <MoneyFigure
+                    valueRub={schedule.calculatedCapitalNeedRub}
+                    className="text-[20px] sm:text-[22px] font-semibold tracking-[-0.025em] leading-none"
+                  />
+                ) : (
+                  <span className="font-display-num text-[20px] font-semibold text-[#8C877E]">—</span>
+                )}
               </div>
-              <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
-                Расчётный пик потребности периода
+              <div className="mt-1 text-[11px] text-[#7A766E] dark:text-[#9A968E]">
+                Расчётный пик потребности
               </div>
             </div>
 
             <div>
-              <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+              <div className="text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E]">
                 Уже внесено (факт)
               </div>
               <div
                 data-testid="fin-cap-contributed"
-                className="mt-0.5 font-mono text-base sm:text-lg font-semibold text-[#15803D] dark:text-emerald-400"
+                className="mt-1.5 text-[#0F766E] dark:text-emerald-400"
               >
-                {fmtMln(schedule.factualOwnMoneyContributedRub)}
+                <MoneyFigure
+                  valueRub={schedule.factualOwnMoneyContributedRub}
+                  className="text-[20px] sm:text-[22px] font-semibold tracking-[-0.025em] leading-none text-[#0F766E] dark:text-emerald-400"
+                  unitClassName="!text-[#0F766E]/70 dark:!text-emerald-400/70"
+                />
               </div>
               {schedule.plannedOwnMoneyInjectionsRub > 0 ? (
                 <div
                   data-testid="fin-cap-planned-subnote"
-                  className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                  className="mt-1 text-[11px] text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap"
                 >
-                  Запланировано: <span className="font-mono">{fmtMln(schedule.plannedOwnMoneyInjectionsRub)}</span>
+                  Запланировано:{' '}
+                  <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
+                    {fmtMln(schedule.plannedOwnMoneyInjectionsRub)}
+                  </span>
                 </div>
               ) : (
-                <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
-                  Стартовый остаток и оплаченные вложения
+                <div className="mt-1 text-[11px] text-[#7A766E] dark:text-[#9A968E]">
+                  Стартовый остаток и взносы
                 </div>
               )}
             </div>
 
             <div>
-              <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+              <div className="text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E]">
                 Ещё покрыть
               </div>
               <div
                 data-testid="inv-still-needed-value"
-                className={`mt-0.5 font-mono text-base sm:text-lg font-semibold ${
-                  (schedule.remainingOwnMoneyNeededRub ?? 0) > 0
-                    ? 'text-[#B91C1C] dark:text-rose-400'
-                    : 'text-[#15803D] dark:text-emerald-400'
-                }`}
+                className="mt-1.5"
               >
-                {schedule.remainingOwnMoneyNeededRub === null
-                  ? '—'
-                  : schedule.remainingOwnMoneyNeededRub > 0
-                  ? fmtMln(schedule.remainingOwnMoneyNeededRub)
-                  : '0,00 млн ₽ (закрыто)'}
+                {schedule.remainingOwnMoneyNeededRub === null ? (
+                  <span className="font-display-num text-[20px] font-semibold text-[#8C877E]">—</span>
+                ) : schedule.remainingOwnMoneyNeededRub > 0 ? (
+                  <MoneyFigure
+                    valueRub={schedule.remainingOwnMoneyNeededRub}
+                    className="text-[20px] sm:text-[22px] font-semibold tracking-[-0.025em] leading-none text-[#B91C1C] dark:text-rose-400"
+                    unitClassName="!text-[#B91C1C]/70 dark:!text-rose-400/70"
+                  />
+                ) : (
+                  <span className="inline-flex items-baseline gap-1.5 font-display-num text-[20px] sm:text-[22px] font-semibold tracking-[-0.025em] leading-none text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
+                    <span>0,00</span>
+                    <span className="text-[0.58em] font-medium opacity-75">млн ₽ (закрыто)</span>
+                  </span>
+                )}
               </div>
               {schedule.remainingNeedAfterFactualOnlyRub !== null &&
                 schedule.remainingOwnMoneyNeededRub !== null &&
@@ -2203,10 +2695,10 @@ export function InvestmentSchedulePanel({
                 ) >= 1000 && (
                   <div
                     data-testid="fin-cap-remaining-factual-only"
-                    className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                    className="mt-1 text-[11px] text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap"
                   >
-                    без учёта плановых:{' '}
-                    <span className="font-mono font-medium">
+                    без плановых:{' '}
+                    <span className="font-display-num tabular-nums font-medium">
                       {fmtMln(schedule.remainingNeedAfterFactualOnlyRub)}
                     </span>
                   </div>
@@ -2218,14 +2710,14 @@ export function InvestmentSchedulePanel({
                     (schedule.calculatedCapitalNeedRub ?? 0) - schedule.totalOwnMoneyConfiguredRub
                   ) +
                     1000 && (
-                  <div className="text-[10.5px] text-amber-700 dark:text-amber-300">
-                    покрытие по датам: взнос позже платежа ({schedule.whenAndHowMuchRows[0]?.dateDotRu || ''})
+                  <div className="mt-1 text-[11px] text-[#9A5B13] dark:text-amber-300">
+                    взнос позже платежа ({schedule.whenAndHowMuchRows[0]?.dateDotRu || ''})
                   </div>
                 )}
             </div>
           </div>
 
-          {/* Кнопки управления инвестициями и сравнения */}
+          {/* Спокойные вторичные кнопки управления */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {canEdit && (
               <button
@@ -2237,13 +2729,13 @@ export function InvestmentSchedulePanel({
                   }
                   setShowEditInvestmentPlan((v) => !v);
                 }}
-                className={`h-9 px-3.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`h-9 px-3.5 rounded-xl text-[12.5px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
                   showEditInvestmentPlan
-                    ? 'bg-[#282724] text-white'
-                    : 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] hover:opacity-90'
+                    ? 'bg-[#141413] text-white'
+                    : 'bg-[#F3F1EC] dark:bg-[#23221F] hover:bg-[#E7E4DC] dark:hover:bg-[#2D2C28] text-[#141413] dark:text-[#F5F4F0]'
                 }`}
               >
-                <Wallet className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <Wallet className="h-3.5 w-3.5" strokeWidth={1.6} />
                 <span>Изменить план инвестиций</span>
               </button>
             )}
@@ -2252,13 +2744,13 @@ export function InvestmentSchedulePanel({
               type="button"
               data-testid="btn-compare-baseline"
               onClick={() => setShowBaselineComparison((v) => !v)}
-              className={`h-9 px-3.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+              className={`h-9 px-3.5 rounded-xl border text-[12.5px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
                 showBaselineComparison || planComparison.hasDifferences
-                  ? 'border-[#141413] dark:border-[#F5F4F0] bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0]'
-                  : 'border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413]'
+                  ? 'border-[#141413]/30 dark:border-[#F5F4F0]/30 bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0]'
+                  : 'border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] hover:bg-[#FAF9F6]'
               }`}
             >
-              <GitCompare className="h-3.5 w-3.5" strokeWidth={1.5} />
+              <GitCompare className="h-3.5 w-3.5" strokeWidth={1.6} />
               <span>Сравнить с исходным планом</span>
             </button>
 
@@ -2267,7 +2759,7 @@ export function InvestmentSchedulePanel({
                 type="button"
                 data-testid="inv-reset-plan-btn"
                 onClick={() => setShowResetPreviewModal(true)}
-                className="h-9 px-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-300 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                className="h-9 px-3 rounded-xl border border-[#EED9B3] dark:border-amber-500/35 bg-[#FDF8EE] dark:bg-amber-500/10 text-[#7A4B16] dark:text-amber-300 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>Вернуть расчёт по плану ({resetPreview.willResetCount})</span>
@@ -2276,42 +2768,77 @@ export function InvestmentSchedulePanel({
           </div>
         </div>
 
-        {/* СТР. 9 ТЗ v1.0: ПРОГНОЗ ВОЗВРАТА СОБСТВЕННОГО КАПИТАЛА — «КОГДА МОЖНО ВЕРНУТЬ ВЛОЖЕННОЕ» */}
+        {/* Тонкая полоса прогресса покрытия потребности фактом */}
+        {requiredCapitalRub > 0 && (
+          <div className="space-y-1.5">
+            <div className="h-[5px] w-full rounded-full bg-[#EFECE6] dark:bg-[#242320] overflow-hidden flex">
+              {factualFundedSharePct > 0 && (
+                <div
+                  style={{ width: `${factualFundedSharePct}%` }}
+                  className="h-full bg-[#0F766E] dark:bg-emerald-500 transition-all duration-300"
+                />
+              )}
+              {plannedFundedSharePct > 0 && (
+                <div
+                  style={{ width: `${plannedFundedSharePct}%` }}
+                  className="h-full bg-[#0F766E]/35 dark:bg-emerald-500/35 transition-all duration-300"
+                />
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#7A766E] dark:text-[#9A968E]">
+              <span className="font-display-num tabular-nums">
+                Внесено фактом: {factualFundedSharePct}% от расчётного пика
+              </span>
+              {plannedFundedSharePct > 0 && (
+                <span className="font-display-num tabular-nums">
+                  С учётом запланированных взносов: {Math.min(100, factualFundedSharePct + plannedFundedSharePct)}%
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* СТР. 9 ТЗ v1.0: ПРОГНОЗ ВОЗВРАТА ВЛОЖЕННОГО КАПИТАЛА */}
         <div
           data-testid="fin-capital-return-forecast"
           title={schedule.capitalReturnForecast.disclaimerRu}
-          className="pt-3 border-t border-[#E4E1DA] dark:border-[#282724] flex flex-wrap items-center justify-between gap-2 text-xs"
+          className="pt-3.5 border-t border-[#F0EDE6] dark:border-[#242320] flex flex-wrap items-center justify-between gap-2 text-[12px]"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-[#5C5953] dark:text-[#9A968E] font-medium">
-              <Clock className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.75} />
-              <span>Когда можно вернуть вложенное:</span>
-            </span>
             {!schedule.wbPayoutScheduleSpecified ? (
-              <span className="font-mono text-[#5C5953] dark:text-[#9A968E]">
-                Укажите срок выплат WB
+              <span className="inline-flex items-center gap-1.5 text-[#7A766E] dark:text-[#9A968E]">
+                <Clock className="h-3.5 w-3.5" strokeWidth={1.6} />
+                <span>Возврат вложенного: укажите срок выплат WB</span>
               </span>
             ) : schedule.capitalReturnForecast.deployedOwnCapitalRub <= 0 ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11.5px] font-medium text-[#15803D] dark:text-emerald-400">
-                Собственные вложения не требуются
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EAF6F0] dark:bg-emerald-500/12 text-[12px] font-medium text-[#0F766E] dark:text-emerald-400">
+                <Clock className="h-3.5 w-3.5" strokeWidth={1.7} />
+                <span>Возврат вложенного: собственные вложения не требуются</span>
               </span>
             ) : schedule.capitalReturnForecast.canReturnWithinHorizon &&
               schedule.capitalReturnForecast.eligibleDateHumanRu ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11.5px] font-semibold text-[#15803D] dark:text-emerald-400">
-                <span>с {schedule.capitalReturnForecast.eligibleDateHumanRu}</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EAF6F0] dark:bg-emerald-500/12 text-[12px] font-medium text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
+                <Clock className="h-3.5 w-3.5" strokeWidth={1.7} />
+                <span>
+                  Возврат вложенного: с{' '}
+                  <strong className="font-semibold">
+                    {schedule.capitalReturnForecast.eligibleDateHumanRu}
+                  </strong>
+                </span>
                 {schedule.capitalReturnForecast.eligibleDateDotRu && (
-                  <span className="font-normal opacity-80">
+                  <span className="font-display-num tabular-nums opacity-75">
                     ({schedule.capitalReturnForecast.eligibleDateDotRu})
                   </span>
                 )}
               </span>
             ) : (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium text-[#5C5953] dark:text-[#9A968E]">
-                В пределах периода не окупается с сохранением резерва
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F5F2EB] dark:bg-[#1D1C1A] text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E]">
+                <Clock className="h-3.5 w-3.5" strokeWidth={1.6} />
+                <span>Возврат вложенного: за пределами горизонта с сохранением резерва</span>
               </span>
             )}
           </div>
-          <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+          <span className="text-[11px] text-[#8C877E] dark:text-[#8E8A82]">
             {schedule.capitalReturnForecast.disclaimerRu}
           </span>
         </div>
@@ -2635,67 +3162,67 @@ export function InvestmentSchedulePanel({
         {showBaselineComparison && (
           <div
             data-testid="fin-baseline-comparison-panel"
-            className="pt-4 border-t border-[#E4E1DA] dark:border-[#282724] space-y-3"
+            className="pt-4 border-t border-[#F0EDE6] dark:border-[#242320] space-y-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 Сравнение с исходным автоматическим планом
               </div>
-              <span className="text-xs text-[#5C5953] dark:text-[#9A968E]">
+              <span className="text-xs text-[#6B6760] dark:text-[#9A968E]">
                 {planComparison.summaryVerdictRu}
               </span>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
-              <table className="w-full min-w-[560px] border-collapse text-left text-xs">
+            <div className="overflow-x-auto rounded-xl border border-[#ECEAE3] dark:border-[#262522]">
+              <table className="w-full min-w-[560px] border-collapse text-left text-[12.5px]">
                 <thead>
-                  <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] uppercase tracking-wider text-[#5C5953]">
-                    <th className="py-2 px-3 font-medium">Показатель</th>
-                    <th className="py-2 px-3 font-medium text-right">Исходный план</th>
-                    <th className="py-2 px-3 font-medium text-right">Текущий план</th>
-                    <th className="py-2 px-3 font-medium text-right">Изменение</th>
+                  <tr className="bg-[#FAF9F6] dark:bg-[#1A1917] border-b border-[#ECEAE3] dark:border-[#262522] text-[11px] uppercase tracking-[0.05em] text-[#7A766E]">
+                    <th className="py-2.5 px-3.5 font-medium">Показатель</th>
+                    <th className="py-2.5 px-3.5 font-medium text-right">Исходный план</th>
+                    <th className="py-2.5 px-3.5 font-medium text-right">Текущий план</th>
+                    <th className="py-2.5 px-3.5 font-medium text-right">Изменение</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+                <tbody className="divide-y divide-[#F0EDE6] dark:divide-[#242320]">
                   <tr>
-                    <td className="py-2.5 px-3 font-medium">Стоимость закупок</td>
-                    <td className="py-2.5 px-3 text-right font-mono">{fmtMln(planComparison.autoProcurementRub)}</td>
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold">{fmtMln(planComparison.currentProcurementRub)}</td>
-                    <td className="py-2.5 px-3 text-right font-mono">{fmtSignedDeltaMln(planComparison.deltaProcurementRub)}</td>
+                    <td className="py-2.5 px-3.5 font-medium">Стоимость закупок</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">{fmtMln(planComparison.autoProcurementRub)}</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums font-semibold whitespace-nowrap">{fmtMln(planComparison.currentProcurementRub)}</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">{fmtSignedDeltaMln(planComparison.deltaProcurementRub)}</td>
                   </tr>
                   <tr>
-                    <td className="py-2.5 px-3 font-medium">Расчётная потребность в своих деньгах</td>
-                    <td className="py-2.5 px-3 text-right font-mono">
+                    <td className="py-2.5 px-3.5 font-medium">Расчётная потребность в своих деньгах</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                       {planComparison.autoCalculatedNeedRub !== null ? fmtMln(planComparison.autoCalculatedNeedRub) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums font-semibold whitespace-nowrap">
                       {planComparison.currentCalculatedNeedRub !== null ? fmtMln(planComparison.currentCalculatedNeedRub) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono">
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                       {planComparison.deltaCalculatedNeedRub !== null ? fmtSignedDeltaMln(planComparison.deltaCalculatedNeedRub) : '—'}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-2.5 px-3 font-medium">Оставшаяся сумма финансирования</td>
-                    <td className="py-2.5 px-3 text-right font-mono">
+                    <td className="py-2.5 px-3.5 font-medium">Оставшаяся сумма финансирования</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                       {planComparison.autoRemainingNeedRub !== null ? fmtMln(planComparison.autoRemainingNeedRub) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums font-semibold whitespace-nowrap">
                       {planComparison.currentRemainingNeedRub !== null ? fmtMln(planComparison.currentRemainingNeedRub) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono">
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                       {planComparison.deltaRemainingNeedRub !== null ? fmtSignedDeltaMln(planComparison.deltaRemainingNeedRub) : '—'}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-2.5 px-3 font-medium">Обеспеченность товаром (дефицит)</td>
-                    <td className="py-2.5 px-3 text-right font-mono">
+                    <td className="py-2.5 px-3.5 font-medium">Обеспеченность товаром (дефицит)</td>
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                       {planComparison.autoDeficitPacks.toLocaleString('ru-RU')} ед.
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                    <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums font-semibold whitespace-nowrap">
                       {planComparison.currentDeficitPacks.toLocaleString('ru-RU')} ед.
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-[#B91C1C]">
+                    <td className={`py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap ${planComparison.deltaDeficitPacks > 0 ? 'text-[#B91C1C]' : 'text-[#0F766E]'}`}>
                       {planComparison.deltaDeficitPacks > 0
                         ? `+${planComparison.deltaDeficitPacks.toLocaleString('ru-RU')} ед. риска`
                         : 'Без дефицита'}
@@ -2712,7 +3239,7 @@ export function InvestmentSchedulePanel({
       {schedule.supplyDeficitWarnings.length > 0 && (
         <div
           data-testid="fin-supply-deficit-banner"
-          className="rounded-xl border border-rose-500/35 bg-rose-500/8 p-4 space-y-2"
+          className="rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-4 space-y-2"
         >
           {schedule.supplyDeficitWarnings.map((sw) => (
             <div
@@ -2734,7 +3261,7 @@ export function InvestmentSchedulePanel({
                     modelCode: sw.modelCode,
                   })
                 }
-                className="h-7.5 px-3 rounded-lg bg-white dark:bg-[#151514] border border-rose-500/35 text-[#B91C1C] dark:text-rose-300 text-[11.5px] font-medium cursor-pointer shrink-0"
+                className="h-7.5 px-3 rounded-lg bg-white dark:bg-[#151514] border border-rose-500/30 text-[#B91C1C] dark:text-rose-300 text-[11.5px] font-medium whitespace-nowrap cursor-pointer shrink-0"
               >
                 Открыть закупку →
               </button>
@@ -2746,36 +3273,36 @@ export function InvestmentSchedulePanel({
       {/* РАЗДЕЛ 4 И РАЗДЕЛ 6 ТЗ: ГЛАВНЫЙ РАБОЧИЙ БЛОК — «КОГДА И СКОЛЬКО ВЛОЖИТЬ» */}
       <div
         id="when-and-how-much-anchor"
-        className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
+        className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] space-y-4"
       >
-        <div className="flex flex-wrap items-start justify-between gap-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[15.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h3 className="text-[15.5px] font-semibold tracking-[-0.015em] text-[#141413] dark:text-[#F5F4F0]">
                 Когда и сколько вложить
               </h3>
               {schedule.wbPayoutScheduleSpecified &&
                 schedule.capitalReturnForecast.deployedOwnCapitalRub > 0 && (
                   <span
                     title={schedule.capitalReturnForecast.disclaimerRu}
-                    className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium border ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-0.5 text-[11.5px] font-medium whitespace-nowrap ${
                       schedule.capitalReturnForecast.canReturnWithinHorizon
-                        ? 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-400'
-                        : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]'
+                        ? 'bg-[#EAF6F0] dark:bg-emerald-500/12 text-[#0F766E] dark:text-emerald-400'
+                        : 'bg-[#F5F2EB] dark:bg-[#1D1C1A] text-[#6B6760] dark:text-[#9A968E]'
                     }`}
                   >
                     <Clock className="h-3 w-3" />
                     <span>
                       {schedule.capitalReturnForecast.canReturnWithinHorizon &&
                       schedule.capitalReturnForecast.eligibleDateHumanRu
-                        ? `Возврат вложенного: с ${schedule.capitalReturnForecast.eligibleDateHumanRu}`
-                        : 'Возврат вложенного: за пределами периода'}
+                        ? `Возврат: с ${schedule.capitalReturnForecast.eligibleDateHumanRu}`
+                        : 'Возврат: за пределами периода'}
                     </span>
                   </span>
                 )}
             </div>
-            <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-              Даты финансирования закупочных партий. Раскройте дату («Подробнее»), чтобы увидеть конкретные товары с фото, изменить условия платежа с предпросмотром последствий или открыть партию в «Закупках».
+            <p className="text-[12px] text-[#7A766E] dark:text-[#9A968E]">
+              Даты финансирования закупочных партий. Раскройте дату, чтобы увидеть товары, скорректировать платёж или перейти к партии.
             </p>
           </div>
 
@@ -2784,7 +3311,7 @@ export function InvestmentSchedulePanel({
               type="button"
               data-testid="btn-toggle-all-factory-payments"
               onClick={() => setShowAllFactoryPayments((v) => !v)}
-              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors shrink-0"
+              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#C8C3B8] text-[12px] font-medium text-[#3D3A36] dark:text-[#F5F4F0] whitespace-nowrap cursor-pointer transition-colors shrink-0"
             >
               {showAllFactoryPayments
                 ? 'Только даты вложений'
@@ -2793,23 +3320,23 @@ export function InvestmentSchedulePanel({
           )}
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
+        <div className="overflow-x-auto rounded-xl border border-[#ECEAE3] dark:border-[#262522]">
           <table
             data-testid="when-and-how-much-table"
-            className="w-full min-w-[640px] border-collapse text-left text-xs"
+            className="w-full min-w-[640px] border-collapse text-left text-[13px]"
           >
             <thead>
-              <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
-                <th className="py-2.5 px-3.5 font-medium">Дата</th>
-                <th className="py-2.5 px-3.5 font-medium">Нужно вложить</th>
-                <th className="py-2.5 px-3.5 font-medium">На что нужны деньги</th>
-                <th className="py-2.5 px-3.5 font-medium text-right">Действие</th>
+              <tr className="bg-[#FAF9F6] dark:bg-[#1A1917] border-b border-[#ECEAE3] dark:border-[#262522] text-[11px] uppercase tracking-[0.05em] text-[#7A766E] dark:text-[#9A968E]">
+                <th className="py-3 px-4 font-medium">Дата</th>
+                <th className="py-3 px-4 font-medium">Нужно вложить</th>
+                <th className="py-3 px-4 font-medium">На что нужны деньги</th>
+                <th className="py-3 px-4 font-medium text-right">Действие</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+            <tbody className="divide-y divide-[#F0EDE6] dark:divide-[#242320]">
               {schedule.whenAndHowMuchRows.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-6 px-4 text-center text-[#5C5953] dark:text-[#9A968E]">
+                  <td colSpan={4} className="py-7 px-4 text-center text-[13px] text-[#7A766E] dark:text-[#9A968E]">
                     {!schedule.wbPayoutScheduleSpecified
                       ? 'Укажите срок поступлений от Wildberries в разделе «Изменить план инвестиций», чтобы рассчитать точные даты вложений.'
                       : 'Все плановые закупочные платежи покрываются текущими средствами и поступлениями от продаж.'}
@@ -2824,54 +3351,61 @@ export function InvestmentSchedulePanel({
                       <tr
                         data-testid={`when-row-${row.dateIso}`}
                         onClick={() => toggleWhenRow(row.dateIso)}
-                        className={`hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors ${
-                          isPreSalesYear ? 'bg-amber-500/[0.03]' : ''
+                        className={`hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] cursor-pointer transition-colors ${
+                          isExp
+                            ? 'bg-[#FAF8F4] dark:bg-[#1B1A17]'
+                            : isPreSalesYear
+                            ? 'bg-[#FDFBF6] dark:bg-amber-500/[0.025]'
+                            : ''
                         }`}
                       >
-                        <td className="py-3 px-3.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                        <td className="py-3.5 px-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-display-num tabular-nums font-semibold text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap">
                               {row.dateDotRu}
                             </span>
                             {isPreSalesYear && (
                               <span
                                 data-testid={`when-pre-year-badge-${row.dateIso}`}
-                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/12 border border-amber-500/30 text-[10px] font-medium text-amber-800 dark:text-amber-300"
+                                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-[#FDF5E6] dark:bg-amber-500/15 text-[10.5px] font-medium text-[#9A5B13] dark:text-amber-300 whitespace-nowrap"
                               >
                                 До начала {selectedYear}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-3.5">
+                        <td className="py-3.5 px-4">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                              {fmtMln(row.calculatedNeedRub)}
-                            </span>
+                            <MoneyFigure
+                              valueRub={row.calculatedNeedRub}
+                              title={fmtRub(row.calculatedNeedRub)}
+                              className="text-[14.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                              unitClassName="!text-[0.8em]"
+                            />
                             {row.coveredByOwnMoneyRub > 0 && (
                               <span
-                                className={`px-1.5 py-0.5 rounded font-mono text-[10.5px] font-medium ${
+                                className={`px-2 py-0.5 rounded-md font-display-num tabular-nums text-[11px] font-medium whitespace-nowrap ${
                                   row.isFullyCoveredByOwnMoney
-                                    ? 'bg-emerald-500/12 text-[#15803D] dark:text-emerald-400'
-                                    : 'bg-amber-500/12 text-amber-800 dark:text-amber-300'
+                                    ? 'bg-[#EAF6F0] dark:bg-emerald-500/15 text-[#0F766E] dark:text-emerald-400'
+                                    : 'bg-[#FDF5E6] dark:bg-amber-500/15 text-[#9A5B13] dark:text-amber-300'
                                 }`}
                               >
                                 {row.isFullyCoveredByOwnMoney
-                                  ? 'Закрыто вложением'
-                                  : `Осталось: ${fmtMln(row.remainingNeedRub)}`}
+                                  ? 'Закрыто'
+                                  : `Осталось ${fmtMln(row.remainingNeedRub)}`}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-3.5 text-[#141413] dark:text-[#F5F4F0]">
+                        <td className="py-3.5 px-4 text-[#141413] dark:text-[#F5F4F0]">
                           <span>{row.purposeLabel}</span>
                           {row.batchesCount > 0 && (
-                            <span className="ml-1.5 text-[#5C5953] dark:text-[#9A968E]">
-                              ({pluralizeBatchesRu(row.batchesCount)})
+                            <span className="ml-1.5 text-[12px] text-[#7A766E] dark:text-[#9A968E] whitespace-nowrap">
+                              · {pluralizeBatchesRu(row.batchesCount)}
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-3.5 text-right">
+                        <td className="py-3.5 px-4 text-right">
                           <button
                             type="button"
                             data-testid={`when-row-toggle-${row.dateIso}`}
@@ -2879,7 +3413,11 @@ export function InvestmentSchedulePanel({
                               e.stopPropagation();
                               toggleWhenRow(row.dateIso);
                             }}
-                            className="h-7.5 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1 cursor-pointer"
+                            className={`h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                              isExp
+                                ? 'bg-[#EFECE6] dark:bg-[#2A2925] text-[#141413] dark:text-[#F5F4F0]'
+                                : 'border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:bg-[#FAF9F6] text-[#3D3A36] dark:text-[#F5F4F0]'
+                            }`}
                           >
                             <span>{isExp ? 'Свернуть' : 'Подробнее'}</span>
                             {isExp ? (
@@ -2891,14 +3429,14 @@ export function InvestmentSchedulePanel({
                         </td>
                       </tr>
 
-                      {/* СТР. 6 ТЗ v1.0: «ОДИН ПЛАТЁЖ — КОНКРЕТНЫЕ ТОВАРЫ» (ФОТО SKU, КАРТОЧКИ ПАРТИЙ, РЕДАКТИРОВАНИЕ И ПРЯМОЙ ПЕРЕХОД) */}
+                      {/* СТР. 6 ТЗ v1.0: «ОДИН ПЛАТЁЖ — КОНКРЕТНЫЕ ТОВАРЫ» (РЕДАКТОРСКИЙ СПИСОК БЕЗ «ЧЁРНОЙ СТЕНЫ») */}
                       {isExp && (
                         <tr>
                           <td
                             colSpan={4}
-                            className="bg-[#FAF9F6] dark:bg-[#191816] px-3.5 py-3.5 space-y-2.5"
+                            className="bg-[#FAF8F4] dark:bg-[#181715] px-4 py-3.5"
                           >
-                            <div className="space-y-2.5">
+                            <div className="space-y-2">
                               {row.factoryPayments.map((fp) => {
                                 const isPrepayRole = fp.event.paymentRole === 'prepay';
                                 const isBalanceRole = fp.event.paymentRole === 'balance';
@@ -2909,26 +3447,30 @@ export function InvestmentSchedulePanel({
                                   : fp.paymentStageLabel;
                                 const isPaidFactual = fp.status === 'Оплачено';
                                 const statusBadgeCls = isPaidFactual
-                                  ? 'bg-emerald-500/12 border-emerald-500/30 text-[#15803D] dark:text-emerald-400'
+                                  ? 'bg-[#EAF6F0] dark:bg-emerald-500/15 text-[#0F766E] dark:text-emerald-400'
                                   : fp.status === 'Утверждено' || fp.isApprovedPo
-                                  ? 'bg-blue-500/10 border-blue-500/25 text-blue-800 dark:text-blue-300'
-                                  : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]';
+                                  ? 'bg-sky-500/10 text-sky-800 dark:text-sky-300'
+                                  : 'bg-[#F5F4F0] dark:bg-[#22211E] text-[#7A766E] dark:text-[#9A968E]';
                                 const targetBrandCode =
                                   fp.brandCode ||
                                   (fp.event.brandCode === 'ALL' ? undefined : fp.event.brandCode);
+                                const targetBrandVis = targetBrandCode
+                                  ? getBrandVisual(targetBrandCode)
+                                  : null;
 
                                 return (
                                   <div
                                     key={fp.opKey}
                                     data-testid={`factory-payment-item-${fp.opKey}`}
-                                    className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3 sm:p-3.5 shadow-[0_1px_2px_rgba(20,20,19,0.03)] flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                                    className="group rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] hover:border-[#D6D2C9] dark:hover:border-[#383632] px-3.5 py-3 shadow-[0_1px_2px_rgba(20,20,19,0.025)] flex flex-col lg:flex-row lg:items-center justify-between gap-3 transition-colors"
                                   >
-                                    {/* Левая часть: Фото SKU + Название/код + Объём + Фабрика + Связанная доплата */}
-                                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    {/* Левая часть: 48px фото/монограмма + название + компактные бейджи + строка метаданных */}
+                                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
                                       <SkuPaymentThumbnail
                                         src={fp.thumbnailUrl}
                                         alt={fp.productTitle}
                                         code={fp.modelCode}
+                                        brandCode={targetBrandCode}
                                       />
 
                                       <div className="min-w-0 flex-1 space-y-1">
@@ -2946,81 +3488,90 @@ export function InvestmentSchedulePanel({
                                                 }
                                               )
                                             }
-                                            className="text-left text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0] hover:underline cursor-pointer truncate max-w-full"
+                                            className="text-left text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] hover:underline cursor-pointer truncate max-w-full"
                                           >
                                             {fp.productTitle}
                                           </button>
-                                          {fp.modelCode &&
-                                            !fp.productTitle.includes(fp.modelCode) && (
-                                              <span className="font-mono text-[10.5px] px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953]">
-                                                {fp.modelCode}
-                                              </span>
-                                            )}
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#141413]/5 dark:bg-white/10 font-mono text-[10.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+
+                                          {normBrand === 'ALL' && targetBrandCode && targetBrandVis && (
+                                            <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-[#F6F5F1] dark:bg-[#22211E] text-[10.5px] font-medium text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap">
+                                              <span
+                                                aria-hidden="true"
+                                                className={`h-1.5 w-1.5 rounded-full shrink-0 ${targetBrandVis.dotClass}`}
+                                              />
+                                              <span>{getBrandShortLabel(targetBrandCode)}</span>
+                                            </span>
+                                          )}
+
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F3F1EC] dark:bg-[#23221F] font-display-num text-[11px] font-medium text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap">
                                             {roleBadgeLabel}
                                           </span>
+
                                           <span
-                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${statusBadgeCls}`}
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-medium whitespace-nowrap ${statusBadgeCls}`}
                                           >
                                             {(fp.isApprovedLocked || isPaidFactual) && (
                                               <Lock className="h-2.5 w-2.5" />
                                             )}
                                             <span>{fp.status}</span>
                                           </span>
+
                                           {fp.hasManualOverride && (
-                                            <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-medium">
+                                            <span className="px-1.5 py-0.5 rounded-md bg-[#FDF5E6] dark:bg-amber-500/15 text-[#9A5B13] dark:text-amber-300 text-[10.5px] font-medium whitespace-nowrap">
                                               изм.
                                             </span>
                                           )}
                                         </div>
 
-                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                                          <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-[#7A766E] dark:text-[#9A968E] leading-snug">
+                                          <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA] whitespace-nowrap">
                                             {fp.packsQty.toLocaleString('ru-RU')} {fp.unitLabel}
                                           </span>
-                                          <span>·</span>
-                                          <span>{fp.factoryName}</span>
-                                          <span>·</span>
-                                          <span className="font-mono">{fp.batchNumber}</span>
-                                          <span>·</span>
-                                          <span>
-                                            Поставка:{' '}
-                                            <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                          <span className="text-[#D2CEC4]">·</span>
+                                          <span className="truncate max-w-[220px]">{fp.factoryName}</span>
+                                          <span className="text-[#D2CEC4]">·</span>
+                                          <span className="whitespace-nowrap">
+                                            Поставка{' '}
+                                            <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
                                               {fp.arrivalDateDotRu}
-                                            </strong>
-                                          </span>
-                                        </div>
-
-                                        {isPrepayRole && fp.balanceAmountRub > 0 && (
-                                          <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                                            Доплата:{' '}
-                                            <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                                              {fmtMln(fp.balanceAmountRub)}
-                                            </span>{' '}
-                                            к{' '}
-                                            <span className="font-mono">
-                                              {fp.balanceDateDotRu}
                                             </span>
-                                          </div>
-                                        )}
-                                        {isBalanceRole && (
-                                          <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                                            Окончательный расчёт по партии (аванс: {fp.prepaymentPct}%)
-                                          </div>
-                                        )}
+                                          </span>
+                                          {isPrepayRole && fp.balanceAmountRub > 0 && (
+                                            <>
+                                              <span className="text-[#D2CEC4]">·</span>
+                                              <span className="whitespace-nowrap">
+                                                Доплата{' '}
+                                                <span className="font-display-num tabular-nums font-medium text-[#3D3A36] dark:text-[#D4D1CA]">
+                                                  {fmtMln(fp.balanceAmountRub)}
+                                                </span>{' '}
+                                                к{' '}
+                                                <span className="font-display-num tabular-nums">
+                                                  {fp.balanceDateDotRu}
+                                                </span>
+                                              </span>
+                                            </>
+                                          )}
+                                          {isBalanceRole && (
+                                            <>
+                                              <span className="text-[#D2CEC4]">·</span>
+                                              <span className="whitespace-nowrap">
+                                                Оконч. расчёт (аванс {fp.prepaymentPct}%)
+                                              </span>
+                                            </>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
 
-                                    {/* Правая часть: Сумма в ₽ + Дата + Кнопки Редактировать / Открыть партию */}
-                                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#E4E1DA] dark:border-[#282724] shrink-0">
-                                      <div className="text-left lg:text-right">
-                                        <div
+                                    {/* Правая часть: сумма + 3 лёгкие аккуратные кнопки (без тяжёлых чёрных кирпичей) */}
+                                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-3.5 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-[#F0EDE6] dark:border-[#242320] shrink-0">
+                                      <div className="text-left lg:text-right min-w-[100px]">
+                                        <MoneyFigure
+                                          valueRub={fp.amountRub}
                                           title={fmtRub(fp.amountRub)}
-                                          className="font-mono text-[14px] font-semibold tabular-nums text-[#141413] dark:text-[#F5F4F0]"
-                                        >
-                                          {fmtMln(fp.amountRub)}
-                                        </div>
-                                        <div className="font-mono text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
+                                          className="text-[16px] font-semibold tracking-[-0.02em] leading-none text-[#141413] dark:text-[#F5F4F0]"
+                                        />
+                                        <div className="mt-1 font-display-num tabular-nums text-[11px] text-[#8C877E] dark:text-[#8E8A82]">
                                           {fp.paymentDateDotRu}
                                         </div>
                                       </div>
@@ -3035,7 +3586,7 @@ export function InvestmentSchedulePanel({
                                               onClick={() =>
                                                 handleQuickShiftFactoryPaymentNextMonth(fp.event)
                                               }
-                                              className="h-8 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
+                                              className="h-8 px-2.5 rounded-lg text-[11.5px] font-medium text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0] hover:bg-[#F1EFE9] dark:hover:bg-[#23221F] whitespace-nowrap cursor-pointer transition-colors"
                                               title="Перенести плановый платёж на следующий месяц"
                                             >
                                               На след. мес.
@@ -3046,7 +3597,7 @@ export function InvestmentSchedulePanel({
                                           type="button"
                                           data-testid={`open-payment-editor-${fp.opKey}`}
                                           onClick={() => setSelectedOpId(fp.event.id)}
-                                          className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
+                                          className="h-8 px-3 rounded-lg bg-[#F3F1EC] dark:bg-[#23221F] hover:bg-[#E7E4DC] dark:hover:bg-[#2D2C28] text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap cursor-pointer transition-colors"
                                         >
                                           Редактировать
                                         </button>
@@ -3066,9 +3617,10 @@ export function InvestmentSchedulePanel({
                                                 }
                                               )
                                             }
-                                            className="h-8 px-3 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] hover:opacity-90 text-[11.5px] font-medium inline-flex items-center gap-1 cursor-pointer transition-opacity"
+                                            className="h-8 px-3 rounded-lg border border-[#DCD8CE] dark:border-[#383632] bg-white dark:bg-transparent text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0] hover:bg-[#141413] hover:text-white hover:border-[#141413] dark:hover:bg-[#F5F4F0] dark:hover:text-[#141413] dark:hover:border-[#F5F4F0] inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
                                           >
-                                            <span>Открыть партию →</span>
+                                            <span>Партия</span>
+                                            <ArrowRight className="h-3 w-3" />
                                           </button>
                                         )}
                                       </div>
@@ -3078,7 +3630,7 @@ export function InvestmentSchedulePanel({
                               })}
 
                               {row.otherExpenseEvents.length > 0 && (
-                                <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+                                <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] divide-y divide-[#F0EDE6] dark:divide-[#242320]">
                                   {row.otherExpenseEvents.map((oe) => (
                                     <div
                                       key={oe.id}
@@ -3088,13 +3640,15 @@ export function InvestmentSchedulePanel({
                                         <span className="font-medium text-[#141413] dark:text-[#F5F4F0]">
                                           {oe.title}
                                         </span>
-                                        <span className="ml-2 text-[11px] text-[#5C5953]">
+                                        <span className="ml-2 text-[11px] text-[#7A766E]">
                                           {oe.status} · {formatIsoDateDotRu(oe.dateIso)}
                                         </span>
                                       </div>
-                                      <span className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                                        {fmtMln(oe.outflowRub)}
-                                      </span>
+                                      <MoneyFigure
+                                        valueRub={oe.outflowRub}
+                                        className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                                        unitClassName="!text-[0.82em]"
+                                      />
                                     </div>
                                   ))}
                                 </div>
@@ -3114,53 +3668,55 @@ export function InvestmentSchedulePanel({
         {/* Режим просмотра всех плановых платежей фабрикам (включая оплаченные из реинвестирования) */}
         {showAllFactoryPayments && allFactoryPaymentEvents.length > 0 && (
           <div className="pt-2 space-y-2">
-            <div className="text-xs font-medium text-[#5C5953] dark:text-[#9A968E]">
+            <div className="text-[12px] font-medium text-[#6B6760] dark:text-[#9A968E]">
               Все платежи фабрикам по календарю периода ({allFactoryPaymentEvents.length})
             </div>
-            <div className="overflow-x-auto max-h-80 rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
-              <table className="w-full min-w-[720px] border-collapse text-left text-[11.5px]">
-                <thead className="sticky top-0 bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[10.5px] uppercase text-[#5C5953]">
+            <div className="overflow-x-auto max-h-80 rounded-xl border border-[#ECEAE3] dark:border-[#262522]">
+              <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
+                <thead className="sticky top-0 bg-[#FAF9F6] dark:bg-[#1A1917] border-b border-[#ECEAE3] dark:border-[#262522] text-[10.5px] uppercase tracking-[0.05em] text-[#7A766E]">
                   <tr>
-                    <th className="py-2 px-3 font-medium">Дата</th>
-                    <th className="py-2 px-3 font-medium">Партия и товар</th>
-                    <th className="py-2 px-2.5 font-medium">Фабрика</th>
-                    <th className="py-2 px-2.5 font-medium text-right">Сумма</th>
-                    <th className="py-2 px-2.5 font-medium text-right">Из продаж WB</th>
-                    <th className="py-2 px-3 font-medium text-right">Действие</th>
+                    <th className="py-2.5 px-3.5 font-medium">Дата</th>
+                    <th className="py-2.5 px-3.5 font-medium">Партия и товар</th>
+                    <th className="py-2.5 px-3 font-medium">Фабрика</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Сумма</th>
+                    <th className="py-2.5 px-3 font-medium text-right">Из продаж WB</th>
+                    <th className="py-2.5 px-3.5 font-medium text-right">Действие</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+                <tbody className="divide-y divide-[#F0EDE6] dark:divide-[#242320]">
                   {allFactoryPaymentEvents.map((ev) => (
                     <tr
                       key={ev.id}
-                      className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A]"
+                      className="hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] transition-colors"
                     >
-                      <td className="py-2 px-3 font-mono">{formatIsoDateDotRu(ev.dateIso)}</td>
-                      <td className="py-2 px-3">
+                      <td className="py-2.5 px-3.5 font-display-num tabular-nums whitespace-nowrap">
+                        {formatIsoDateDotRu(ev.dateIso)}
+                      </td>
+                      <td className="py-2.5 px-3.5">
                         <div className="font-medium text-[#141413] dark:text-[#F5F4F0]">
                           {ev.title}
                         </div>
-                        <div className="text-[10.5px] text-[#5C5953]">
+                        <div className="text-[11px] text-[#7A766E]">
                           {ev.status}
                           {ev.batchDetails
                             ? ` · поступление ${formatIsoDateDotRu(ev.batchDetails.arrivalDateIso)}`
                             : ''}
                         </div>
                       </td>
-                      <td className="py-2 px-2.5 text-[#5C5953]">{ev.factoryName || '—'}</td>
-                      <td className="py-2 px-2.5 text-right font-mono font-semibold">
+                      <td className="py-2.5 px-3 text-[#6B6760]">{ev.factoryName || '—'}</td>
+                      <td className="py-2.5 px-3 text-right font-display-num tabular-nums font-semibold whitespace-nowrap">
                         {fmtMln(ev.amountRub)}
                       </td>
-                      <td className="py-2 px-2.5 text-right font-mono text-[#15803D]">
+                      <td className="py-2.5 px-3 text-right font-display-num tabular-nums text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                         {ev.reinvestedFromSalesRub > 0
                           ? fmtMln(ev.reinvestedFromSalesRub)
                           : '—'}
                       </td>
-                      <td className="py-2 px-3 text-right">
+                      <td className="py-2.5 px-3.5 text-right">
                         <button
                           type="button"
                           onClick={() => setSelectedOpId(ev.id)}
-                          className="h-7 px-2.5 rounded border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[11px] font-medium cursor-pointer"
+                          className="h-7 px-2.5 rounded-lg bg-[#F3F1EC] dark:bg-[#23221F] hover:bg-[#E7E4DC] text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
                         >
                           Редактировать
                         </button>
@@ -3215,6 +3771,12 @@ export function InvestmentSchedulePanel({
                         src={selectedEvent.batchDetails.thumbnailUrl}
                         alt={selectedEvent.batchDetails.modelTitle}
                         code={selectedEvent.batchDetails.modelCode}
+                        brandCode={
+                          selectedEvent.batchDetails.brandCode ||
+                          (selectedEvent.brandCode === 'ALL'
+                            ? undefined
+                            : selectedEvent.brandCode)
+                        }
                       />
                     )}
                     <div className="min-w-0">
@@ -3807,32 +4369,32 @@ export function InvestmentSchedulePanel({
       {/* РАЗДЕЛ 8 ТЗ: ОДИН ОСНОВНОЙ ГРАФИК — «СВОБОДНЫЕ ДЕНЬГИ БИЗНЕСА» */}
       <div
         data-testid="business-free-cash-chart"
-        className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-4"
+        className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.035),0_4px_12px_-4px_rgba(20,20,19,0.025)] space-y-4"
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
           <div>
-            <h3 className="text-[15.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+            <h3 className="text-[15.5px] font-semibold tracking-[-0.015em] text-[#141413] dark:text-[#F5F4F0]">
               Свободные деньги бизнеса · {selectedYear}
             </h3>
-            <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-              Выше нуля — деньги доступны после обязательных платежей и с учётом резерва. Ниже нуля — требуется финансирование. Нажмите на месяц для раскрытия операций.
+            <p className="mt-0.5 text-[12px] text-[#7A766E] dark:text-[#9A968E]">
+              Выше нуля — доступный остаток после платежей и резерва. Ниже нуля — потребность в финансировании. Нажмите на месяц для детализации.
             </p>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-xs bg-[#15803D]" />
-              <span>Свободные средства (&gt; 0)</span>
+          <div className="flex items-center gap-4 text-[11.5px] text-[#6B6760] dark:text-[#9A968E]">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span className="h-2 w-2 rounded-full bg-[#0F766E] dark:bg-emerald-500" />
+              <span>Свободные (&gt; 0)</span>
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-xs bg-[#B91C1C]" />
-              <span>Требуется финансирование (&lt; 0)</span>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span className="h-2 w-2 rounded-full bg-[#B91C1C] dark:bg-rose-500" />
+              <span>Дефицит (&lt; 0)</span>
             </span>
           </div>
         </div>
 
         {/* Столбчатый график по 12 месяцам с нулевой осью */}
-        <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 sm:p-4">
-          <div className="grid grid-cols-12 gap-1.5 sm:gap-2.5">
+        <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-[#FAF9F6] dark:bg-[#191816] p-3.5 sm:p-4">
+          <div className="grid grid-cols-12 gap-1 sm:gap-2">
             {schedule.monthlyCalendarRows.map((mRow) => {
               const val = mRow.businessFreeCashRub;
               const isPos = val >= 0;
@@ -3858,16 +4420,16 @@ export function InvestmentSchedulePanel({
                       prev === mRow.monthIdx ? null : mRow.monthIdx
                     )
                   }
-                  className={`group rounded-lg p-1.5 flex flex-col items-center cursor-pointer transition-colors ${
+                  className={`group rounded-xl p-1.5 flex flex-col items-center cursor-pointer transition-all ${
                     isSel
-                      ? 'bg-white dark:bg-[#151514] ring-1 ring-[#141413] dark:ring-[#F5F4F0]'
-                      : 'hover:bg-white/70 dark:hover:bg-[#151514]/70'
+                      ? 'bg-white dark:bg-[#151514] ring-1 ring-[#141413]/25 dark:ring-[#F5F4F0]/30 shadow-[0_1px_3px_rgba(20,20,19,0.06)]'
+                      : 'hover:bg-white/80 dark:hover:bg-[#151514]/70'
                   }`}
                 >
                   <span
-                    className={`font-mono text-[10px] font-medium tabular-nums mb-1 ${
+                    className={`font-display-num tabular-nums text-[10.5px] font-medium mb-1.5 whitespace-nowrap ${
                       isPos
-                        ? 'text-[#15803D] dark:text-emerald-400'
+                        ? 'text-[#0F766E] dark:text-emerald-400'
                         : 'text-[#B91C1C] dark:text-rose-400 font-semibold'
                     }`}
                   >
@@ -3879,29 +4441,29 @@ export function InvestmentSchedulePanel({
                     {isPos && (
                       <div
                         style={{ height: `${ratioPct}%` }}
-                        className="w-full max-w-[26px] rounded-t bg-[#15803D] dark:bg-emerald-500 transition-all"
+                        className="w-full max-w-[24px] rounded-t-md bg-[#0F766E] dark:bg-emerald-500 group-hover:opacity-90 transition-all"
                       />
                     )}
                   </div>
 
                   {/* Линия 0 ₽ */}
-                  <div className="w-full h-px bg-[#78746C]/60" />
+                  <div className="w-full h-px bg-[#D2CEC4] dark:bg-[#383632]" />
 
                   {/* Нижняя полуплоскость (< 0) */}
                   <div className="w-full h-16 flex items-start justify-center">
                     {!isPos && (
                       <div
                         style={{ height: `${ratioPct}%` }}
-                        className="w-full max-w-[26px] rounded-b bg-[#B91C1C] dark:bg-rose-500 transition-all"
+                        className="w-full max-w-[24px] rounded-b-md bg-[#B91C1C] dark:bg-rose-500 group-hover:opacity-90 transition-all"
                       />
                     )}
                   </div>
 
                   <span
-                    className={`mt-1.5 text-[11px] font-medium ${
+                    className={`mt-2 text-[11px] font-medium ${
                       isSel
                         ? 'text-[#141413] dark:text-[#F5F4F0] font-semibold'
-                        : 'text-[#5C5953] dark:text-[#9A968E]'
+                        : 'text-[#7A766E] dark:text-[#9A968E]'
                     }`}
                   >
                     {mRow.shortMonthLabel}
@@ -3916,7 +4478,7 @@ export function InvestmentSchedulePanel({
         {selectedFreeCashRow && (
           <div
             data-testid="free-cash-month-detail"
-            className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-4 space-y-3"
+            className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-[#FAF8F4] dark:bg-[#191816] p-4 space-y-3"
           >
             <div className="flex items-center justify-between gap-2">
               <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
@@ -3925,49 +4487,60 @@ export function InvestmentSchedulePanel({
               <button
                 type="button"
                 onClick={() => setSelectedFreeCashMonthIdx(null)}
-                className="text-xs text-[#5C5953] hover:text-[#141413] cursor-pointer"
+                className="text-xs text-[#6B6760] hover:text-[#141413] dark:hover:text-[#F5F4F0] cursor-pointer"
               >
                 Закрыть
               </button>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3">
-                <div className="text-[#5C5953]">Поступления</div>
-                <div className="mt-1 font-mono text-sm font-semibold text-[#15803D]">
-                  +{fmtMln(selectedFreeCashRow.inflowsRub)}
+              <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] p-3">
+                <div className="text-[#7A766E]">Поступления</div>
+                <div className="mt-1">
+                  <MoneyFigure
+                    valueRub={selectedFreeCashRow.inflowsRub}
+                    signed
+                    className="text-[15px] font-semibold text-[#0F766E] dark:text-emerald-400"
+                    unitClassName="!text-[#0F766E]/70 dark:!text-emerald-400/70"
+                  />
                 </div>
               </div>
-              <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3">
-                <div className="text-[#5C5953]">Платежи</div>
-                <div className="mt-1 font-mono text-sm font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  −{fmtMln(selectedFreeCashRow.outflowsRub)}
+              <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] p-3">
+                <div className="text-[#7A766E]">Платежи</div>
+                <div className="mt-1">
+                  <MoneyFigure
+                    valueRub={-selectedFreeCashRow.outflowsRub}
+                    className="text-[15px] font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                  />
                 </div>
               </div>
-              <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3">
-                <div className="text-[#5C5953]">Собственные вложения</div>
-                <div className="mt-1 font-mono text-sm font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  {selectedFreeCashRow.userCapitalInjectionsRub > 0
-                    ? `+${fmtMln(selectedFreeCashRow.userCapitalInjectionsRub)}`
-                    : '0,00 млн ₽'}
+              <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] p-3">
+                <div className="text-[#7A766E]">Собственные вложения</div>
+                <div className="mt-1">
+                  <MoneyFigure
+                    valueRub={selectedFreeCashRow.userCapitalInjectionsRub}
+                    signed={selectedFreeCashRow.userCapitalInjectionsRub > 0}
+                    className="text-[15px] font-semibold text-[#141413] dark:text-[#F5F4F0]"
+                  />
                 </div>
               </div>
-              <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3">
-                <div className="text-[#5C5953]">Остаток (свободные деньги)</div>
-                <div
-                  className={`mt-1 font-mono text-sm font-semibold ${
-                    selectedFreeCashRow.businessFreeCashRub >= 0
-                      ? 'text-[#15803D]'
-                      : 'text-[#B91C1C]'
-                  }`}
-                >
-                  {fmtMln(selectedFreeCashRow.businessFreeCashRub)}
+              <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] p-3">
+                <div className="text-[#7A766E]">Остаток (свободные)</div>
+                <div className="mt-1">
+                  <MoneyFigure
+                    valueRub={selectedFreeCashRow.businessFreeCashRub}
+                    className={`text-[15px] font-semibold ${
+                      selectedFreeCashRow.businessFreeCashRub >= 0
+                        ? 'text-[#0F766E] dark:text-emerald-400'
+                        : 'text-[#B91C1C] dark:text-rose-400'
+                    }`}
+                  />
                 </div>
               </div>
             </div>
 
             {selectedFreeCashRow.events.length > 0 && (
-              <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] divide-y divide-[#E4E1DA] dark:divide-[#282724] max-h-60 overflow-y-auto text-xs">
+              <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-white dark:bg-[#151514] divide-y divide-[#F0EDE6] dark:divide-[#242320] max-h-60 overflow-y-auto text-xs">
                 {selectedFreeCashRow.events.map((ev) => (
                   <div
                     key={ev.id}
@@ -3976,10 +4549,10 @@ export function InvestmentSchedulePanel({
                         setSelectedOpId(ev.id);
                       }
                     }}
-                    className="px-3 py-2 flex flex-wrap items-center justify-between gap-2 hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer"
+                    className="px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] cursor-pointer transition-colors"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-[#5C5953] shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="font-display-num tabular-nums text-[#7A766E] shrink-0">
                         {formatIsoDateDotRu(ev.dateIso)}
                       </span>
                       <span className="truncate font-medium text-[#141413] dark:text-[#F5F4F0]">
@@ -3987,9 +4560,9 @@ export function InvestmentSchedulePanel({
                       </span>
                     </div>
                     <span
-                      className={`font-mono font-semibold shrink-0 ${
+                      className={`font-display-num tabular-nums font-semibold shrink-0 whitespace-nowrap ${
                         ev.inflowRub > 0 || ev.userCapitalInjectionRub > 0
-                          ? 'text-[#15803D]'
+                          ? 'text-[#0F766E] dark:text-emerald-400'
                           : 'text-[#141413] dark:text-[#F5F4F0]'
                       }`}
                     >
@@ -4009,34 +4582,34 @@ export function InvestmentSchedulePanel({
 
       {/* ЖУРНАЛ ИСТОРИИ ИЗМЕНЕНИЙ (РАЗДЕЛ 11 ТЗ) */}
       {showHistoryDrawer && (
-        <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 space-y-3">
+        <div className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] p-5 sm:p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+            <div className="text-[14.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
               История изменений плана инвестиций и платежей ({ledgerState.auditHistory.length})
             </div>
             <button
               type="button"
               onClick={() => setShowHistoryDrawer(false)}
-              className="text-xs text-[#5C5953] hover:text-[#141413] cursor-pointer"
+              className="text-xs text-[#6B6760] hover:text-[#141413] cursor-pointer"
             >
               Закрыть
             </button>
           </div>
           {ledgerState.auditHistory.length === 0 ? (
-            <p className="text-xs text-[#5C5953]">Ручных изменений пока не вносилось.</p>
+            <p className="text-xs text-[#7A766E]">Ручных изменений пока не вносилось.</p>
           ) : (
-            <div className="max-h-60 overflow-y-auto divide-y divide-[#E4E1DA] dark:divide-[#282724] border border-[#E4E1DA] dark:border-[#282724] rounded-lg text-xs">
+            <div className="max-h-60 overflow-y-auto divide-y divide-[#F0EDE6] dark:divide-[#242320] border border-[#ECEAE3] dark:border-[#262522] rounded-xl text-xs">
               {ledgerState.auditHistory.map((h) => (
-                <div key={h.id} className="p-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div key={h.id} className="p-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="font-medium text-[#141413] dark:text-[#F5F4F0]">
                       {h.operationTitle}
                     </div>
-                    <div className="text-[#5C5953]">
+                    <div className="text-[#6B6760]">
                       {h.beforeValue} → <strong className="text-[#141413] dark:text-[#F5F4F0]">{h.afterValue}</strong>
                     </div>
                   </div>
-                  <div className="font-mono text-[10.5px] text-[#5C5953]">
+                  <div className="font-display-num tabular-nums text-[11px] text-[#7A766E]">
                     {new Date(h.timestampIso).toLocaleString('ru-RU')} · {h.author}
                   </div>
                 </div>
@@ -4047,25 +4620,27 @@ export function InvestmentSchedulePanel({
       )}
 
       {/* РАЗДЕЛЫ 3 И 8 ТЗ: СКРЫТЫЙ ПО УМОЛЧАНИЮ РАЗДЕЛ «ПОДРОБНАЯ АНАЛИТИКА» */}
-      <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] overflow-hidden">
+      <div className="card-elevated rounded-2xl border border-[#141413]/[0.07] dark:border-[#282724] bg-white dark:bg-[#151514] overflow-hidden shadow-[0_1px_2px_rgba(20,20,19,0.03)]">
         <button
           type="button"
           data-testid="btn-toggle-detailed-analytics"
           onClick={() => setShowDetailedAnalytics((v) => !v)}
-          className="w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
+          className="w-full px-5 sm:px-6 py-4 flex items-center justify-between gap-3 text-left hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] cursor-pointer transition-colors"
         >
-          <div className="flex items-center gap-2.5">
-            <BarChart3 className="h-4 w-4 text-[#5C5953]" strokeWidth={1.5} />
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#F3F1EC] dark:bg-[#23221F] flex items-center justify-center shrink-0">
+              <BarChart3 className="h-4 w-4 text-[#5C5953] dark:text-[#9A968E]" strokeWidth={1.6} />
+            </div>
             <div>
-              <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+              <div className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 Подробная аналитика
               </div>
-              <div className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-                Помесячная таблица движения денег, операционные расходы, рентабельность и дополнительные показатели
+              <div className="text-[12px] text-[#7A766E] dark:text-[#9A968E]">
+                Помесячный календарь движения денег, операционные расходы, P&amp;L и дополнительные показатели
               </div>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-[#141413] dark:text-[#F5F4F0]">
+          <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[#3D3A36] dark:text-[#F5F4F0] whitespace-nowrap">
             <span>{showDetailedAnalytics ? 'Свернуть' : 'Открыть'}</span>
             {showDetailedAnalytics ? (
               <ChevronDown className="h-4 w-4" />
@@ -4076,7 +4651,7 @@ export function InvestmentSchedulePanel({
         </button>
 
         {showDetailedAnalytics && (
-          <div className="p-5 border-t border-[#E4E1DA] dark:border-[#282724] space-y-6">
+          <div className="p-5 sm:p-6 border-t border-[#F0EDE6] dark:border-[#242320] space-y-6">
             {/* Управление дополнительными расходами (реклама, логистика, ФОТ) */}
             {canEdit && (
               <div id="fin-custom-expenses-anchor" className="space-y-3">
@@ -4096,26 +4671,26 @@ export function InvestmentSchedulePanel({
                 </div>
 
                 {showAddOperationForm && (
-                  <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 text-xs items-end">
+                  <div className="rounded-xl border border-[#ECEAE3] dark:border-[#262522] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 text-xs items-end">
                     <label className="space-y-1">
-                      <span className="text-[#5C5953]">Тип</span>
+                      <span className="text-[#6B6760]">Тип</span>
                       <select
                         value={opKind}
                         onChange={(e) => setOpKind(e.target.value as 'expense' | 'inflow')}
-                        className="w-full h-8 px-2 rounded border border-[#E4E1DA] bg-white dark:bg-[#151514]"
+                        className="w-full h-8 px-2 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514]"
                       >
                         <option value="expense">Расход</option>
                         <option value="inflow">Поступление</option>
                       </select>
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[#5C5953]">Категория</span>
+                      <span className="text-[#6B6760]">Категория</span>
                       <select
                         value={opCategory}
                         onChange={(e) =>
                           setOpCategory(e.target.value as CustomCashOperationRecord['category'])
                         }
-                        className="w-full h-8 px-2 rounded border border-[#E4E1DA] bg-white dark:bg-[#151514]"
+                        className="w-full h-8 px-2 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514]"
                       >
                         <option value="opex">Операционные / ФОТ</option>
                         <option value="marketing_ext">Реклама</option>
@@ -4126,32 +4701,32 @@ export function InvestmentSchedulePanel({
                       </select>
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[#5C5953]">Дата</span>
+                      <span className="text-[#6B6760]">Дата</span>
                       <input
                         type="date"
                         value={opDateIso}
                         onChange={(e) => setOpDateIso(e.target.value)}
-                        className="w-full h-8 px-2 rounded border border-[#E4E1DA] bg-white dark:bg-[#151514] font-mono"
+                        className="w-full h-8 px-2 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514] font-display-num"
                       />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[#5C5953]">Сумма, млн ₽</span>
+                      <span className="text-[#6B6760]">Сумма, млн ₽</span>
                       <input
                         type="number"
                         min={0.05}
                         step={0.1}
                         value={opAmountMln}
                         onChange={(e) => setOpAmountMln(e.target.value)}
-                        className="w-full h-8 px-2 rounded border border-[#E4E1DA] bg-white dark:bg-[#151514] font-mono"
+                        className="w-full h-8 px-2 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514] font-display-num"
                       />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[#5C5953]">Назначение</span>
+                      <span className="text-[#6B6760]">Назначение</span>
                       <input
                         type="text"
                         value={opTitle}
                         onChange={(e) => setOpTitle(e.target.value)}
-                        className="w-full h-8 px-2 rounded border border-[#E4E1DA] bg-white dark:bg-[#151514]"
+                        className="w-full h-8 px-2 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514]"
                       />
                     </label>
                     <button
@@ -4176,7 +4751,7 @@ export function InvestmentSchedulePanel({
                         );
                         setShowAddOperationForm(false);
                       }}
-                      className="h-8 px-3 rounded bg-[#141413] text-white font-medium cursor-pointer"
+                      className="h-8 px-3 rounded-lg bg-[#141413] text-white font-medium cursor-pointer"
                     >
                       Сохранить
                     </button>
@@ -4186,26 +4761,26 @@ export function InvestmentSchedulePanel({
             )}
 
             {/* Полная помесячная таблица календаря движения денег */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 Помесячный календарь движения денег · {selectedYear}
               </div>
-              <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
+              <div className="overflow-x-auto rounded-xl border border-[#ECEAE3] dark:border-[#262522]">
                 <table
                   data-testid="investment-calendar-table"
-                  className="w-full min-w-[760px] border-collapse text-left text-xs"
+                  className="w-full min-w-[760px] border-collapse text-left text-[12.5px]"
                 >
                   <thead>
-                    <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] uppercase text-[#5C5953]">
-                      <th className="py-2.5 px-3 font-medium">Период</th>
-                      <th className="py-2.5 px-3 font-medium text-right">Поступления</th>
-                      <th className="py-2.5 px-3 font-medium text-right">Платежи</th>
-                      <th className="py-2.5 px-3 font-medium text-right">Реинвестирование</th>
-                      <th className="py-2.5 px-3 font-medium text-right">Нужно вложить</th>
-                      <th className="py-2.5 px-3 font-medium text-right">Остаток</th>
+                    <tr className="bg-[#FAF9F6] dark:bg-[#1A1917] border-b border-[#ECEAE3] dark:border-[#262522] text-[11px] uppercase tracking-[0.05em] text-[#7A766E]">
+                      <th className="py-2.5 px-3.5 font-medium">Период</th>
+                      <th className="py-2.5 px-3.5 font-medium text-right">Поступления</th>
+                      <th className="py-2.5 px-3.5 font-medium text-right">Платежи</th>
+                      <th className="py-2.5 px-3.5 font-medium text-right">Реинвестирование</th>
+                      <th className="py-2.5 px-3.5 font-medium text-right">Нужно вложить</th>
+                      <th className="py-2.5 px-3.5 font-medium text-right">Остаток</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+                  <tbody className="divide-y divide-[#F0EDE6] dark:divide-[#242320]">
                     {schedule.monthlyCalendarRows.map((mRow) => {
                       const isOpen = expandedMonths.has(mRow.monthIdx);
                       return (
@@ -4213,29 +4788,29 @@ export function InvestmentSchedulePanel({
                           <tr
                             data-testid={`inv-month-row-${mRow.monthIdx}`}
                             onClick={() => toggleMonthExpand(mRow.monthIdx)}
-                            className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer"
+                            className="hover:bg-[#FAF8F4] dark:hover:bg-[#1C1B18] cursor-pointer transition-colors"
                           >
-                            <td className="py-2.5 px-3 font-medium inline-flex items-center gap-1.5">
+                            <td className="py-2.5 px-3.5 font-medium inline-flex items-center gap-1.5">
                               {isOpen ? (
-                                <ChevronDown className="h-3.5 w-3.5 text-[#5C5953]" />
+                                <ChevronDown className="h-3.5 w-3.5 text-[#7A766E]" />
                               ) : (
-                                <ChevronRight className="h-3.5 w-3.5 text-[#5C5953]" />
+                                <ChevronRight className="h-3.5 w-3.5 text-[#7A766E]" />
                               )}
                               <span>{mRow.periodLabel}</span>
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#15803D]">
+                            <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                               {mRow.inflowsRub > 0 ? `+${fmtMln(mRow.inflowsRub)}` : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono">
+                            <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                               {mRow.outflowsRub > 0 ? `−${fmtMln(mRow.outflowsRub)}` : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#15803D]">
+                            <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                               {mRow.reinvestedRub > 0 ? fmtMln(mRow.reinvestedRub) : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#B91C1C]">
+                            <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums font-semibold text-[#B91C1C] dark:text-rose-400 whitespace-nowrap">
                               {mRow.needToInvestRub > 0 ? fmtMln(mRow.needToInvestRub) : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono">
+                            <td className="py-2.5 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                               {fmtMln(mRow.endingFreeCashRub)}
                             </td>
                           </tr>
@@ -4245,26 +4820,26 @@ export function InvestmentSchedulePanel({
                                 key={ev.id}
                                 data-testid={`inv-event-row-${ev.type}`}
                                 onClick={() => setSelectedOpId(ev.id)}
-                                className="bg-[#FAF9F6]/60 dark:bg-[#191816] text-[11.5px] cursor-pointer"
+                                className="bg-[#FAF8F4]/70 dark:bg-[#191816] text-[11.5px] cursor-pointer"
                               >
-                                <td className="py-2 pl-8 pr-3 font-mono text-[#5C5953]">
+                                <td className="py-2 pl-9 pr-3.5 font-display-num tabular-nums text-[#6B6760]">
                                   {formatIsoDateDotRu(ev.dateIso)} · {ev.title}
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono text-[#15803D]">
+                                <td className="py-2 px-3.5 text-right font-display-num tabular-nums text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                                   {ev.inflowRub > 0 ? `+${fmtMln(ev.inflowRub)}` : '—'}
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono">
+                                <td className="py-2 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                                   {ev.outflowRub > 0 ? `−${fmtMln(ev.outflowRub)}` : '—'}
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono text-[#15803D]">
+                                <td className="py-2 px-3.5 text-right font-display-num tabular-nums text-[#0F766E] dark:text-emerald-400 whitespace-nowrap">
                                   {ev.reinvestedFromSalesRub > 0
                                     ? fmtMln(ev.reinvestedFromSalesRub)
                                     : '—'}
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono text-[#B91C1C]">
+                                <td className="py-2 px-3.5 text-right font-display-num tabular-nums text-[#B91C1C] dark:text-rose-400 whitespace-nowrap">
                                   {ev.needToInvestRub > 0 ? fmtMln(ev.needToInvestRub) : '—'}
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono">
+                                <td className="py-2 px-3.5 text-right font-display-num tabular-nums whitespace-nowrap">
                                   {ev.type === 'other_expense' || ev.type === 'other_inflow' ? (
                                     <button
                                       type="button"

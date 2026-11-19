@@ -5,7 +5,7 @@ import path from "path";
 const isExport = process.env.STATIC_EXPORT === "1";
 const exportBasePath = process.env.EXPORT_BASE_PATH ?? "/borners-platform";
 const buildId =
-  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-rls";
+  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-visual";
 
 const defaultSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ocdmyldosplufhhwrrwq.supabase.co";
@@ -14,7 +14,7 @@ const defaultSupabasePublishableKey =
   "sb_publishable_O2S9Pi4aswxjD5ShAhHQ_w_CnUvmZlR";
 
 const releaseNotesSummary =
-  "Релиз ТЗ v1.0: Защищённый вход Supabase Auth + RLS, защита от перезаписи с двух устройств, единый движок расчётов (возвраты AKUSHA в пути, защита от нулевой себестоимости, постатейная экономика, 2026→2028 перенос), фото SKU в платежах, предпросмотр «Было → Стало» и 2 режима капитала группы.";
+  "Визуальный апгрейд Ramp / Apple Finance: чистая финансовая типографика без перечёркнутых нулей, выровненная линия 4 KPI, визуальная полоса разложения выручки 100%, единая строка внимания вместо повторов, монограммы SKU в платежах, цветовые маркеры брендов и компактная пилюля обновлений.";
 
 const versionPayload = {
   buildId,

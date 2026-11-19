@@ -34,6 +34,21 @@ import {
 function resolveCatalogAssetUrl(url: string): string {
   return resolvePublicAssetUrl(url);
 }
+
+function getCatalogBrandDotClass(
+  brandCode: string | null | undefined,
+  onDarkActive = false
+): string {
+  const upper = (brandCode || '').trim().toUpperCase();
+  if (upper === 'AKUSHA') return 'bg-[#D95D39]';
+  if (upper === 'LISKANI' || upper === 'ЛИСКАНИ') {
+    return onDarkActive ? 'bg-[#14B8A6] dark:bg-[#0F766E]' : 'bg-[#0F766E]';
+  }
+  if (upper === 'NA_TELE' || upper === 'НА ТЕЛЕ') return 'bg-[#B07D4F]';
+  return onDarkActive
+    ? 'bg-white/90 dark:bg-[#1C1B18]'
+    : 'bg-[#1C1B18] dark:bg-[#E7E4DC]';
+}
 import { getActingSkuByWbOrVendor } from '@/lib/actingAssortment2027';
 import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
@@ -947,7 +962,7 @@ export function ProductCatalogView() {
   return (
     <div className="space-y-5 pb-20">
       {/* 1. ШАПКА ЕДИНОГО КАТАЛОГА 01 · ПРОДУКТ */}
-      <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+      <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92]">
@@ -1099,6 +1114,33 @@ export function ProductCatalogView() {
                       : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:bg-white dark:hover:bg-[#282724] text-[#141413] dark:text-[#F5F4F0] border-[#E4E1DA] dark:border-[#282724]'
                   }`}
                 >
+                  {b.code === 'ALL' ? (
+                    <span
+                      className="inline-grid grid-cols-2 gap-[1.5px] shrink-0"
+                      aria-hidden="true"
+                    >
+                      <span
+                        className={`w-[3.5px] h-[3.5px] rounded-full ${
+                          isAct ? 'bg-white/90 dark:bg-[#1C1B18]' : 'bg-[#1C1B18] dark:bg-[#E7E4DC]'
+                        }`}
+                      />
+                      <span className="w-[3.5px] h-[3.5px] rounded-full bg-[#D95D39]" />
+                      <span
+                        className={`w-[3.5px] h-[3.5px] rounded-full ${
+                          isAct ? 'bg-[#14B8A6] dark:bg-[#0F766E]' : 'bg-[#0F766E]'
+                        }`}
+                      />
+                      <span className="w-[3.5px] h-[3.5px] rounded-full bg-[#B07D4F]" />
+                    </span>
+                  ) : (
+                    <span
+                      className={`inline-block w-[7.5px] h-[7.5px] rounded-full shrink-0 ${getCatalogBrandDotClass(
+                        b.code,
+                        isAct
+                      )}`}
+                      aria-hidden="true"
+                    />
+                  )}
                   <span>{b.label}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded font-mono text-[10.5px] ${
@@ -1178,13 +1220,27 @@ export function ProductCatalogView() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
-                    AKUSHA · ПЛАН 2027 (31 МОДЕЛЬ · 9 ГРУПП)
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
+                    <span className="inline-block w-[7px] h-[7px] rounded-full bg-[#D95D39] shrink-0" aria-hidden="true" />
+                    <span>AKUSHA · ПЛАН 2027 (31 МОДЕЛЬ · 9 ГРУПП)</span>
                   </span>
-                  <span className="font-mono tabular-nums text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                    20 377 выкупленных пар · 47 808 заказов
-                    {hasFinance ? ' · 105,79 млн ₽ выручки' : ''}
-                    {hasCost ? ' · 37,45 млн ₽ себестоимость' : ''}
+                  <span className="font-display-num text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    <span className="whitespace-nowrap">20 377 выкупленных пар</span> ·{' '}
+                    <span className="whitespace-nowrap">47 808 заказов</span>
+                    {hasFinance ? (
+                      <>
+                        {' '}· <span className="whitespace-nowrap">105,79 млн ₽ выручки</span>
+                      </>
+                    ) : (
+                      ''
+                    )}
+                    {hasCost ? (
+                      <>
+                        {' '}· <span className="whitespace-nowrap">37,45 млн ₽ себестоимость</span>
+                      </>
+                    ) : (
+                      ''
+                    )}
                   </span>
                 </div>
                 <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
@@ -1226,11 +1282,20 @@ export function ProductCatalogView() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
-                    LISKANI · ПЛАН 2027 ({liskaniBannerBuyoutText})
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] font-medium">
+                    <span className="inline-block w-[7px] h-[7px] rounded-full bg-[#0F766E] shrink-0" aria-hidden="true" />
+                    <span>LISKANI · ПЛАН 2027 ({liskaniBannerBuyoutText})</span>
                   </span>
-                  <span className="font-mono tabular-nums text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                    {hasFinance ? '500,00 млн ₽ выкупов · 877,19 млн ₽ заказов · ' : ''}289 889 {liskaniPrimaryUnit}
+                  <span className="font-display-num text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    {hasFinance ? (
+                      <>
+                        <span className="whitespace-nowrap">500,00 млн ₽ выкупов</span> ·{' '}
+                        <span className="whitespace-nowrap">877,19 млн ₽ заказов</span> ·{' '}
+                      </>
+                    ) : (
+                      ''
+                    )}
+                    <span className="whitespace-nowrap">289 889 {liskaniPrimaryUnit}</span>
                   </span>
                 </div>
                 <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
@@ -1397,7 +1462,7 @@ export function ProductCatalogView() {
                   <div
                     key={mod.id}
                     onClick={() => setActivePassportModelId(mod.id)}
-                    className="relative rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] flex flex-col justify-between transition-colors cursor-pointer group overflow-hidden"
+                    className="card-elevated card-elevated-interactive relative rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] flex flex-col justify-between transition-colors cursor-pointer group overflow-hidden"
                   >
                     <div>
                       {/* Верхняя плашка продаж прямо над карточкой */}
@@ -1416,7 +1481,7 @@ export function ProductCatalogView() {
                           )}
                         </div>
                         <div
-                          className={`font-mono tabular-nums text-[11px] font-semibold truncate ${
+                          className={`font-display-num whitespace-nowrap text-[11px] font-semibold truncate ${
                             met.annualPacks > 0
                               ? 'text-[#141413] dark:text-[#F5F4F0]'
                               : 'text-[#78746C] dark:text-[#9E9A92]'
@@ -1474,8 +1539,16 @@ export function ProductCatalogView() {
                       {/* Editorial Linesheet Body */}
                       <div className="p-4 pb-3.5 space-y-2">
                         <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-[#5C5953] dark:text-[#9E9A92]">
-                          <span className="truncate">
-                            {displayBrand} · {skuDisplay}
+                          <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                            <span
+                              className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${getCatalogBrandDotClass(
+                                normalizePortfolioBrandCode(displayBrand || mod.brandId)
+                              )}`}
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">
+                              {displayBrand} · {skuDisplay}
+                            </span>
                           </span>
                           <span className="shrink-0 text-[#78746C] dark:text-[#9E9A92]">
                             {unitPackCaption}
@@ -1505,7 +1578,7 @@ export function ProductCatalogView() {
                       <div className="grid grid-cols-3 divide-x divide-[#E4E1DA] dark:divide-[#282724] border-t border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6]/60 dark:bg-[#1D1C1A]/50">
                         <div className="px-3.5 py-2.5">
                           <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">РРЦ</div>
-                          <div className="font-mono tabular-nums text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
+                          <div className="font-display-num whitespace-nowrap text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                             {met.avgRetailPriceRub > 0
                               ? formatCurrencyRub(met.avgRetailPriceRub)
                               : 'уточнить'}
@@ -1513,7 +1586,7 @@ export function ProductCatalogView() {
                         </div>
                         <div className="px-3.5 py-2.5">
                           <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">Себест.</div>
-                          <div className="font-mono tabular-nums text-[13.5px] font-medium text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
+                          <div className="font-display-num whitespace-nowrap text-[13.5px] font-medium text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                             {!hasCost
                               ? 'Скрыто'
                               : mod.unitCostRub > 0
@@ -1529,7 +1602,7 @@ export function ProductCatalogView() {
                               ? 'Выручка / Год'
                               : 'Маржа / Год'}
                           </div>
-                          <div className="font-mono tabular-nums text-[13px] font-semibold text-[#15803D] dark:text-emerald-400 mt-0.5">
+                          <div className="font-display-num whitespace-nowrap text-[13px] font-semibold text-[#15803D] dark:text-emerald-400 mt-0.5">
                             {!hasFinance || met.annualRevenueRub <= 0
                               ? `${met.annualPacks.toLocaleString('ru-RU')} ${unitCfg.primaryUnit}`
                               : !hasCost || mod.unitCostRub <= 0
@@ -1544,7 +1617,7 @@ export function ProductCatalogView() {
                           Выкуп WB:{' '}
                           {met.buyoutRatePct > 0 ? (
                             <>
-                              <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                              <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                                 {met.buyoutRatePct}%
                               </strong>{' '}
                               (×{met.orderMultiplier.toFixed(2).replace('.', ',')})
@@ -1571,7 +1644,7 @@ export function ProductCatalogView() {
 
       {/* РЕЖИМ 2: ГРУППЫ ТОВАРОВ И КАБИНЕТЫ БРЕНДОВ */}
       {viewMode === 'groups' && (
-        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6">
           <PeaklyCatalogGroupsAndBrandsView
             key={`groups-${productGroupsReloadTick}`}
             models={scenarioModels}
@@ -1602,7 +1675,7 @@ export function ProductCatalogView() {
 
       {/* РЕЖИМ 3: СВОДНАЯ ТАБЛИЦА КАТАЛОГА */}
       {viewMode === 'table' && (
-        <div className="bg-white dark:bg-[#151514] rounded-xl border border-[#E4E1DA] dark:border-[#282724] overflow-x-auto shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated bg-white dark:bg-[#151514] rounded-xl border border-[#E4E1DA] dark:border-[#282724] overflow-x-auto">
           <table className="w-full text-left text-[13.5px]">
             <thead className="border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] font-semibold uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92] bg-[#FAF9F6] dark:bg-[#1D1C1A]">
               <tr>
@@ -1637,9 +1710,9 @@ export function ProductCatalogView() {
                   <tr
                     key={mod.id}
                     onClick={() => setActivePassportModelId(mod.id)}
-                    className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] transition-colors cursor-pointer"
+                    className="hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] transition-colors cursor-pointer"
                   >
-                    <td className="py-3.5 px-5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    <td className="py-3.5 px-5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap">
                       {mod.code}
                     </td>
                     <td className="py-3.5 px-4">
@@ -1648,9 +1721,15 @@ export function ProductCatalogView() {
                         {mod.fabric?.composition}
                       </div>
                     </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded font-mono text-[10.5px] font-medium bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724]">
-                        {displayBrand}
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-mono text-[10.5px] font-medium bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[#141413] dark:text-[#F5F4F0] border border-[#E4E1DA] dark:border-[#282724]">
+                        <span
+                          className={`inline-block w-[6.5px] h-[6.5px] rounded-full shrink-0 ${getCatalogBrandDotClass(
+                            normalizePortfolioBrandCode(displayBrand || mod.brandId)
+                          )}`}
+                          aria-hidden="true"
+                        />
+                        <span>{displayBrand}</span>
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-[#5C5953] dark:text-[#9E9A92]">
@@ -1659,26 +1738,26 @@ export function ProductCatalogView() {
                         {unitPackCaption}
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    <td className="py-3.5 px-4 text-right font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {met.avgRetailPriceRub > 0
                         ? formatCurrencyRub(met.avgRetailPriceRub)
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono tabular-nums text-[#5C5953] dark:text-[#9E9A92]">
+                    <td className="py-3.5 px-4 text-right font-display-num whitespace-nowrap text-[#5C5953] dark:text-[#9E9A92]">
                       {!hasCost
                         ? 'Скрыто'
                         : mod.unitCostRub > 0
                         ? formatCurrencyRub(mod.unitCostRub)
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#15803D] dark:text-emerald-400">
+                    <td className="py-3.5 px-4 text-right font-display-num whitespace-nowrap font-semibold text-[#15803D] dark:text-emerald-400">
                       {!hasCost || !hasFinance
                         ? 'Скрыто'
                         : met.avgRetailPriceRub > 0 && mod.unitCostRub > 0
                         ? `${met.unitMarginPct.toFixed(1)}%`
                         : 'уточнить'}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    <td className="py-3.5 px-4 text-right font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {!hasFinance
                         ? 'Скрыто'
                         : met.annualRevenueRub > 0
@@ -1719,7 +1798,7 @@ export function ProductCatalogView() {
 
       {/* РЕЖИМ 4: ПОЛНЫЙ РЕЕСТР 269 РАЗМЕРНЫХ SKU LISKANI (ВСЕ РАЗМЕРЫ 300×240..600×270 И ПОМЕСЯЧНЫЙ ПЛАН 2027) */}
       {viewMode === 'liskani_269' && (
-        <div className="bg-white rounded-2xl border border-[#CBD5E1] p-5 space-y-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+        <div className="card-elevated bg-white rounded-2xl border border-[#CBD5E1] p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-[17px] font-extrabold text-[#0F172A]">
@@ -1821,7 +1900,7 @@ export function ProductCatalogView() {
                           <tr
                             key={`${mod.id}-${sv.skuIndex}`}
                             onClick={() => setActivePassportModelId(mod.id)}
-                            className="hover:bg-[#F8FAFC] transition cursor-pointer"
+                            className="hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] transition-colors cursor-pointer"
                           >
                             <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B]">
                               {sv.skuIndex}
@@ -1848,31 +1927,31 @@ export function ProductCatalogView() {
                             <td className="py-2.5 px-3 font-semibold text-[#334155]">
                               {sv.fabric}
                             </td>
-                            <td className="py-2.5 px-3 font-mono font-bold text-[#0F172A]">
+                            <td className="py-2.5 px-3 font-mono font-bold text-[#0F172A] whitespace-nowrap">
                               {sv.sizeCm}
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#0F172A]">
+                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#0F172A] whitespace-nowrap">
                               {sv.sellerSku}
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#475569]">
+                            <td className="py-2.5 px-3 font-mono text-[11.5px] text-[#475569] whitespace-nowrap">
                               {sv.wbNmId || 'Новинка 03.2027'}
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B]">
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B] whitespace-nowrap">
                               {sv.barcode || '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
+                            <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap text-[#334155]">
                               {hasCost ? `${sv.unitCostRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A]">
+                            <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                               {sv.retailPriceRub.toLocaleString('ru-RU')} ₽
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A]">
+                            <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                               {ordPacks.toLocaleString('ru-RU')}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#334155]">
+                            <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap text-[#334155]">
                               {hasFinance ? `${ordRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                            <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap font-semibold text-emerald-700">
                               {hasFinance ? `${buyRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                             </td>
                           </tr>

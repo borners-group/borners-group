@@ -207,6 +207,53 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+function BrandIdentityDot({ brandCode }: { brandCode: string }) {
+  if (!brandCode || brandCode === 'ALL') {
+    return (
+      <span
+        aria-hidden="true"
+        className="inline-grid grid-cols-2 gap-[1.5px] shrink-0"
+      >
+        <span
+          className="h-[3px] w-[3px] rounded-full"
+          style={{ backgroundColor: 'var(--accent-borners, #1C1B18)' }}
+        />
+        <span
+          className="h-[3px] w-[3px] rounded-full"
+          style={{ backgroundColor: 'var(--accent-akusha, #D95D39)' }}
+        />
+        <span
+          className="h-[3px] w-[3px] rounded-full"
+          style={{ backgroundColor: 'var(--accent-liskani, #0F766E)' }}
+        />
+        <span
+          className="h-[3px] w-[3px] rounded-full"
+          style={{ backgroundColor: 'var(--accent-natele, #B07D4F)' }}
+        />
+      </span>
+    );
+  }
+
+  const colorVar =
+    brandCode === 'BORNERS_FUKAI' || brandCode === 'BORNERS' || brandCode === 'FUKAI'
+      ? 'var(--accent-borners, #1C1B18)'
+      : brandCode === 'AKUSHA'
+      ? 'var(--accent-akusha, #D95D39)'
+      : brandCode === 'LISKANI'
+      ? 'var(--accent-liskani, #0F766E)'
+      : brandCode === 'NA_TELE'
+      ? 'var(--accent-natele, #B07D4F)'
+      : '#5C5953';
+
+  return (
+    <span
+      aria-hidden="true"
+      className="h-[7px] w-[7px] rounded-full shrink-0"
+      style={{ backgroundColor: colorVar }}
+    />
+  );
+}
+
 export function AppShell() {
   const {
     isAuthenticated,
@@ -834,16 +881,24 @@ export function AppShell() {
         }
         const remoteId = data.buildId || currentBuildId;
         setDetectedBuildId(remoteId);
+        if (remoteId === currentBuildId) {
+          try {
+            window.localStorage.setItem(SEEN_BUILD_KEY, currentBuildId);
+          } catch {
+            // ignore
+          }
+          setUpdateBannerOpen(false);
+          return;
+        }
         const seenId = window.localStorage.getItem(SEEN_BUILD_KEY);
         if (seenId !== remoteId) {
           setUpdateBannerOpen(true);
         }
       } catch {
-        // Fallback: проверим локальный seenId
+        // Нет сети или version.json недоступен: фиксируем текущий билд без ложного баннера
         try {
-          const seenId = window.localStorage.getItem(SEEN_BUILD_KEY);
-          if (seenId !== currentBuildId) {
-            setUpdateBannerOpen(true);
+          if (!window.localStorage.getItem(SEEN_BUILD_KEY)) {
+            window.localStorage.setItem(SEEN_BUILD_KEY, currentBuildId);
           }
         } catch {
           // ignore
@@ -1480,16 +1535,16 @@ export function AppShell() {
       <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)] flex flex-col overflow-x-hidden transition-colors duration-200">
         {/* ОСНОВНАЯ ПОЛНОШИРИННАЯ ОБОЛОЧКА БЕЗ ЛЕВОЙ КОЛОНКИ (КОНЦЕПТ А: ЦЕПОЧКА ПОТОКА + БЕНТО-АТЛАС) */}
         <div className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip">
-          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-[var(--bg-card)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-2.5 sm:px-4 lg:px-5 2xl:px-8 flex items-center justify-between gap-1.5 sm:gap-2 2xl:gap-3">
+          <header className="sticky top-0 z-50 h-[56px] w-full max-w-full bg-white/88 backdrop-blur-md border-b border-[#E6E3DC] shadow-[0_1px_0_rgba(20,20,19,0.03)] px-2.5 sm:px-4 lg:px-5 2xl:px-8 flex items-center justify-between gap-1.5 sm:gap-2 2xl:gap-3">
             {/* Левая группа: Медальон BORNERS + Назад/Вперёд + Переключатель бренда */}
             <div className="flex items-center gap-1.5 sm:gap-2 2xl:gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => handleGoHomeSummary('home')}
                 title="Перейти на Главную страницу BORNERS GROUP"
-                className="inline-flex items-center gap-2 pr-0 sm:pr-1 rounded-[10px] text-left cursor-pointer group shrink-0"
+                className="inline-flex items-center gap-2 pr-0 sm:pr-1 rounded-[10px] text-left cursor-pointer group shrink-0 whitespace-nowrap"
               >
-                <span className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#94A3B8] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
+                <span className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-[#FAF9F6] border border-[#E4E1DA] group-hover:border-[#D2CEC4] flex items-center justify-center p-1 transition shrink-0 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={resolvePublicAssetUrl('images/products/borners-lion-emblem.png')}
@@ -1498,19 +1553,19 @@ export function AppShell() {
                   />
                 </span>
                 <span className="hidden sm:flex flex-col shrink-0">
-                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#0F172A] leading-none whitespace-nowrap">
-                    BORNERS<sup className="text-[9px] font-semibold ml-0.5 text-[#64748B]">®</sup>
+                  <span className="text-[14.5px] font-bold tracking-[-0.02em] text-[#141413] leading-none whitespace-nowrap">
+                    BORNERS<sup className="text-[9px] font-semibold ml-0.5 text-[#5C5953]">®</sup>
                   </span>
-                  <span className="hidden 2xl:block text-[9.5px] font-medium text-[#64748B] mt-0.5 whitespace-nowrap">
+                  <span className="hidden 2xl:block text-[9.5px] font-medium text-[#5C5953] mt-0.5 whitespace-nowrap">
                     Strategy · 2027
                   </span>
                 </span>
               </button>
 
-              <div className="h-4 w-[1px] bg-[#E2E8F0] hidden sm:block xl:hidden 2xl:block shrink-0" />
+              <div className="h-4 w-[1px] bg-[#E4E1DA] hidden sm:block xl:hidden 2xl:block shrink-0" />
 
               {/* Кнопки Назад (←) и Вперёд (→) */}
-              <div className="hidden sm:inline-flex xl:hidden 2xl:inline-flex items-center rounded-[8px] bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
+              <div className="hidden sm:inline-flex xl:hidden 2xl:inline-flex items-center rounded-[9px] bg-[#F1EFE9]/90 border border-[#E4E1DA] p-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={goBack}
@@ -1519,8 +1574,8 @@ export function AppShell() {
                   aria-label="Назад"
                   className={`inline-flex items-center justify-center h-7 w-7 rounded-[6px] transition ${
                     canGoBack
-                      ? 'text-[#0F172A] hover:bg-white cursor-pointer'
-                      : 'text-[#94A3B8] opacity-55 cursor-not-allowed'
+                      ? 'text-[#141413] hover:bg-white cursor-pointer'
+                      : 'text-[#8E8D85] opacity-55 cursor-not-allowed'
                   }`}
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -1533,8 +1588,8 @@ export function AppShell() {
                   aria-label="Вперёд"
                   className={`inline-flex items-center justify-center h-7 w-7 rounded-[6px] transition ${
                     canGoForward
-                      ? 'text-[#0F172A] hover:bg-white cursor-pointer'
-                      : 'text-[#94A3B8] opacity-55 cursor-not-allowed'
+                      ? 'text-[#141413] hover:bg-white cursor-pointer'
+                      : 'text-[#8E8D85] opacity-55 cursor-not-allowed'
                   }`}
                 >
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -1542,7 +1597,7 @@ export function AppShell() {
               </div>
 
               {swipeFeedback && (
-                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3.5 py-1.5 rounded-full bg-[#0F172A]/92 text-white text-[12px] font-semibold shadow-lg flex items-center gap-1.5">
+                <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3.5 py-1.5 rounded-full bg-[#141413]/92 text-white text-[12px] font-semibold shadow-lg flex items-center gap-1.5">
                   {swipeFeedback === 'back' ? (
                     <>
                       <ArrowLeft className="h-3.5 w-3.5" />
@@ -1557,13 +1612,14 @@ export function AppShell() {
                 </div>
               )}
 
-              {/* Переключатель бренда (чистая типографика без цветных точек) */}
+              {/* Переключатель бренда с деликатными 7px акцентными точками идентичности */}
               <div className="relative shrink-0" data-tour="brand-switcher">
                 <button
                   type="button"
                   onClick={() => setBrandDropdownOpen(!brandDropdownOpen)}
-                  className="h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] text-[12px] sm:text-[12.5px] text-[#0F172A] inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer transition shrink-0 whitespace-nowrap"
+                  className="h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3 rounded-[9px] bg-white hover:border-[#D2CEC4] border border-[#E4E1DA] shadow-[0_1px_2px_rgba(20,20,19,0.03)] text-[12px] sm:text-[12.5px] text-[#141413] inline-flex items-center gap-1.5 cursor-pointer transition shrink-0 whitespace-nowrap"
                 >
+                  <BrandIdentityDot brandCode={brandFilter} />
                   <span className="font-semibold whitespace-nowrap truncate max-w-[112px] sm:max-w-none">
                     {brandFilter === 'ALL'
                       ? 'Все бренды'
@@ -1580,7 +1636,7 @@ export function AppShell() {
                       : brands.find((b) => b.code === brandFilter || b.id === brandFilter)?.name ||
                         brandFilter}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-[#64748B] shrink-0" />
+                  <ChevronDown className="h-3.5 w-3.5 text-[#5C5953] shrink-0" />
                 </button>
 
                 {brandDropdownOpen && (
@@ -1589,7 +1645,7 @@ export function AppShell() {
                       className="fixed inset-0 z-40"
                       onClick={() => setBrandDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 mt-1.5 w-64 max-w-[calc(100vw-20px)] rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_16px_36px_rgba(15,23,42,0.1)] p-1.5 z-50 text-[12.5px] space-y-0.5">
+                    <div className="absolute left-0 mt-1.5 w-68 max-w-[calc(100vw-20px)] rounded-[14px] bg-white border border-[#E4E1DA] shadow-[0_16px_38px_-10px_rgba(20,20,19,0.14)] p-1.5 z-50 text-[12.5px] space-y-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1601,16 +1657,19 @@ export function AppShell() {
                           }
                           setBrandDropdownOpen(false);
                         }}
-                        className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
+                        className={`w-full px-3 py-2 rounded-[9px] text-left flex items-center justify-between gap-2 cursor-pointer transition ${
                           brandFilter === 'ALL'
-                            ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
-                            : 'text-[#1E293B] hover:bg-[#F8FAFC]'
+                            ? 'bg-[#F1EFE9] text-[#141413] font-semibold border border-[#E4E1DA]'
+                            : 'text-[#141413] hover:bg-[#FAF9F6] border border-transparent'
                         }`}
                       >
-                        <span>Все бренды</span>
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <BrandIdentityDot brandCode="ALL" />
+                          <span className="truncate">Все бренды</span>
+                        </span>
                         <span
-                          className={`font-mono text-[10px] ${
-                            brandFilter === 'ALL' ? 'text-[#334155]' : 'text-[#64748B]'
+                          className={`font-display-num text-[10.5px] shrink-0 ${
+                            brandFilter === 'ALL' ? 'text-[#5C5953]' : 'text-[#78756E]'
                           }`}
                         >
                           Сводка группы
@@ -1621,7 +1680,7 @@ export function AppShell() {
                         {
                           code: 'BORNERS_FUKAI',
                           label: 'BORNERS / FUKAI',
-                          sub: 'Бельё и база WB · компл.',
+                          sub: 'Бельё и база WB',
                         },
                         { code: 'AKUSHA', label: 'AKUSHA', sub: 'Обувь · пары' },
                         { code: 'LISKANI', label: 'LISKANI', sub: 'Шторы · компл.' },
@@ -1676,16 +1735,19 @@ export function AppShell() {
                                 }
                                 setBrandDropdownOpen(false);
                               }}
-                              className={`w-full px-3 py-2 rounded-[8px] text-left flex items-center justify-between cursor-pointer ${
+                              className={`w-full px-3 py-2 rounded-[9px] text-left flex items-center justify-between gap-2 cursor-pointer transition ${
                                 isSelected
-                                  ? 'bg-[#F1F5F9] text-[#111827] font-bold border border-[#CBD5E1]'
-                                  : 'text-[#1E293B] hover:bg-[#F8FAFC]'
+                                  ? 'bg-[#F1EFE9] text-[#141413] font-semibold border border-[#E4E1DA]'
+                                  : 'text-[#141413] hover:bg-[#FAF9F6] border border-transparent'
                               }`}
                             >
-                              <span>{bItem.label}</span>
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <BrandIdentityDot brandCode={bItem.code} />
+                                <span className="truncate">{bItem.label}</span>
+                              </span>
                               <span
-                                className={`font-mono text-[10px] ${
-                                  isSelected ? 'text-[#334155]' : 'text-[#64748B]'
+                                className={`font-display-num text-[10.5px] shrink-0 ${
+                                  isSelected ? 'text-[#5C5953]' : 'text-[#78756E]'
                                 }`}
                               >
                                 {bItem.sub}
@@ -1699,16 +1761,16 @@ export function AppShell() {
               </div>
             </div>
 
-            {/* ЦЕНТР: ЦЕПОЧКА БИЗНЕС-ПОТОКА С ЧИСТОЙ БЕЛОЙ АКТИВНОЙ ВКЛАДКОЙ */}
+            {/* ЦЕНТР: ЦЕПОЧКА БИЗНЕС-ПОТОКА С ЧИСТОЙ ПРИПОДНЯТОЙ АКТИВНОЙ ВКЛАДКОЙ */}
             <nav
               aria-label="Цепочка контуров BORNERS"
               data-tour="sidebar-nav"
-              className="hidden xl:flex items-center shrink-0 rounded-[11px] bg-[#EEF1F6] dark:bg-[#151A26] border border-[#D8DEE8] dark:border-[#222938] p-0.5 gap-0.5"
+              className="hidden xl:flex items-center shrink-0 rounded-[11px] bg-[#F1EFE9]/90 dark:bg-[#151A26] border border-[#E4E1DA] dark:border-[#222938] p-0.5 gap-0.5"
             >
               {pipelineSteps.map((item, idx) => (
                 <React.Fragment key={item.key}>
                   {idx > 0 && (
-                    <div className="h-3.5 w-[1px] bg-[#D8DEE8] dark:bg-[#222938] mx-0.5 shrink-0" />
+                    <div className="hidden 2xl:block h-3.5 w-[1px] bg-[#DFDCD4] dark:bg-[#222938] mx-0.5 shrink-0" />
                   )}
                   <button
                     type="button"
@@ -1725,18 +1787,18 @@ export function AppShell() {
                       navigateTo(item.target);
                       setAtlasOpen(false);
                     }}
-                    className={`shrink-0 whitespace-nowrap h-7.5 px-2 2xl:px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1 2xl:gap-1.5 transition cursor-pointer ${
+                    className={`shrink-0 whitespace-nowrap h-7.5 px-1.5 2xl:px-3 rounded-[8px] text-[12px] inline-flex items-center gap-1 2xl:gap-1.5 transition cursor-pointer ${
                       item.isActive
-                        ? 'bg-white dark:bg-[#222A3D] text-[#111827] dark:text-[#F8FAFC] font-bold shadow-[0_1px_3px_rgba(15,23,42,0.1)] border border-[#CBD5E1] dark:border-[#334155]'
-                        : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC] hover:bg-white/60 dark:hover:bg-[#1E2536] font-semibold'
+                        ? 'bg-white dark:bg-[#222A3D] text-[#141413] dark:text-[#F8FAFC] font-semibold shadow-[0_1px_3px_rgba(20,20,19,0.08)] ring-1 ring-black/[0.06] dark:ring-white/10'
+                        : 'text-[#5C5953] dark:text-[#94A3B8] hover:text-[#141413] dark:hover:text-[#F8FAFC] hover:bg-white/60 dark:hover:bg-[#1E2536] font-medium'
                     }`}
                   >
                     {item.step && (
                       <span
-                        className={`shrink-0 whitespace-nowrap font-mono text-[10.5px] ${
+                        className={`shrink-0 whitespace-nowrap font-display-num text-[10.5px] font-semibold ${
                           item.isActive
-                            ? 'text-[#111827] dark:text-[#34D399]'
-                            : 'text-[#64748B] dark:text-[#64748B]'
+                            ? 'text-[#141413] dark:text-[#2DD4BF]'
+                            : 'text-[#78756E] dark:text-[#78756E]'
                         }`}
                       >
                         {item.step}
@@ -1745,10 +1807,10 @@ export function AppShell() {
                     <span className="whitespace-nowrap">{item.label}</span>
                     {item.badge && (
                       <span
-                        className={`whitespace-nowrap shrink-0 font-mono text-[10px] px-1.5 py-0.2 rounded-[5px] ${
+                        className={`whitespace-nowrap shrink-0 font-display-num text-[10.5px] font-medium px-1.5 py-[1px] rounded-[5px] ${
                           item.isActive
-                            ? 'bg-[#F1F5F9] dark:bg-[#151A26] text-[#111827] dark:text-[#F8FAFC] border border-[#CBD5E1] dark:border-[#334155]'
-                            : 'bg-white dark:bg-[#121620] text-[#475569] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938]'
+                            ? 'bg-[#F1EFE9] dark:bg-[#151A26] text-[#141413] dark:text-[#F8FAFC]'
+                            : 'bg-white/90 dark:bg-[#121620] text-[#5C5953] dark:text-[#94A3B8] border border-[#E4E1DA]/80 dark:border-[#222938]'
                         }`}
                       >
                         {item.badge}
@@ -1759,23 +1821,23 @@ export function AppShell() {
               ))}
             </nav>
 
-            {/* Правая группа: Кнопка вызова Бенто-Атласа («Все разделы») + Поиск + Профиль без лишних иконок */}
+            {/* Правая группа: Кнопка вызова Бенто-Атласа («Все разделы») + Поиск + Тема + Профиль */}
             <div className="flex items-center gap-1 sm:gap-1.5 2xl:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setAtlasOpen((v) => !v)}
                 aria-expanded={atlasOpen}
-                className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 sm:gap-1.5 h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3.5 rounded-[9px] border text-[11.5px] sm:text-[12.5px] font-bold transition cursor-pointer ${
+                className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 sm:gap-1.5 h-8 sm:h-8.5 px-2 sm:px-2.5 2xl:px-3.5 rounded-[9px] border text-[11.5px] sm:text-[12.5px] font-semibold transition cursor-pointer ${
                   atlasOpen
-                    ? 'bg-[#F1F5F9] text-[#111827] border-[#94A3B8]'
-                    : 'bg-white hover:border-[#94A3B8] text-[#1E293B] border-[#E2E8F0]'
+                    ? 'bg-[#F1EFE9] text-[#141413] border-[#D2CEC4]'
+                    : 'bg-white hover:border-[#D2CEC4] text-[#141413] border-[#E4E1DA] shadow-[0_1px_2px_rgba(20,20,19,0.03)]'
                 }`}
               >
                 <span className="sm:hidden">Разделы</span>
                 <span className="hidden sm:inline">Все разделы</span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 transition-transform shrink-0 ${
-                    atlasOpen ? 'rotate-180 text-[#111827]' : 'text-[#64748B]'
+                    atlasOpen ? 'rotate-180 text-[#141413]' : 'text-[#5C5953]'
                   }`}
                 />
               </button>
@@ -1788,11 +1850,11 @@ export function AppShell() {
                   setSearchModalOpen(true);
                 }}
                 aria-label="Глобальный поиск"
-                className="shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 h-8 w-8 sm:h-8.5 sm:w-auto rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] px-0 sm:px-2.5 2xl:px-3 text-[12px] font-semibold text-[#1E293B] dark:text-[#EDF0F7] transition cursor-pointer"
+                className="shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 h-8 w-8 sm:h-8.5 sm:w-auto rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#D2CEC4] border border-[#E4E1DA] dark:border-[#222938] shadow-[0_1px_2px_rgba(20,20,19,0.03)] px-0 sm:px-2.5 2xl:px-3 text-[12px] font-semibold text-[#141413] dark:text-[#EDF0F7] transition cursor-pointer"
               >
                 <Search className="h-3.5 w-3.5 sm:hidden" />
                 <span className="hidden sm:inline">Поиск</span>
-                <span className="hidden md:inline xl:hidden 2xl:inline font-mono text-[10px] text-[#64748B] px-1 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#121620] border border-[#E2E8F0] dark:border-[#222938]">
+                <span className="hidden md:inline xl:hidden 2xl:inline font-display-num text-[10px] text-[#5C5953] px-1 py-0.2 rounded bg-[#F1EFE9] dark:bg-[#121620] border border-[#E4E1DA] dark:border-[#222938]">
                   ⌘K
                 </span>
               </button>
@@ -1803,7 +1865,7 @@ export function AppShell() {
                 onClick={() => setDarkMode(!darkMode)}
                 title={darkMode ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
                 aria-label={darkMode ? 'Светлая тема' : 'Тёмная тема'}
-                className="inline-flex items-center justify-center h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#94A3B8] border border-[#E2E8F0] dark:border-[#222938] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition cursor-pointer shrink-0"
+                className="inline-flex items-center justify-center h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-[9px] bg-white dark:bg-[#181D2A] hover:border-[#D2CEC4] border border-[#E4E1DA] dark:border-[#222938] shadow-[0_1px_2px_rgba(20,20,19,0.03)] text-[#5C5953] dark:text-[#94A3B8] hover:text-[#141413] dark:hover:text-white transition cursor-pointer shrink-0"
               >
                 {darkMode ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
               </button>
@@ -1813,12 +1875,12 @@ export function AppShell() {
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-8.5 rounded-[9px] bg-white hover:border-[#94A3B8] border border-[#E2E8F0] px-1.5 sm:px-2 2xl:pl-2 2xl:pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-8.5 rounded-[9px] bg-white hover:border-[#D2CEC4] border border-[#E4E1DA] shadow-[0_1px_2px_rgba(20,20,19,0.03)] px-1.5 sm:px-2 2xl:pl-2 2xl:pr-2.5 text-[12.5px] font-semibold cursor-pointer transition"
                 >
-                  <span className="h-5 w-5 rounded-[5px] bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] flex items-center justify-center font-mono text-[10px] font-bold shrink-0">
+                  <span className="h-5 w-5 rounded-[6px] bg-[#F1EFE9] text-[#141413] border border-[#E4E1DA] flex items-center justify-center font-display-num text-[10px] font-bold shrink-0">
                     {currentUser.avatarInitials}
                   </span>
-                  <span className="hidden sm:inline xl:hidden 2xl:inline text-[#1E293B]">
+                  <span className="hidden sm:inline xl:hidden 2xl:inline text-[#141413]">
                     {ROLE_LABELS_RU[currentUser.role]}
                   </span>
                 </button>
@@ -3081,83 +3143,63 @@ export function AppShell() {
           }}
         />
 
-        {/* УВЕДОМЛЕНИЕ О НОВОЙ ВЕРСИИ САЙТА В СТИЛЕ PEAKLY («BORNERS обновился · НОВОЕ») */}
+        {/* КОМПАКТНОЕ 1-СТРОЧНОЕ УВЕДОМЛЕНИЕ О НОВОЙ ВЕРСИИ (НЕ ПЕРЕКРЫВАЕТ КНОПКИ) */}
         {updateBannerOpen && (
-          <div className="fixed bottom-4 right-4 sm:right-5 sm:left-auto z-50 w-[340px] sm:w-[356px] max-w-[calc(100vw-2rem)]">
-            <div className="relative overflow-hidden rounded-[18px] border border-[#DCE0E8] bg-white pl-4 pr-3.5 pt-3.5 pb-3.5 shadow-[0_14px_38px_rgba(15,23,42,0.12)]">
-              {/* Тёмно-синяя акцентная полоска слева как в Peakly */}
-              <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-r-full bg-[#141A29]" />
-
-              <div className="flex items-start gap-3">
-                <div className="h-10 w-10 shrink-0 rounded-[12px] bg-[#EEF0F5] flex items-center justify-center text-[#1E2638]">
-                  <Sparkles className="h-4.5 w-4.5 stroke-[1.8]" />
+          <div className="fixed bottom-3 right-4 z-40 flex flex-col items-end gap-2 max-w-[calc(100vw-2rem)]">
+            {updateDetailsOpen && (
+              <div className="w-[340px] max-w-[calc(100vw-2rem)] rounded-[14px] bg-[#141413]/95 backdrop-blur-md border border-white/12 p-3.5 text-[#F2F0EC] shadow-[0_16px_40px_rgba(0,0,0,0.3)] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">
+                    Что вошло в обновление
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUpdateDetailsOpen(false)}
+                    aria-label="Скрыть детали обновления"
+                    className="h-5 w-5 rounded-full flex items-center justify-center text-white/55 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[15px] font-bold tracking-[-0.015em] text-[#0F141C]">
-                        BORNERS обновился
-                      </span>
-                      <span className="rounded-full bg-[#EEF0F5] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#263042]">
-                        НОВОЕ
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleDismissUpdateBanner}
-                      aria-label="Закрыть уведомление об обновлении"
-                      className="h-6.5 w-6.5 shrink-0 rounded-full flex items-center justify-center text-[#4A5568] hover:bg-[#F1F5F9] hover:text-[#0F141C] transition cursor-pointer"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  <p className="mt-0.5 text-[12.5px] leading-[1.35] text-[#4A5568]">
-                    Выпустили техническое обновление. Обновите страницу, чтобы применить свежую версию.
-                  </p>
-                </div>
+                <ul className="space-y-1.5 list-disc pl-4 text-[11.5px] leading-snug text-white/85">
+                  {updateChanges.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
               </div>
+            )}
 
-              {updateDetailsOpen && (
-                <div className="mt-3 rounded-[12px] border border-[#E2E6EE] bg-[#F8FAFC] p-2.5 text-[11.5px] text-[#334155] space-y-1.5">
-                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-[#0F141C]">
-                    Что вошло в обновление:
-                  </div>
-                  <ul className="space-y-1 list-disc pl-4">
-                    {updateChanges.map((item, idx) => (
-                      <li key={idx} className="leading-snug">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setUpdateDetailsOpen((v) => !v)}
-                  className="h-9.5 rounded-full bg-[#0F141C] hover:bg-[#1E2638] text-white text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
-                >
-                  <span>{updateDetailsOpen ? 'Скрыть детали' : 'Что нового'}</span>
-                  <ArrowRight
-                    className={`h-3.5 w-3.5 transition-transform ${
-                      updateDetailsOpen ? '-rotate-90' : ''
-                    }`}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleApplySiteUpdate}
-                  className="h-9.5 rounded-full bg-white hover:bg-[#F8FAFC] border border-[#CFD6E0] text-[#0F141C] text-[13px] font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Обновить</span>
-                </button>
-              </div>
+            <div className="bg-[#141413]/95 backdrop-blur-md text-white rounded-full px-3.5 py-2 shadow-lg border border-white/10 flex items-center gap-2.5 text-[12px] leading-none">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full bg-[#2DD4BF] shrink-0"
+              />
+              <span className="font-medium text-white/95 whitespace-nowrap">
+                Доступно обновление
+              </span>
+              <button
+                type="button"
+                onClick={() => setUpdateDetailsOpen((v) => !v)}
+                className="text-white/65 hover:text-white underline decoration-white/30 underline-offset-2 transition cursor-pointer whitespace-nowrap"
+              >
+                {updateDetailsOpen ? 'Скрыть' : 'Что нового'}
+              </button>
+              <button
+                type="button"
+                onClick={handleApplySiteUpdate}
+                className="borners-update-pill-cta rounded-full bg-white hover:bg-[#F2F0EC] text-[#141413] px-2.5 py-1 text-[11.5px] font-semibold inline-flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Обновить</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissUpdateBanner}
+                aria-label="Закрыть уведомление об обновлении"
+                className="h-5 w-5 -mr-1 shrink-0 rounded-full flex items-center justify-center text-white/55 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}
@@ -3170,7 +3212,7 @@ export function AppShell() {
         />
         <div
           className={`fixed right-4 z-50 flex flex-col items-end gap-2 max-w-[360px] w-auto pointer-events-none ${
-            updateBannerOpen ? 'bottom-44' : 'bottom-4'
+            updateBannerOpen ? 'bottom-16' : 'bottom-4'
           }`}
         >
           {conflictMergedToast && (

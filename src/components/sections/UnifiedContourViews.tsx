@@ -254,6 +254,14 @@ function formatMln(rub: number): string {
   return `${(rub / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`;
 }
 
+function getContourBrandDotClass(brandCode: string | null | undefined): string {
+  const upper = (brandCode || '').trim().toUpperCase();
+  if (upper === 'AKUSHA') return 'bg-[#D95D39]';
+  if (upper === 'LISKANI' || upper === 'ЛИСКАНИ') return 'bg-[#0F766E]';
+  if (upper === 'NA_TELE' || upper === 'НА ТЕЛЕ') return 'bg-[#B07D4F]';
+  return 'bg-[#1C1B18] dark:bg-[#E7E4DC]';
+}
+
 function allocatePacksAcrossProfileSizes(
   totalPacks: number,
   sizes: string[],
@@ -435,7 +443,7 @@ function ScenarioContourHeader({
   const hasFinance = canUserViewFinance(currentUser);
 
   return (
-    <section className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+    <section className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-5 md:p-6 space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b border-[#E4E1DA] dark:border-[#282724]">
         <div>
           <div className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-[#78746C] dark:text-[#9E9A92]">
@@ -1109,25 +1117,25 @@ export function SalesMatrixContourView() {
 
       {/* 4 ключевых показателя продаж в спокойной архитектурной подаче */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Годовая выручка 2027
           </div>
-          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+          <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {hasFinance ? formatMln(effectiveTotals.annualRevenueRub) : 'Скрыто'}
           </div>
-          <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
+          <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92] whitespace-nowrap">
             {hasFinance
               ? `${effectiveTotals.annualRevenueRub.toLocaleString('ru-RU')} ₽ за 12 мес.`
               : 'Скрыто по роли'}
           </div>
         </div>
 
-        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Выручка в декабре 2027
           </div>
-          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+          <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {hasFinance ? formatMln(effectiveTotals.decRevenueRub) : 'Скрыто'}
           </div>
           <div className="text-[11.5px] text-[#15803D] dark:text-emerald-400 font-medium">
@@ -1139,7 +1147,7 @@ export function SalesMatrixContourView() {
           </div>
         </div>
 
-        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Выкупы и заказы за 2027 год
           </div>
@@ -1163,12 +1171,16 @@ export function SalesMatrixContourView() {
                 );
             return (
               <>
-                <div className="font-mono tabular-nums tracking-[-0.025em] text-xl font-semibold text-[#141413] dark:text-[#F5F4F0] leading-tight">
+                <div
+                  className={`font-display-num tracking-[-0.025em] text-xl font-semibold text-[#141413] dark:text-[#F5F4F0] leading-tight ${
+                    singleUnit ? 'whitespace-nowrap' : ''
+                  }`}
+                >
                   {buyoutsLabel}
                 </div>
                 <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                   Заказы (до выкупа):{' '}
-                  <strong className="font-mono text-[#15803D] dark:text-emerald-400">
+                  <strong className="font-display-num whitespace-nowrap font-semibold text-[#15803D] dark:text-emerald-400">
                     {singleUnit
                       ? `${effectiveTotals.annualOrdersPacks.toLocaleString('ru-RU')} ${singleUnit}`
                       : hasFinance
@@ -1180,18 +1192,22 @@ export function SalesMatrixContourView() {
                           }))
                         )}
                   </strong>
-                  {singleUnit && hasFinance ? ` · ${formatMln(effectiveTotals.annualOrdersRub)}` : ''}
+                  {singleUnit && hasFinance ? (
+                    <span className="whitespace-nowrap"> · {formatMln(effectiveTotals.annualOrdersRub)}</span>
+                  ) : (
+                    ''
+                  )}
                 </div>
               </>
             );
           })()}
         </div>
 
-        <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+        <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
             Моделей в матрице
           </div>
-          <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+          <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
             {scopedEntries.length} SKU
           </div>
           <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
@@ -1216,7 +1232,7 @@ export function SalesMatrixContourView() {
       </section>
 
       {/* Полноширинная матрица 12 месяцев по всем SKU */}
-      <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+      <section className="card-elevated rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[16px] font-bold text-[#0F172A] dark:text-[#EDF0F7]">
             Помесячная матрица (
@@ -1293,9 +1309,9 @@ export function SalesMatrixContourView() {
                     key={mod.id}
                     onClick={() => setEditingModelId(mod.id)}
                     title="Нажмите, чтобы редактировать помесячный план модели"
-                    className="group hover:bg-[#F8FAFC] dark:hover:bg-[#181D2A]/80 cursor-pointer transition"
+                    className="group hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
                   >
-                    <td className="py-2.5 px-3 sticky left-0 z-10 bg-white dark:bg-[#121620] group-hover:bg-[#F8FAFC] dark:group-hover:bg-[#181D2A] border-r border-[#EEF2F6] dark:border-[#222938]">
+                    <td className="py-2.5 px-3 sticky left-0 z-10 bg-white dark:bg-[#121620] group-hover:bg-[#FAF8F4] dark:group-hover:bg-[#1D1C1A] border-r border-[#EEF2F6] dark:border-[#222938] transition-colors">
                       <div className="font-bold text-[#0F172A] dark:text-[#EDF0F7] truncate max-w-[235px]">
                         {mod.title}
                       </div>
@@ -1304,7 +1320,7 @@ export function SalesMatrixContourView() {
                         {detectModelBrandPortfolioLabel(mod)}
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-right font-mono text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-right font-display-num text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
                       {met.avgRetailPriceRub.toLocaleString('ru-RU')} ₽
                     </td>
                     <td
@@ -1343,9 +1359,9 @@ export function SalesMatrixContourView() {
                       return (
                         <td
                           key={mIdx}
-                          className={`py-2.5 px-2 text-right font-mono ${
+                          className={`py-2.5 px-2 text-right font-display-num whitespace-nowrap ${
                             mIdx === 11
-                              ? 'bg-emerald-500/6 dark:bg-emerald-500/12 font-bold text-emerald-700 dark:text-emerald-300'
+                              ? 'bg-emerald-500/6 dark:bg-emerald-500/12 font-semibold text-emerald-700 dark:text-emerald-300'
                               : valPacks === 0
                               ? 'text-[#CBD5E1] dark:text-[#475569]'
                               : 'text-[#0F172A] dark:text-[#E2E8F0]'
@@ -1361,7 +1377,7 @@ export function SalesMatrixContourView() {
                         </td>
                       );
                     })}
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[#0F172A] dark:text-[#EDF0F7] bg-[#F8FAFC] dark:bg-[#161C28] whitespace-nowrap">
+                    <td className="py-2.5 px-3 text-right font-display-num font-semibold text-[#0F172A] dark:text-[#EDF0F7] bg-[#F8FAFC] dark:bg-[#161C28] whitespace-nowrap">
                       <div>
                         {effectiveUnitMode === 'rub'
                           ? (met.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
@@ -1393,7 +1409,7 @@ export function SalesMatrixContourView() {
                       ИТОГО ({scopedEntries.length} SKU)
                     </td>
                     <td className="py-3 px-2 text-right">—</td>
-                    <td className="py-3 px-2 text-right font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
+                    <td className="py-3 px-2 text-right font-display-num whitespace-nowrap text-[11px] text-emerald-700 dark:text-emerald-400">
                       {!isMixedPackUnits && effectiveTotals.annualOrdersPacks > 0
                         ? `${Math.round((effectiveTotals.annualPacks / effectiveTotals.annualOrdersPacks) * 100)}%`
                         : hasFinance && effectiveTotals.annualOrdersRub > 0
@@ -1403,7 +1419,7 @@ export function SalesMatrixContourView() {
                     {MONTHS_SHORT_RU.map((_, mIdx) => (
                       <td
                         key={mIdx}
-                        className={`py-3 px-2 text-right font-mono ${
+                        className={`py-3 px-2 text-right font-display-num whitespace-nowrap ${
                           mIdx === 11
                             ? 'bg-emerald-500/12 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                             : ''
@@ -1418,7 +1434,7 @@ export function SalesMatrixContourView() {
                           : effectiveTotals.monthlyPacks[mIdx].toLocaleString('ru-RU')}
                       </td>
                     ))}
-                    <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536]">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap bg-[#F1F5F9] dark:bg-[#1E2536]">
                       {effectiveUnitMode === 'rub' ? (
                         (effectiveTotals.annualRevenueRub / 1_000_000).toFixed(2).replace('.', ',')
                       ) : isMixedPackUnits ? (
@@ -2287,7 +2303,7 @@ export function ProcurementContourView() {
   return (
     <div className="space-y-4 pb-16">
       {/* ЕДИНАЯ ОДНОСТРОЧНАЯ ПАНЕЛЬ НАВИГАЦИИ РАЗДЕЛА 03 · ЗАКУПКИ (В стиле Peakly — строго один фокус внимания на экране) */}
-      <div className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+      <div className="card-elevated rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
         {/* Левая часть: 4 взаимоисключающих режима (Сводная детализация всех SKU / 4 волны и кэшфлоу / По товару / Задачи CRM) */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex flex-wrap rounded-xl bg-[#F1F5F9] dark:bg-[#181D2A] p-1 text-xs font-medium gap-0.5">
@@ -2576,7 +2592,7 @@ export function ProcurementContourView() {
         <>
           {/* ПЛАТЁЖНЫЙ КАЛЕНДАРЬ 4 ВОЛН ЗАКУПОК 2027 (РЕАЛЬНЫЕ КВАРТАЛЬНЫЕ ПАРТИИ И PO БЕЗ УСЛОВНЫХ ПРОПОРЦИЙ) */}
           {wavesCalendarOpen && (
-            <section className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+            <section className="card-elevated rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
@@ -2651,23 +2667,23 @@ export function ProcurementContourView() {
                       {w.title}
                     </div>
                     <div className="flex items-baseline justify-between gap-2">
-                      <div className="font-mono text-xl font-bold text-[#0F172A] dark:text-[#EDF0F7]">
+                      <div className="font-display-num whitespace-nowrap text-xl font-semibold tracking-[-0.02em] text-[#0F172A] dark:text-[#EDF0F7]">
                         {formatCostMln(w.budgetRub)}
                       </div>
-                      <span className="font-mono text-[11px] font-semibold text-[#64748B]">
+                      <span className="font-mono whitespace-nowrap text-[11px] font-semibold text-[#64748B]">
                         {w.packsQty.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit} ({w.sharePct}%)
                       </span>
                     </div>
                     <div className="space-y-1 text-[11px] text-[#64748B]">
-                      <div className="flex justify-between">
+                      <div className="flex justify-between gap-2">
                         <span>Аванс {wavesSummary.avgPrepaymentPct}% ({w.orderWindow}):</span>
-                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                        <strong className="font-display-num whitespace-nowrap font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
                           {formatCostMln(w.prepayRub)}
                         </strong>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between gap-2">
                         <span>Доплата {100 - wavesSummary.avgPrepaymentPct}% ({w.arrivalMonth}):</span>
-                        <strong className="font-mono text-[#0F172A] dark:text-[#EDF0F7]">
+                        <strong className="font-display-num whitespace-nowrap font-semibold text-[#0F172A] dark:text-[#EDF0F7]">
                           {formatCostMln(w.balanceRub)}
                         </strong>
                       </div>
@@ -2702,7 +2718,7 @@ export function ProcurementContourView() {
 
           {/* ЕДИНАЯ РАСКРЫВАЮЩАЯСЯ ПАНЕЛЬ СЦЕНАРИЯ (Скрыта по умолчанию, чтобы не дублировать карточки на экране!) */}
           {scenarioDrawerTab !== 'none' && (
-            <div className="rounded-[16px] border border-[#D8D7CE] bg-white overflow-hidden shadow-[0_2px_10px_rgba(20,20,19,0.04)]">
+            <div className="card-elevated rounded-[16px] border border-[#D8D7CE] bg-white overflow-hidden">
               {/* Шапка панели с переключением 3 режимов: Инвестиции и оборот WB / По брендам / Все SKU */}
               <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[#EAE9E2] bg-[#FAF9F6] px-5 py-3">
                 <div className="inline-flex flex-wrap items-center gap-1 rounded-[9px] border border-[#E2E1D9] bg-[#F2F1EC] p-0.5 text-[12px] font-semibold">
@@ -2779,12 +2795,12 @@ export function ProcurementContourView() {
                           02 · Продажи →
                         </button>
                       </div>
-                      <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                      <div className="mt-1.5 font-display-num whitespace-nowrap text-[22px] font-semibold tracking-[-0.025em] text-[#141413]">
                         {hasFinance ? formatMln(investmentSummary.annualRevenueRub) : 'Скрыто'}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
                         Дек:{' '}
-                        <strong className="text-[#141413]">
+                        <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413]">
                           {hasFinance ? formatMln(investmentSummary.decemberRevenueRub) : 'Скрыто'}
                         </strong>{' '}
                         ·{' '}
@@ -2808,11 +2824,11 @@ export function ProcurementContourView() {
                           Старт Q1
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#157347]">
+                      <div className="mt-1.5 font-display-num whitespace-nowrap text-[22px] font-semibold tracking-[-0.025em] text-[#157347]">
                         {formatCostMln(investmentSummary.firstWaveStartBudgetRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Аванс 30% сейчас: <strong className="text-[#141413]">{formatCostMln(investmentSummary.firstWavePrepaymentRub)}</strong> · {investmentSummary.firstWavePacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit}
+                        Аванс 30% сейчас: <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413]">{formatCostMln(investmentSummary.firstWavePrepaymentRub)}</strong> · {investmentSummary.firstWavePacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit}
                       </div>
                     </div>
 
@@ -2833,7 +2849,7 @@ export function ProcurementContourView() {
                         </span>
                       </div>
                       {!hasCost || !hasFinance ? (
-                        <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                        <div className="mt-1.5 font-display-num whitespace-nowrap text-[22px] font-semibold tracking-[-0.025em] text-[#141413]">
                           Скрыто
                         </div>
                       ) : wbLagMonths < 0 ? (
@@ -2843,7 +2859,7 @@ export function ProcurementContourView() {
                       ) : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
                         investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
                         <>
-                          <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                          <div className="mt-1.5 font-display-num whitespace-nowrap text-[22px] font-semibold tracking-[-0.025em] text-[#141413]">
                             {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
                           </div>
                           <div className="mt-1 text-[11.5px] text-[#686762]">
@@ -2870,11 +2886,11 @@ export function ProcurementContourView() {
                             : `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
-                      <div className="mt-1.5 font-mono text-[21px] font-extrabold text-[#141413]">
+                      <div className="mt-1.5 font-display-num whitespace-nowrap text-[22px] font-semibold tracking-[-0.025em] text-[#141413]">
                         {formatCostMln(investmentSummary.totalProcurementBudgetRub)}
                       </div>
                       <div className="mt-1 text-[11.5px] text-[#686762]">
-                        Себест. продаж: {formatCostMln(investmentSummary.annualSoldGoodsCostRub)} · Прибыль: <strong className="text-[#157347]">{formatProfitMln(investmentSummary.annualEstimatedOperatingProfitRub)}</strong>
+                        Себест. продаж: <span className="whitespace-nowrap">{formatCostMln(investmentSummary.annualSoldGoodsCostRub)}</span> · Прибыль: <strong className="font-display-num whitespace-nowrap font-semibold text-[#157347]">{formatProfitMln(investmentSummary.annualEstimatedOperatingProfitRub)}</strong>
                       </div>
                     </div>
                   </div>
@@ -2964,7 +2980,7 @@ export function ProcurementContourView() {
                                   : b.brandCode
                               )
                             }
-                            className={`hover:bg-[#FAF9F6] cursor-pointer transition ${
+                            className={`hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors ${
                               brandFilter === b.brandCode ||
                               (brandFilter === 'BORNERS_FUKAI' &&
                                 (b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'))
@@ -2972,29 +2988,37 @@ export function ProcurementContourView() {
                                 : ''
                             }`}
                           >
-                            <td className="py-2.5 px-3 font-bold text-[#141413]">{b.brandTitle}</td>
-                            <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C]">
+                            <td className="py-2.5 px-3 font-bold text-[#141413] whitespace-nowrap">
+                              <span className="inline-flex items-center gap-2">
+                                <span
+                                  className={`inline-block w-[8px] h-[8px] rounded-full shrink-0 ${getContourBrandDotClass(b.brandCode)}`}
+                                  aria-hidden="true"
+                                />
+                                <span>{b.brandTitle}</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C] whitespace-nowrap">
                               {b.modelsCount}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#141413]">
+                            <td className="py-2.5 px-3 text-right font-display-num font-semibold text-[#141413] whitespace-nowrap">
                               {b.modelsCount > 0
                                 ? hasFinance
                                   ? formatMln(b.annualRevenueRub)
                                   : 'Скрыто'
                                 : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
+                            <td className="py-2.5 px-3 text-right font-display-num text-[#3D3C38] whitespace-nowrap">
                               {b.modelsCount > 0
                                 ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} ${getBrandUnitConfig(b.brandCode).primaryUnit}`
                                 : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#146C43]">
+                            <td className="py-2.5 px-3 text-right font-display-num text-[#146C43] whitespace-nowrap">
                               {b.modelsCount > 0 ? (
                                 <div>
-                                  <div className="font-bold">
+                                  <div className="font-semibold whitespace-nowrap">
                                     {formatCostMln(b.firstWaveStartBudgetRub)}
                                   </div>
-                                  <div className="text-[10.5px] text-[#686762]">
+                                  <div className="text-[10.5px] text-[#686762] whitespace-nowrap">
                                     аванс: {formatCostMln(b.firstWavePrepaymentRub)}
                                   </div>
                                 </div>
@@ -3002,7 +3026,7 @@ export function ProcurementContourView() {
                                 '—'
                               )}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
+                            <td className="py-2.5 px-3 text-right font-display-num font-semibold text-[#141413] whitespace-nowrap">
                               {b.modelsCount > 0 ? (
                                 !hasCost || !hasFinance ? (
                                   'Скрыто'
@@ -3012,8 +3036,8 @@ export function ProcurementContourView() {
                                   </span>
                                 ) : (
                                   <div>
-                                    <div>{formatMln(b.peakWorkingCapitalRub)}</div>
-                                    <div className="text-[10px] font-normal text-amber-800">
+                                    <div className="whitespace-nowrap">{formatMln(b.peakWorkingCapitalRub)}</div>
+                                    <div className="text-[10px] font-normal text-amber-800 whitespace-nowrap">
                                       пик: {b.peakMonthLabel || 'Янв'}
                                       {b.selfFundingMonthLabel ? ` → с ${b.selfFundingMonthLabel} с WB` : ''}
                                     </div>
@@ -3023,13 +3047,13 @@ export function ProcurementContourView() {
                                 '—'
                               )}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
+                            <td className="py-2.5 px-3 text-right font-display-num text-[#141413] whitespace-nowrap">
                               {b.modelsCount > 0 ? formatCostMln(b.totalProcurementBudgetRub) : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[#52514C]">
+                            <td className="py-2.5 px-3 text-right font-display-num text-[#52514C] whitespace-nowrap">
                               {b.modelsCount > 0 ? formatCostMln(b.annualSoldGoodsCostRub) : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#157347]">
+                            <td className="py-2.5 px-3 text-right font-display-num font-semibold text-[#157347] whitespace-nowrap">
                               {b.modelsCount > 0
                                 ? formatProfitMln(b.annualEstimatedOperatingProfitRub)
                                 : '—'}
@@ -3047,15 +3071,15 @@ export function ProcurementContourView() {
                               ? `ИТОГО (${formatContourBrandFilterLabel(brandFilter)})`
                               : 'ИТОГО ПО ГРУППЕ (без дублей)'}
                           </td>
-                          <td className="py-3 px-2.5 text-right font-mono">
+                          <td className="py-3 px-2.5 text-right font-mono whitespace-nowrap">
                             {brandsReport.groupTotal.modelsCount}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                             {hasFinance
                               ? formatMln(brandsReport.groupTotal.annualRevenueRub)
                               : 'Скрыто'}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                             {formatGroupedUnitInline(
                               brandsReport.brands.map((b) => ({
                                 unit: getBrandUnitConfig(b.brandCode).primaryUnit,
@@ -3064,26 +3088,26 @@ export function ProcurementContourView() {
                               scopeUnitInfo.primaryUnit
                             )}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono text-[#146C43]">
-                            <div>{formatCostMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
-                            <div className="text-[10.5px] font-semibold text-[#686762]">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap text-[#146C43]">
+                            <div className="whitespace-nowrap">{formatCostMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                            <div className="text-[10.5px] font-semibold text-[#686762] whitespace-nowrap">
                               аванс: {formatCostMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
                             </div>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                             {!hasCost || !hasFinance
                               ? 'Скрыто'
                               : wbLagMonths < 0
                               ? 'Лаг WB не задан'
                               : formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                             {formatCostMln(brandsReport.groupTotal.totalProcurementBudgetRub)}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                             {formatCostMln(brandsReport.groupTotal.annualSoldGoodsCostRub)}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono text-[#157347]">
+                          <td className="py-3 px-3 text-right font-display-num whitespace-nowrap text-[#157347]">
                             {formatProfitMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}
                           </td>
                         </tr>
@@ -3221,24 +3245,24 @@ export function ProcurementContourView() {
                         const el = document.getElementById('procurement-summary-table-anchor');
                         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       }}
-                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                      className="card-elevated card-elevated-interactive text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 transition cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           1. Себестоимость выкупов (Сводка)
                         </span>
-                        <span className="rounded-md bg-[#EEF2F6] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#334155]">
+                        <span className="rounded-md bg-[#EEF2F6] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#334155] whitespace-nowrap">
                           {scopeUnitInfo.isMixed
                             ? `${procData.perSku.length} SKU`
                             : `${procData.annualDemandPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
-                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                      <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-[22px] font-semibold text-[#0F172A]">
                         {formatCostMln(investmentSummary.annualSoldGoodsCostRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
                         Средняя себест.:{' '}
-                        <strong className="font-mono text-[#0F172A]">
+                        <strong className="font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                           {!hasCost
                             ? 'Скрыто'
                             : scopeUnitInfo.isMixed
@@ -3262,19 +3286,19 @@ export function ProcurementContourView() {
                         const el = document.getElementById('procurement-summary-table-anchor');
                         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       }}
-                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                      className="card-elevated card-elevated-interactive text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 transition cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           2. Бюджет закупок у фабрик (Год)
                         </span>
-                        <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[10.5px] font-bold text-emerald-700">
+                        <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[10.5px] font-bold text-emerald-700 whitespace-nowrap">
                           {scopeUnitInfo.isMixed
                             ? `${procData.perSku.length} SKU`
                             : `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`}
                         </span>
                       </div>
-                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                      <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-[22px] font-semibold text-[#0F172A]">
                         {formatCostMln(procData.totalScenarioBudgetRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
@@ -3295,22 +3319,22 @@ export function ProcurementContourView() {
                     <button
                       type="button"
                       onClick={() => setWavesCalendarOpen((v) => !v)}
-                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                      className="card-elevated card-elevated-interactive text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 transition cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           3. Старт · Волна №1 (Q1 · Янв–Мар)
                         </span>
-                        <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 text-[10.5px] font-bold text-[#146C43]">
+                        <span className="rounded-md bg-[#EAF6F0] px-2 py-0.5 text-[10.5px] font-bold text-[#146C43] whitespace-nowrap">
                           аванс 30%
                         </span>
                       </div>
-                      <div className="font-mono text-[22px] font-extrabold text-[#157347]">
+                      <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-[22px] font-semibold text-[#157347]">
                         {formatCostMln(procData.firstWaveBudgetRub)}
                       </div>
                       <div className="text-[11.5px] text-[#64748B]">
                         Аванс сейчас:{' '}
-                        <strong className="font-mono text-[#0F172A]">
+                        <strong className="font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                           {formatCostMln(procData.firstWavePrepaymentRub)}
                         </strong>{' '}
                         · {procData.firstWavePacks.toLocaleString('ru-RU')} {scopeUnitInfo.primaryUnit}
@@ -3320,17 +3344,17 @@ export function ProcurementContourView() {
                     <button
                       type="button"
                       onClick={() => setWavesCalendarOpen((v) => !v)}
-                      className="text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 shadow-2xs transition cursor-pointer"
+                      className="card-elevated card-elevated-interactive text-left rounded-xl border border-[#E2E6EE] bg-white hover:border-emerald-500/50 p-4 space-y-1 transition cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                           4. Волны №2–№4 (Q2–Q4 с оборота WB)
                         </span>
-                        <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#475569]">
+                        <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-[#475569] whitespace-nowrap">
                           реинвест WB
                         </span>
                       </div>
-                      <div className="font-mono text-[22px] font-extrabold text-[#0F172A]">
+                      <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-[22px] font-semibold text-[#0F172A]">
                         {formatCostMln(
                           Math.max(0, procData.totalScenarioBudgetRub - procData.firstWaveBudgetRub)
                         )}
@@ -3345,7 +3369,7 @@ export function ProcurementContourView() {
                   </div>
 
                   {/* 1Б. ПОМЕСЯЧНАЯ ЛЕНТА ПЛАТЕЖЕЙ ФАБРИКАМ (12 МЕС.) + УПРАВЛЕНИЕ УСЛОВИЯМИ ОПЛАТЫ И ПИКОМ СВОИХ ДЕНЕГ */}
-                  <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 space-y-3.5 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                  <div className="card-elevated rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 space-y-3.5">
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -3611,9 +3635,9 @@ export function ProcurementContourView() {
                               onClick={() =>
                                 setSelectedCategoryFilter(isSel ? 'ALL' : cg.categoryLabel)
                               }
-                              className={`text-left rounded-xl border p-3.5 transition cursor-pointer ${
+                              className={`card-elevated card-elevated-interactive text-left rounded-xl border p-3.5 transition cursor-pointer ${
                                 isSel
-                                  ? 'border-emerald-500 bg-emerald-500/8 shadow-xs'
+                                  ? 'border-emerald-500 bg-emerald-500/8'
                                   : 'border-[#E2E6EE] bg-white hover:border-[#CBD5E1]'
                               }`}
                             >
@@ -3628,13 +3652,13 @@ export function ProcurementContourView() {
                               <div className="mt-2 flex items-baseline justify-between gap-2">
                                 <div>
                                   <div className="text-[10.5px] text-[#64748B]">Бюджет закупок (год)</div>
-                                  <div className="font-mono text-[17px] font-extrabold text-[#0F172A]">
+                                  <div className="font-display-num whitespace-nowrap text-[17px] font-semibold text-[#0F172A]">
                                     {formatCostMln(cg.totalBudgetRub)}
                                   </div>
                                 </div>
                                 <div className="text-right">
                                   <div className="text-[10.5px] text-[#64748B]">Себест. выкупов</div>
-                                  <div className="font-mono text-[13.5px] font-bold text-[#334155]">
+                                  <div className="font-display-num whitespace-nowrap text-[13.5px] font-semibold text-[#334155]">
                                     {formatCostMln(cg.soldCogsRub)}
                                   </div>
                                 </div>
@@ -3642,13 +3666,13 @@ export function ProcurementContourView() {
                               <div className="mt-2 pt-2 border-t border-[#EEF2F6] flex items-center justify-between text-[11px] text-[#475569]">
                                 <span>
                                   К заказу:{' '}
-                                  <strong className="font-mono text-[#0F172A]">
+                                  <strong className="font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                                     {cg.totalOrderPacks.toLocaleString('ru-RU')}
                                   </strong>{' '}
                                   {cg.unitSet.size === 1 ? Array.from(cg.unitSet)[0] : 'ед.'}
                                   {hasCost && cg.unitSet.size === 1 ? ` (~${avgCost} ₽)` : ''}
                                 </span>
-                                <span className="font-mono font-semibold text-emerald-700">
+                                <span className="font-display-num whitespace-nowrap font-semibold text-emerald-700">
                                   Q1: {formatCostMln(cg.firstWaveBudgetRub)}
                                 </span>
                               </div>
@@ -3816,12 +3840,12 @@ export function ProcurementContourView() {
                                   data-model-id={m.id}
                                   data-model-code={m.code}
                                   onClick={toggleExpand}
-                                  className={`cursor-pointer transition ${
+                                  className={`cursor-pointer transition-colors ${
                                     highlightedModelId === m.id
                                       ? 'bg-emerald-50/80 ring-2 ring-inset ring-emerald-500'
                                       : isExp
-                                      ? 'bg-[#F8FAFC]'
-                                      : 'hover:bg-[#F8FAFC]/80'
+                                      ? 'bg-[#FAF8F4] dark:bg-[#1D1C1A]'
+                                      : 'hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A]'
                                   }`}
                                 >
                                   <td className="py-2.5 pr-3 pl-3.5">
@@ -3909,17 +3933,17 @@ export function ProcurementContourView() {
                                     </div>
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono font-semibold text-[#334155]">
-                                    <div>{formatCostMln(soldCogsRub)}</div>
+                                  <td className="px-2.5 py-2.5 text-right font-display-num font-semibold text-[#334155] whitespace-nowrap">
+                                    <div className="whitespace-nowrap">{formatCostMln(soldCogsRub)}</div>
                                     {hasCost && (
-                                      <div className="text-[10px] text-[#64748B]">
+                                      <div className="text-[10px] font-normal text-[#64748B] whitespace-nowrap">
                                         {soldCogsRub.toLocaleString('ru-RU')} ₽
                                       </div>
                                     )}
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono font-bold text-[#0F172A]">
-                                    <div>
+                                  <td className="px-2.5 py-2.5 text-right font-display-num font-semibold text-[#0F172A] whitespace-nowrap">
+                                    <div className="whitespace-nowrap">
                                       {totalModelPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                     </div>
                                     <div className="text-[10px] font-normal text-[#64748B]">
@@ -3933,27 +3957,27 @@ export function ProcurementContourView() {
                                     </div>
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono bg-emerald-500/4">
-                                    <div className="font-bold text-emerald-700">
+                                  <td className="px-2.5 py-2.5 text-right font-display-num bg-emerald-500/4 whitespace-nowrap">
+                                    <div className="font-semibold text-emerald-700 whitespace-nowrap">
                                       {formatCostMln(w1Rub)}
                                     </div>
-                                    <div className="text-[10px] text-[#475569]">
+                                    <div className="text-[10px] text-[#475569] whitespace-nowrap">
                                       {w1Packs.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} · ав.{' '}
                                       {formatCostMln(w1Prepay)}
                                     </div>
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono text-[#334155]">
-                                    <div className="font-semibold">{formatCostMln(restRub)}</div>
-                                    <div className="text-[10px] text-[#64748B]">
+                                  <td className="px-2.5 py-2.5 text-right font-display-num text-[#334155] whitespace-nowrap">
+                                    <div className="font-semibold whitespace-nowrap">{formatCostMln(restRub)}</div>
+                                    <div className="text-[10px] text-[#64748B] whitespace-nowrap">
                                       {restPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} (с WB)
                                     </div>
                                   </td>
 
-                                  <td className="px-2.5 py-2.5 text-right font-mono font-extrabold text-[#0F172A]">
-                                    <div>{formatCostMln(totalModelBudgetRub)}</div>
+                                  <td className="px-2.5 py-2.5 text-right font-display-num font-semibold text-[#0F172A] whitespace-nowrap">
+                                    <div className="whitespace-nowrap">{formatCostMln(totalModelBudgetRub)}</div>
                                     {hasCost && (
-                                      <div className="text-[10px] font-normal text-[#64748B]">
+                                      <div className="text-[10px] font-normal text-[#64748B] whitespace-nowrap">
                                         {totalModelBudgetRub.toLocaleString('ru-RU')} ₽
                                       </div>
                                     )}
@@ -4037,11 +4061,11 @@ export function ProcurementContourView() {
                                                           : 'border-emerald-300 bg-emerald-50/50'
                                                       }`}
                                                     >
-                                                      <div className="flex items-center justify-between text-[11px]">
+                                                      <div className="flex items-center justify-between gap-2 text-[11px]">
                                                         <span className="font-bold text-emerald-950">
                                                           ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
                                                         </span>
-                                                        <span className="font-mono font-bold text-emerald-700">
+                                                        <span className="font-display-num whitespace-nowrap font-semibold text-emerald-700">
                                                           {formatCostMln(po.totalOrderRub)}
                                                         </span>
                                                       </div>
@@ -4065,11 +4089,11 @@ export function ProcurementContourView() {
                                                           : 'border-[#CBD5E1] bg-white'
                                                       }`}
                                                     >
-                                                      <div className="flex items-center justify-between text-[11px]">
+                                                      <div className="flex items-center justify-between gap-2 text-[11px]">
                                                         <span className="font-bold text-[#0F172A]">
                                                           Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
                                                         </span>
-                                                        <span className="font-mono font-semibold text-emerald-700">
+                                                        <span className="font-display-num whitespace-nowrap font-semibold text-emerald-700">
                                                           {formatCostMln(rb.estimatedTotalRub)}
                                                         </span>
                                                       </div>
@@ -4136,7 +4160,7 @@ export function ProcurementContourView() {
                                                   const szBudgetRub = totalSzOrder * sv.unitCostRub;
 
                                                   return (
-                                                    <tr key={sv.sellerSku} className="hover:bg-[#F8FAFC]">
+                                                    <tr key={sv.sellerSku} className="hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] transition-colors">
                                                       <td className="py-2 px-3">
                                                         <span className="font-bold text-[#0F172A]">
                                                           {sv.sizeCm}
@@ -4145,7 +4169,7 @@ export function ProcurementContourView() {
                                                           ({sv.sellerSku})
                                                         </span>
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
+                                                      <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A] whitespace-nowrap">
                                                         {!hasCost ? (
                                                           <span className="text-[11px] font-semibold text-[#64748B]">
                                                             Скрыто
@@ -4178,33 +4202,33 @@ export function ProcurementContourView() {
                                                             </span>
                                                           </div>
                                                         ) : (
-                                                          <span>
+                                                          <span className="font-display-num whitespace-nowrap">
                                                             {Math.round(sv.unitCostRub || 0).toLocaleString('ru-RU')} ₽
                                                           </span>
                                                         )}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap text-[#334155]">
                                                         {sv.annualBuyoutsUnits.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono text-[#334155]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap text-[#334155]">
                                                         {hasCost ? `${szSoldCogsRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono font-semibold text-emerald-700 bg-emerald-500/4">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap font-semibold text-emerald-700 bg-emerald-500/4">
                                                         {q1Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap text-[#475569]">
                                                         {q2Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap text-[#475569]">
                                                         {q3Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono text-[#475569]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap text-[#475569]">
                                                         {q4Order.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-2.5 text-right font-mono font-bold text-[#0F172A]">
+                                                      <td className="py-2 px-2.5 text-right font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                                                         {totalSzOrder.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
                                                       </td>
-                                                      <td className="py-2 px-3 text-right font-mono font-bold text-[#0F172A]">
+                                                      <td className="py-2 px-3 text-right font-display-num whitespace-nowrap font-semibold text-[#0F172A]">
                                                         {hasCost ? `${szBudgetRub.toLocaleString('ru-RU')} ₽` : 'Скрыто'}
                                                       </td>
                                                     </tr>
@@ -4245,11 +4269,11 @@ export function ProcurementContourView() {
                                                       }`}
                                                     >
                                                       <div className="space-y-1">
-                                                        <div className="flex items-center justify-between text-[11px]">
+                                                        <div className="flex items-center justify-between gap-2 text-[11px]">
                                                           <span className="font-bold text-emerald-950 dark:text-emerald-200">
                                                             ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
                                                           </span>
-                                                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                                                          <span className="font-display-num whitespace-nowrap font-semibold text-emerald-700 dark:text-emerald-300">
                                                             {formatCostMln(po.totalOrderRub)}
                                                           </span>
                                                         </div>
@@ -4326,11 +4350,11 @@ export function ProcurementContourView() {
                                                         }`}
                                                       >
                                                         <div className="space-y-1">
-                                                          <div className="flex items-center justify-between text-[11px]">
+                                                          <div className="flex items-center justify-between gap-2 text-[11px]">
                                                             <span className="font-bold text-[#0F172A] dark:text-[#EDF0F7]">
                                                               Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
                                                             </span>
-                                                            <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+                                                            <span className="font-display-num whitespace-nowrap font-semibold text-emerald-700 dark:text-emerald-400">
                                                               {formatCostMln(rb.estimatedTotalRub)}
                                                             </span>
                                                           </div>
@@ -4390,7 +4414,7 @@ export function ProcurementContourView() {
                             <td className="py-3 pr-3 pl-3.5">
                               ИТОГО ПО СЦЕНАРИЮ ({procData.perSku.length} мод.)
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap">
                               {!hasCost
                                 ? 'Скрыто'
                                 : scopeUnitInfo.isMixed
@@ -4404,7 +4428,7 @@ export function ProcurementContourView() {
                                       : 0
                                   } ₽`}
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap">
                               {scopeUnitInfo.isMixed ? (
                                 <div className="space-y-0.5 text-[10.5px] leading-tight">
                                   {groupQuantitiesByPrimaryUnit(
@@ -4422,10 +4446,10 @@ export function ProcurementContourView() {
                                 `${procData.annualDemandPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`
                               )}
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap">
                               {formatCostMln(investmentSummary.annualSoldGoodsCostRub)}
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap">
                               {scopeUnitInfo.isMixed ? (
                                 <div className="space-y-0.5 text-[10.5px] leading-tight">
                                   {groupQuantitiesByPrimaryUnit(
@@ -4445,13 +4469,13 @@ export function ProcurementContourView() {
                                 `${procData.totalScenarioPacks.toLocaleString('ru-RU')} ${scopeUnitInfo.primaryUnit}`
                               )}
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono text-emerald-700 bg-emerald-500/8">
-                              <div>{formatCostMln(procData.firstWaveBudgetRub)}</div>
-                              <div className="text-[10px] font-semibold text-[#475569]">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap text-emerald-700 bg-emerald-500/8">
+                              <div className="whitespace-nowrap">{formatCostMln(procData.firstWaveBudgetRub)}</div>
+                              <div className="text-[10px] font-semibold text-[#475569] whitespace-nowrap">
                                 ав. {formatCostMln(procData.firstWavePrepaymentRub)}
                               </div>
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap">
                               {formatCostMln(
                                 Math.max(
                                   0,
@@ -4459,10 +4483,10 @@ export function ProcurementContourView() {
                                 )
                               )}
                             </td>
-                            <td className="px-2.5 py-3 text-right font-mono text-[13px]">
+                            <td className="px-2.5 py-3 text-right font-display-num whitespace-nowrap text-[13px]">
                               {formatCostMln(procData.totalScenarioBudgetRub)}
                             </td>
-                            <td className="py-3 pr-3.5 pl-2.5 text-right font-mono text-[11px] text-[#475569]">
+                            <td className="py-3 pr-3.5 pl-2.5 text-right font-mono text-[11px] text-[#475569] whitespace-nowrap">
                               100% сводки
                             </td>
                           </tr>
@@ -5251,15 +5275,15 @@ export function FinanceContourView() {
                 : 'ед.';
             return (
               <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     1. Вложить на старт (Партия №1 · Q1)
                   </div>
-                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                  <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasCost ? formatMln(investmentSummary.firstWaveStartBudgetRub) : 'Скрыто'}
                   </div>
                   <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
-                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
+                    <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       Аванс 30% сейчас:{' '}
                       {hasCost ? formatMln(investmentSummary.firstWavePrepaymentRub) : 'Скрыто'}
                     </strong>{' '}
@@ -5272,20 +5296,20 @@ export function FinanceContourView() {
                     const el = document.getElementById('peak-own-money-chart-anchor');
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
-                  className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)] cursor-pointer transition-colors"
+                  className="card-elevated card-elevated-interactive rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] hover:border-[#141413] dark:hover:border-[#5C5953] p-4 space-y-1 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                       2. Пик своих денег (с оборотом WB)
                     </div>
-                    <span className="rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                    <span className="rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[#141413] dark:text-[#F5F4F0] whitespace-nowrap">
                       {wbLagMonths < 0
                         ? 'Лаг WB не задан'
                         : `Пик: ${investmentSummary.peakMonthLabel} ${currentScenario.year || 2027}`}
                     </span>
                   </div>
                   {!hasCost ? (
-                    <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                    <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       Скрыто
                     </div>
                   ) : wbLagMonths < 0 ? (
@@ -5295,7 +5319,7 @@ export function FinanceContourView() {
                   ) : investmentSummary.verifiedOwnMoneyRequiredRub !== null &&
                     investmentSummary.verifiedOwnMoneyRequiredRub !== undefined ? (
                     <>
-                      <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#B91C1C] dark:text-rose-400">
+                      <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#B91C1C] dark:text-rose-400">
                         {formatMln(investmentSummary.verifiedOwnMoneyRequiredRub)}
                       </div>
                       <div className="text-[11px] text-[#5C5953] dark:text-[#9E9A92] leading-snug">
@@ -5316,37 +5340,37 @@ export function FinanceContourView() {
                   )}
                 </div>
 
-                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     3. Закупки за год vs Себест. продаж
                   </div>
-                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                  <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasCost ? formatMln(investmentSummary.totalProcurementBudgetRub) : 'Скрыто'}
                   </div>
                   <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                     Себестоимость проданного товара:{' '}
-                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
+                    <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {hasCost ? formatMln(investmentSummary.annualSoldGoodsCostRub) : 'Скрыто'}
                     </strong>
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+                <div className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] p-4 space-y-1">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-[#78746C] dark:text-[#9E9A92]">
                     4. Ожидаемая прибыль 2027 (после WB и рекламы)
                   </div>
-                  <div className="font-mono tabular-nums tracking-[-0.025em] text-2xl font-semibold text-[#15803D] dark:text-emerald-400">
+                  <div className="font-display-num whitespace-nowrap tracking-[-0.025em] text-2xl font-semibold text-[#15803D] dark:text-emerald-400">
                     {hasCost
                       ? `+${formatMln(investmentSummary.annualEstimatedOperatingProfitRub)}`
                       : 'Скрыто'}
                   </div>
                   <div className="text-[11.5px] text-[#5C5953] dark:text-[#9E9A92]">
                     Выручка:{' '}
-                    <strong className="text-[#141413] dark:text-[#F5F4F0]">
+                    <strong className="font-display-num whitespace-nowrap font-semibold text-[#141413] dark:text-[#F5F4F0]">
                       {formatMln(effectiveAnnualRevenueRub)}
                     </strong>{' '}
                     · Рентабельность:{' '}
-                    <strong className="text-[#15803D] dark:text-emerald-400">
+                    <strong className="font-display-num whitespace-nowrap font-semibold text-[#15803D] dark:text-emerald-400">
                       {hasCost
                         ? `${investmentSummary.operatingMarginPct.toFixed(1).replace('.', ',')}%`
                         : '—'}
@@ -5383,7 +5407,7 @@ export function FinanceContourView() {
               whatIfPriceDelta !== 0 || whatIfCostDelta !== 0 || whatIfMpAdsDelta !== 0;
 
             return (
-              <section className="rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] px-5 py-3.5 space-y-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
+              <section className="card-elevated rounded-xl bg-white dark:bg-[#151514] border border-[#E4E1DA] dark:border-[#282724] px-5 py-3.5 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <button
@@ -5517,10 +5541,10 @@ export function FinanceContourView() {
                   <div className="lg:col-span-5 grid grid-cols-3 gap-3">
                     <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/25 p-3">
                       <div className="text-[11px] text-[#64748B]">Новая прибыль</div>
-                      <div className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                      <div className="font-display-num whitespace-nowrap text-base font-semibold text-emerald-700 dark:text-emerald-300 mt-0.5">
                         {hasCost ? `+${formatMln(sim.simulatedProfitRub)}` : 'Скрыто'}
                       </div>
-                      <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
+                      <div className="font-display-num whitespace-nowrap text-[10.5px] text-emerald-600 dark:text-emerald-400">
                         {hasCost
                           ? `${sim.profitDeltaRub >= 0 ? 'Δ +' : 'Δ −'}${formatMln(Math.abs(sim.profitDeltaRub))}`
                           : '—'}
@@ -5528,10 +5552,10 @@ export function FinanceContourView() {
                     </div>
                     <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
                       <div className="text-[11px] text-[#64748B]">Новая выручка</div>
-                      <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
+                      <div className="font-display-num whitespace-nowrap text-base font-semibold text-[#0F172A] mt-0.5">
                         {formatMln(sim.simulatedRevenueRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-[#64748B]">
+                      <div className="font-display-num whitespace-nowrap text-[10.5px] text-[#64748B]">
                         {hasCost
                           ? `Маржа ${sim.simulatedMarginPct.toFixed(1).replace('.', ',')}%`
                           : 'Скрыто'}
@@ -5539,14 +5563,14 @@ export function FinanceContourView() {
                     </div>
                     <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E6EE] p-3">
                       <div className="text-[11px] text-[#64748B]">Пик своих денег</div>
-                      <div className="font-mono text-base font-bold text-[#0F172A] mt-0.5">
+                      <div className="font-display-num whitespace-nowrap text-base font-semibold text-[#0F172A] mt-0.5">
                         {!hasCost
                           ? 'Скрыто'
                           : wbLagMonths < 0
                           ? 'Лаг WB не задан'
                           : formatMln(sim.simulatedOwnCapitalRub)}
                       </div>
-                      <div className="font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">
+                      <div className="font-display-num whitespace-nowrap text-[10.5px] text-emerald-600 dark:text-emerald-400">
                         {hasCost && wbLagMonths >= 0 && sim.simulatedRoiMult
                           ? `ROI ×${sim.simulatedRoiMult}`
                           : 'с WB'}
@@ -5560,7 +5584,7 @@ export function FinanceContourView() {
           })()}
 
           {/* 01 · СВОДНАЯ ТАБЛИЦА ИНВЕСТИЦИЙ И ПРИБЫЛИ ПО БРЕНДАМ ГРУППЫ (РАЗДЕЛ 09.2 ТЗ) */}
-          <section className="rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4 shadow-[0_2px_10px_-3px_rgba(15,23,42,0.04)]">
+          <section className="card-elevated rounded-2xl bg-white dark:bg-[#121620] border border-[#E2E6EE] dark:border-[#222938] p-5 md:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#5E5D58]">
@@ -5617,7 +5641,7 @@ export function FinanceContourView() {
                             : b.brandCode
                         );
                       }}
-                      className={`hover:bg-[#FAFAF7] cursor-pointer transition ${
+                      className={`hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors ${
                         brandFilter === b.brandCode ||
                         (brandFilter === 'BORNERS_FUKAI' &&
                           (b.brandCode === 'BORNERS' || b.brandCode === 'FUKAI'))
@@ -5625,24 +5649,32 @@ export function FinanceContourView() {
                           : ''
                       }`}
                     >
-                      <td className="py-2.5 px-3.5 font-bold text-[#141413]">{b.brandTitle}</td>
-                      <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C]">
+                      <td className="py-2.5 px-3.5 font-bold text-[#141413] whitespace-nowrap">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className={`inline-block w-[8px] h-[8px] rounded-full shrink-0 ${getContourBrandDotClass(b.brandCode)}`}
+                            aria-hidden="true"
+                          />
+                          <span>{b.brandTitle}</span>
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right font-mono text-[#52514C] whitespace-nowrap">
                         {b.modelsCount}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
+                      <td className="py-2.5 px-3 text-right font-display-num font-semibold text-[#141413] whitespace-nowrap">
                         {b.modelsCount > 0 ? formatMln(b.annualRevenueRub) : '—'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[#3D3C38]">
+                      <td className="py-2.5 px-3 text-right font-display-num text-[#3D3C38] whitespace-nowrap">
                         {b.modelsCount > 0
                           ? `${b.totalProcurementPacks.toLocaleString('ru-RU')} ${getBrandUnitConfig(b.brandCode).primaryUnit}`
                           : '—'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono bg-emerald-500/6 text-emerald-700 dark:text-emerald-300">
+                      <td className="py-2.5 px-3 text-right font-display-num bg-emerald-500/6 text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
                         {b.modelsCount > 0 ? (
                           hasCost ? (
                             <div>
-                              <div className="font-bold">{formatMln(b.firstWaveStartBudgetRub)}</div>
-                              <div className="text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80">
+                              <div className="font-semibold whitespace-nowrap">{formatMln(b.firstWaveStartBudgetRub)}</div>
+                              <div className="text-[10.5px] text-emerald-600/80 dark:text-emerald-400/80 whitespace-nowrap">
                                 аванс 30%: {formatMln(b.firstWavePrepaymentRub)}
                               </div>
                             </div>
@@ -5653,7 +5685,7 @@ export function FinanceContourView() {
                           '—'
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7]">
+                      <td className="py-2.5 px-3 text-right font-display-num font-semibold bg-[#F8FAFC] dark:bg-[#161C28] text-[#0F172A] dark:text-[#EDF0F7] whitespace-nowrap">
                         {b.modelsCount > 0 ? (
                           !hasCost ? (
                             'Скрыто'
@@ -5663,8 +5695,8 @@ export function FinanceContourView() {
                             </span>
                           ) : (
                             <div>
-                              <div>{formatMln(b.peakWorkingCapitalRub)}</div>
-                              <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300">
+                              <div className="whitespace-nowrap">{formatMln(b.peakWorkingCapitalRub)}</div>
+                              <div className="text-[10px] font-normal text-amber-800 dark:text-amber-300 whitespace-nowrap">
                                 пик: {b.peakMonthLabel || 'Янв'}
                                 {b.selfFundingMonthLabel
                                   ? ` · с ${b.selfFundingMonthLabel} с WB`
@@ -5676,21 +5708,21 @@ export function FinanceContourView() {
                           '—'
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[#141413]">
+                      <td className="py-2.5 px-3 text-right font-display-num text-[#141413] whitespace-nowrap">
                         {b.modelsCount > 0
                           ? hasCost
                             ? formatMln(b.totalProcurementBudgetRub)
                             : 'Скрыто'
                           : '—'}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[#5E5D58]">
+                      <td className="py-2.5 px-3 text-right font-display-num text-[#5E5D58] whitespace-nowrap">
                         {b.modelsCount > 0
                           ? hasCost
                             ? formatMln(b.annualSoldGoodsCostRub)
                             : 'Скрыто'
                           : '—'}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono font-bold text-[#157347]">
+                      <td className="py-2.5 px-3.5 text-right font-display-num font-semibold text-[#157347] whitespace-nowrap">
                         {b.modelsCount > 0
                           ? hasCost
                             ? `+${formatMln(b.annualEstimatedOperatingProfitRub)}`
@@ -5710,13 +5742,13 @@ export function FinanceContourView() {
                         ? 'ИТОГО ПО ГРУППЕ (без дублей)'
                         : `ИТОГО (${formatContourBrandFilterLabel(brandFilter)})`}
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono">
+                    <td className="py-3 px-2.5 text-right font-mono whitespace-nowrap">
                       {brandsReport.groupTotal.modelsCount}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                       {formatMln(brandsReport.groupTotal.annualRevenueRub)}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                       {formatGroupedUnitInline(
                         brandsReport.brands.map((b) => ({
                           unit: getBrandUnitConfig(b.brandCode).primaryUnit,
@@ -5725,11 +5757,11 @@ export function FinanceContourView() {
                         isHoldingAllBrands ? 'ед.' : getBrandUnitConfig(brandFilter).primaryUnit
                       )}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
                       {hasCost ? (
                         <>
-                          <div>{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
-                          <div className="text-[10.5px] font-semibold">
+                          <div className="whitespace-nowrap">{formatMln(brandsReport.groupTotal.firstWaveStartBudgetRub)}</div>
+                          <div className="text-[10.5px] font-semibold whitespace-nowrap">
                             аванс 30%: {formatMln(brandsReport.groupTotal.firstWavePrepaymentRub)}
                           </div>
                         </>
@@ -5737,7 +5769,7 @@ export function FinanceContourView() {
                         'Скрыто'
                       )}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap bg-[#F1F5F9] dark:bg-[#1E2536] text-[#0F172A] dark:text-[#EDF0F7]">
                       {!hasCost ? (
                         'Скрыто'
                       ) : wbLagMonths < 0 ? (
@@ -5746,8 +5778,8 @@ export function FinanceContourView() {
                         </div>
                       ) : (
                         <>
-                          <div>{formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}</div>
-                          <div className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300">
+                          <div className="whitespace-nowrap">{formatMln(brandsReport.groupTotal.netOwnMoneyRequiredRub)}</div>
+                          <div className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300 whitespace-nowrap">
                             пик:{' '}
                             {isHoldingAllBrands
                               ? holdingSummary.groupTotal.peakMonthLabel
@@ -5767,13 +5799,13 @@ export function FinanceContourView() {
                         </>
                       )}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                       {hasCost ? formatMln(brandsReport.groupTotal.totalProcurementBudgetRub) : 'Скрыто'}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono">
+                    <td className="py-3 px-3 text-right font-display-num whitespace-nowrap">
                       {hasCost ? formatMln(brandsReport.groupTotal.annualSoldGoodsCostRub) : 'Скрыто'}
                     </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-[#157347]">
+                    <td className="py-3 px-3.5 text-right font-display-num whitespace-nowrap text-[#157347]">
                       {hasCost
                         ? `+${formatMln(brandsReport.groupTotal.annualEstimatedOperatingProfitRub)}`
                         : 'Скрыто'}
@@ -5804,7 +5836,7 @@ export function FinanceContourView() {
           />
 
           {/* 03 · Юнит-экономика по моделям */}
-          <section className="rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">
+          <section className="card-elevated rounded-2xl bg-white border border-[#E2E6EE] p-5 md:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[0.07em] text-[#64748B]">
@@ -5858,7 +5890,7 @@ export function FinanceContourView() {
                         key={model.id}
                         onClick={() => openSkuPassport(model.id)}
                         title="Нажмите, чтобы открыть карточку модели и детальные расходы"
-                        className="hover:bg-[#FAFAF7] cursor-pointer transition"
+                        className="hover:bg-[#FAF8F4] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
                       >
                         <td className="py-2.5 px-3.5">
                           <div className="font-bold text-[#141413]">{model.title}</div>
@@ -5866,29 +5898,29 @@ export function FinanceContourView() {
                             {acting ? `WB ${acting.wbSku}` : model.code} · {getBrandUnitConfig(model).primaryUnit}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono">
+                        <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap">
                           {Math.round(pnl.avgRealizedPricePerPackRub).toLocaleString('ru-RU')} ₽
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[#5E5D58]">
+                        <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap text-[#5E5D58]">
                           {!hasCost
                             ? 'Скрыто'
                             : pnl.unitCostPerPackRub !== null
                             ? `${pnl.unitCostPerPackRub.toLocaleString('ru-RU')} ₽`
                             : '—'}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                        <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap font-semibold">
                           {hasCost && pnl.grossMarginPct !== null
                             ? `${pnl.grossMarginPct.toFixed(1).replace('.', ',')}%`
                             : '—'}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-[#141413]">
+                        <td className="py-2.5 px-3 text-right font-display-num whitespace-nowrap font-semibold text-[#141413]">
                           {formatMln(pnl.annualRevenueRub)}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right">
+                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
                           {!hasCost ? (
                             <span className="font-mono text-[#5E5D58]">Скрыто</span>
                           ) : pnl.annualOperatingProfitRub !== null ? (
-                            <span className="font-mono font-bold text-[#157347]">
+                            <span className="font-display-num whitespace-nowrap font-semibold text-[#157347]">
                               {formatMln(pnl.annualOperatingProfitRub)}
                             </span>
                           ) : (
