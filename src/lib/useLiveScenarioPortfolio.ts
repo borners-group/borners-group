@@ -60,7 +60,9 @@ import {
 import {
   SUPABASE_CORE_KEY,
   SUPABASE_GALLERY_KEY_PREFIX,
+  type CloudConflictEventDetail,
   type CloudPortfolioCorePayload,
+  type CloudSaveStatus,
   getLastLocalCorePushIso,
   pullPortfolioFromSupabase,
   pushModelGalleryToSupabase,
@@ -180,6 +182,7 @@ export function useLiveScenarioPortfolio() {
   const [models, setModels] = useState<ScenarioModelSpec[]>(DEFAULT_MODELS_LIST);
   const [selectedScenarioId, setSelectedScenarioIdState] = useState<number>(1);
   const [includeGroupPortfolioInS1, setIncludeGroupState] = useState<boolean>(false);
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<CloudSaveStatus>('saved_cloud');
   const [selectedScenarioByBrand, setSelectedScenarioByBrandState] = useState<
     Partial<Record<CanonicalBrandCode, number | null>>
   >({
@@ -609,6 +612,134 @@ export function useLiveScenarioPortfolio() {
     [scheduleCompleteCloudPush, emitWindowSync]
   );
 
+  const adoptMergedCloudCorePayload = useCallback(
+    (merged: CloudPortfolioCorePayload | null | undefined) => {
+      if (!merged || !Array.isArray(merged.models) || merged.models.length === 0) return;
+
+      const prevById = new Map<string, ScenarioModelSpec>();
+      for (const pm of modelsRef.current) {
+        if (pm?.id) prevById.set(pm.id, pm);
+      }
+
+      const nextModels = merged.models.map((rawM) => {
+        const normalized = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
+        const pm = prevById.get(normalized.id);
+        const hasPlaceholderRef =
+          Array.isArray(normalized.gallery) &&
+          normalized.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
+        if (
+          pm &&
+          Array.isArray(pm.gallery) &&
+          pm.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0)
+        ) {
+          const mergedValidCount = Array.isArray(normalized.gallery)
+            ? normalized.gallery.filter(
+                (g) => Boolean(g?.url && g.url !== '__SUPABASE_GALLERY_REF__')
+              ).length
+            : 0;
+          const isExplicitEmpty =
+            Array.isArray(normalized.gallery) && normalized.gallery.length === 0;
+          if (hasPlaceholderRef || (!isExplicitEmpty && mergedValidCount === 0)) {
+            return { ...normalized, gallery: pm.gallery };
+          }
+        }
+        return normalized;
+      });
+
+      if (Array.isArray(merged.deletedModelIds)) {
+        safeSetStorageJson(STORAGE_KEY_DELETED_MODELS, merged.deletedModelIds);
+      }
+      if (Array.isArray(merged.deletedScenarioIds)) {
+        safeSetStorageJson(STORAGE_KEY_DELETED_SCENARIOS, merged.deletedScenarioIds);
+      }
+
+      for (const m of nextModels) {
+        if (
+          Array.isArray(m.gallery) &&
+          m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+        ) {
+          void saveModelGalleryToIdb(m.id, m.gallery);
+        }
+      }
+
+      safeSetStorageJson(STORAGE_KEY_MODELS, nextModels);
+      syncUserPlansBackup(nextModels, { replaceExact: true });
+      void savePortfolioSnapshotToIdb(nextModels, merged.updatedAtIso || undefined);
+      modelsRef.current = nextModels;
+      setModels(nextModels);
+
+      const deletedScenSet = new Set(getDeletedScenariosRegistry());
+      let nextScen = scenariosRef.current;
+      if (Array.isArray(merged.scenarios) && merged.scenarios.length > 0) {
+        nextScen = merged.scenarios.filter((s) => s && !deletedScenSet.has(s.id));
+        if (!nextScen.some((s) => s.id === ACTING_2027_SCENARIO_ID)) {
+          nextScen = [ACTING_2027_SCENARIO_DEF, ...nextScen];
+        }
+        if (!nextScen.some((s) => s.id === LISKANI_2027_SCENARIO_ID)) {
+          nextScen = [...nextScen, LISKANI_2027_SCENARIO_DEF];
+        }
+        if (!nextScen.some((s) => s.id === AKUSHA_2027_SCENARIO_ID)) {
+          nextScen = [...nextScen, AKUSHA_2027_SCENARIO_DEF];
+        }
+        safeSetStorageJson(STORAGE_KEY_SCENARIOS, nextScen);
+        scenariosRef.current = nextScen;
+        setScenarios(nextScen);
+      }
+
+      if (merged.selectedScenarioByBrand && typeof merged.selectedScenarioByBrand === 'object') {
+        const sanitizedMap = sanitizeSelectedScenarioByBrand(
+          merged.selectedScenarioByBrand as Partial<Record<CanonicalBrandCode, number | null>>,
+          nextScen
+        );
+        safeSetStorageJson(STORAGE_KEY_SCENARIO_BY_BRAND, sanitizedMap);
+        selectedScenarioByBrandRef.current = sanitizedMap;
+        setSelectedScenarioByBrandState(sanitizedMap);
+
+        const curBrand = brandFilterRef.current;
+        const normCurBrand =
+          !curBrand || curBrand === 'ALL'
+            ? 'BORNERS'
+            : normalizePortfolioBrandCode(curBrand);
+        const nextActiveId =
+          normCurBrand !== 'ALL' ? sanitizedMap[normCurBrand] : sanitizedMap.BORNERS;
+        if (typeof nextActiveId === 'number') {
+          safeSetStorageJson(STORAGE_KEY_ACTIVE_SCENARIO_ID, nextActiveId);
+          setSelectedScenarioIdState(nextActiveId);
+        }
+      }
+
+      if (typeof merged.includeGroupPortfolioInS1 === 'boolean') {
+        safeSetStorageJson(STORAGE_KEY_S1_GROUP_PORTFOLIO, merged.includeGroupPortfolioInS1);
+        includeGroupRef.current = merged.includeGroupPortfolioInS1;
+        setIncludeGroupState(merged.includeGroupPortfolioInS1);
+      }
+
+      if (merged.financeContourParams && typeof merged.financeContourParams === 'object') {
+        safeSetStorageJson('borners_finance_contour_params_v1', merged.financeContourParams);
+        emitWindowSync('borners-finance-params-changed');
+      }
+
+      if (Array.isArray(merged.productGroups)) {
+        safeSetStorageJson('borners_product_groups_v1', merged.productGroups);
+        emitWindowSync('borners-product-groups-changed');
+      }
+
+      if (merged.investmentLedger && typeof merged.investmentLedger === 'object') {
+        safeSetStorageJson('borners_investment_ledger_v1', merged.investmentLedger);
+        emitWindowSync('borners-investment-ledger-changed');
+      }
+
+      if (merged.updatedAtIso) {
+        touchPortfolioUpdatedAt(merged.updatedAtIso);
+      }
+
+      emitWindowSync('borners-scenario-models-changed');
+      emitWindowSync('borners-scenarios-changed');
+      emitWindowSync('borners-active-scenario-changed');
+    },
+    [emitWindowSync]
+  );
+
   useEffect(() => {
     const myHookId = hookIdRef.current;
     mountedHookIds.add(myHookId);
@@ -772,6 +903,36 @@ export function useLiveScenarioPortfolio() {
       scheduleCompleteCloudPush();
     };
 
+    const handleAuthSignedIn = () => {
+      if (activeCloudCoordinatorId !== myHookId) return;
+      void (async () => {
+        const seqBefore = localMutationSeqRef.current;
+        const cloud = await pullPortfolioFromSupabase();
+        initialCloudPullDoneRef.current = true;
+        moduleBootCloudSyncDone = true;
+        if (cancelled) return;
+        applyCloudSnapshotPayload(cloud, seqBefore, false);
+      })();
+    };
+
+    const handleCloudConflictMerged = (ev: Event) => {
+      const detail = (ev as CustomEvent<CloudConflictEventDetail | undefined>)?.detail;
+      if (!detail || detail.key !== SUPABASE_CORE_KEY || !detail.mergedPayload) return;
+      setCloudSaveStatus('conflict_merged');
+      if (activeCloudCoordinatorId !== myHookId && activeCloudCoordinatorId !== null) {
+        return;
+      }
+      adoptMergedCloudCorePayload(detail.mergedPayload as CloudPortfolioCorePayload);
+    };
+
+    const handleCloudSaveStatus = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ status?: CloudSaveStatus; atIso?: string } | undefined>)
+        ?.detail;
+      if (detail?.status) {
+        setCloudSaveStatus(detail.status);
+      }
+    };
+
     const unsubRealtime = subscribeToSupabaseKvChanges((key, updatedAt) => {
       if (activeCloudCoordinatorId !== myHookId) return;
       if (key !== SUPABASE_CORE_KEY && !key.startsWith(SUPABASE_GALLERY_KEY_PREFIX)) {
@@ -799,6 +960,9 @@ export function useLiveScenarioPortfolio() {
     window.addEventListener('borners-force-cloud-sync', handleForceCloudSync);
     window.addEventListener('borners-finance-params-changed', handleFinanceParamsEdited);
     window.addEventListener('borners-investment-ledger-changed', handleFinanceParamsEdited);
+    window.addEventListener('borners-auth-signed-in', handleAuthSignedIn);
+    window.addEventListener('borners-cloud-conflict-merged', handleCloudConflictMerged);
+    window.addEventListener('borners-cloud-save-status', handleCloudSaveStatus);
 
     return () => {
       cancelled = true;
@@ -825,8 +989,17 @@ export function useLiveScenarioPortfolio() {
       window.removeEventListener('borners-force-cloud-sync', handleForceCloudSync);
       window.removeEventListener('borners-finance-params-changed', handleFinanceParamsEdited);
       window.removeEventListener('borners-investment-ledger-changed', handleFinanceParamsEdited);
+      window.removeEventListener('borners-auth-signed-in', handleAuthSignedIn);
+      window.removeEventListener('borners-cloud-conflict-merged', handleCloudConflictMerged);
+      window.removeEventListener('borners-cloud-save-status', handleCloudSaveStatus);
     };
-  }, [syncFromStorage, scheduleCompleteCloudPush, emitWindowSync, applyCloudSnapshotPayload]);
+  }, [
+    syncFromStorage,
+    scheduleCompleteCloudPush,
+    emitWindowSync,
+    applyCloudSnapshotPayload,
+    adoptMergedCloudCorePayload,
+  ]);
 
   useEffect(() => {
     if (!brandFilter || brandFilter === 'ALL') return;
@@ -1558,5 +1731,6 @@ export function useLiveScenarioPortfolio() {
     launchStarterCabinet,
     launchAllCabinets,
     resetStarterCabinets,
+    cloudSaveStatus,
   };
 }

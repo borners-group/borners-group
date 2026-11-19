@@ -55,6 +55,7 @@ import {
   matchesBrandFilter,
   normalizePortfolioBrandCode,
   removeApprovedPurchaseOrder,
+  resolveBrandEconomicsProfile,
 } from '@/lib/unifiedBusinessEngine';
 import {
   canUserAccessSection,
@@ -882,16 +883,40 @@ export function PeaklyMasterCabinetsSummary({
     activeScenario: activeScenarioForInv,
     brandFilter: normalizedSelectedBrand,
     selectedScenarioByBrand: selectedScenarioByBrand as Partial<
-      Record<CanonicalBrandCode | 'LISCANI', number | null>
+      Record<CanonicalBrandCode, number | null>
     >,
   });
   const hasLiveInvSchedule = Boolean(models && models.length > 0 && activeScenarioForInv);
   const effectiveWbUnspecified = hasLiveInvSchedule
     ? !invSchedule.wbPayoutScheduleSpecified
     : wbLagUnspecified;
+  const effectiveAnnualRevenueRub = hasLiveInvSchedule
+    ? invSchedule.totalGrossSalesRevenueRub
+    : gt.annualRevenueRub;
   const effectiveTotalProcRub = hasLiveInvSchedule
     ? invSchedule.totalProcurementCostRub
     : gt.totalProcurementBudgetRub;
+  const effectiveSoldGoodsCostRub = hasLiveInvSchedule
+    ? invSchedule.totalSoldGoodsCostRub
+    : gt.annualSoldGoodsCostRub;
+  const effectiveOperatingProfitRub = hasLiveInvSchedule
+    ? invSchedule.expectedOperatingProfitRub
+    : gt.annualEstimatedOperatingProfitRub;
+  const effectiveReverseLogisticsRub = hasLiveInvSchedule
+    ? invSchedule.totalReverseLogisticsRub
+    : 0;
+  const effectiveTaxRub = hasLiveInvSchedule ? invSchedule.totalTaxRub : 0;
+  const effectiveOpexRub = hasLiveInvSchedule ? invSchedule.totalOpexRub : 0;
+  const effectiveWbDeductionsRub = hasLiveInvSchedule
+    ? invSchedule.totalWbDeductionsRub
+    : Math.max(
+        0,
+        effectiveAnnualRevenueRub -
+          effectiveSoldGoodsCostRub -
+          effectiveOperatingProfitRub -
+          effectiveTaxRub -
+          effectiveOpexRub
+      );
   const effectiveOwnMoneyPeakRub = hasLiveInvSchedule
     ? invSchedule.maxOwnMoneyNeededRub
     : gt.verifiedOwnMoneyRequiredRub;
@@ -913,13 +938,14 @@ export function PeaklyMasterCabinetsSummary({
     if (isAct('NA_TELE')) count += 1;
     return count;
   }, [multiBrandSummary.brands]);
-  const groupMarginPct =
-    gt.annualRevenueRub > 0
-      ? Math.round((gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub) * 1000) / 10
-      : 0;
+  const groupMarginPct = hasLiveInvSchedule
+    ? invSchedule.expectedOperatingMarginPct
+    : effectiveAnnualRevenueRub > 0
+    ? Math.round((effectiveOperatingProfitRub / effectiveAnnualRevenueRub) * 1000) / 10
+    : 0;
   const brandShareOfHoldingPct =
     selectedBrandRow && holdingTotal.annualRevenueRub > 0
-      ? Math.round((selectedBrandRow.annualRevenueRub / holdingTotal.annualRevenueRub) * 1000) / 10
+      ? Math.round((effectiveAnnualRevenueRub / holdingTotal.annualRevenueRub) * 1000) / 10
       : null;
 
   // Параметры анимированного кольца маржинальности (Profitability Ring)
@@ -928,57 +954,84 @@ export function PeaklyMasterCabinetsSummary({
   const clampedMargin = Math.min(Math.max(groupMarginPct, 0), 100);
   const ringStrokeOffset = ringCircumference * (1 - clampedMargin / 100);
 
-  // Режим 1: 4 статьи расходов холдинга (Комиссия WB = 30%, Логистика и хранение WB = 0%, ДРР = 10%)
+  // Режим 1: Единая побрендовая структура расходов из единого движка (без плоского 40% и без двойного счёта логистики)
   const expenseCards = useMemo(() => {
-    const rev = Math.max(gt.annualRevenueRub, 1);
-    const cogsRub = Math.max(0, gt.annualSoldGoodsCostRub);
-    const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);
-    const wbLogisticsStorageRub = 0;
-    const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);
+    const rev = Math.max(effectiveAnnualRevenueRub, 1);
+    const activeBrandProfile =
+      normalizedSelectedBrand !== 'ALL'
+        ? resolveBrandEconomicsProfile(normalizedSelectedBrand)
+        : null;
+    const cogsRub = Math.max(0, effectiveSoldGoodsCostRub);
+    const wbCoreDeductionsRub = Math.max(
+      0,
+      effectiveWbDeductionsRub - effectiveReverseLogisticsRub
+    );
+    const reverseLogisticsRub = Math.max(0, effectiveReverseLogisticsRub);
+    const taxAndOpexRub = Math.max(0, effectiveTaxRub + effectiveOpexRub);
+
+    const wbSubtitle = activeBrandProfile
+      ? activeBrandProfile.logisticsIncludedInWbPct
+        ? `All-in ставка WB ${activeBrandProfile.wbTotalMarketplacePct}% (комиссия + логистика + ДРР)`
+        : `Комиссия ${activeBrandProfile.wbCommissionPct}% + ДРР ${activeBrandProfile.adPct}% + логистика ${activeBrandProfile.forwardLogisticsPerOrderRub} ₽/зак.`
+      : 'По профилям брендов и юрлиц (без двойного счёта)';
+    const reverseSubtitle =
+      reverseLogisticsRub > 0
+        ? `Возвраты с ПВЗ (${activeBrandProfile?.reverseLogisticsPerReturnRub ?? 50} ₽/отказ при выкупе < 100%)`
+        : activeBrandProfile?.logisticsIncludedInWbPct
+        ? 'Включена в ставку WB (без двойного счёта)'
+        : 'Нет отказов / обратная логистика 0 ₽';
+    const taxSubtitle = activeBrandProfile
+      ? `Налог УСН ${activeBrandProfile.taxPct}% от выручки${effectiveOpexRub > 0 ? ' и OPEX' : ''}`
+      : 'Налог УСН 6% от выручки и OPEX';
 
     return [
       {
         key: 'cogs',
         label: 'Закупочная себестоимость',
-        subtitle: 'Производство проданных партий',
+        subtitle: 'Производство проданных партий (выкупы)',
         valueRub: cogsRub,
-        pct: gt.annualRevenueRub > 0 ? (cogsRub / rev) * 100 : 0,
+        pct: effectiveAnnualRevenueRub > 0 ? (cogsRub / rev) * 100 : 0,
         color: '#475569',
       },
       {
         key: 'wb-comm',
-        label: 'Комиссия маркетплейса WB',
-        subtitle: 'Комиссия площадки с выкупов (30%)',
-        valueRub: wbCommissionRub,
-        pct: gt.annualRevenueRub > 0 ? 30 : 0,
+        label: 'Удержания WB и реклама (ДРР)',
+        subtitle: wbSubtitle,
+        valueRub: wbCoreDeductionsRub,
+        pct: effectiveAnnualRevenueRub > 0 ? (wbCoreDeductionsRub / rev) * 100 : 0,
         color: '#F59E0B',
       },
       {
         key: 'wb-log',
-        label: 'Логистика и хранение WB',
-        subtitle: 'Доставка до клиента и склады (0%)',
-        valueRub: wbLogisticsStorageRub,
-        pct: 0,
+        label: 'Обратная логистика возвратов',
+        subtitle: reverseSubtitle,
+        valueRub: reverseLogisticsRub,
+        pct: effectiveAnnualRevenueRub > 0 ? (reverseLogisticsRub / rev) * 100 : 0,
         color: '#D97706',
       },
       {
         key: 'ads',
-        label: 'Продвижение и налоги',
-        subtitle: 'Реклама карточек (ДРР 10%)',
-        valueRub: adsAndTaxRub,
-        pct: gt.annualRevenueRub > 0 ? 10 : 0,
+        label: 'Налоги и OPEX (УСН 6%)',
+        subtitle: taxSubtitle,
+        valueRub: taxAndOpexRub,
+        pct: effectiveAnnualRevenueRub > 0 ? (taxAndOpexRub / rev) * 100 : 0,
         color: '#64748B',
       },
     ];
   }, [
-    gt.annualRevenueRub,
-    gt.annualSoldGoodsCostRub,
+    normalizedSelectedBrand,
+    effectiveAnnualRevenueRub,
+    effectiveSoldGoodsCostRub,
+    effectiveWbDeductionsRub,
+    effectiveReverseLogisticsRub,
+    effectiveTaxRub,
+    effectiveOpexRub,
   ]);
 
   // Полная шкала «Куда уходит выручка (100%)» = 4 статьи расходов + чистая прибыль
   const pnlWaterfallSegments = useMemo(() => {
-    const rev = Math.max(gt.annualRevenueRub, 1);
-    const profitRub = Math.max(0, gt.annualEstimatedOperatingProfitRub);
+    const rev = Math.max(effectiveAnnualRevenueRub, 1);
+    const profitRub = Math.max(0, effectiveOperatingProfitRub);
     return [
       ...expenseCards,
       {
@@ -986,23 +1039,26 @@ export function PeaklyMasterCabinetsSummary({
         label: 'Чистая прибыль',
         subtitle: 'Остаётся чистыми',
         valueRub: profitRub,
-        pct: gt.annualRevenueRub > 0 ? (profitRub / rev) * 100 : 0,
+        pct: effectiveAnnualRevenueRub > 0 ? (profitRub / rev) * 100 : 0,
         color: '#10B981',
       },
     ];
-  }, [expenseCards, gt.annualRevenueRub, gt.annualEstimatedOperatingProfitRub]);
+  }, [expenseCards, effectiveAnnualRevenueRub, effectiveOperatingProfitRub]);
 
   const totalExpensesRub = useMemo(
     () => expenseCards.reduce((acc, item) => acc + item.valueRub, 0),
     [expenseCards]
   );
   const totalExpensesPct = useMemo(
-    () => (gt.annualRevenueRub > 0 ? Math.max(0, Math.min(100, 100 - groupMarginPct)) : 0),
-    [gt.annualRevenueRub, groupMarginPct]
+    () =>
+      effectiveAnnualRevenueRub > 0
+        ? Math.max(0, Math.min(100, 100 - groupMarginPct))
+        : 0,
+    [effectiveAnnualRevenueRub, groupMarginPct]
   );
 
   const hasPortfolioActivity =
-    gt.annualRevenueRub > 0 || gt.totalProcurementBudgetRub > 0;
+    effectiveAnnualRevenueRub > 0 || effectiveTotalProcRub > 0;
 
   // Режим 2: Доли брендов в годовой выручке холдинга
   const brandSegments = useMemo(() => {
@@ -1052,15 +1108,23 @@ export function PeaklyMasterCabinetsSummary({
   // Плавный кубический график (ProfitTrendChart 7+5) по 12 месяцам (К выплате WB / Прибыль / Пик своих денег)
   const trendChartData = useMemo(() => {
     const rows = gt.monthlyRows || [];
+    const activeBrandProfile = resolveBrandEconomicsProfile(
+      normalizedSelectedBrand === 'ALL' ? 'BORNERS' : normalizedSelectedBrand
+    );
+    const fallbackWbNetShare = Math.max(
+      0,
+      1 - activeBrandProfile.wbTotalMarketplacePct / 100
+    );
     const marginRatio =
-      gt.annualRevenueRub > 0
-        ? gt.annualEstimatedOperatingProfitRub / gt.annualRevenueRub
-        : 0.4;
+      effectiveAnnualRevenueRub > 0
+        ? effectiveOperatingProfitRub / effectiveAnnualRevenueRub
+        : 0;
     const series = Array.from({ length: 12 }, (_, idx) => {
       const mRow = rows[idx];
       const revRub = mRow ? mRow.grossSalesRub : 0;
-      const payoutRub =
-        mRow && mRow.wbNetInflowRub > 0 ? mRow.wbNetInflowRub : revRub * 0.6;
+      const payoutRub = mRow
+        ? mRow.wbNetInflowRub
+        : Math.round(revRub * fallbackWbNetShare);
       const profRub = revRub * marginRatio;
       const intraLowRub = mRow ? mRow.intraMonthLowBalanceRub : 0;
       const endCashRub = mRow ? mRow.cumulativeCashBalanceRub : 0;
@@ -1137,43 +1201,50 @@ export function PeaklyMasterCabinetsSummary({
       totalPayoutYearRub,
       growthMult,
     };
-  }, [gt.monthlyRows, gt.annualRevenueRub, gt.annualEstimatedOperatingProfitRub, gt.decemberRevenueRub, trendChartMode]);
+  }, [
+    gt.monthlyRows,
+    gt.decemberRevenueRub,
+    normalizedSelectedBrand,
+    effectiveAnnualRevenueRub,
+    effectiveOperatingProfitRub,
+    trendChartMode,
+  ]);
 
   // Мультипликатор отдачи на собственный капитал
   const ownCapitalRoiMult = useMemo(() => {
     if (
       effectiveOwnMoneyPeakRub !== null &&
       effectiveOwnMoneyPeakRub > 0 &&
-      gt.annualEstimatedOperatingProfitRub > 0
+      effectiveOperatingProfitRub > 0
     ) {
-      return Math.round((gt.annualEstimatedOperatingProfitRub / effectiveOwnMoneyPeakRub) * 10) / 10;
+      return Math.round((effectiveOperatingProfitRub / effectiveOwnMoneyPeakRub) * 10) / 10;
     }
     return null;
-  }, [effectiveOwnMoneyPeakRub, gt.annualEstimatedOperatingProfitRub]);
+  }, [effectiveOwnMoneyPeakRub, effectiveOperatingProfitRub]);
 
   // Доля закупок из оборотной выручки WB
   const selfFundedProcurementPct = useMemo(() => {
     if (hasLiveInvSchedule) {
       return invSchedule.reinvestedSharePct;
     }
-    if (gt.totalProcurementBudgetRub <= 0) return 0;
+    if (effectiveTotalProcRub <= 0) return 0;
     if (
       gt.verifiedOwnMoneyRequiredRub !== null &&
       gt.verifiedOwnMoneyRequiredRub > 0
     ) {
-      const fundedByWb = Math.max(0, gt.totalProcurementBudgetRub - gt.verifiedOwnMoneyRequiredRub);
-      return Math.min(95, Math.max(0, Math.round((fundedByWb / gt.totalProcurementBudgetRub) * 100)));
+      const fundedByWb = Math.max(0, effectiveTotalProcRub - gt.verifiedOwnMoneyRequiredRub);
+      return Math.min(95, Math.max(0, Math.round((fundedByWb / effectiveTotalProcRub) * 100)));
     }
     if (gt.verifiedOwnMoneyRequiredRub === 0) return 100;
     return 0;
-  }, [hasLiveInvSchedule, invSchedule.reinvestedSharePct, gt.totalProcurementBudgetRub, gt.verifiedOwnMoneyRequiredRub]);
+  }, [hasLiveInvSchedule, invSchedule.reinvestedSharePct, effectiveTotalProcRub, gt.verifiedOwnMoneyRequiredRub]);
 
   const cogsPct = useMemo(() => {
-    if (gt.annualRevenueRub > 0) {
-      return Math.round((gt.annualSoldGoodsCostRub / gt.annualRevenueRub) * 1000) / 10;
+    if (effectiveAnnualRevenueRub > 0) {
+      return Math.round((effectiveSoldGoodsCostRub / effectiveAnnualRevenueRub) * 1000) / 10;
     }
     return 0;
-  }, [gt.annualRevenueRub, gt.annualSoldGoodsCostRub]);
+  }, [effectiveAnnualRevenueRub, effectiveSoldGoodsCostRub]);
 
   // 4 круговых индикатора KPIRing (2×2 сетка справа от графика)
   const kpiRings = useMemo(() => {
@@ -1308,11 +1379,13 @@ export function PeaklyMasterCabinetsSummary({
     () =>
       computeWhatIfSensitivitySimulation(
         {
-          annualRevenueRub: gt.annualRevenueRub,
-          annualSoldGoodsCostRub: gt.annualSoldGoodsCostRub,
-          annualEstimatedOperatingProfitRub: gt.annualEstimatedOperatingProfitRub,
-          totalProcurementBudgetRub: gt.totalProcurementBudgetRub,
-          verifiedOwnMoneyRequiredRub: gt.verifiedOwnMoneyRequiredRub,
+          annualRevenueRub: effectiveAnnualRevenueRub,
+          annualSoldGoodsCostRub: effectiveSoldGoodsCostRub,
+          annualWbDeductionsAndAdsRub:
+            effectiveWbDeductionsRub + effectiveTaxRub + effectiveOpexRub,
+          annualEstimatedOperatingProfitRub: effectiveOperatingProfitRub,
+          totalProcurementBudgetRub: effectiveTotalProcRub,
+          verifiedOwnMoneyRequiredRub: effectiveOwnMoneyPeakRub,
         },
         {
           priceDeltaPct: whatIfPriceDelta,
@@ -1321,11 +1394,14 @@ export function PeaklyMasterCabinetsSummary({
         }
       ),
     [
-      gt.annualRevenueRub,
-      gt.annualSoldGoodsCostRub,
-      gt.annualEstimatedOperatingProfitRub,
-      gt.totalProcurementBudgetRub,
-      gt.verifiedOwnMoneyRequiredRub,
+      effectiveAnnualRevenueRub,
+      effectiveSoldGoodsCostRub,
+      effectiveWbDeductionsRub,
+      effectiveTaxRub,
+      effectiveOpexRub,
+      effectiveOperatingProfitRub,
+      effectiveTotalProcRub,
+      effectiveOwnMoneyPeakRub,
       whatIfPriceDelta,
       whatIfCostDelta,
       whatIfMpAdsDelta,
@@ -1566,21 +1642,55 @@ export function PeaklyMasterCabinetsSummary({
           brandFilter={normalizedSelectedBrand}
           selectedScenarioByBrand={
             selectedScenarioByBrand as Partial<
-              Record<CanonicalBrandCode | 'LISCANI', number | null>
+              Record<CanonicalBrandCode, number | null>
             >
           }
           onSelectBrandFilter={onSelectBrandFilter}
           onSelectScenarioId={onSelectActiveScenarioId}
-          onOpenBatchInProcurement={(mId, bCode) => {
+          onOpenBatchInProcurement={(mId, bCode, batchKey?: string) => {
+            const resolvedFilter =
+              bCode === 'BORNERS' || bCode === 'FUKAI'
+                ? 'BORNERS_FUKAI'
+                : bCode;
             try {
+              let existingBatchKey = '';
+              let existingModelCode = '';
+              let existingDateIso = '';
+              const rawPrev = window.sessionStorage.getItem('borners_focus_procurement_batch');
+              if (rawPrev) {
+                const prev = JSON.parse(rawPrev) as {
+                  modelId?: string;
+                  batchKey?: string;
+                  modelCode?: string;
+                  dateIso?: string;
+                };
+                if (!prev.modelId || prev.modelId === mId) {
+                  existingBatchKey = prev.batchKey || '';
+                  existingModelCode = prev.modelCode || '';
+                  existingDateIso = prev.dateIso || '';
+                }
+              }
+              window.sessionStorage.setItem(
+                'borners_focus_procurement_batch',
+                JSON.stringify({
+                  modelId: mId,
+                  brandCode: resolvedFilter || '',
+                  batchKey: batchKey || existingBatchKey,
+                  modelCode: existingModelCode,
+                  dateIso: existingDateIso,
+                })
+              );
               window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
               window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
               window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
             } catch {
               // ignore
             }
-            if (bCode) onSelectBrandFilter(bCode);
-            navigateTo('roadmap-tasks');
+            if (resolvedFilter) onSelectBrandFilter(resolvedFilter);
+            navigateTo(
+              'roadmap-tasks',
+              resolvedFilter ? { brandId: resolvedFilter } : undefined
+            );
           }}
           extraDetailedAnalyticsSlot={
             <div className="space-y-6 pt-4 border-t border-[#E4E1DA] dark:border-[#282724]">
@@ -1611,7 +1721,7 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="font-mono text-4xl sm:text-[46px] font-semibold tracking-[-0.025em] tabular-nums leading-none text-[#15803D] dark:text-emerald-400">
                   {hasFinance && hasCost ? (
                     <AnimatedMlnValue
-                      valueRub={gt.annualEstimatedOperatingProfitRub}
+                      valueRub={effectiveOperatingProfitRub}
                       prefix="+"
                       unitClassName="text-lg sm:text-xl font-medium tracking-normal text-[#15803D] dark:text-emerald-400/90 font-sans ml-1.5"
                     />
@@ -1654,7 +1764,7 @@ export function PeaklyMasterCabinetsSummary({
                 <div className="mt-1 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
                   Выручка за 2027:{' '}
                   <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                    {hasFinance ? formatMln(gt.annualRevenueRub) : 'Скрыто'}
+                    {hasFinance ? formatMln(effectiveAnnualRevenueRub) : 'Скрыто'}
                   </strong>
                 </div>
               </div>
@@ -3549,7 +3659,7 @@ export function PeaklyMasterCabinetsSummary({
               <div className="text-xs text-[#64748B] flex items-center justify-between">
                 <span className="font-mono text-emerald-600 dark:text-emerald-400">
                   {hasFinance && hasCost
-                    ? `+${formatMln(gt.annualEstimatedOperatingProfitRub)}`
+                    ? `+${formatMln(effectiveOperatingProfitRub)}`
                     : 'Скрыто по роли'}
                 </span>
                 <span className="text-emerald-600 dark:text-emerald-400">
@@ -3572,22 +3682,56 @@ export function PeaklyMasterCabinetsSummary({
           brandFilter={normalizedSelectedBrand}
           selectedScenarioByBrand={
             selectedScenarioByBrand as Partial<
-              Record<CanonicalBrandCode | 'LISCANI', number | null>
+              Record<CanonicalBrandCode, number | null>
             >
           }
           onSelectBrandFilter={onSelectBrandFilter}
           onSelectScenarioId={onSelectActiveScenarioId}
-          onOpenBatchInProcurement={(mId, bCode) => {
+          onOpenBatchInProcurement={(mId, bCode, batchKey?: string) => {
+            const resolvedFilter =
+              bCode === 'BORNERS' || bCode === 'FUKAI'
+                ? 'BORNERS_FUKAI'
+                : bCode;
             try {
+              let existingBatchKey = '';
+              let existingModelCode = '';
+              let existingDateIso = '';
+              const rawPrev = window.sessionStorage.getItem('borners_focus_procurement_batch');
+              if (rawPrev) {
+                const prev = JSON.parse(rawPrev) as {
+                  modelId?: string;
+                  batchKey?: string;
+                  modelCode?: string;
+                  dateIso?: string;
+                };
+                if (!prev.modelId || prev.modelId === mId) {
+                  existingBatchKey = prev.batchKey || '';
+                  existingModelCode = prev.modelCode || '';
+                  existingDateIso = prev.dateIso || '';
+                }
+              }
+              window.sessionStorage.setItem(
+                'borners_focus_procurement_batch',
+                JSON.stringify({
+                  modelId: mId,
+                  brandCode: resolvedFilter || '',
+                  batchKey: batchKey || existingBatchKey,
+                  modelCode: existingModelCode,
+                  dateIso: existingDateIso,
+                })
+              );
               window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
               window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
               window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
             } catch {
               // ignore
             }
-            if (bCode) onSelectBrandFilter(bCode);
+            if (resolvedFilter) onSelectBrandFilter(resolvedFilter);
             setInvestmentModalOpen(false);
-            navigateTo('roadmap-tasks');
+            navigateTo(
+              'roadmap-tasks',
+              resolvedFilter ? { brandId: resolvedFilter } : undefined
+            );
           }}
           initialFocusOpKey={investmentModalFocusOpKey}
         />

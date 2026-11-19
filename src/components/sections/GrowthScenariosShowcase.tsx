@@ -107,6 +107,7 @@ import {
   syncUserPlansBackup as saveUserPlansBackup,
   unmarkModelAsDeletedInStorage,
 } from '@/lib/useLiveScenarioPortfolio';
+import { useInvestmentSchedule } from '@/lib/useInvestmentSchedule';
 import {
   CanonicalBrandCode,
   applyCategoryWbUnitEconomics,
@@ -1403,6 +1404,15 @@ export function GrowthScenariosShowcase({
   const currentAgg =
     scenarioAggregates[currentScenario.id] || scenarioAggregates[1];
 
+  const showcaseInvHook = useInvestmentSchedule({
+    models,
+    scenarios,
+    activeScenario: currentScenario,
+    brandFilter: brandFilterLocal,
+    selectedScenarioByBrand,
+    includeGroupPortfolioInS1,
+  });
+
   // Сводка ТЗ v1.1 по выбранному сценарию: Партии закупок, Капитал, Честный P&L и Риски
   const v11ScenarioSummary = useMemo(() => {
     const eligible = filterShowcaseModels(
@@ -1468,10 +1478,27 @@ export function GrowthScenariosShowcase({
       eligible,
       currentScenario
     );
-    const investmentSummary = computeScenarioInvestmentSummary(
+    const baseInvestmentSummary = computeScenarioInvestmentSummary(
       eligible,
       currentScenario
     );
+    const invS = showcaseInvHook.schedule;
+    const investmentSummary = {
+      ...baseInvestmentSummary,
+      annualRevenueRub: invS.totalGrossSalesRevenueRub,
+      totalProcurementBudgetRub: invS.totalProcurementCostRub,
+      annualSoldGoodsCostRub: invS.totalSoldGoodsCostRub,
+      annualWbDeductionsAndAdsRub: invS.totalWbDeductionsRub,
+      annualReverseLogisticsRub: invS.totalReverseLogisticsRub,
+      annualTaxRub: invS.totalTaxRub,
+      annualOpexRub: invS.totalOpexRub,
+      annualEstimatedOperatingProfitRub: invS.expectedOperatingProfitRub,
+      operatingMarginPct: invS.expectedOperatingMarginPct,
+      isProfitComplete: invS.isProfitComplete,
+      profitIncompleteReason: invS.profitIncompleteReason,
+      netOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub ?? baseInvestmentSummary.netOwnMoneyRequiredRub,
+      verifiedOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub,
+    };
     const brandsReport = computeGroupBrandsInvestmentReport(
       brandFilterLocal === 'ALL' ? models : eligible,
       currentScenario,
@@ -1515,6 +1542,7 @@ export function GrowthScenariosShowcase({
     selectedScenarioByBrand,
     brandFilterLocal,
     filterShowcaseModels,
+    showcaseInvHook.schedule,
   ]);
 
   const activeBrandUnits = useMemo(() => {
@@ -3397,7 +3425,7 @@ export function GrowthScenariosShowcase({
                   mbSummary.groupTotal.annualRevenueRub > 0
                     ? mbSummary.groupTotal.annualEstimatedOperatingProfitRub /
                       mbSummary.groupTotal.annualRevenueRub
-                    : 0.4;
+                    : 0;
 
                 const brandMarginRatio =
                   isBornersFukaiFilter && bfAnnualRev > 0

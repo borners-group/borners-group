@@ -1507,6 +1507,8 @@ export function ProcurementContourView() {
   const [skuSearch, setSkuSearch] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
   const [expandedSummaryModelIds, setExpandedSummaryModelIds] = useState<string[]>([]);
+  const [highlightedModelId, setHighlightedModelId] = useState<string | null>(null);
+  const [highlightedBatchKey, setHighlightedBatchKey] = useState<string | null>(null);
   const [scenarioDrawerTab, setScenarioDrawerTab] = useState<
     'none' | 'investment' | 'brands' | 'skus'
   >('skus');
@@ -1549,17 +1551,88 @@ export function ProcurementContourView() {
   const formatProfitMln = (rub: number) =>
     hasCost && hasFinance ? `+${formatMln(rub)}` : 'Скрыто';
 
+  const applyFocusProcurementBatch = React.useCallback(
+    (payload: {
+      modelId?: string;
+      brandCode?: string;
+      batchKey?: string;
+      modelCode?: string;
+      dateIso?: string;
+    }) => {
+      if (!payload) return;
+      const matchedByCode =
+        !payload.modelId && payload.modelCode
+          ? models.find(
+              (m) =>
+                m.code.trim().toUpperCase() === payload.modelCode!.trim().toUpperCase()
+            )
+          : undefined;
+      const targetModelId = payload.modelId || matchedByCode?.id || '';
+      if (payload.brandCode) {
+        const upper = payload.brandCode.trim().toUpperCase();
+        if (
+          upper === 'BORNERS' ||
+          upper === 'FUKAI' ||
+          upper === 'BORNERS_FUKAI' ||
+          upper === 'BORNERS / FUKAI' ||
+          upper === 'BORNERS/FUKAI'
+        ) {
+          setBrandFilter('BORNERS_FUKAI');
+          setHoldingScopeMode(false);
+        } else if (upper === 'AKUSHA' || upper === 'NA_TELE') {
+          setBrandFilter(upper);
+          setHoldingScopeMode(false);
+        } else if (upper === 'LISKANI' || upper === 'LISCANI') {
+          setBrandFilter('LISKANI');
+          setHoldingScopeMode(false);
+        }
+      }
+      setSubTab('batches');
+      setWavesCalendarOpen(false);
+      setScenarioDrawerTab('skus');
+      setSkuSearch('');
+      setSelectedCategoryFilter('ALL');
+      if (targetModelId) {
+        setSelectedSkuId(targetModelId);
+        setExpandedSummaryModelIds((prev) =>
+          prev.includes(targetModelId) ? prev : [...prev, targetModelId]
+        );
+        setHighlightedModelId(targetModelId);
+      }
+      setHighlightedBatchKey(payload.batchKey || null);
+    },
+    [models, setBrandFilter]
+  );
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const focusSku = window.sessionStorage.getItem('borners_focus_procurement_sku_id');
-      if (focusSku) {
-        setSubTab('batches');
-        setWavesCalendarOpen(false);
-        setScenarioDrawerTab('none');
-        setHoldingScopeMode(false);
-        setSelectedSkuId(focusSku);
-        window.sessionStorage.removeItem('borners_focus_procurement_sku_id');
+      const rawBatchFocus = window.sessionStorage.getItem('borners_focus_procurement_batch');
+      if (rawBatchFocus) {
+        window.sessionStorage.removeItem('borners_focus_procurement_batch');
+        const parsed = JSON.parse(rawBatchFocus) as {
+          modelId?: string;
+          brandCode?: string;
+          batchKey?: string;
+          modelCode?: string;
+          dateIso?: string;
+        };
+        applyFocusProcurementBatch(parsed);
+      } else {
+        const focusSku = window.sessionStorage.getItem('borners_focus_procurement_sku_id');
+        if (focusSku) {
+          setSubTab('batches');
+          setWavesCalendarOpen(false);
+          setScenarioDrawerTab('skus');
+          setSkuSearch('');
+          setSelectedCategoryFilter('ALL');
+          setSelectedSkuId(focusSku);
+          setExpandedSummaryModelIds((prev) =>
+            prev.includes(focusSku) ? prev : [...prev, focusSku]
+          );
+          setHighlightedModelId(focusSku);
+          window.sessionStorage.removeItem('borners_focus_procurement_sku_id');
+        }
       }
       const requested = window.sessionStorage.getItem('borners_open_procurement_view_mode');
       if (requested === 'summary') {
@@ -1578,9 +1651,71 @@ export function ProcurementContourView() {
       setScenarioDrawerTab('skus');
       setHoldingScopeMode(true);
     };
+    const onOpenBatch = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          modelId?: string;
+          brandCode?: string;
+          batchKey?: string;
+          modelCode?: string;
+          dateIso?: string;
+        }>
+      )?.detail;
+      if (!detail) return;
+      try {
+        window.sessionStorage.removeItem('borners_focus_procurement_batch');
+      } catch {
+        // ignore
+      }
+      applyFocusProcurementBatch(detail);
+    };
     window.addEventListener('borners-open-procurement-summary', onOpenSummary);
-    return () => window.removeEventListener('borners-open-procurement-summary', onOpenSummary);
-  }, []);
+    window.addEventListener('borners-open-procurement-batch', onOpenBatch);
+    return () => {
+      window.removeEventListener('borners-open-procurement-summary', onOpenSummary);
+      window.removeEventListener('borners-open-procurement-batch', onOpenBatch);
+    };
+  }, [applyFocusProcurementBatch]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!highlightedBatchKey && !highlightedModelId) return;
+
+    const scrollTimer = window.setTimeout(() => {
+      let targetEl: Element | null = null;
+      if (highlightedBatchKey) {
+        const candidates = document.querySelectorAll('[data-batch-key]');
+        for (const el of Array.from(candidates)) {
+          if (el.getAttribute('data-batch-key') === highlightedBatchKey) {
+            targetEl = el;
+            break;
+          }
+        }
+      }
+      if (!targetEl && highlightedModelId) {
+        const candidates = document.querySelectorAll('[data-model-id]');
+        for (const el of Array.from(candidates)) {
+          if (el.getAttribute('data-model-id') === highlightedModelId) {
+            targetEl = el;
+            break;
+          }
+        }
+      }
+      if (targetEl && typeof targetEl.scrollIntoView === 'function') {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 90);
+
+    const clearTimer = window.setTimeout(() => {
+      setHighlightedBatchKey(null);
+      setHighlightedModelId(null);
+    }, 9000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [highlightedBatchKey, highlightedModelId, expandedSummaryModelIds, scenarioDrawerTab]);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1795,7 +1930,17 @@ export function ProcurementContourView() {
       ...base,
       wbPayoutScheduleSpecified: invS.wbPayoutScheduleSpecified,
       initialCashOnHandRub: invS.initialCashRub,
+      annualRevenueRub: invS.totalGrossSalesRevenueRub,
       totalProcurementBudgetRub: invS.totalProcurementCostRub,
+      annualSoldGoodsCostRub: invS.totalSoldGoodsCostRub,
+      annualWbDeductionsAndAdsRub: invS.totalWbDeductionsRub,
+      annualReverseLogisticsRub: invS.totalReverseLogisticsRub,
+      annualTaxRub: invS.totalTaxRub,
+      annualOpexRub: invS.totalOpexRub,
+      annualEstimatedOperatingProfitRub: invS.expectedOperatingProfitRub,
+      operatingMarginPct: invS.expectedOperatingMarginPct,
+      isProfitComplete: invS.isProfitComplete,
+      profitIncompleteReason: invS.profitIncompleteReason,
       peakWorkingCapitalRub:
         invS.grossOwnCapitalPeakFromZeroRub ?? base.peakWorkingCapitalRub,
       netOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub ?? 0,
@@ -3668,9 +3813,13 @@ export function ProcurementContourView() {
                             return (
                               <React.Fragment key={m.id}>
                                 <tr
+                                  data-model-id={m.id}
+                                  data-model-code={m.code}
                                   onClick={toggleExpand}
                                   className={`cursor-pointer transition ${
-                                    isExp
+                                    highlightedModelId === m.id
+                                      ? 'bg-emerald-50/80 ring-2 ring-inset ring-emerald-500'
+                                      : isExp
                                       ? 'bg-[#F8FAFC]'
                                       : 'hover:bg-[#F8FAFC]/80'
                                   }`}
@@ -3871,7 +4020,71 @@ export function ProcurementContourView() {
                                         </div>
 
                                         {hasLiskaniSizes ? (
-                                          <div className="overflow-x-auto rounded-lg border border-[#CBD5E1] bg-white">
+                                          <div className="space-y-3">
+                                            {(confirmedPos.length > 0 || plan.recommendedBatches.length > 0) && (
+                                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                                                {confirmedPos.map((po) => {
+                                                  const poBatchKey = `${m.id}::po:${po.id}`;
+                                                  const isBatchHighlighted = highlightedBatchKey === poBatchKey;
+                                                  return (
+                                                    <div
+                                                      key={po.id}
+                                                      data-batch-key={poBatchKey}
+                                                      data-model-id={m.id}
+                                                      className={`rounded-lg border p-2.5 space-y-1 transition ${
+                                                        isBatchHighlighted
+                                                          ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.18)]'
+                                                          : 'border-emerald-300 bg-emerald-50/50'
+                                                      }`}
+                                                    >
+                                                      <div className="flex items-center justify-between text-[11px]">
+                                                        <span className="font-bold text-emerald-950">
+                                                          ✓ {po.orderNumber} · {po.coverageMonthsLabel || MONTHS_SHORT_RU[po.arrivalMonthIdx]}
+                                                        </span>
+                                                        <span className="font-mono font-bold text-emerald-700">
+                                                          {formatCostMln(po.totalOrderRub)}
+                                                        </span>
+                                                      </div>
+                                                      <div className="font-mono text-[11.5px] font-bold text-[#0F172A]">
+                                                        {po.packsQty.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit} · Приход {po.requiredArrivalDateIso}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                                {plan.recommendedBatches.map((rb, bIdx) => {
+                                                  const rbBatchKey = `${m.id}::rb:${rb.periodId}`;
+                                                  const isBatchHighlighted = highlightedBatchKey === rbBatchKey;
+                                                  return (
+                                                    <div
+                                                      key={rb.periodId}
+                                                      data-batch-key={rbBatchKey}
+                                                      data-model-id={m.id}
+                                                      className={`rounded-lg border p-2.5 space-y-1 transition ${
+                                                        isBatchHighlighted
+                                                          ? 'border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.2)]'
+                                                          : 'border-[#CBD5E1] bg-white'
+                                                      }`}
+                                                    >
+                                                      <div className="flex items-center justify-between text-[11px]">
+                                                        <span className="font-bold text-[#0F172A]">
+                                                          Партия №{bIdx + 1} · {rb.coverageMonthsLabel}
+                                                        </span>
+                                                        <span className="font-mono font-semibold text-emerald-700">
+                                                          {formatCostMln(rb.estimatedTotalRub)}
+                                                        </span>
+                                                      </div>
+                                                      <div className="font-mono text-[11.5px] font-bold text-[#0F172A]">
+                                                        {rb.recommendedPacks.toLocaleString('ru-RU')} {rowUnitCfg.primaryUnit}
+                                                      </div>
+                                                      <div className="text-[10.5px] text-[#64748B]">
+                                                        Аванс: {formatCostMln(rb.prepaymentRub)} · Доплата: {formatCostMln(rb.balancePaymentRub)}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                            <div className="overflow-x-auto rounded-lg border border-[#CBD5E1] bg-white">
                                             <table className="w-full min-w-[820px] border-collapse text-left text-[11.5px]">
                                               <thead>
                                                 <tr className="border-b border-[#E2E8F0] bg-[#F1F5F9] text-[10px] font-bold uppercase tracking-wider text-[#475569]">
@@ -4000,6 +4213,7 @@ export function ProcurementContourView() {
                                               </tbody>
                                             </table>
                                           </div>
+                                          </div>
                                         ) : (
                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                                             {(() => {
@@ -4016,10 +4230,19 @@ export function ProcurementContourView() {
 
                                               return (
                                                 <>
-                                                  {confirmedPos.map((po) => (
+                                                  {confirmedPos.map((po) => {
+                                                    const poBatchKey = `${m.id}::po:${po.id}`;
+                                                    const isBatchHighlighted = highlightedBatchKey === poBatchKey;
+                                                    return (
                                                     <div
                                                       key={po.id}
-                                                      className="rounded-lg border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-500/10 p-3 space-y-1.5 flex flex-col justify-between"
+                                                      data-batch-key={poBatchKey}
+                                                      data-model-id={m.id}
+                                                      className={`rounded-lg border p-3 space-y-1.5 flex flex-col justify-between transition ${
+                                                        isBatchHighlighted
+                                                          ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-500/20 ring-2 ring-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.2)]'
+                                                          : 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-500/10'
+                                                      }`}
                                                     >
                                                       <div className="space-y-1">
                                                         <div className="flex items-center justify-between text-[11px]">
@@ -4064,9 +4287,12 @@ export function ProcurementContourView() {
                                                         )}
                                                       </div>
                                                     </div>
-                                                  ))}
+                                                    );
+                                                  })}
 
                                                   {plan.recommendedBatches.map((rb, bIdx) => {
+                                                    const rbBatchKey = `${m.id}::rb:${rb.periodId}`;
+                                                    const isBatchHighlighted = highlightedBatchKey === rbBatchKey;
                                                     const canonicalKeys = ['S', 'M', 'L', 'XL', 'XXL'] as const;
                                                     const mappedSizesText =
                                                       prodProfile.sizes.length === 5 &&
@@ -4091,7 +4317,13 @@ export function ProcurementContourView() {
                                                     return (
                                                       <div
                                                         key={rb.periodId}
-                                                        className="rounded-lg border border-[#CBD5E1] dark:border-[#283246] bg-white dark:bg-[#121620] p-3 space-y-1.5 flex flex-col justify-between"
+                                                        data-batch-key={rbBatchKey}
+                                                        data-model-id={m.id}
+                                                        className={`rounded-lg border p-3 space-y-1.5 flex flex-col justify-between transition ${
+                                                          isBatchHighlighted
+                                                            ? 'border-emerald-500 bg-emerald-50/75 dark:bg-emerald-500/20 ring-2 ring-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.22)]'
+                                                            : 'border-[#CBD5E1] dark:border-[#283246] bg-white dark:bg-[#121620]'
+                                                        }`}
                                                       >
                                                         <div className="space-y-1">
                                                           <div className="flex items-center justify-between text-[11px]">
@@ -4347,13 +4579,36 @@ export function ProcurementContourView() {
               (!isHoldingAllBrandsActive && brandFilter !== 'ALL' ? brandFilter : undefined)
           )
         }
-        onOpenBatchInProcurement={(mId, bCode) => {
-          if (bCode) setBrandFilter(bCode);
-          setHoldingScopeMode(false);
-          setSubTab('batches');
-          setWavesCalendarOpen(false);
-          setScenarioDrawerTab('none');
-          setSelectedSkuId(mId);
+        onOpenBatchInProcurement={(mId, bCode, batchKey?: string) => {
+          let resolvedBatchKey = batchKey || '';
+          let resolvedModelCode = '';
+          let resolvedDateIso = '';
+          try {
+            const rawPrev = window.sessionStorage.getItem('borners_focus_procurement_batch');
+            if (rawPrev) {
+              const prev = JSON.parse(rawPrev) as {
+                modelId?: string;
+                batchKey?: string;
+                modelCode?: string;
+                dateIso?: string;
+              };
+              if (!prev.modelId || prev.modelId === mId) {
+                resolvedBatchKey = resolvedBatchKey || prev.batchKey || '';
+                resolvedModelCode = prev.modelCode || '';
+                resolvedDateIso = prev.dateIso || '';
+              }
+              window.sessionStorage.removeItem('borners_focus_procurement_batch');
+            }
+          } catch {
+            // ignore
+          }
+          applyFocusProcurementBatch({
+            modelId: mId,
+            brandCode: bCode,
+            batchKey: resolvedBatchKey || undefined,
+            modelCode: resolvedModelCode || undefined,
+            dateIso: resolvedDateIso || undefined,
+          });
           setProcInvModalOpen(false);
         }}
         initialFocusOpKey={procInvFocusOpKey}
@@ -4720,7 +4975,17 @@ export function FinanceContourView() {
       ...base,
       wbPayoutScheduleSpecified: invS.wbPayoutScheduleSpecified,
       initialCashOnHandRub: invS.initialCashRub,
+      annualRevenueRub: invS.totalGrossSalesRevenueRub,
       totalProcurementBudgetRub: invS.totalProcurementCostRub,
+      annualSoldGoodsCostRub: invS.totalSoldGoodsCostRub,
+      annualWbDeductionsAndAdsRub: invS.totalWbDeductionsRub,
+      annualReverseLogisticsRub: invS.totalReverseLogisticsRub,
+      annualTaxRub: invS.totalTaxRub,
+      annualOpexRub: invS.totalOpexRub,
+      annualEstimatedOperatingProfitRub: invS.expectedOperatingProfitRub,
+      operatingMarginPct: invS.expectedOperatingMarginPct,
+      isProfitComplete: invS.isProfitComplete,
+      profitIncompleteReason: invS.profitIncompleteReason,
       peakWorkingCapitalRub:
         invS.grossOwnCapitalPeakFromZeroRub ?? base.peakWorkingCapitalRub,
       netOwnMoneyRequiredRub: invS.maxOwnMoneyNeededRub ?? 0,
@@ -4747,11 +5012,7 @@ export function FinanceContourView() {
     [scopedFinanceEntries, investmentSummary.monthlyRows, currentScenario.year]
   );
 
-  const effectiveAnnualRevenueRub = isHoldingAllBrands
-    ? holdingSummary.groupTotal.annualRevenueRub
-    : brandFilter === 'BORNERS_FUKAI'
-    ? Math.max(totals.annualRevenueRub, brandsReport.groupTotal.annualRevenueRub)
-    : totals.annualRevenueRub;
+  const effectiveAnnualRevenueRub = finInvHook.schedule.totalGrossSalesRevenueRub;
 
   if (!hasFinance) {
     return (
@@ -4910,16 +5171,50 @@ export function FinanceContourView() {
                   bOvr || (!isHoldingAllBrands ? brandFilter : undefined)
                 )
               }
-              onOpenBatchInProcurement={(mId, bCode) => {
+              onOpenBatchInProcurement={(mId, bCode, batchKey?: string) => {
+                const resolvedFilter =
+                  bCode === 'BORNERS' || bCode === 'FUKAI'
+                    ? 'BORNERS_FUKAI'
+                    : bCode;
                 try {
+                  let existingBatchKey = '';
+                  let existingModelCode = '';
+                  let existingDateIso = '';
+                  const rawPrev = window.sessionStorage.getItem('borners_focus_procurement_batch');
+                  if (rawPrev) {
+                    const prev = JSON.parse(rawPrev) as {
+                      modelId?: string;
+                      batchKey?: string;
+                      modelCode?: string;
+                      dateIso?: string;
+                    };
+                    if (!prev.modelId || prev.modelId === mId) {
+                      existingBatchKey = prev.batchKey || '';
+                      existingModelCode = prev.modelCode || '';
+                      existingDateIso = prev.dateIso || '';
+                    }
+                  }
+                  window.sessionStorage.setItem(
+                    'borners_focus_procurement_batch',
+                    JSON.stringify({
+                      modelId: mId,
+                      brandCode: resolvedFilter || '',
+                      batchKey: batchKey || existingBatchKey,
+                      modelCode: existingModelCode,
+                      dateIso: existingDateIso,
+                    })
+                  );
                   window.sessionStorage.setItem('borners_focus_procurement_sku_id', mId);
                   window.localStorage.setItem('borners_procurement_selected_sku_v1', mId);
                   window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
                 } catch {
                   // ignore
                 }
-                if (bCode) setBrandFilter(bCode);
-                navigateTo('roadmap-tasks');
+                if (resolvedFilter) setBrandFilter(resolvedFilter);
+                navigateTo(
+                  'roadmap-tasks',
+                  resolvedFilter ? { brandId: resolvedFilter } : undefined
+                );
               }}
               onOpenMissingCostSku={(mId) => {
                 if (mId) {
@@ -5068,6 +5363,10 @@ export function FinanceContourView() {
               {
                 annualRevenueRub: effectiveAnnualRevenueRub,
                 annualSoldGoodsCostRub: investmentSummary.annualSoldGoodsCostRub,
+                annualWbDeductionsAndAdsRub:
+                  finInvHook.schedule.totalWbDeductionsRub +
+                  finInvHook.schedule.totalTaxRub +
+                  finInvHook.schedule.totalOpexRub,
                 annualEstimatedOperatingProfitRub:
                   investmentSummary.annualEstimatedOperatingProfitRub,
                 totalProcurementBudgetRub: investmentSummary.totalProcurementBudgetRub,

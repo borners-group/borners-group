@@ -3495,34 +3495,39 @@ test('46. Синхронизация сценариев бренда в «01 · 
   );
 });
 
-test('47. Сводка (02 · Расходы, удержания WB и рентабельность): Комиссия WB = 30%, Логистика и хранение = 0%, ДРР = 10% (итого 40% удержаний)', async () => {
+test('47. Сводка (02 · Расходы, удержания WB и рентабельность): Единая постатейная экономика LISKANI (24% ком. + 6% ДРР + 140 ₽ прямая + 50 ₽ обратная + 6% налог) и отсутствие плоского 40% в PeaklyBrandCatalogAndGroups', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
   const root = process.cwd();
+  const { resolveBrandEconomicsProfile } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
 
   const summarySrc = fs.readFileSync(
     path.join(root, 'src/components/sections/PeaklyBrandCatalogAndGroups.tsx'),
     'utf8'
   );
 
-  // 1. Проверяем формулы 3 карточек расходов WB и ДРР в Сводке
+  // 1. Проверяем, что Сводка использует единый побрендовый профиль (resolveBrandEconomicsProfile + effectiveWbDeductionsRub + effectiveReverseLogisticsRub + effectiveTaxRub) вместо плоского 30%/0%/10%
   assert.ok(
-    summarySrc.includes('const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);') &&
-      summarySrc.includes('pct: gt.annualRevenueRub > 0 ? 30 : 0'),
-    'Комиссия маркетплейса WB в Сводке должна составлять ровно 30% от выручки'
-  );
-  assert.ok(
-    summarySrc.includes('const wbLogisticsStorageRub = 0;') &&
-      summarySrc.includes('pct: 0'),
-    'Логистика и хранение WB в Сводке должны быть установлены в 0% (0 ₽)'
-  );
-  assert.ok(
-    summarySrc.includes('const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);') &&
-      summarySrc.includes('pct: gt.annualRevenueRub > 0 ? 10 : 0'),
-    'Продвижение (ДРР) в Сводке должно составлять ровно 10% от выручки'
+    summarySrc.includes('resolveBrandEconomicsProfile') &&
+      summarySrc.includes('effectiveWbDeductionsRub') &&
+      summarySrc.includes('effectiveReverseLogisticsRub') &&
+      summarySrc.includes('effectiveTaxRub') &&
+      !summarySrc.includes('const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);'),
+    'Сводка обязана считать расходы WB, обратную логистику и налог из единого побрендового движка без плоского 40%'
   );
 
-  // 2. Проверяем расчёт computeScenarioInvestmentSummary на реальном портфеле LISKANI 2027 (500 млн ₽)
+  // 2. Проверяем профиль LISKANI: 24% комиссия + 6% ДРР + 140 ₽ прямая логистика/заказ + 50 ₽ обратная/возврат + 6% налог
+  const liskaniProfile = resolveBrandEconomicsProfile('LISKANI');
+  assert.equal(liskaniProfile.wbCommissionPct, 24);
+  assert.equal(liskaniProfile.adPct, 6);
+  assert.equal(liskaniProfile.forwardLogisticsPerOrderRub, 140);
+  assert.equal(liskaniProfile.reverseLogisticsPerReturnRub, 50);
+  assert.equal(liskaniProfile.logisticsIncludedInWbPct, false);
+  assert.equal(liskaniProfile.taxPct, 6);
+
+  // 3. Проверяем расчёт computeScenarioInvestmentSummary на реальном портфеле LISKANI 2027 (500 млн ₽)
   const {
     LISKANI_2027_MODELS,
     LISKANI_2027_SCENARIO_DEF,
@@ -3542,21 +3547,33 @@ test('47. Сводка (02 · Расходы, удержания WB и рент�
     0
   );
 
-  // Суммарные удержания WB (30% комиссия + 0% логистика + 10% ДРР) составляют 40% от годовой выручки (с погрешностью округления по месяцам < 500 ₽)
-  const expectedDeductions40Pct = Math.round(liskaniSummary.annualRevenueRub * 0.40);
+  assert.equal(
+    totalDeductionsYear,
+    liskaniSummary.annualWbDeductionsAndAdsRub,
+    'Помесячные удержания WB должны точно сходиться с годовыми удержаниями LISKANI'
+  );
   assert.ok(
-    Math.abs(totalDeductionsYear - expectedDeductions40Pct) <= 500,
-    `Суммарные удержания WB + ДРР (${totalDeductionsYear}) должны быть равны 40% от выручки (${expectedDeductions40Pct})`
+    (liskaniSummary.annualReverseLogisticsRub || 0) > 0,
+    'При выкупе 57% у LISKANI обязана учитываться обратная логистика возвратов (50 ₽/отказ)'
+  );
+  const expectedTax6Pct = Math.round(liskaniSummary.annualRevenueRub * 0.06);
+  assert.ok(
+    Math.abs((liskaniSummary.annualTaxRub || 0) - expectedTax6Pct) <= 50,
+    `Налог 6% от выручки LISKANI (${liskaniSummary.annualTaxRub}) должен сходиться с ${expectedTax6Pct}`
   );
   assert.equal(
     totalNetInflowYear,
     liskaniSummary.annualRevenueRub - totalDeductionsYear,
-    'Поступление на счёт с WB должно равняться 60% от выручки (Выручка − 30% Комиссия − 10% ДРР)'
+    'Поступление на счёт с WB должно равняться Выручка − Постатейные удержания WB (комиссия + ДРР + прямая и обратная логистика)'
   );
   assert.equal(
     liskaniSummary.annualEstimatedOperatingProfitRub,
-    liskaniSummary.annualRevenueRub - liskaniSummary.annualSoldGoodsCostRub - totalDeductionsYear,
-    'Операционная прибыль должна равняться Выручка − Закупочная себестоимость − 40% (Комиссия 30% + Логистика 0% + ДРР 10%)'
+    liskaniSummary.annualRevenueRub -
+      liskaniSummary.annualSoldGoodsCostRub -
+      totalDeductionsYear -
+      (liskaniSummary.annualTaxRub || 0) -
+      (liskaniSummary.annualOpexRub || 0),
+    'Операционная прибыль LISKANI должна равняться Выручка − Закупочная себестоимость − Удержания WB − Налог 6% − OPEX'
   );
 });
 
@@ -4003,7 +4020,9 @@ test('52. Процент выкупа WB (%) в продажах, заказах
     assert.equal(salesMetrics33.annualRevenueRub, 1200 * 7500);
     assert.equal(salesMetrics33.annualOrdersRub, 303 * 12 * 7500);
 
-    // 2. Проверяем, что 03 · Закупки считает потребность в партиях у фабрики от объёма ЗАКАЗОВ (3 636 пар), а не только от выкупов (1 200 пар)
+    // 2. Проверяем честный круговорот возвратов маркетплейса (ТЗ Тест 02):
+    // при 33% выкупа заказов 3 636, выкупов 1 200, возвраты возвращаются в доступный остаток за 14 дней,
+    // а к закупке идут выкупы (1 200) + 2% невозвратных потерь (48) + 14-дневный оборотный сток в возвратах (93) = 1 341 пара (НЕ списание всех 3 636 заказов!)
     const proc33 = computeProcurementPlan(akushaModel, akushaScen);
     assert.equal(proc33.buyoutRatePct, 33);
     assert.equal(proc33.procureByOrdersVolume, true);
@@ -4011,8 +4030,8 @@ test('52. Процент выкупа WB (%) в продажах, заказах
     assert.equal(proc33.annualOrdersPacks, 3636);
     assert.equal(
       proc33.annualDemandPacks,
-      3636,
-      'Годовая потребность к заказу для обуви при 33% выкупа должна масштабироваться до объёма заказов (3 636 пар против 1 200 выкупов)'
+      1341,
+      'Годовая потребность к закупке при 33% выкупа = выкупы (1 200) + 2% потерь (48) + 14-дневный сток в возвратах (93) = 1 341 пара'
     );
 
     // При этом в P&L себестоимость реализованных (выкупленных) товаров считается строго по 1 200 выкупам
@@ -4030,10 +4049,17 @@ test('52. Процент выкупа WB (%) в продажах, заказах
     assert.equal(salesMetrics30.annualOrdersPacks, 333 * 12); // 3 996 заказов
 
     const proc30 = computeProcurementPlan(updated30, akushaScen);
-    assert.equal(proc30.annualDemandPacks, 3996);
+    assert.equal(proc30.annualOrdersPacks, 3996);
+    assert.equal(proc30.annualBuyoutsPacks, 1200);
+    assert.equal(
+      proc30.annualDemandPacks,
+      1366,
+      'При снижении выкупа до 30% потребность увеличивается за счёт потерь и стока в возвратах (1 366 > 1 341), не списывая все 3 996 заказов'
+    );
     assert.ok(
-      (proc30.totalRecommendedBudgetRub ?? 0) > (proc33.totalRecommendedBudgetRub ?? 0),
-      'При снижении процента выкупа с 33% до 30% бюджет закупок под оборот заказов должен увеличиваться'
+      proc30.annualDemandPacks > proc33.annualDemandPacks &&
+        proc30.annualDemandPacks < proc30.annualOrdersPacks,
+      'Потребность при 30% выкупа должна расти относительно 33%, но оставаться ниже полного числа заказов (возвраты возвращаются в продажу)'
     );
 
     // Проверяем переключатель «Считать закупки только под выкупы (×1.00)»
@@ -6910,7 +6936,11 @@ test('91. Детализация «Пик своих денег» (внутри 
     bornersInv.peakWindowHumanRu.includes('1–15 января 2027'),
     `Человекочитаемое окно пика должно указывать 1–15 января 2027, получено: ${bornersInv.peakWindowHumanRu}`
   );
-  assert.equal(bornersInv.selfFundingMonthLabel, 'Мар', 'С марта BORNERS S1 выходит в устойчивую самоокупаемость с WB');
+  assert.equal(
+    bornersInv.selfFundingMonthLabel,
+    'Май',
+    'При исключении SKU с нулевой себестоимостью из фантомного реинвестирования BORNERS S1 честно выходит на самоокупаемость с мая'
+  );
 
   const janRow = bornersInv.monthlyRows[0];
   assert.equal(janRow.isPeakDeficitMonth, true);
@@ -8750,11 +8780,12 @@ test('122. v9 Честный пустой кабинет (0 ₽ без фейк�
     'PeakOwnMoneyChartPanel обязан проверять hasAnyActivity для пустых кабинетов и закрывать данные по RBAC'
   );
   assert.equal(
-    groupsCode.includes('const wbCommissionRub = Math.round(gt.annualRevenueRub * 0.30);') &&
-      groupsCode.includes('const wbLogisticsStorageRub = 0;') &&
-      groupsCode.includes('const adsAndTaxRub = Math.round(gt.annualRevenueRub * 0.10);'),
+    groupsCode.includes('resolveBrandEconomicsProfile') &&
+      groupsCode.includes('effectiveWbDeductionsRub') &&
+      groupsCode.includes('effectiveReverseLogisticsRub') &&
+      groupsCode.includes('effectiveTaxRub'),
     true,
-    'Инвариант Test 47 в PeaklyBrandCatalogAndGroups обязан оставаться нетронутым'
+    'PeaklyBrandCatalogAndGroups обязан использовать единую побрендовую экономику (Test 47 / ТЗ v1.0)'
   );
   assert.equal(
     strategyCode.includes('borners_open_brand_passport'),
@@ -11375,7 +11406,7 @@ test('195. Защита цен/себестоимости/продаж от об
   assert.equal(met028.buyoutRatePct, 39);
   assert.equal(met028.annualOrdersPacks, 996, 'Годовые заказы AKU-028 при 39% выкупа равны 996 парам');
 
-  // 3. COGS проданного товара AKUSHA в computeInvestmentSchedule считается по выкупам (+26,03 млн ₽ опер. прибыли, а не убыток)
+  // 3. COGS проданного товара AKUSHA в computeInvestmentSchedule считается по выкупам с обратной логистикой и налогом 6% (+21,95 млн ₽ опер. прибыли)
   const akushaSched = computeInvestmentSchedule({
     models: AKUSHA_2027_MODELS,
     scenarios: [AKUSHA_2027_SCENARIO_DEF],
@@ -11383,7 +11414,7 @@ test('195. Защита цен/себестоимости/продаж от об
     brandFilter: 'AKUSHA',
     ledgerState: createDefaultInvestmentLedgerState(),
   });
-  assert.equal(akushaSched.totalAccrualOperatingProfitRub, 26_027_726);
+  assert.equal(akushaSched.totalAccrualOperatingProfitRub, 21_953_167);
 
   // 4. JSON-бэкап сохраняет и восстанавливает investmentLedger и financeContourParams
   const sampleLedger = {
@@ -11536,6 +11567,1044 @@ test('196. Единый кабинет BORNERS / FUKAI (BORNERS_FUKAI): объе
     false
   );
   assert.equal(effFukaiScen.id, ACTING_2027_SCENARIO_ID);
+});
+
+// =============================================================================
+// 12 ОБЯЗАТЕЛЬНЫХ ПРИЁМОЧНЫХ ТЕСТОВ (ТЗ v1.0, СТР. 12 — ТЕСТЫ 197–208)
+// =============================================================================
+
+test('197. Приёмочный тест 01 (ТЗ v1.0): Увеличение продаж SKU даёт идентичные новые Выручку, Закупки, COGS и Операционную прибыль во всех расчётных точках (computeInvestmentSchedule, computeUnifiedEconomicSummary, computeHoldingBrandsOverviewRows)', async () => {
+  const {
+    computeUnifiedEconomicSummary,
+    updateModelScenarioMonthBuyouts,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeHoldingBrandsOverviewRows,
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+
+  const ledger = createDefaultInvestmentLedgerState();
+  const baseModels = AKUSHA_2027_MODELS.filter((m) => (m.unitCostRub || 0) > 0 && (m.retailPriceRub || 0) > 0);
+  const targetSku = baseModels[0]!;
+  assert.ok(targetSku && targetSku.unitCostRub > 0 && targetSku.retailPriceRub > 0);
+
+  const beforeSchedule = computeInvestmentSchedule({
+    models: baseModels,
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    activeScenario: AKUSHA_2027_SCENARIO_DEF,
+    brandFilter: 'AKUSHA',
+    selectedScenarioByBrand: { AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    ledgerState: ledger,
+  });
+  const beforeUnified = computeUnifiedEconomicSummary(baseModels, AKUSHA_2027_SCENARIO_DEF);
+
+  assert.equal(beforeSchedule.totalGrossSalesRevenueRub, beforeUnified.revenueRub);
+  assert.equal(beforeSchedule.totalProcurementCostRub, beforeUnified.procurementRub);
+  assert.equal(beforeSchedule.totalSoldGoodsCostRub, beforeUnified.soldGoodsCostRub);
+  assert.equal(beforeSchedule.expectedOperatingProfitRub, beforeUnified.expectedOperatingProfitRub);
+
+  // Увеличиваем план продаж SKU на +300 пар в каждом из 6 месяцев (Янв–Июн)
+  let boostedSku = targetSku;
+  for (let mIdx = 0; mIdx < 6; mIdx++) {
+    const curPacks = boostedSku.plansByScenario?.[AKUSHA_2027_SCENARIO_ID]?.monthlyPacks?.[mIdx] || 0;
+    boostedSku = updateModelScenarioMonthBuyouts(
+      boostedSku,
+      AKUSHA_2027_SCENARIO_ID,
+      mIdx,
+      curPacks + 300
+    );
+  }
+  const updatedModels = baseModels.map((m) => (m.id === boostedSku.id ? boostedSku : m));
+
+  const afterSchedule = computeInvestmentSchedule({
+    models: updatedModels,
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    activeScenario: AKUSHA_2027_SCENARIO_DEF,
+    brandFilter: 'AKUSHA',
+    selectedScenarioByBrand: { AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    ledgerState: ledger,
+  });
+  const afterUnified = computeUnifiedEconomicSummary(updatedModels, AKUSHA_2027_SCENARIO_DEF);
+  const afterHolding = computeHoldingBrandsOverviewRows({
+    models: updatedModels,
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    activeScenario: AKUSHA_2027_SCENARIO_DEF,
+    selectedScenarioByBrand: { AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    ledgerState: ledger,
+    combineBornersAndFukai: true,
+  });
+  const akushaHoldingRow = afterHolding.rows.find((r) => r.brandCode === 'AKUSHA')!;
+  assert.ok(akushaHoldingRow, 'В сводке холдинга должна присутствовать строка AKUSHA');
+
+  // Все 4 показателя выросли после увеличения продаж
+  assert.ok(afterSchedule.totalGrossSalesRevenueRub > beforeSchedule.totalGrossSalesRevenueRub);
+  assert.ok(afterSchedule.totalProcurementCostRub > beforeSchedule.totalProcurementCostRub);
+  assert.ok(afterSchedule.totalSoldGoodsCostRub > beforeSchedule.totalSoldGoodsCostRub);
+  assert.ok(afterSchedule.expectedOperatingProfitRub > beforeSchedule.expectedOperatingProfitRub);
+
+  // Полное совпадение рубль-в-рубль между всеми тремя точками расчёта
+  assert.equal(afterSchedule.totalGrossSalesRevenueRub, afterUnified.revenueRub);
+  assert.equal(afterSchedule.totalProcurementCostRub, afterUnified.procurementRub);
+  assert.equal(afterSchedule.totalSoldGoodsCostRub, afterUnified.soldGoodsCostRub);
+  assert.equal(afterSchedule.expectedOperatingProfitRub, afterUnified.expectedOperatingProfitRub);
+
+  assert.equal(akushaHoldingRow.revenueRub, afterUnified.revenueRub);
+  assert.equal(akushaHoldingRow.procurementRub, afterUnified.procurementRub);
+  assert.equal(akushaHoldingRow.totalSoldGoodsCostRub, afterUnified.soldGoodsCostRub);
+  assert.equal(akushaHoldingRow.expectedOperatingProfitRub, afterUnified.expectedOperatingProfitRub);
+});
+
+test('198. Приёмочный тест 02 (ТЗ v1.0): Снижение выкупа обуви AKUSHA (40% → 25%) увеличивает заказы, отказы, сток в возвратах и обратную логистику, но НЕ списывает все заказы в COGS', async () => {
+  const {
+    computeProcurementPlan,
+    createBrandProductModel,
+    updateModelBuyoutRatePct,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const created = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Лоферы кожаные AKUSHA Тест 02',
+    brandCode: 'AKUSHA',
+    code: 'AKU-T02-LOAFER',
+    categoryLabel: 'Лоферы',
+    unitsInPack: 1,
+    retailPriceRub: 7000,
+    unitCostRub: 2500,
+    initialMonthlyPacks: Array(12).fill(120), // 1 440 выкупов/год
+  });
+  const sc = INITIAL_SCENARIOS[0];
+  const baseScaling = {
+    ...created.model,
+    sharedSupplyAndFact: {
+      ...created.model.sharedSupplyAndFact!,
+      scalingStage: 'scaling' as const,
+    },
+  };
+
+  const model40 = updateModelBuyoutRatePct(baseScaling, 40, { scenarioId: sc.id });
+  const model25 = updateModelBuyoutRatePct(baseScaling, 25, { scenarioId: sc.id });
+
+  const proc40 = computeProcurementPlan(model40, sc);
+  const proc25 = computeProcurementPlan(model25, sc);
+
+  const ledger = createDefaultInvestmentLedgerState();
+  const sched40 = computeInvestmentSchedule({
+    models: [model40],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'AKUSHA',
+    ledgerState: ledger,
+  });
+  const sched25 = computeInvestmentSchedule({
+    models: [model25],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'AKUSHA',
+    ledgerState: ledger,
+  });
+
+  // Заказы, отказы, сток в возвратах и обратная логистика ВСЕ выросли при падении выкупа с 40% до 25%
+  assert.ok(proc25.annualOrdersPacks > proc40.annualOrdersPacks, 'annualOrdersPacks должен вырасти');
+  assert.ok(
+    (proc25.annualRefusalsPacks || 0) > (proc40.annualRefusalsPacks || 0),
+    'annualRefusalsPacks должен вырасти'
+  );
+  assert.ok(
+    (proc25.endingReturnsInTransitPacks || 0) > (proc40.endingReturnsInTransitPacks || 0),
+    'endingReturnsInTransitPacks должен вырасти'
+  );
+  assert.ok(
+    sched25.totalReverseLogisticsRub > sched40.totalReverseLogisticsRub,
+    'totalReverseLogisticsRub должен вырасти'
+  );
+
+  // Выкупы и себестоимость проданных товаров (COGS) НЕ изменились и НЕ списывают все заказы как проданные!
+  assert.equal(proc25.annualBuyoutsPacks, 1440);
+  assert.equal(proc40.annualBuyoutsPacks, 1440);
+  assert.equal(sched25.totalSoldGoodsCostRub, 1440 * 2500);
+  assert.equal(sched25.totalSoldGoodsCostRub, sched40.totalSoldGoodsCostRub);
+  assert.ok(
+    proc25.annualDemandPacks < proc25.annualOrdersPacks,
+    'Возвращённый товар возвращается в продажу — годовая закупка строго меньше полного числа заказов'
+  );
+});
+
+test('199. Приёмочный тест 03 (ТЗ v1.0): Обнуление себестоимости SKU (0 ₽) помечает расчёт предварительным, не создаёт платежи фабрике на 0 ₽ и исключает выручку SKU из реинвестирования', async () => {
+  const { createBrandProductModel } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const sc = INITIAL_SCENARIOS[0];
+  const paidSkuRes = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Боксеры базовые BORNERS (с себестоимостью)',
+    brandCode: 'BORNERS',
+    code: 'BRN-T03-PAID',
+    categoryLabel: 'Боксеры',
+    unitsInPack: 3,
+    retailPriceRub: 2400,
+    unitCostRub: 750,
+    initialMonthlyPacks: Array(12).fill(500),
+  });
+  const zeroCostSkuRes = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Новинка BORNERS без себестоимости',
+    brandCode: 'BORNERS',
+    code: 'BRN-T03-ZERO',
+    categoryLabel: 'Боксеры',
+    unitsInPack: 3,
+    retailPriceRub: 3000,
+    unitCostRub: 0,
+    initialMonthlyPacks: Array(12).fill(900),
+  });
+
+  const paidSku = {
+    ...paidSkuRes.model,
+    id: 't03-paid-sku',
+    sharedSupplyAndFact: { ...paidSkuRes.model.sharedSupplyAndFact!, scalingStage: 'scaling' as const },
+  };
+  const zeroCostSku = {
+    ...zeroCostSkuRes.model,
+    id: 't03-zero-sku',
+    unitCostRub: 0,
+    sharedSupplyAndFact: { ...zeroCostSkuRes.model.sharedSupplyAndFact!, scalingStage: 'scaling' as const },
+  };
+
+  const ledger = createDefaultInvestmentLedgerState();
+  const paidOnlySched = computeInvestmentSchedule({
+    models: [paidSku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+  const mixedSched = computeInvestmentSchedule({
+    models: [paidSku, zeroCostSku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  });
+
+  assert.equal(mixedSched.isPreliminaryCalculation, true);
+  assert.equal(mixedSched.isProfitComplete, false);
+  assert.equal(mixedSched.missingCostModelsCount, 1);
+  assert.ok(mixedSched.missingCostModelIds.includes(zeroCostSku.id));
+  assert.ok(
+    mixedSched.incompleteDataReasons.some(
+      (r) => r.modelId === zeroCostSku.id || r.code.toLowerCase().includes('cost')
+    ),
+    'incompleteDataReasons обязан указывать на отсутствие себестоимости'
+  );
+
+  // Никаких нулевых платежей фабрике для SKU с себестоимостью 0 ₽
+  const zeroCostFactoryEvents = mixedSched.allEvents.filter(
+    (ev) =>
+      ev.type === 'factory_payment' &&
+      (ev.batchDetails?.modelId === zeroCostSku.id || ev.amountRub <= 0)
+  );
+  assert.equal(zeroCostFactoryEvents.length, 0, 'Не должно быть платежей фабрике на 0 ₽');
+
+  // Выручка бесценового SKU полностью исключена из реинвестирования (не финансирует партии других SKU!)
+  assert.ok(mixedSched.excludedZeroCostRevenueRub > 0);
+  assert.ok(mixedSched.excludedZeroCostWbPayoutRub > 0);
+  assert.equal(
+    mixedSched.calculatedCapitalNeedRub,
+    paidOnlySched.calculatedCapitalNeedRub,
+    'Выплата WB от SKU с нулевой себестоимостью НЕ должна уменьшать потребность в капитале для других SKU'
+  );
+});
+
+test('200. Приёмочный тест 04 (ТЗ v1.0): Изменение аванса партии 30% → 10% автоматически увеличивает доплату без потери ни рубля и previewPaymentOrBatchEdit не мутирует состояние', async () => {
+  const { createBrandProductModel } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+    previewPaymentOrBatchEdit,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const sc = INITIAL_SCENARIOS[0];
+  const skuRes = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Партия Тест 04 Аванс 30 → 10%',
+    brandCode: 'BORNERS',
+    code: 'BRN-T04-ADV',
+    categoryLabel: 'Боксеры',
+    unitsInPack: 3,
+    retailPriceRub: 2200,
+    unitCostRub: 700,
+    initialMonthlyPacks: Array(12).fill(400),
+  });
+  const sku = {
+    ...skuRes.model,
+    sharedSupplyAndFact: { ...skuRes.model.sharedSupplyAndFact!, scalingStage: 'scaling' as const },
+  };
+  const ledger = createDefaultInvestmentLedgerState();
+  const ledgerSnapshotBefore = JSON.stringify(ledger);
+
+  const baseParams = {
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: ledger,
+  };
+  const before = computeInvestmentSchedule(baseParams);
+  const firstBatch = before.batchesCatalog[0]!;
+  assert.ok(firstBatch && firstBatch.totalBatchCostRub > 0, 'Должна существовать стартовая партия');
+
+  const preview = previewPaymentOrBatchEdit(baseParams, {
+    batchKey: firstBatch.batchKey,
+    scenarioScopeKey: before.activeScopeKey,
+    batchOverride: { customPrepaymentPct: 10 },
+  });
+
+  // Аванс уменьшился (30% -> 10%), доплата выросла (70% -> 90%), сумма = ровно totalBatchCostRub без потерь
+  assert.ok(preview.newPrepaymentRub < preview.oldPrepaymentRub);
+  assert.ok(preview.newBalancePaymentRub > preview.oldBalancePaymentRub);
+  assert.equal(
+    preview.newPrepaymentRub + preview.newBalancePaymentRub,
+    firstBatch.totalBatchCostRub,
+    'Сумма нового аванса и новой доплаты обязана в точности равняться стоимости партии (0 ₽ потерь)'
+  );
+  assert.equal(
+    preview.oldPrepaymentRub + preview.oldBalancePaymentRub,
+    firstBatch.totalBatchCostRub
+  );
+  assert.ok(preview.summaryLinesRu.length > 0, 'Предпросмотр возвращает текстовое резюме изменений');
+
+  // Исходный ledgerState не мутирован!
+  assert.equal(
+    JSON.stringify(ledger),
+    ledgerSnapshotBefore,
+    'previewPaymentOrBatchEdit не имеет права мутировать исходный ledgerState'
+  );
+});
+
+test('201. Приёмочный тест 05 (ТЗ v1.0): Сдвиг даты платежа и поставки партии вперёд обновляет даты кэш-событий, денежный баланс и вызывает предупреждение о дефиците товара', async () => {
+  const { createBrandProductModel } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+    ensureScenarioPlanSlot,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const sc = INITIAL_SCENARIOS[0];
+  const skuRes = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Партия Тест 05 Перенос сроков',
+    brandCode: 'BORNERS',
+    code: 'BRN-T05-SHIFT',
+    categoryLabel: 'Боксеры',
+    unitsInPack: 3,
+    retailPriceRub: 2100,
+    unitCostRub: 650,
+    initialMonthlyPacks: Array(12).fill(500),
+  });
+  const sku = {
+    ...skuRes.model,
+    sharedSupplyAndFact: {
+      ...skuRes.model.sharedSupplyAndFact!,
+      actualOpeningStockPacks: 0,
+      scalingStage: 'scaling' as const,
+    },
+  };
+
+  const baseLedger = createDefaultInvestmentLedgerState();
+  const baseSched = computeInvestmentSchedule({
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: baseLedger,
+  });
+  const firstBatch = baseSched.batchesCatalog[0]!;
+  assert.ok(firstBatch, 'Должна быть первая партия');
+
+  // Сдвигаем предоплату на 2027-02-15 и приход партии на 2027-04-20 (позже спроса Q1!)
+  const shiftedLedger = createDefaultInvestmentLedgerState();
+  const slot = ensureScenarioPlanSlot(shiftedLedger, baseSched.activeScopeKey);
+  slot.batchOverrides[firstBatch.batchKey] = {
+    batchKey: firstBatch.batchKey,
+    customOrderDateIso: '2027-02-15',
+    customArrivalDateIso: '2027-04-20',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 05',
+  };
+  slot.paymentOverrides[`${firstBatch.batchKey}::prepay`] = {
+    opKey: `${firstBatch.batchKey}::prepay`,
+    batchKey: firstBatch.batchKey,
+    customDateIso: '2027-02-15',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 05',
+  };
+  shiftedLedger.scenarioPlans[baseSched.activeScopeKey] = slot;
+
+  const shiftedSched = computeInvestmentSchedule({
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: shiftedLedger,
+  });
+
+  const shiftedPrepayEvent = shiftedSched.allEvents.find(
+    (ev) => ev.opKey === `${firstBatch.batchKey}::prepay`
+  );
+  const shiftedBalanceEvent = shiftedSched.allEvents.find(
+    (ev) => ev.opKey === `${firstBatch.batchKey}::balance`
+  );
+  assert.equal(shiftedPrepayEvent?.dateIso, '2027-02-15', 'Дата аванса должна сместиться на 2027-02-15');
+  assert.ok(
+    shiftedBalanceEvent && shiftedBalanceEvent.dateIso >= '2027-04-01',
+    'Дата доплаты должна сместиться вперёд вместе с поставкой'
+  );
+  assert.notEqual(
+    shiftedSched.monthlyCalendarRows[11]?.endingTotalCashRub,
+    baseSched.monthlyCalendarRows[11]?.endingTotalCashRub,
+    'Итоговый денежный баланс обязан пересчитаться при переносе дат платежей'
+  );
+  assert.ok(
+    shiftedSched.supplyDeficitWarnings.length > 0,
+    'При сдвиге поставки позже планового спроса должно срабатывать предупреждение о дефиците (supplyDeficitWarnings)'
+  );
+});
+
+test('202. Приёмочный тест 06 (ТЗ v1.0): Крупное вложение 50 млн ₽ ПОСЛЕ даты пика НЕ скрывает ранний кассовый разрыв, а плановые и фактические вложения строго разделены', async () => {
+  const { createBrandProductModel } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+    ensureScenarioPlanSlot,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const sc = INITIAL_SCENARIOS[0];
+  const skuRes = createBrandProductModel([], INITIAL_SCENARIOS, {
+    title: 'Партия Тест 06 Хронология вложений',
+    brandCode: 'BORNERS',
+    code: 'BRN-T06-CAP',
+    categoryLabel: 'Боксеры',
+    unitsInPack: 3,
+    retailPriceRub: 2200,
+    unitCostRub: 750,
+    initialMonthlyPacks: Array(12).fill(600),
+  });
+  const sku = {
+    ...skuRes.model,
+    sharedSupplyAndFact: { ...skuRes.model.sharedSupplyAndFact!, scalingStage: 'scaling' as const },
+  };
+
+  const baseLedger = createDefaultInvestmentLedgerState();
+  const baseSched = computeInvestmentSchedule({
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: baseLedger,
+  });
+  assert.ok(
+    (baseSched.remainingOwnMoneyNeededRub || 0) > 0 && baseSched.peakShortageDateIso,
+    'В базовом сценарии есть ранний пиковый дефицит'
+  );
+
+  // 1. Добавляем гигантское фактическое вложение 50 000 000 ₽ в ноябре (ПОСЛЕ даты пика)
+  const lateInjLedger = createDefaultInvestmentLedgerState();
+  lateInjLedger.sharedCommitted.committedCapitalInjections.push({
+    id: 'late-50m',
+    dateIso: '2027-11-15',
+    amountRub: 50_000_000,
+    brandCode: 'BORNERS',
+    title: 'Позднее вложение 50 млн ₽',
+    status: 'Оплачено',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 06',
+  });
+  const lateInjSched = computeInvestmentSchedule({
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: lateInjLedger,
+  });
+  assert.equal(
+    lateInjSched.remainingOwnMoneyNeededRub,
+    baseSched.remainingOwnMoneyNeededRub,
+    'Позднее вложение 50 млн ₽ после пика НЕ имеет права скрывать ранний кассовый разрыв'
+  );
+
+  // 2. Добавляем ПЛАНОВОЕ вложение («Запланировано») ДО даты пика и проверяем строгое разделение План vs Факт
+  const plannedOnlyLedger = createDefaultInvestmentLedgerState();
+  const slot = ensureScenarioPlanSlot(plannedOnlyLedger, baseSched.activeScopeKey);
+  slot.plannedCapitalInjections.push({
+    id: 'early-planned-1m',
+    dateIso: '2026-10-01',
+    amountRub: 1_000_000,
+    brandCode: 'BORNERS',
+    title: 'Плановое вложение 1 млн ₽',
+    status: 'Запланировано',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 06',
+  });
+  plannedOnlyLedger.scenarioPlans[baseSched.activeScopeKey] = slot;
+
+  const plannedSched = computeInvestmentSchedule({
+    models: [sku],
+    scenarios: [sc],
+    activeScenario: sc,
+    brandFilter: 'BORNERS',
+    ledgerState: plannedOnlyLedger,
+  });
+  assert.equal(plannedSched.plannedOwnMoneyInjectionsRub, 1_000_000);
+  assert.equal(plannedSched.factualOwnMoneyContributedRub, 0);
+  assert.equal(
+    plannedSched.remainingNeedAfterFactualOnlyRub,
+    baseSched.remainingOwnMoneyNeededRub,
+    'Плановое вложение НЕ должно уменьшать remainingNeedAfterFactualOnlyRub'
+  );
+  assert.ok(
+    (plannedSched.remainingOwnMoneyNeededRub || 0) <
+      (plannedSched.remainingNeedAfterFactualOnlyRub || 0),
+    'При учёте плана остаток меньше, чем при учёте только фактических оплат'
+  );
+});
+
+test('203. Приёмочный тест 07 (ТЗ v1.0): Переключение сценариев (№1 ↔ №2) меняет прогноз и плановые партии, но НЕ трогает и НЕ дублирует физические остатки, утверждённые PO и фактические платежи', async () => {
+  const {
+    approveRecommendedBatch,
+    computeProcurementPlan,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const s2 = INITIAL_SCENARIOS.find((s) => s.id === 2)!;
+  const baseBorners = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).filter((m) => !isUnverifiedActingSku(m.code) && (m.unitCostRub || 0) > 0);
+
+  const heroIdx = 0;
+  let heroModel: (typeof baseBorners)[number] = {
+    ...baseBorners[heroIdx],
+    sharedSupplyAndFact: {
+      ...baseBorners[heroIdx].sharedSupplyAndFact!,
+      actualOpeningStockPacks: 450,
+    },
+  };
+  const procForApprove = computeProcurementPlan(heroModel, s1);
+  assert.ok(procForApprove.recommendedBatches.length > 0);
+  heroModel = approveRecommendedBatch(heroModel, procForApprove.recommendedBatches[0], 'Тест 07');
+  const approvedPoId = heroModel.sharedSupplyAndFact!.approvedOrders[0]!.id;
+
+  const modelsWithFact = baseBorners.map((m, idx) => (idx === heroIdx ? heroModel : m));
+
+  const ledger = createDefaultInvestmentLedgerState();
+  ledger.sharedCommitted.committedCapitalInjections.push({
+    id: 'fact-paid-2m',
+    dateIso: '2026-10-15',
+    amountRub: 2_000_000,
+    brandCode: 'BORNERS',
+    title: 'Фактическое внесение 2 млн ₽',
+    status: 'Оплачено',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 07',
+  });
+
+  const schedS1 = computeInvestmentSchedule({
+    models: modelsWithFact,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s1,
+    brandFilter: 'BORNERS',
+    selectedScenarioByBrand: { BORNERS: 1 },
+    ledgerState: ledger,
+  });
+  const schedS2 = computeInvestmentSchedule({
+    models: modelsWithFact,
+    scenarios: INITIAL_SCENARIOS,
+    activeScenario: s2,
+    brandFilter: 'BORNERS',
+    selectedScenarioByBrand: { BORNERS: 2 },
+    ledgerState: ledger,
+  });
+
+  // Прогноз выручки и объём плановых партий отличаются между Сценарием №1 и №2
+  assert.notEqual(schedS1.totalGrossSalesRevenueRub, schedS2.totalGrossSalesRevenueRub);
+  assert.notEqual(schedS1.plannedProcurementCostRub, schedS2.plannedProcurementCostRub);
+
+  // Физический остаток, утверждённый PO и фактические вложения абсолютно неизменны и не дублируются!
+  assert.equal(heroModel.sharedSupplyAndFact!.actualOpeningStockPacks, 450);
+  assert.equal(schedS1.approvedProcurementCostRub, schedS2.approvedProcurementCostRub);
+  assert.equal(
+    schedS1.batchesCatalog.filter((b) => b.batchKey === `${heroModel.id}::po:${approvedPoId}`).length,
+    1
+  );
+  assert.equal(
+    schedS2.batchesCatalog.filter((b) => b.batchKey === `${heroModel.id}::po:${approvedPoId}`).length,
+    1
+  );
+  assert.equal(schedS1.factualOwnMoneyContributedRub, 2_000_000);
+  assert.equal(schedS2.factualOwnMoneyContributedRub, 2_000_000);
+});
+
+test('204. Приёмочный тест 08 (ТЗ v1.0): Каждый платёж фабрике в whenAndHowMuchRows несёт точные brandCode, modelId, batchKey и thumbnailUrl из галереи SKU, а навигация ведёт к точной партии', async () => {
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
+
+  const sampleThumbUrl = '/images/products/test-sku-thumb.jpg';
+  const allModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ].map((m, idx) =>
+    idx === 0
+      ? {
+          ...m,
+          gallery: [
+            {
+              id: 'g-t08',
+              category: 'pack' as const,
+              label: 'Main',
+              url: sampleThumbUrl,
+              isMain: true,
+              caption: 'Main',
+            },
+          ],
+        }
+      : m
+  );
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+
+  const sched = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'ALL',
+    selectedScenarioByBrand: {
+      BORNERS: 1,
+      FUKAI: ACTING_2027_SCENARIO_ID,
+      AKUSHA: AKUSHA_2027_SCENARIO_ID,
+      LISKANI: LISKANI_2027_SCENARIO_ID,
+      NA_TELE: 2,
+    },
+    ledgerState: createDefaultInvestmentLedgerState(),
+  });
+
+  const allFactoryPayments = sched.whenAndHowMuchRows.flatMap((row) => row.factoryPayments);
+  assert.ok(allFactoryPayments.length > 0, 'В whenAndHowMuchRows должны быть платежи фабрикам');
+
+  const modelById = new Map(allModels.map((m) => [m.id, m]));
+  let verifiedThumbCount = 0;
+
+  for (const fp of allFactoryPayments) {
+    assert.ok(fp.brandCode && fp.brandCode.length > 0, `У платежа ${fp.opKey} отсутствует brandCode`);
+    assert.ok(fp.modelId && modelById.has(fp.modelId), `У платежа ${fp.opKey} отсутствует валидный modelId`);
+    assert.ok(
+      fp.batchKey &&
+        (fp.batchKey.startsWith(`${fp.modelId}::rb:`) || fp.batchKey.startsWith(`${fp.modelId}::po:`)),
+      `У платежа ${fp.opKey} некорректный batchKey: ${fp.batchKey}`
+    );
+    const srcModel = modelById.get(fp.modelId)!;
+    const expectedThumb =
+      srcModel.gallery?.find((g) => g.isMain && g.url)?.url || srcModel.gallery?.[0]?.url;
+    if (expectedThumb) {
+      assert.equal(fp.thumbnailUrl, expectedThumb, `thumbnailUrl для ${fp.modelCode} должен совпадать с фото из gallery`);
+      verifiedThumbCount += 1;
+    }
+  }
+  assert.ok(verifiedThumbCount > 0, 'Должна быть проверена передача thumbnailUrl хотя бы для 1 SKU с фото');
+
+  // Проверяем связку UI: AppShell + ProcurementContourView обрабатывают borners-open-procurement-batch и подсвечивают data-batch-key
+  const appShellCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shell/AppShell.tsx'),
+    'utf8'
+  );
+  const contourCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf8'
+  );
+  assert.ok(
+    appShellCode.includes('borners-open-procurement-batch') &&
+      appShellCode.includes('borners_focus_procurement_batch'),
+    'AppShell обязан слушать borners-open-procurement-batch и переключать на 03 · Закупки с нужным брендом'
+  );
+  assert.ok(
+    contourCode.includes('borners_focus_procurement_batch') &&
+      contourCode.includes('borners-open-procurement-batch') &&
+      contourCode.includes('data-batch-key') &&
+      contourCode.includes('data-model-id') &&
+      contourCode.includes('scrollIntoView'),
+    'ProcurementContourView обязан раскрывать SKU, подсвечивать точную партию (data-batch-key) и скроллить к ней'
+  );
+});
+
+test('205. Приёмочный тест 09 (ТЗ v1.0): Сводка группы (ALL) не умножает кэш/резерв на число брендов, common_pool <= per_brand, единицы не смешиваются, единый BORNERS / FUKAI и чистое написание LISKANI', async () => {
+  const {
+    computeHoldingBrandsOverviewRows,
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } =
+    await import('../src/lib/liskaniAssortment2027.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+  const { ACTING_2027_SCENARIO_ID } = await import('../src/lib/actingAssortment2027.ts');
+
+  const allModels = [
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...applyClientSavedS1SalesPlan(S1_100M_SCENARIO_MODELS),
+    ...LISKANI_2027_MODELS,
+    ...AKUSHA_2027_MODELS,
+  ];
+  const allScenarios = [
+    ...INITIAL_SCENARIOS,
+    LISKANI_2027_SCENARIO_DEF,
+    AKUSHA_2027_SCENARIO_DEF,
+  ];
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const selectedByBrand = {
+    BORNERS: 1,
+    FUKAI: ACTING_2027_SCENARIO_ID,
+    AKUSHA: AKUSHA_2027_SCENARIO_ID,
+    LISKANI: LISKANI_2027_SCENARIO_ID,
+    NA_TELE: 2,
+  };
+
+  const ledger = createDefaultInvestmentLedgerState();
+  ledger.globalSettings.initialCashRub = 5_000_000;
+  ledger.globalSettings.minCashReserveRub = 2_000_000;
+
+  const groupCommon = computeInvestmentSchedule({
+    models: allModels,
+    scenarios: allScenarios,
+    activeScenario: s1,
+    brandFilter: 'ALL',
+    selectedScenarioByBrand: selectedByBrand,
+    ledgerState: ledger,
+    groupCapitalMode: 'common_pool',
+  });
+
+  // 1. Стартовые деньги и резерв НЕ умножаются на 4 или 5 брендов!
+  assert.equal(groupCommon.initialCashRub, 5_000_000);
+  assert.equal(groupCommon.minCashReserveRub, 2_000_000);
+
+  // 2. Общий котёл <= сумма пиков по брендам, синергия >= 0
+  assert.ok(
+    groupCommon.commonPoolCapitalNeedRub !== null &&
+      groupCommon.perBrandSumCapitalNeedRub !== null &&
+      groupCommon.commonPoolCapitalNeedRub <= groupCommon.perBrandSumCapitalNeedRub,
+    'Пик «Общего котла» (common_pool) обязан быть <= сумме пиков «Каждый бренд сам» (per_brand)'
+  );
+  assert.ok(groupCommon.commonPoolSavingsRub >= 0);
+
+  // 3. Совместимые единицы измерения разделены: бельё (sets), обувь (pairs), шторы (curtains)
+  const unitCats = groupCommon.compatibleUnitsBreakdown.map((u) => u.unitCategory);
+  assert.ok(unitCats.includes('sets'), 'Должна быть отдельная строка для комплектов белья (sets)');
+  assert.ok(unitCats.includes('pairs'), 'Должна быть отдельная строка для пар обуви (pairs)');
+  assert.ok(unitCats.includes('curtains'), 'Должна быть отдельная строка для комплектов штор (curtains)');
+  assert.equal(new Set(unitCats).size, unitCats.length, 'Категории единиц измерения не должны дублироваться');
+
+  // 4. Единый кабинет BORNERS / FUKAI и только написание LISKANI (0 вхождений LISCANI)
+  const overview = computeHoldingBrandsOverviewRows(
+    {
+      models: allModels,
+      scenarios: allScenarios,
+      activeScenario: s1,
+      selectedScenarioByBrand: selectedByBrand,
+      ledgerState: ledger,
+      combineBornersAndFukai: true,
+    },
+    groupCommon
+  );
+  assert.deepEqual(
+    overview.rows.map((r) => r.displayBrandName),
+    ['BORNERS / FUKAI', 'AKUSHA', 'LISKANI', 'НА ТЕЛЕ']
+  );
+  assert.equal(
+    overview.rows.some((r) => /LISCANI/i.test(r.displayBrandName)),
+    false,
+    'В сводке холдинга не должно быть написания LISCANI'
+  );
+});
+
+test('206. Приёмочный тест 10 (ТЗ v1.0): Сквозной переход 31.12.2027 → 01.01.2028 переносит складские остатки, возвраты в пути, денежный остаток, неоплаченные доплаты Q4 2027 и выплаты WB декабря 2027', async () => {
+  const {
+    approveRecommendedBatch,
+    computeProcurementPlan,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    computeInvestmentSchedule,
+    createDefaultInvestmentLedgerState,
+  } = await import('../src/lib/investmentScheduleEngine.ts');
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_DEF, AKUSHA_2027_SCENARIO_ID } =
+    await import('../src/lib/akushaAssortment2027.ts');
+
+  const ledger = createDefaultInvestmentLedgerState();
+  ledger.globalSettings.wbPayoutScheduleSpecified = true;
+  ledger.globalSettings.wbPayoutDelayDays = 14; // Декабрьские продажи WB 2027 частично приходят в январе 2028!
+
+  // Утверждаем Q4 2027 PO у первой активной модели AKUSHA с доплатой в январе 2028
+  const targetIdx = AKUSHA_2027_MODELS.findIndex((m) => (m.unitCostRub || 0) > 0 && (m.retailPriceRub || 0) > 0);
+  assert.ok(targetIdx >= 0);
+  const targetBase = AKUSHA_2027_MODELS[targetIdx]!;
+  const targetProc = computeProcurementPlan(targetBase, AKUSHA_2027_SCENARIO_DEF);
+  const lastBatch = targetProc.recommendedBatches[targetProc.recommendedBatches.length - 1]!;
+  assert.ok(lastBatch, 'У модели AKUSHA должна быть партия Q4 2027');
+  const targetWithPo = approveRecommendedBatch(targetBase, lastBatch, 'Тест 10');
+  const approvedPo = targetWithPo.sharedSupplyAndFact!.approvedOrders[0]!;
+  const poBatchKey = `${targetWithPo.id}::po:${approvedPo.id}`;
+
+  const modelsWithQ4Po = AKUSHA_2027_MODELS.map((m, idx) => (idx === targetIdx ? targetWithPo : m));
+  ledger.sharedCommitted.committedPaymentOverrides[`${poBatchKey}::balance`] = {
+    opKey: `${poBatchKey}::balance`,
+    batchKey: poBatchKey,
+    customDateIso: '2028-01-18',
+    status: 'Утверждено',
+    updatedAtIso: new Date().toISOString(),
+    updatedBy: 'Тест 10',
+  };
+
+  const sched2028 = computeInvestmentSchedule({
+    models: modelsWithQ4Po,
+    scenarios: [AKUSHA_2027_SCENARIO_DEF],
+    activeScenario: AKUSHA_2027_SCENARIO_DEF,
+    brandFilter: 'AKUSHA',
+    selectedScenarioByBrand: { AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    ledgerState: ledger,
+    targetYear: 2028,
+  });
+
+  const carryover = sched2028.yearBoundaryCarryover;
+  assert.ok(carryover, 'yearBoundaryCarryover обязан присутствовать при targetYear: 2028');
+  assert.equal(carryover!.fromYear, 2027);
+  assert.equal(carryover!.toYear, 2028);
+  assert.ok(
+    carryover!.carriedOverStockUnitsFrom2027 > 0,
+    'Складской остаток на 31.12.2027 должен переноситься на 01.01.2028'
+  );
+  assert.ok(
+    carryover!.carriedOverReturnsInTransitUnitsFrom2027 > 0,
+    'Возвраты в пути на 31.12.2027 должны переноситься на 01.01.2028'
+  );
+  assert.ok(
+    carryover!.carriedOverCashFrom2027Rub > 0 && carryover!.carriedOverCashAppliedToStart === true,
+    'Денежный остаток на конец 2027 должен переноситься на старт 2028'
+  );
+  assert.ok(
+    carryover!.carriedOverWbPayoutsFromDec2027Rub > 0 &&
+      carryover!.carriedOverWbPayoutsEventsCount > 0,
+    'Декабрьские выплаты WB 2027 с лагом 14 дн. обязаны прийти в январе 2028'
+  );
+  assert.ok(
+    carryover!.carriedOverPayablesFrom2027Rub > 0 &&
+      carryover!.carriedOverPayablesEventsCount > 0,
+    'Неоплаченная доплата Q4 2027 со сроком в январе 2028 обязана перенестись в 2028'
+  );
+});
+
+test('207. Приёмочный тест 11 (ТЗ v1.0): Одновременное редактирование с двух устройств (resolveConcurrentPortfolioConflict) сохраняет правки SKU-1, SKU-2, PO и инвестиций обоих устройств независимо от порядка таймстампов', async () => {
+  const { resolveConcurrentPortfolioConflict } = await import('../src/lib/supabaseCloudSync.ts');
+  const { createDefaultInvestmentLedgerState } = await import(
+    '../src/lib/investmentScheduleEngine.ts'
+  );
+  const {
+    approveRecommendedBatch,
+    computeProcurementPlan,
+    updateModelScenarioMonthBuyouts,
+  } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  const s1 = INITIAL_SCENARIOS.find((s) => s.id === 1)!;
+  const baseModels = applyClientSavedS1SalesPlan([
+    ...ACTING_2027_SCENARIO_MODELS,
+    ...S1_100M_SCENARIO_MODELS,
+  ]).slice(0, 4);
+  const sku1 = baseModels[0]!;
+  const sku2 = baseModels[1]!;
+
+  // Устройство A: меняет цену SKU-1 (4 444 ₽) и добавляет инвестицию в investmentLedger
+  const sku1EditedA = {
+    ...sku1,
+    retailPriceRub: 4444,
+    updatedAtIso: '2026-11-19T10:05:00.000Z',
+  };
+  const ledgerA = createDefaultInvestmentLedgerState();
+  ledgerA.sharedCommitted.committedCapitalInjections.push({
+    id: 'inj-device-a',
+    dateIso: '2026-12-01',
+    amountRub: 3_300_000,
+    brandCode: 'BORNERS',
+    title: 'Инвестиция с устройства A',
+    status: 'Оплачено',
+    updatedAtIso: '2026-11-19T10:05:00.000Z',
+    updatedBy: 'Устройство A',
+  });
+  ledgerA.updatedAtIso = '2026-11-19T10:05:00.000Z';
+
+  // Устройство B: меняет план продаж SKU-2 (+777 комплектов в январе) и утверждает PO на SKU-2
+  let sku2EditedB = updateModelScenarioMonthBuyouts(sku2, s1.id, 0, 777);
+  const proc2 = computeProcurementPlan(sku2EditedB, s1);
+  assert.ok(proc2.recommendedBatches.length > 0);
+  sku2EditedB = {
+    ...approveRecommendedBatch(sku2EditedB, proc2.recommendedBatches[0], 'Устройство B'),
+    updatedAtIso: '2026-11-19T10:06:00.000Z',
+  };
+  const poBId = sku2EditedB.sharedSupplyAndFact!.approvedOrders[0]!.id;
+
+  const ledgerB = createDefaultInvestmentLedgerState();
+  ledgerB.sharedCommitted.committedCapitalInjections.push({
+    id: 'inj-device-b',
+    dateIso: '2026-12-10',
+    amountRub: 1_500_000,
+    brandCode: 'BORNERS',
+    title: 'Инвестиция с устройства B',
+    status: 'Оплачено',
+    updatedAtIso: '2026-11-19T10:06:00.000Z',
+    updatedBy: 'Устройство B',
+  });
+  ledgerB.updatedAtIso = '2026-11-19T10:06:00.000Z';
+
+  const payloadA = {
+    models: baseModels.map((m) => (m.id === sku1.id ? sku1EditedA : m)),
+    scenarios: INITIAL_SCENARIOS,
+    investmentLedger: ledgerA,
+    updatedAtIso: '2026-11-19T10:05:00.000Z',
+    serverRevision: 10,
+  };
+  const payloadB = {
+    models: baseModels.map((m) => (m.id === sku2.id ? sku2EditedB : m)),
+    scenarios: INITIAL_SCENARIOS,
+    investmentLedger: ledgerB,
+    updatedAtIso: '2026-11-19T10:06:00.000Z',
+    serverRevision: 11,
+  };
+
+  // Проверяем оба направления: (A local vs B server) И (B local vs A server)
+  for (const [label, merged] of [
+    ['A local + B server', resolveConcurrentPortfolioConflict(payloadA, payloadB)],
+    ['B local + A server', resolveConcurrentPortfolioConflict(payloadB, payloadA)],
+  ] as const) {
+    const m1 = merged.models.find((m) => m.id === sku1.id)!;
+    const m2 = merged.models.find((m) => m.id === sku2.id)!;
+    assert.equal(m1.retailPriceRub, 4444, `${label}: правка цены SKU-1 с устройства A не должна пропасть`);
+    assert.equal(
+      m2.plansByScenario[s1.id]?.monthlyPacks?.[0],
+      777,
+      `${label}: правка продаж SKU-2 с устройства B не должна пропасть`
+    );
+    assert.ok(
+      m2.sharedSupplyAndFact?.approvedOrders.some((po) => po.id === poBId),
+      `${label}: утверждённый PO с устройства B обязан сохраниться`
+    );
+    const mergedInjIds = (
+      (merged.investmentLedger as typeof ledgerA)?.sharedCommitted?.committedCapitalInjections || []
+    ).map((x) => x.id);
+    assert.ok(mergedInjIds.includes('inj-device-a'), `${label}: инвестиция устройства A обязана сохраниться`);
+    assert.ok(mergedInjIds.includes('inj-device-b'), `${label}: инвестиция устройства B обязана сохраниться`);
+  }
+});
+
+test('208. Приёмочный тест 12 (ТЗ v1.0): Защита коммерческих данных — AuthGate смонтирован в page.tsx, isCloudAuthRequired() блокирует облако без входа, а RLS-миграция закрывает все политики строго TO authenticated с private.is_company_member()', async () => {
+  const { isCloudAuthRequired } = await import('../src/lib/supabase.ts');
+
+  // 1. В локальном офлайн-окружении без флага isCloudAuthRequired() === false, а при __BORNERS_REQUIRE_AUTH__ === true -> true
+  assert.equal(isCloudAuthRequired(), false);
+
+  const prevWindow = (globalThis as any).window;
+  try {
+    (globalThis as any).window = {
+      __BORNERS_REQUIRE_AUTH__: true,
+      location: { hostname: 'localhost' },
+    };
+    assert.equal(
+      isCloudAuthRequired(),
+      true,
+      'isCloudAuthRequired() обязан возвращать true при флаге __BORNERS_REQUIRE_AUTH__'
+    );
+
+    // При наличии активной конфигурации Supabase (облачный клиент активен) auth также обязателен
+    const store = new Map<string, string>([
+      [
+        'borners_supabase_runtime_config_v1',
+        JSON.stringify({
+          url: 'https://ocdmyldosplufhhwrrwq.supabase.co',
+          anonKey: 'sb_publishable_test_key_for_auth_check',
+        }),
+      ],
+    ]);
+    (globalThis as any).window = {
+      location: { hostname: 'borners-platform.vercel.app' },
+      localStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => store.set(k, v),
+        removeItem: (k: string) => store.delete(k),
+      },
+    };
+    assert.equal(
+      isCloudAuthRequired(),
+      true,
+      'isCloudAuthRequired() обязан требовать авторизацию при активном облачном клиенте Supabase'
+    );
+  } finally {
+    (globalThis as any).window = prevWindow;
+  }
+
+  // 2. page.tsx оборачивает PlatformProvider и AppShell внутрь AuthProvider + AuthGate
+  const pageCode = fs.readFileSync(path.join(process.cwd(), 'src/app/page.tsx'), 'utf8');
+  assert.ok(
+    pageCode.includes('AuthProvider') &&
+      pageCode.includes('AuthGate') &&
+      pageCode.indexOf('<AuthGate>') < pageCode.indexOf('<PlatformProvider>'),
+    'src/app/page.tsx обязан монтировать AuthProvider и AuthGate снаружи PlatformProvider/AppShell'
+  );
+
+  // 3. SQL-миграция 20261119105000_lockdown_rls_authenticated_only.sql закрывает borners_portfolio_kv и borners_portfolio_history строго TO authenticated с private.is_company_member() и нулевым доступом anon
+  const rlsSql = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'supabase/migrations/20261119105000_lockdown_rls_authenticated_only.sql'
+    ),
+    'utf8'
+  );
+  assert.ok(rlsSql.includes('ALTER TABLE public.borners_portfolio_kv ENABLE ROW LEVEL SECURITY;'));
+  assert.ok(rlsSql.includes('ALTER TABLE public.borners_portfolio_history ENABLE ROW LEVEL SECURITY;'));
+  for (const policyName of [
+    'borners_kv_select_policy',
+    'borners_kv_insert_policy',
+    'borners_kv_update_policy',
+    'borners_history_select_policy',
+    'borners_history_insert_policy',
+  ]) {
+    assert.ok(
+      rlsSql.includes(`ALTER POLICY ${policyName}`),
+      `Политика ${policyName} должна быть ужесточена в миграции`
+    );
+  }
+  const toAuthMatches = rlsSql.match(/TO authenticated/g) || [];
+  assert.ok(
+    toAuthMatches.length >= 5,
+    `Все 5 RLS-политик обязаны быть ограничены TO authenticated (найдено: ${toAuthMatches.length})`
+  );
+  assert.ok(rlsSql.includes('private.is_company_member()'));
+  assert.equal(/\bTO\s+anon\b/i.test(rlsSql), false, 'В миграции RLS не должно быть доступа TO anon');
+  assert.equal(/USING\s*\(\s*true\s*\)/i.test(rlsSql), false, 'Не должно быть открытых USING (true) политик');
 });
 
 

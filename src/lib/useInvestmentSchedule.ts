@@ -10,12 +10,16 @@ import {
 import {
   type BatchTermsManualOverride,
   type CapitalInjectionRecord,
+  type ComputeInvestmentScheduleParams,
   type ComputedInvestmentScheduleResult,
   type CustomCashOperationRecord,
+  type DraftPaymentOrBatchEditPatch,
+  type GroupCapitalMode,
   type HoldingGroupOverviewSummary,
   type InvestmentLedgerGlobalSettings,
   type InvestmentLedgerState,
   type ManualPaymentOverride,
+  type PaymentOrBatchEditPreviewResult,
   type PlanComparisonWithBaseline,
   type ResetToAutoPlanPreview,
   appendLedgerAudit,
@@ -28,6 +32,7 @@ import {
   ensureScenarioPlanSlot,
   formatIsoDateHumanRu,
   loadInvestmentLedgerState,
+  previewPaymentOrBatchEdit,
   saveInvestmentLedgerState,
 } from '@/lib/investmentScheduleEngine';
 
@@ -46,6 +51,7 @@ export interface UseInvestmentScheduleParams {
   explicitWbLagMonths?: number | null;
   explicitWbScheduleSpecified?: boolean;
   targetYear?: 2027 | 2028;
+  groupCapitalMode?: GroupCapitalMode;
 }
 
 function normalizeScopeKeyForLedger(rawScopeKey: string | undefined, fallbackScopeKey: string): string {
@@ -99,21 +105,28 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     params.targetYear ||
     (ledgerState.globalSettings.selectedFinanceYear === 2028 ? 2028 : 2027);
 
-  const schedule: ComputedInvestmentScheduleResult = useMemo(
-    () =>
-      computeInvestmentSchedule({
-        models: params.models,
-        scenarios: params.scenarios,
-        activeScenario: params.activeScenario,
-        brandFilter: params.brandFilter,
-        selectedScenarioByBrand: params.selectedScenarioByBrand,
-        includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
-        ledgerState,
-        explicitInitialCashRub: params.explicitInitialCashRub,
-        explicitWbLagMonths: params.explicitWbLagMonths,
-        explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
-        targetYear: params.targetYear,
-      }),
+  const groupCapitalMode: GroupCapitalMode =
+    params.groupCapitalMode ||
+    (ledgerState.globalSettings.groupCapitalMode === 'per_brand'
+      ? 'per_brand'
+      : 'common_pool');
+
+  const currentComputeParams: ComputeInvestmentScheduleParams = useMemo(
+    () => ({
+      models: params.models,
+      scenarios: params.scenarios,
+      activeScenario: params.activeScenario,
+      brandFilter: params.brandFilter,
+      selectedScenarioByBrand: params.selectedScenarioByBrand,
+      includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
+      ledgerState,
+      explicitInitialCashRub: params.explicitInitialCashRub,
+      explicitWbLagMonths: params.explicitWbLagMonths,
+      explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
+      targetYear: params.targetYear,
+      groupCapitalMode,
+      combineBornersAndFukai: true,
+    }),
     [
       params.models,
       params.scenarios,
@@ -125,42 +138,25 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       params.explicitWbLagMonths,
       params.explicitWbScheduleSpecified,
       params.targetYear,
+      groupCapitalMode,
       ledgerState,
     ]
   );
 
+  const schedule: ComputedInvestmentScheduleResult = useMemo(
+    () => computeInvestmentSchedule(currentComputeParams),
+    [currentComputeParams]
+  );
+
+  const previewEdit = useCallback(
+    (draftPatch: DraftPaymentOrBatchEditPatch): PaymentOrBatchEditPreviewResult =>
+      previewPaymentOrBatchEdit(currentComputeParams, draftPatch),
+    [currentComputeParams]
+  );
+
   const planComparison: PlanComparisonWithBaseline = useMemo(
-    () =>
-      computePlanComparisonWithAutoBaseline(
-        {
-          models: params.models,
-          scenarios: params.scenarios,
-          activeScenario: params.activeScenario,
-          brandFilter: params.brandFilter,
-          selectedScenarioByBrand: params.selectedScenarioByBrand,
-          includeGroupPortfolioInS1: params.includeGroupPortfolioInS1,
-          ledgerState,
-          explicitInitialCashRub: params.explicitInitialCashRub,
-          explicitWbLagMonths: params.explicitWbLagMonths,
-          explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
-          targetYear: params.targetYear,
-        },
-        schedule
-      ),
-    [
-      params.models,
-      params.scenarios,
-      params.activeScenario,
-      params.brandFilter,
-      params.selectedScenarioByBrand,
-      params.includeGroupPortfolioInS1,
-      params.explicitInitialCashRub,
-      params.explicitWbLagMonths,
-      params.explicitWbScheduleSpecified,
-      params.targetYear,
-      ledgerState,
-      schedule,
-    ]
+    () => computePlanComparisonWithAutoBaseline(currentComputeParams, schedule),
+    [currentComputeParams, schedule]
   );
 
   const holdingOverview: HoldingGroupOverviewSummary | null = useMemo(() => {
@@ -178,6 +174,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         explicitWbLagMonths: params.explicitWbLagMonths,
         explicitWbScheduleSpecified: params.explicitWbScheduleSpecified,
         targetYear: params.targetYear,
+        groupCapitalMode,
         combineBornersAndFukai: true,
       },
       schedule
@@ -193,6 +190,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     params.explicitWbLagMonths,
     params.explicitWbScheduleSpecified,
     params.targetYear,
+    groupCapitalMode,
     ledgerState,
     schedule,
   ]);
@@ -312,6 +310,21 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
             : 'Лаг WB: не задан'
         );
       }
+      if (
+        patch.groupCapitalMode !== undefined &&
+        patch.groupCapitalMode !== (prevGs.groupCapitalMode || 'common_pool')
+      ) {
+        beforeParts.push(
+          prevGs.groupCapitalMode === 'per_brand'
+            ? 'Режим группы: Каждый бренд сам'
+            : 'Режим группы: Общий котёл'
+        );
+        afterParts.push(
+          nextGs.groupCapitalMode === 'per_brand'
+            ? 'Режим группы: Каждый бренд сам'
+            : 'Режим группы: Общий котёл'
+        );
+      }
 
       const nextState: InvestmentLedgerState = {
         ...current,
@@ -357,27 +370,46 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       const existingScen = current.scenarioPlans[targetScope]?.paymentOverrides?.[input.opKey];
       const baseOvr = existingCommitted || existingScen;
 
+      const hasDepositPctPatch = 'depositPct' in input.patch;
+      const clampedDepositPct =
+        input.patch.depositPct !== undefined
+          ? Math.max(0, Math.min(100, Math.round(input.patch.depositPct)))
+          : undefined;
+      const hasCustomAmountPatch = 'customAmountRub' in input.patch;
+
+      // При явной смене процента предоплаты очищаем устаревший ручной customAmountRub (если не передан явно)
+      // и наоборот — при явной смене суммы очищаем устаревший depositPct, чтобы инвариант аванс + доплата = цена PO работал чисто.
+      const resolvedDepositPct = hasDepositPctPatch
+        ? clampedDepositPct
+        : hasCustomAmountPatch && input.patch.customAmountRub !== undefined
+        ? undefined
+        : baseOvr?.depositPct;
+
+      const resolvedCustomAmountRub = hasCustomAmountPatch
+        ? input.patch.customAmountRub
+        : clampedDepositPct !== undefined
+        ? undefined
+        : baseOvr?.customAmountRub;
+
       const mergedOvr: ManualPaymentOverride = {
         opKey: input.opKey,
         batchKey: input.batchKey,
         customDateIso:
-          input.patch.customDateIso !== undefined
-            ? input.patch.customDateIso
-            : baseOvr?.customDateIso,
-        customAmountRub:
-          input.patch.customAmountRub !== undefined
-            ? input.patch.customAmountRub
-            : baseOvr?.customAmountRub,
+          'customDateIso' in input.patch ? input.patch.customDateIso : baseOvr?.customDateIso,
+        customAmountRub: resolvedCustomAmountRub,
+        depositPct: resolvedDepositPct,
+        balanceDateIso:
+          'balanceDateIso' in input.patch
+            ? input.patch.balanceDateIso
+            : baseOvr?.balanceDateIso,
         customFactoryName:
-          input.patch.customFactoryName !== undefined
+          'customFactoryName' in input.patch
             ? input.patch.customFactoryName
             : baseOvr?.customFactoryName,
-        status: input.patch.status !== undefined ? input.patch.status : baseOvr?.status,
+        status: 'status' in input.patch ? input.patch.status : baseOvr?.status,
         splitTranches:
-          input.patch.splitTranches !== undefined
-            ? input.patch.splitTranches
-            : baseOvr?.splitTranches,
-        note: input.patch.note !== undefined ? input.patch.note : baseOvr?.note,
+          'splitTranches' in input.patch ? input.patch.splitTranches : baseOvr?.splitTranches,
+        note: 'note' in input.patch ? input.patch.note : baseOvr?.note,
         updatedAtIso: new Date().toISOString(),
         updatedBy: author,
       };
@@ -391,6 +423,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         );
 
       const nextCommittedMap = { ...current.sharedCommitted.committedPaymentOverrides };
+      const nextCommittedBatch = { ...current.sharedCommitted.committedBatchOverrides };
       const nextScenarioPlans = { ...current.scenarioPlans };
       const slot = ensureScenarioPlanSlot(current, targetScope);
 
@@ -401,6 +434,56 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         delete nextCommittedMap[input.opKey];
         slot.paymentOverrides[input.opKey] = mergedOvr;
       }
+
+      // Синхронизация инварианта аванс + доплата = полная цена партии (Тест 04 ТЗ v1.0):
+      // При редактировании % предоплаты обновляем batchOverrides[batchKey].customPrepaymentPct
+      // и сбрасываем устаревший customAmountRub на связанной доплате, чтобы движок автоматически пересчитал доплату.
+      if (input.batchKey && clampedDepositPct !== undefined) {
+        const existingCommittedB = nextCommittedBatch[input.batchKey];
+        const existingScenB = slot.batchOverrides[input.batchKey];
+        const baseB = existingCommittedB || existingScenB;
+        const syncedBatch: BatchTermsManualOverride = {
+          ...baseB,
+          batchKey: input.batchKey,
+          customPrepaymentPct: clampedDepositPct,
+          updatedAtIso: mergedOvr.updatedAtIso,
+          updatedBy: author,
+        };
+        if (input.isApprovedPo || Boolean(existingCommittedB)) {
+          nextCommittedBatch[input.batchKey] = syncedBatch;
+        } else {
+          slot.batchOverrides[input.batchKey] = syncedBatch;
+        }
+      }
+
+      if (
+        input.batchKey &&
+        (clampedDepositPct !== undefined ||
+          (input.opKey.endsWith('::prepay') && input.patch.customAmountRub !== undefined))
+      ) {
+        const balanceOpKey = `${input.batchKey}::balance`;
+        if (balanceOpKey !== input.opKey) {
+          const cleanBalanceAmount = (ovr: ManualPaymentOverride | undefined) => {
+            if (!ovr || (ovr.splitTranches && ovr.splitTranches.length > 0)) return ovr;
+            if (ovr.customAmountRub === undefined) return ovr;
+            return {
+              ...ovr,
+              customAmountRub: undefined,
+              updatedAtIso: mergedOvr.updatedAtIso,
+              updatedBy: author,
+            };
+          };
+          if (nextCommittedMap[balanceOpKey]) {
+            nextCommittedMap[balanceOpKey] = cleanBalanceAmount(nextCommittedMap[balanceOpKey])!;
+          }
+          if (slot.paymentOverrides[balanceOpKey]) {
+            slot.paymentOverrides[balanceOpKey] = cleanBalanceAmount(
+              slot.paymentOverrides[balanceOpKey]
+            )!;
+          }
+        }
+      }
+
       nextScenarioPlans[targetScope] = slot;
 
       const afterParts: string[] = [];
@@ -414,9 +497,17 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         if (mergedOvr.customDateIso) {
           afterParts.push(`Дата: ${formatIsoDateHumanRu(mergedOvr.customDateIso)}`);
         }
+        if (mergedOvr.depositPct !== undefined) {
+          afterParts.push(
+            `Аванс/Доплата: ${mergedOvr.depositPct}% / ${100 - mergedOvr.depositPct}%`
+          );
+        }
         if (mergedOvr.customAmountRub !== undefined) {
           afterParts.push(`Сумма: ${mergedOvr.customAmountRub.toLocaleString('ru-RU')} ₽`);
         }
+      }
+      if (mergedOvr.balanceDateIso) {
+        afterParts.push(`Доплата к: ${formatIsoDateHumanRu(mergedOvr.balanceDateIso)}`);
       }
       if (mergedOvr.customFactoryName) {
         afterParts.push(`Поставщик: ${mergedOvr.customFactoryName}`);
@@ -428,6 +519,8 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       const actionType =
         input.patch.splitTranches !== undefined
           ? 'split_payment'
+          : clampedDepositPct !== undefined
+          ? 'edit_terms'
           : input.patch.status !== undefined
           ? 'status_change'
           : input.patch.customDateIso !== undefined
@@ -441,6 +534,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         sharedCommitted: {
           ...current.sharedCommitted,
           committedPaymentOverrides: nextCommittedMap,
+          committedBatchOverrides: nextCommittedBatch,
         },
         scenarioPlans: nextScenarioPlans,
         auditHistory: appendLedgerAudit(current, {
@@ -479,12 +573,16 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       const existingScen = current.scenarioPlans[targetScope]?.batchOverrides?.[input.batchKey];
       const baseB = existingCommitted || existingScen;
 
+      const clampedPrepayPct =
+        input.patch.customPrepaymentPct !== undefined
+          ? Math.max(0, Math.min(100, Math.round(input.patch.customPrepaymentPct)))
+          : undefined;
+
+      const nowIso = new Date().toISOString();
       const merged: BatchTermsManualOverride = {
         batchKey: input.batchKey,
         customPrepaymentPct:
-          input.patch.customPrepaymentPct !== undefined
-            ? input.patch.customPrepaymentPct
-            : baseB?.customPrepaymentPct,
+          clampedPrepayPct !== undefined ? clampedPrepayPct : baseB?.customPrepaymentPct,
         customFactoryName:
           input.patch.customFactoryName !== undefined
             ? input.patch.customFactoryName
@@ -501,11 +599,12 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
           input.patch.customPacksQty !== undefined
             ? input.patch.customPacksQty
             : baseB?.customPacksQty,
-        updatedAtIso: new Date().toISOString(),
+        updatedAtIso: nowIso,
         updatedBy: author,
       };
 
       const nextCommittedBatch = { ...current.sharedCommitted.committedBatchOverrides };
+      const nextCommittedPay = { ...current.sharedCommitted.committedPaymentOverrides };
       const nextScenarioPlans = { ...current.scenarioPlans };
       const slot = ensureScenarioPlanSlot(current, targetScope);
 
@@ -514,6 +613,48 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
       } else {
         slot.batchOverrides[input.batchKey] = merged;
       }
+
+      // При изменении % предоплаты или объёма партии синхронизируем связанные paymentOverrides,
+      // чтобы старый ручной customAmountRub или старый depositPct не перекрывал новый расчёт аванса и доплаты!
+      if (clampedPrepayPct !== undefined || input.patch.customPacksQty !== undefined) {
+        const prepayOpKey = `${input.batchKey}::prepay`;
+        const balanceOpKey = `${input.batchKey}::balance`;
+        const sanitizePayOvr = (
+          ovr: ManualPaymentOverride | undefined,
+          isPrepay: boolean
+        ): ManualPaymentOverride | undefined => {
+          if (!ovr || (ovr.splitTranches && ovr.splitTranches.length > 0)) return ovr;
+          return {
+            ...ovr,
+            customAmountRub: undefined,
+            ...(isPrepay && clampedPrepayPct !== undefined
+              ? { depositPct: clampedPrepayPct }
+              : {}),
+            updatedAtIso: nowIso,
+            updatedBy: author,
+          };
+        };
+
+        if (nextCommittedPay[prepayOpKey]) {
+          nextCommittedPay[prepayOpKey] = sanitizePayOvr(nextCommittedPay[prepayOpKey], true)!;
+        }
+        if (slot.paymentOverrides[prepayOpKey]) {
+          slot.paymentOverrides[prepayOpKey] = sanitizePayOvr(
+            slot.paymentOverrides[prepayOpKey],
+            true
+          )!;
+        }
+        if (nextCommittedPay[balanceOpKey]) {
+          nextCommittedPay[balanceOpKey] = sanitizePayOvr(nextCommittedPay[balanceOpKey], false)!;
+        }
+        if (slot.paymentOverrides[balanceOpKey]) {
+          slot.paymentOverrides[balanceOpKey] = sanitizePayOvr(
+            slot.paymentOverrides[balanceOpKey],
+            false
+          )!;
+        }
+      }
+
       nextScenarioPlans[targetScope] = slot;
 
       const afterParts: string[] = [];
@@ -536,6 +677,7 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
         ...current,
         sharedCommitted: {
           ...current.sharedCommitted,
+          committedPaymentOverrides: nextCommittedPay,
           committedBatchOverrides: nextCommittedBatch,
         },
         scenarioPlans: nextScenarioPlans,
@@ -799,6 +941,13 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     [updateGlobalSettings]
   );
 
+  const setGroupCapitalMode = useCallback(
+    (mode: GroupCapitalMode, author = 'Владелец') => {
+      updateGlobalSettings({ groupCapitalMode: mode }, author);
+    },
+    [updateGlobalSettings]
+  );
+
   return {
     ledgerState,
     schedule,
@@ -808,6 +957,9 @@ export function useInvestmentSchedule(params: UseInvestmentScheduleParams) {
     activeCapitalInjections,
     selectedYear,
     setSelectedYear,
+    groupCapitalMode,
+    setGroupCapitalMode,
+    previewEdit,
     saveStatus,
     lastSavedAtIso,
     updateGlobalSettings,

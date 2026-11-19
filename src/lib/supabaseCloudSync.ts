@@ -1,4 +1,20 @@
 import type { GrowthScenarioDef, ScenarioModelSpec } from './scenarioData.ts';
+import type {
+  ActualMonthSaleRecord,
+  ApprovedPurchaseOrder,
+  ModelAuditEntry,
+  SharedSkuSupplyAndFact,
+} from './unifiedBusinessEngine.ts';
+import type {
+  BatchTermsManualOverride,
+  CapitalInjectionRecord,
+  CustomCashOperationRecord,
+  InvestmentLedgerAuditEntry,
+  InvestmentLedgerState,
+  ManualPaymentOverride,
+  ScenarioManualLedgerPlan,
+} from './investmentScheduleEngine.ts';
+import { mergeCloudPortfolioSnapshot } from './portfolioPersistence.ts';
 import { getActiveSupabaseClient } from './supabase.ts';
 
 export const SUPABASE_PORTFOLIO_TABLE = 'borners_portfolio_kv';
@@ -7,6 +23,17 @@ export const SUPABASE_CORE_KEY = 'portfolio_core_v1';
 export const SUPABASE_GALLERY_KEY_PREFIX = 'photo_gallery:';
 export const SUPABASE_WORKSPACE_KEY = 'platform_workspace_v1';
 export const SUPABASE_CONCEPT_MEDIA_PREFIX = 'concept_media:';
+
+export type CloudSaveStatus =
+  | 'saving'
+  | 'saved_cloud'
+  | 'saved_local'
+  | 'conflict_merged';
+
+export interface CloudPushOptions {
+  expectedRevision?: number | null;
+  maxConflictRetries?: number;
+}
 
 export interface CloudPlatformWorkspacePayload {
   concepts: unknown[];
@@ -17,6 +44,7 @@ export interface CloudPlatformWorkspacePayload {
   campaigns?: unknown[];
   deletedConceptIds?: string[];
   updatedAtIso: string;
+  serverRevision?: number;
 }
 
 export interface CloudPortfolioCorePayload {
@@ -31,7 +59,33 @@ export interface CloudPortfolioCorePayload {
   productGroups?: unknown;
   investmentLedger?: unknown;
   updatedAtIso: string;
+  serverRevision?: number;
 }
+
+export interface CloudConflictEventDetail {
+  key: string;
+  mergedAtIso: string;
+  previousRevision: number | null;
+  serverRevision: number;
+  mergedPayload: CloudPortfolioCorePayload | CloudPlatformWorkspacePayload;
+}
+
+interface SafeUpsertRpcResponse {
+  ok?: boolean;
+  conflict?: boolean;
+  server_revision?: number | string | null;
+  server_updated_at?: string | null;
+  server_payload?: unknown;
+}
+
+interface SupabaseKvRow {
+  key: string;
+  payload: unknown;
+  updated_at?: string;
+  revision?: number | string | null;
+}
+
+const ASYMMETRIC_OLDER_SENTINEL_ISO = '1970-01-01T00:00:00.000Z';
 
 function isAutomatedOrLocalhostWriteBlocked(): boolean {
   if (
@@ -53,13 +107,78 @@ function isAutomatedOrLocalhostWriteBlocked(): boolean {
   return false;
 }
 
+function parseRevisionNumber(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.trunc(raw);
+  }
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      return Math.trunc(parsed);
+    }
+  }
+  return null;
+}
+
+function parseIsoTs(iso: unknown): number {
+  if (typeof iso !== 'string' || !iso.trim()) return NaN;
+  return Date.parse(iso);
+}
+
+function isMissingRpcError(
+  error: { code?: string; message?: string; status?: number; details?: string } | null | undefined
+): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST202' || error.code === '42883' || error.status === 404) {
+    return true;
+  }
+  const msg = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+  return (
+    msg.includes('upsert_portfolio_kv_safe') &&
+    (msg.includes('could not find the function') || msg.includes('does not exist'))
+  );
+}
+
+function isMissingColumnError(
+  error: { code?: string; message?: string } | null | undefined,
+  columnName: string
+): boolean {
+  if (!error) return false;
+  if (error.code === '42703') return true;
+  const msg = (error.message || '').toLowerCase();
+  return msg.includes(columnName.toLowerCase()) && msg.includes('does not exist');
+}
+
 const lastSyncedGalleryFingerprintByModelId = new Map<string, string>();
 let latestCorePushSeq = 0;
 let lastLocalCorePushIso = '';
 let inFlightPortfolioPull: Promise<CloudPortfolioCorePayload | null> | null = null;
+let lastKnownCoreRevision: number | null = null;
+let lastKnownWorkspaceRevision: number | null = null;
+let lastCloudConflictEvent: CloudConflictEventDetail | null = null;
 
 export function getLastLocalCorePushIso(): string {
   return lastLocalCorePushIso;
+}
+
+export function getLastKnownCoreRevision(): number | null {
+  return lastKnownCoreRevision;
+}
+
+export function setLastKnownCoreRevision(rev: number | null): void {
+  lastKnownCoreRevision = rev === null ? null : parseRevisionNumber(rev);
+}
+
+export function getLastKnownWorkspaceRevision(): number | null {
+  return lastKnownWorkspaceRevision;
+}
+
+export function setLastKnownWorkspaceRevision(rev: number | null): void {
+  lastKnownWorkspaceRevision = rev === null ? null : parseRevisionNumber(rev);
+}
+
+export function getLastCloudConflictEvent(): CloudConflictEventDetail | null {
+  return lastCloudConflictEvent;
 }
 
 function readWindowStorageJsonSafe(key: string): unknown {
@@ -135,6 +254,836 @@ function stripBase64FromModelForCoreRow(
           ? ''
           : g.originalUrl,
     })),
+  };
+}
+
+function rehydrateLocalGalleriesAfterConflict(
+  mergedModels: ScenarioModelSpec[],
+  originalLocalModels: ScenarioModelSpec[]
+): ScenarioModelSpec[] {
+  const localGalleryById = new Map<string, ScenarioModelSpec['gallery']>();
+  for (const lm of originalLocalModels) {
+    if (
+      lm?.id &&
+      Array.isArray(lm.gallery) &&
+      lm.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+    ) {
+      localGalleryById.set(lm.id, lm.gallery);
+    }
+  }
+  if (localGalleryById.size === 0) return mergedModels;
+
+  return mergedModels.map((m) => {
+    const hasRef =
+      Array.isArray(m.gallery) &&
+      m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
+    if (!hasRef) return m;
+    const localGal = localGalleryById.get(m.id);
+    return localGal ? { ...m, gallery: localGal } : m;
+  });
+}
+
+function rehydrateLocalConceptMediaAfterConflict(
+  mergedConcepts: unknown[],
+  originalLocalConcepts: unknown[]
+): unknown[] {
+  const localById = new Map<string, Record<string, unknown>>();
+  for (const raw of originalLocalConcepts) {
+    if (!raw || typeof raw !== 'object') continue;
+    const rec = raw as Record<string, unknown>;
+    const id = String(rec.id || '').trim();
+    if (id) localById.set(id, rec);
+  }
+  if (localById.size === 0) return mergedConcepts;
+
+  return mergedConcepts.map((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const rec = raw as Record<string, unknown>;
+    const id = String(rec.id || '').trim();
+    const localRec = id ? localById.get(id) : undefined;
+    if (!localRec) return rec;
+
+    const needsImg = rec.imageUrl === '__SUPABASE_CONCEPT_MEDIA_REF__';
+    const rawGallery = Array.isArray(rec.galleryPhotos)
+      ? (rec.galleryPhotos as { id?: string; url?: string; caption?: string }[])
+      : null;
+    const needsGallery = Boolean(
+      rawGallery?.some((gp) => gp?.url === '__SUPABASE_CONCEPT_MEDIA_REF__')
+    );
+    if (!needsImg && !needsGallery) return rec;
+
+    return {
+      ...rec,
+      imageUrl:
+        needsImg && typeof localRec.imageUrl === 'string' && localRec.imageUrl
+          ? localRec.imageUrl
+          : rec.imageUrl,
+      galleryPhotos:
+        needsGallery && Array.isArray(localRec.galleryPhotos)
+          ? localRec.galleryPhotos
+          : rec.galleryPhotos,
+    };
+  });
+}
+
+function isPlainRecord(val: unknown): val is Record<string, unknown> {
+  return Boolean(val && typeof val === 'object' && !Array.isArray(val));
+}
+
+function mergeRecordMapByUpdatedAt<T extends { updatedAtIso?: string }>(
+  localMap: Record<string, T> | undefined,
+  serverMap: Record<string, T> | undefined,
+  preferLocalOnTie: boolean
+): Record<string, T> {
+  const merged: Record<string, T> = {};
+  const keys = new Set<string>([
+    ...Object.keys(serverMap || {}),
+    ...Object.keys(localMap || {}),
+  ]);
+  for (const key of keys) {
+    const lItem = localMap?.[key];
+    const sItem = serverMap?.[key];
+    if (lItem && !sItem) {
+      merged[key] = lItem;
+    } else if (sItem && !lItem) {
+      merged[key] = sItem;
+    } else if (lItem && sItem) {
+      const lTs = parseIsoTs(lItem.updatedAtIso);
+      const sTs = parseIsoTs(sItem.updatedAtIso);
+      if (Number.isFinite(lTs) && Number.isFinite(sTs) && lTs !== sTs) {
+        merged[key] = lTs > sTs ? lItem : sItem;
+      } else if (Number.isFinite(lTs) && !Number.isFinite(sTs)) {
+        merged[key] = lItem;
+      } else if (!Number.isFinite(lTs) && Number.isFinite(sTs)) {
+        merged[key] = sItem;
+      } else {
+        merged[key] = preferLocalOnTie ? lItem : sItem;
+      }
+    }
+  }
+  return merged;
+}
+
+function mergeArrayByIdAndUpdatedAt<T extends { id?: string; updatedAtIso?: string }>(
+  localArr: T[] | undefined,
+  serverArr: T[] | undefined,
+  preferLocalOnTie: boolean
+): T[] {
+  const byId = new Map<string, T>();
+  const orderedIds: string[] = [];
+  const primary = preferLocalOnTie ? localArr || [] : serverArr || [];
+  const secondary = preferLocalOnTie ? serverArr || [] : localArr || [];
+
+  for (const item of primary) {
+    const id = String(item?.id || '').trim();
+    if (!id) continue;
+    if (!byId.has(id)) orderedIds.push(id);
+    byId.set(id, item);
+  }
+  for (const item of secondary) {
+    const id = String(item?.id || '').trim();
+    if (!id) continue;
+    const existing = byId.get(id);
+    if (!existing) {
+      orderedIds.push(id);
+      byId.set(id, item);
+      continue;
+    }
+    const existTs = parseIsoTs(existing.updatedAtIso);
+    const candTs = parseIsoTs(item.updatedAtIso);
+    if (Number.isFinite(candTs) && (!Number.isFinite(existTs) || candTs > existTs)) {
+      byId.set(id, item);
+    }
+  }
+  return orderedIds.map((id) => byId.get(id)!).filter(Boolean);
+}
+
+function mergeInvestmentLedgers(
+  localRaw: unknown,
+  serverRaw: unknown,
+  preferLocalOnTie: boolean
+): unknown {
+  if (!isPlainRecord(localRaw)) return serverRaw;
+  if (!isPlainRecord(serverRaw)) return localRaw;
+
+  const localLedger = localRaw as unknown as Partial<InvestmentLedgerState>;
+  const serverLedger = serverRaw as unknown as Partial<InvestmentLedgerState>;
+
+  const localLedgerTs = parseIsoTs(localLedger.updatedAtIso);
+  const serverLedgerTs = parseIsoTs(serverLedger.updatedAtIso);
+  const isLocalLedgerNewer =
+    Number.isFinite(localLedgerTs) && Number.isFinite(serverLedgerTs)
+      ? localLedgerTs >= serverLedgerTs
+      : Number.isFinite(localLedgerTs)
+      ? true
+      : Number.isFinite(serverLedgerTs)
+      ? false
+      : preferLocalOnTie;
+
+  const olderSettings = (isLocalLedgerNewer
+    ? serverLedger.globalSettings
+    : localLedger.globalSettings) as Record<string, unknown> | undefined;
+  const newerSettings = (isLocalLedgerNewer
+    ? localLedger.globalSettings
+    : serverLedger.globalSettings) as Record<string, unknown> | undefined;
+
+  const mergedSharedCommitted = {
+    committedPaymentOverrides: mergeRecordMapByUpdatedAt<ManualPaymentOverride>(
+      localLedger.sharedCommitted?.committedPaymentOverrides,
+      serverLedger.sharedCommitted?.committedPaymentOverrides,
+      isLocalLedgerNewer
+    ),
+    committedBatchOverrides: mergeRecordMapByUpdatedAt<BatchTermsManualOverride>(
+      localLedger.sharedCommitted?.committedBatchOverrides,
+      serverLedger.sharedCommitted?.committedBatchOverrides,
+      isLocalLedgerNewer
+    ),
+    committedCapitalInjections: mergeArrayByIdAndUpdatedAt<CapitalInjectionRecord>(
+      localLedger.sharedCommitted?.committedCapitalInjections,
+      serverLedger.sharedCommitted?.committedCapitalInjections,
+      isLocalLedgerNewer
+    ),
+    committedOtherOperations: mergeArrayByIdAndUpdatedAt<CustomCashOperationRecord>(
+      localLedger.sharedCommitted?.committedOtherOperations,
+      serverLedger.sharedCommitted?.committedOtherOperations,
+      isLocalLedgerNewer
+    ),
+  };
+
+  const mergedScenarioPlans: Record<string, ScenarioManualLedgerPlan> = {};
+  const scopeKeys = new Set<string>([
+    ...Object.keys(serverLedger.scenarioPlans || {}),
+    ...Object.keys(localLedger.scenarioPlans || {}),
+  ]);
+  for (const scopeKey of scopeKeys) {
+    const lp = localLedger.scenarioPlans?.[scopeKey];
+    const sp = serverLedger.scenarioPlans?.[scopeKey];
+    mergedScenarioPlans[scopeKey] = {
+      paymentOverrides: mergeRecordMapByUpdatedAt<ManualPaymentOverride>(
+        lp?.paymentOverrides,
+        sp?.paymentOverrides,
+        isLocalLedgerNewer
+      ),
+      batchOverrides: mergeRecordMapByUpdatedAt<BatchTermsManualOverride>(
+        lp?.batchOverrides,
+        sp?.batchOverrides,
+        isLocalLedgerNewer
+      ),
+      plannedCapitalInjections: mergeArrayByIdAndUpdatedAt<CapitalInjectionRecord>(
+        lp?.plannedCapitalInjections,
+        sp?.plannedCapitalInjections,
+        isLocalLedgerNewer
+      ),
+      plannedOtherOperations: mergeArrayByIdAndUpdatedAt<CustomCashOperationRecord>(
+        lp?.plannedOtherOperations,
+        sp?.plannedOtherOperations,
+        isLocalLedgerNewer
+      ),
+    };
+  }
+
+  const auditMap = new Map<string, InvestmentLedgerAuditEntry>();
+  for (const entry of [
+    ...(Array.isArray(localLedger.auditHistory) ? localLedger.auditHistory : []),
+    ...(Array.isArray(serverLedger.auditHistory) ? serverLedger.auditHistory : []),
+  ]) {
+    if (entry?.id && !auditMap.has(entry.id)) {
+      auditMap.set(entry.id, entry);
+    }
+  }
+  const mergedAuditHistory = Array.from(auditMap.values())
+    .sort((a, b) => (parseIsoTs(b.timestampIso) || 0) - (parseIsoTs(a.timestampIso) || 0))
+    .slice(0, 300);
+
+  const mergedIso = new Date(
+    Math.max(
+      Date.now(),
+      Number.isFinite(localLedgerTs) ? localLedgerTs : 0,
+      Number.isFinite(serverLedgerTs) ? serverLedgerTs : 0
+    )
+  ).toISOString();
+
+  return {
+    ...(isLocalLedgerNewer ? serverRaw : localRaw),
+    ...(isLocalLedgerNewer ? localRaw : serverRaw),
+    version: 1,
+    globalSettings: {
+      ...(olderSettings || {}),
+      ...(newerSettings || {}),
+    },
+    sharedCommitted: mergedSharedCommitted,
+    scenarioPlans: mergedScenarioPlans,
+    auditHistory: mergedAuditHistory,
+    updatedAtIso: mergedIso,
+  };
+}
+
+function mergeSharedSupplyAndFact(
+  winner: SharedSkuSupplyAndFact | undefined,
+  other: SharedSkuSupplyAndFact | undefined
+): SharedSkuSupplyAndFact | undefined {
+  if (!winner) return other;
+  if (!other) return winner;
+
+  // Объединяем утверждённые заказы фабрикам по id, чтобы заказы с разных устройств не затирали друг друга
+  const poById = new Map<string, ApprovedPurchaseOrder>();
+  const poOrder: string[] = [];
+  for (const po of winner.approvedOrders || []) {
+    if (!po?.id) continue;
+    if (!poById.has(po.id)) poOrder.push(po.id);
+    poById.set(po.id, po);
+  }
+  for (const po of other.approvedOrders || []) {
+    if (!po?.id) continue;
+    const existing = poById.get(po.id);
+    if (!existing) {
+      poOrder.push(po.id);
+      poById.set(po.id, po);
+      continue;
+    }
+    const existVer = Number(existing.version) || 0;
+    const candVer = Number(po.version) || 0;
+    const existTs = parseIsoTs(existing.approvedAt);
+    const candTs = parseIsoTs(po.approvedAt);
+    if (candVer > existVer || (candVer === existVer && Number.isFinite(candTs) && (!Number.isFinite(existTs) || candTs > existTs))) {
+      poById.set(po.id, po);
+    }
+  }
+  const mergedOrders = poOrder.map((id) => poById.get(id)!).filter(Boolean);
+
+  // Объединяем помесячный факт (всегда сохраняем полную матрицу из 12 месяцев 0..11):
+  // не теряем заполненные не-null месяцы со второй стороны
+  const winnerSalesByMonth = new Map<number, ActualMonthSaleRecord>();
+  for (const rec of winner.actualSalesByMonth || []) {
+    if (rec && typeof rec.monthIdx === 'number' && rec.monthIdx >= 0 && rec.monthIdx < 12) {
+      winnerSalesByMonth.set(rec.monthIdx, rec);
+    }
+  }
+  const otherSalesByMonth = new Map<number, ActualMonthSaleRecord>();
+  for (const rec of other.actualSalesByMonth || []) {
+    if (rec && typeof rec.monthIdx === 'number' && rec.monthIdx >= 0 && rec.monthIdx < 12) {
+      otherSalesByMonth.set(rec.monthIdx, rec);
+    }
+  }
+  const mergedActualSales: ActualMonthSaleRecord[] = Array.from({ length: 12 }, (_, mIdx) => {
+    const wRec = winnerSalesByMonth.get(mIdx);
+    const oRec = otherSalesByMonth.get(mIdx);
+    return {
+      monthIdx: mIdx,
+      actualBuyoutsPacks:
+        wRec && wRec.actualBuyoutsPacks !== null && wRec.actualBuyoutsPacks !== undefined
+          ? wRec.actualBuyoutsPacks
+          : oRec && oRec.actualBuyoutsPacks !== null && oRec.actualBuyoutsPacks !== undefined
+          ? oRec.actualBuyoutsPacks
+          : null,
+      actualPriceRub:
+        wRec && wRec.actualPriceRub !== null && wRec.actualPriceRub !== undefined
+          ? wRec.actualPriceRub
+          : oRec && oRec.actualPriceRub !== null && oRec.actualPriceRub !== undefined
+          ? oRec.actualPriceRub
+          : null,
+    };
+  });
+
+  // Объединяем аудит-лог модели
+  const auditById = new Map<string, ModelAuditEntry>();
+  for (const entry of [...(winner.auditHistory || []), ...(other.auditHistory || [])]) {
+    if (entry?.id && !auditById.has(entry.id)) {
+      auditById.set(entry.id, entry);
+    }
+  }
+  const mergedAudit = Array.from(auditById.values())
+    .sort((a, b) => (parseIsoTs(b.timestamp) || 0) - (parseIsoTs(a.timestamp) || 0))
+    .slice(0, 100);
+
+  return {
+    ...winner,
+    approvedOrders: mergedOrders,
+    actualSalesByMonth: mergedActualSales,
+    passportVersion: Math.max(winner.passportVersion || 1, other.passportVersion || 1),
+    auditHistory: mergedAudit,
+  };
+}
+
+function mergeAdditiveModelCollections(
+  winner: ScenarioModelSpec,
+  other: ScenarioModelSpec | undefined
+): ScenarioModelSpec {
+  if (!other) return winner;
+
+  const mergedPlans: ScenarioModelSpec['plansByScenario'] = {
+    ...(winner.plansByScenario || {}),
+  };
+  for (const [scenKey, otherPl] of Object.entries(other.plansByScenario || {})) {
+    const numKey = Number(scenKey);
+    if (!Number.isFinite(numKey) || !otherPl) continue;
+    if (!mergedPlans[numKey]) {
+      mergedPlans[numKey] = {
+        ...otherPl,
+        monthlyPacks: Array.isArray(otherPl.monthlyPacks) ? [...otherPl.monthlyPacks] : [],
+        monthlyPricesRub: Array.isArray(otherPl.monthlyPricesRub)
+          ? [...otherPl.monthlyPricesRub]
+          : [],
+        monthlyReceiptsPacks: Array.isArray(otherPl.monthlyReceiptsPacks)
+          ? [...otherPl.monthlyReceiptsPacks]
+          : [],
+      };
+    }
+  }
+
+  const pdfById = new Map<string, NonNullable<ScenarioModelSpec['attachedPdfs']>[number]>();
+  for (const pdf of [...(winner.attachedPdfs || []), ...(other.attachedPdfs || [])]) {
+    if (pdf?.id && !pdfById.has(pdf.id)) {
+      pdfById.set(pdf.id, pdf);
+    }
+  }
+  const mergedPdfs =
+    winner.attachedPdfs !== undefined || other.attachedPdfs !== undefined
+      ? Array.from(pdfById.values())
+      : undefined;
+
+  return {
+    ...winner,
+    wbArticle: winner.wbArticle || other.wbArticle,
+    description: winner.description || other.description,
+    liskaniSizeVariants:
+      winner.liskaniSizeVariants && winner.liskaniSizeVariants.length > 0
+        ? winner.liskaniSizeVariants
+        : other.liskaniSizeVariants,
+    attachedPdfs: mergedPdfs,
+    plansByScenario: mergedPlans,
+    sharedSupplyAndFact: mergeSharedSupplyAndFact(
+      winner.sharedSupplyAndFact,
+      other.sharedSupplyAndFact
+    ),
+    updatedAtIso:
+      winner.updatedAtIso && winner.updatedAtIso !== ASYMMETRIC_OLDER_SENTINEL_ISO
+        ? winner.updatedAtIso
+        : other.updatedAtIso && other.updatedAtIso !== ASYMMETRIC_OLDER_SENTINEL_ISO
+        ? other.updatedAtIso
+        : undefined,
+  };
+}
+
+function normalizeModelLookupKeys(m: Pick<ScenarioModelSpec, 'id' | 'code'>): string[] {
+  const keys: string[] = [];
+  if (m.id) keys.push(`ID:${m.id.trim().toUpperCase()}`);
+  if (m.code) keys.push(`CODE:${m.code.trim().toUpperCase()}`);
+  return keys;
+}
+
+function findMatchingModel(
+  list: ScenarioModelSpec[],
+  target: Pick<ScenarioModelSpec, 'id' | 'code'>
+): ScenarioModelSpec | undefined {
+  const idU = (target.id || '').trim().toUpperCase();
+  const codeU = (target.code || '').trim().toUpperCase();
+  return list.find(
+    (m) =>
+      (idU && (m.id || '').trim().toUpperCase() === idU) ||
+      (codeU && (m.code || '').trim().toUpperCase() === codeU)
+  );
+}
+
+/**
+ * Чистая детерминированная функция бесконфликтного слияния портфеля при конкурентном редактировании
+ * с двух устройств (Optimistic Concurrency · Test 11).
+ *
+ * Гарантирует:
+ * - правки разных SKU на разных устройствах сохраняются обе (по per-model `updatedAtIso`, включая асимметричный случай,
+ *   когда только отредактированный SKU имеет `updatedAtIso`);
+ * - правки разных сценариев, PO, фактических продаж и PDF внутри одного SKU объединяются без потерь;
+ * - записи и переопределения `investmentLedger`, `scenarios`, `selectedScenarioByBrand`, `customBrands`,
+ *   `productGroups` и `financeContourParams` с обоих устройств сохраняются без тихого затирания.
+ */
+export function resolveConcurrentPortfolioConflict(
+  localPayload: CloudPortfolioCorePayload,
+  serverPayload: CloudPortfolioCorePayload
+): CloudPortfolioCorePayload {
+  const localTs = parseIsoTs(localPayload.updatedAtIso);
+  const serverTs = parseIsoTs(serverPayload.updatedAtIso);
+  const isLocalPayloadNewer =
+    Number.isFinite(localTs) && (!Number.isFinite(serverTs) || localTs >= serverTs);
+
+  const localModelsRaw = Array.isArray(localPayload.models) ? localPayload.models : [];
+  const serverModelsRaw = Array.isArray(serverPayload.models) ? serverPayload.models : [];
+
+  // Собираем реестр удалений с защитой от удаления SKU, который был обновлён/восстановлен позже
+  const deletedSet = new Set<string>();
+  for (const d of localPayload.deletedModelIds || []) {
+    if (d) deletedSet.add(String(d).trim().toUpperCase());
+  }
+  for (const d of serverPayload.deletedModelIds || []) {
+    if (d) deletedSet.add(String(d).trim().toUpperCase());
+  }
+  for (const lm of localModelsRaw) {
+    const lModTs = parseIsoTs(lm.updatedAtIso);
+    if (Number.isFinite(lModTs) && (!Number.isFinite(serverTs) || lModTs > serverTs)) {
+      if (lm.id) deletedSet.delete(lm.id.trim().toUpperCase());
+      if (lm.code) deletedSet.delete(lm.code.trim().toUpperCase());
+    }
+  }
+  for (const sm of serverModelsRaw) {
+    const sModTs = parseIsoTs(sm.updatedAtIso);
+    if (Number.isFinite(sModTs) && (!Number.isFinite(localTs) || sModTs > localTs)) {
+      if (sm.id) deletedSet.delete(sm.id.trim().toUpperCase());
+      if (sm.code) deletedSet.delete(sm.code.trim().toUpperCase());
+    }
+  }
+  const mergedDeletedModelIds = Array.from(deletedSet);
+
+  // Гармонизируем асимметричный per-model updatedAtIso перед вызовом mergeCloudPortfolioSnapshot:
+  // если устройство A редактировало SKU-1 (updatedAtIso=T1), а устройство B — SKU-2 (updatedAtIso=T2),
+  // нетронутый SKU на противоположном устройстве не должен перебить отредактированный SKU из-за payload-таймстампа!
+  const harmonizedLocalModels: ScenarioModelSpec[] = localModelsRaw.map((lm) => {
+    const sm = findMatchingModel(serverModelsRaw, lm);
+    const lModTs = parseIsoTs(lm.updatedAtIso);
+    const sModTs = parseIsoTs(sm?.updatedAtIso);
+    if (!Number.isFinite(lModTs) && Number.isFinite(sModTs)) {
+      return { ...lm, updatedAtIso: ASYMMETRIC_OLDER_SENTINEL_ISO };
+    }
+    return lm;
+  });
+
+  const harmonizedServerModels: ScenarioModelSpec[] = serverModelsRaw.map((sm) => {
+    const lm = findMatchingModel(localModelsRaw, sm);
+    const lModTs = parseIsoTs(lm?.updatedAtIso);
+    const sModTs = parseIsoTs(sm.updatedAtIso);
+    if (!Number.isFinite(sModTs) && Number.isFinite(lModTs)) {
+      return { ...sm, updatedAtIso: ASYMMETRIC_OLDER_SENTINEL_ISO };
+    }
+    return sm;
+  });
+
+  const inputModelKeys = new Set<string>();
+  for (const m of [...localModelsRaw, ...serverModelsRaw]) {
+    if (!m) continue;
+    for (const k of normalizeModelLookupKeys(m)) {
+      inputModelKeys.add(k);
+    }
+  }
+
+  const baseMerge = mergeCloudPortfolioSnapshot({
+    localModels: harmonizedLocalModels,
+    cloudModels: harmonizedServerModels,
+    localUpdatedAtIso: localPayload.updatedAtIso,
+    cloudUpdatedAtIso: serverPayload.updatedAtIso,
+    deletedRegistry: mergedDeletedModelIds,
+  });
+
+  // Оставляем только модели, присутствовавшие хотя бы на одном из двух устройств,
+  // и дополняем каждую модель аддитивными коллекциями (plansByScenario, approvedOrders, actualSalesByMonth, PDF)
+  const mergedModels: ScenarioModelSpec[] = baseMerge.models
+    .filter((m) => normalizeModelLookupKeys(m).some((k) => inputModelKeys.has(k)))
+    .map((m) => {
+      const lm = findMatchingModel(localModelsRaw, m);
+      const sm = findMatchingModel(serverModelsRaw, m);
+      if (!lm && !sm) return m;
+      if (lm && !sm) return mergeAdditiveModelCollections(m, undefined);
+      if (sm && !lm) return mergeAdditiveModelCollections(m, undefined);
+
+      const lModTs = parseIsoTs(lm!.updatedAtIso);
+      const sModTs = parseIsoTs(sm!.updatedAtIso);
+      let localWon = isLocalPayloadNewer;
+      if (Number.isFinite(lModTs) && Number.isFinite(sModTs) && lModTs !== sModTs) {
+        localWon = lModTs > sModTs;
+      } else if (Number.isFinite(lModTs) && !Number.isFinite(sModTs)) {
+        localWon = true;
+      } else if (!Number.isFinite(lModTs) && Number.isFinite(sModTs)) {
+        localWon = false;
+      }
+      const loser = localWon ? sm : lm;
+      return mergeAdditiveModelCollections(m, loser);
+    });
+
+  // Сценарии и реестр удалённых сценариев
+  const mergedDeletedScenarioIds = Array.from(
+    new Set<number>(
+      [
+        ...(localPayload.deletedScenarioIds || []),
+        ...(serverPayload.deletedScenarioIds || []),
+      ]
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n))
+    )
+  );
+  const deletedScenSet = new Set<number>(mergedDeletedScenarioIds);
+
+  const primaryScenarios = (
+    isLocalPayloadNewer ? localPayload.scenarios : serverPayload.scenarios
+  ) || [];
+  const secondaryScenarios = (
+    isLocalPayloadNewer ? serverPayload.scenarios : localPayload.scenarios
+  ) || [];
+  const mergedScenariosMap = new Map<number, GrowthScenarioDef>();
+  const mergedScenariosOrder: number[] = [];
+  for (const s of [...primaryScenarios, ...secondaryScenarios]) {
+    if (!s || typeof s.id !== 'number' || deletedScenSet.has(s.id)) continue;
+    if (!mergedScenariosMap.has(s.id)) {
+      mergedScenariosOrder.push(s.id);
+      mergedScenariosMap.set(s.id, s);
+    }
+  }
+  const mergedScenarios =
+    mergedScenariosOrder.length > 0
+      ? mergedScenariosOrder.map((id) => mergedScenariosMap.get(id)!)
+      : localPayload.scenarios ?? serverPayload.scenarios;
+
+  // selectedScenarioByBrand: объединяем ключи обоих устройств, при конфликте ключа побеждает более свежий payload
+  const mergedSelectedByBrand: Record<string, number | null> | undefined =
+    localPayload.selectedScenarioByBrand || serverPayload.selectedScenarioByBrand
+      ? {
+          ...(isLocalPayloadNewer
+            ? serverPayload.selectedScenarioByBrand
+            : localPayload.selectedScenarioByBrand),
+          ...(isLocalPayloadNewer
+            ? localPayload.selectedScenarioByBrand
+            : serverPayload.selectedScenarioByBrand),
+        }
+      : undefined;
+
+  // customBrands: объединяем уникальные пользовательские бренды с обоих устройств
+  const customBrandMap = new Map<string, string>();
+  for (const brand of [
+    ...(serverPayload.customBrands || []),
+    ...(localPayload.customBrands || []),
+  ]) {
+    const clean = String(brand || '').trim();
+    if (!clean) continue;
+    const key = clean.toUpperCase();
+    if (!customBrandMap.has(key)) customBrandMap.set(key, clean);
+  }
+  const mergedCustomBrands =
+    localPayload.customBrands !== undefined || serverPayload.customBrands !== undefined
+      ? Array.from(customBrandMap.values())
+      : undefined;
+
+  // financeContourParams: объединяем поля обоих устройств, при конфликте побеждает более свежий payload
+  let mergedFinanceContourParams: unknown = isLocalPayloadNewer
+    ? localPayload.financeContourParams ?? serverPayload.financeContourParams
+    : serverPayload.financeContourParams ?? localPayload.financeContourParams;
+  if (
+    isPlainRecord(localPayload.financeContourParams) &&
+    isPlainRecord(serverPayload.financeContourParams)
+  ) {
+    mergedFinanceContourParams = {
+      ...(isLocalPayloadNewer
+        ? serverPayload.financeContourParams
+        : localPayload.financeContourParams),
+      ...(isLocalPayloadNewer
+        ? localPayload.financeContourParams
+        : serverPayload.financeContourParams),
+    };
+  }
+
+  // productGroups: если это массивы объектов с id, объединяем по id
+  let mergedProductGroups: unknown = isLocalPayloadNewer
+    ? localPayload.productGroups ?? serverPayload.productGroups
+    : serverPayload.productGroups ?? localPayload.productGroups;
+  if (Array.isArray(localPayload.productGroups) && Array.isArray(serverPayload.productGroups)) {
+    const pgById = new Map<string, unknown>();
+    const pgOrder: string[] = [];
+    const primaryGroups = isLocalPayloadNewer
+      ? localPayload.productGroups
+      : serverPayload.productGroups;
+    const secondaryGroups = isLocalPayloadNewer
+      ? serverPayload.productGroups
+      : localPayload.productGroups;
+    for (const item of [...primaryGroups, ...secondaryGroups]) {
+      const id = isPlainRecord(item) ? String(item.id || '').trim() : '';
+      const key = id || `idx:${pgOrder.length}`;
+      if (!pgById.has(key)) {
+        pgOrder.push(key);
+        pgById.set(key, item);
+      }
+    }
+    mergedProductGroups = pgOrder.map((k) => pgById.get(k));
+  }
+
+  // investmentLedger: детальное по-записное слияние (override-ы, транши, вложения, операции, аудит)
+  const mergedInvestmentLedger = mergeInvestmentLedgers(
+    localPayload.investmentLedger,
+    serverPayload.investmentLedger,
+    isLocalPayloadNewer
+  );
+
+  const mergedUpdatedAtIso = new Date(
+    Math.max(
+      Date.now(),
+      Number.isFinite(localTs) ? localTs : 0,
+      Number.isFinite(serverTs) ? serverTs : 0
+    )
+  ).toISOString();
+
+  return {
+    ...serverPayload,
+    ...localPayload,
+    models: mergedModels,
+    scenarios: mergedScenarios,
+    selectedScenarioByBrand: mergedSelectedByBrand,
+    includeGroupPortfolioInS1: isLocalPayloadNewer
+      ? localPayload.includeGroupPortfolioInS1 ?? serverPayload.includeGroupPortfolioInS1
+      : serverPayload.includeGroupPortfolioInS1 ?? localPayload.includeGroupPortfolioInS1,
+    deletedModelIds: mergedDeletedModelIds,
+    deletedScenarioIds: mergedDeletedScenarioIds,
+    customBrands: mergedCustomBrands,
+    financeContourParams: mergedFinanceContourParams,
+    productGroups: mergedProductGroups,
+    investmentLedger: mergedInvestmentLedger,
+    updatedAtIso: mergedUpdatedAtIso,
+    serverRevision: serverPayload.serverRevision,
+  };
+}
+
+function getWorkspaceItemKey(item: unknown): string {
+  if (!isPlainRecord(item)) return '';
+  const id = String(item.id || '').trim();
+  if (id) return `id:${id}`;
+  const sectionKey = String(item.sectionKey || item.key || '').trim();
+  const brandId = String(item.brandId || '').trim();
+  if (sectionKey) return `sec:${brandId}:${sectionKey}`;
+  return '';
+}
+
+function getWorkspaceItemTimestamp(item: unknown): number {
+  if (!isPlainRecord(item)) return NaN;
+  return parseIsoTs(
+    item.updatedAtIso ?? item.updatedAt ?? item.modifiedAt ?? item.lastEditedAt
+  );
+}
+
+function mergeWorkspaceEntityArray(
+  localArr: unknown[] | undefined,
+  serverArr: unknown[] | undefined,
+  preferLocalOnTie: boolean,
+  excludedIds?: Set<string>
+): unknown[] | undefined {
+  if (localArr === undefined && serverArr === undefined) return undefined;
+  const localList = Array.isArray(localArr) ? localArr : [];
+  const serverList = Array.isArray(serverArr) ? serverArr : [];
+
+  const byKey = new Map<string, unknown>();
+  const orderedKeys: string[] = [];
+  const unkeyed: unknown[] = [];
+
+  const primary = preferLocalOnTie ? localList : serverList;
+  const secondary = preferLocalOnTie ? serverList : localList;
+
+  const isExcluded = (item: unknown): boolean => {
+    if (!excludedIds || excludedIds.size === 0 || !isPlainRecord(item)) return false;
+    const rawId = String(item.id || '').trim();
+    return Boolean(rawId && excludedIds.has(rawId));
+  };
+
+  for (const item of primary) {
+    if (isExcluded(item)) continue;
+    const key = getWorkspaceItemKey(item);
+    if (!key) {
+      unkeyed.push(item);
+      continue;
+    }
+    if (!byKey.has(key)) orderedKeys.push(key);
+    byKey.set(key, item);
+  }
+
+  for (const item of secondary) {
+    if (isExcluded(item)) continue;
+    const key = getWorkspaceItemKey(item);
+    if (!key) {
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (!existing) {
+      orderedKeys.push(key);
+      byKey.set(key, item);
+      continue;
+    }
+    const existTs = getWorkspaceItemTimestamp(existing);
+    const candTs = getWorkspaceItemTimestamp(item);
+    if (Number.isFinite(candTs) && (!Number.isFinite(existTs) || candTs > existTs)) {
+      byKey.set(key, item);
+    }
+  }
+
+  return [...orderedKeys.map((k) => byKey.get(k)!), ...unkeyed];
+}
+
+export function resolveConcurrentWorkspaceConflict(
+  localPayload: CloudPlatformWorkspacePayload,
+  serverPayload: CloudPlatformWorkspacePayload
+): CloudPlatformWorkspacePayload {
+  const localTs = parseIsoTs(localPayload.updatedAtIso);
+  const serverTs = parseIsoTs(serverPayload.updatedAtIso);
+  const isLocalNewer =
+    Number.isFinite(localTs) && (!Number.isFinite(serverTs) || localTs >= serverTs);
+
+  const deletedConceptSet = new Set<string>([
+    ...(localPayload.deletedConceptIds || []).map((id) => String(id || '').trim()).filter(Boolean),
+    ...(serverPayload.deletedConceptIds || []).map((id) => String(id || '').trim()).filter(Boolean),
+  ]);
+
+  // Защита от удаления концепции, которую явно обновили позже удаления на другом устройстве
+  for (const raw of localPayload.concepts || []) {
+    if (!isPlainRecord(raw)) continue;
+    const id = String(raw.id || '').trim();
+    const ts = getWorkspaceItemTimestamp(raw);
+    if (id && Number.isFinite(ts) && (!Number.isFinite(serverTs) || ts > serverTs)) {
+      deletedConceptSet.delete(id);
+    }
+  }
+  for (const raw of serverPayload.concepts || []) {
+    if (!isPlainRecord(raw)) continue;
+    const id = String(raw.id || '').trim();
+    const ts = getWorkspaceItemTimestamp(raw);
+    if (id && Number.isFinite(ts) && (!Number.isFinite(localTs) || ts > localTs)) {
+      deletedConceptSet.delete(id);
+    }
+  }
+
+  const mergedUpdatedAtIso = new Date(
+    Math.max(
+      Date.now(),
+      Number.isFinite(localTs) ? localTs : 0,
+      Number.isFinite(serverTs) ? serverTs : 0
+    )
+  ).toISOString();
+
+  return {
+    concepts:
+      mergeWorkspaceEntityArray(
+        localPayload.concepts,
+        serverPayload.concepts,
+        isLocalNewer,
+        deletedConceptSet
+      ) || [],
+    miroItems: mergeWorkspaceEntityArray(
+      localPayload.miroItems,
+      serverPayload.miroItems,
+      isLocalNewer
+    ),
+    strategies: mergeWorkspaceEntityArray(
+      localPayload.strategies,
+      serverPayload.strategies,
+      isLocalNewer
+    ),
+    documents: mergeWorkspaceEntityArray(
+      localPayload.documents,
+      serverPayload.documents,
+      isLocalNewer
+    ),
+    launches: mergeWorkspaceEntityArray(
+      localPayload.launches,
+      serverPayload.launches,
+      isLocalNewer
+    ),
+    campaigns: mergeWorkspaceEntityArray(
+      localPayload.campaigns,
+      serverPayload.campaigns,
+      isLocalNewer
+    ),
+    deletedConceptIds: Array.from(deletedConceptSet),
+    updatedAtIso: mergedUpdatedAtIso,
+    serverRevision: serverPayload.serverRevision,
   };
 }
 
@@ -229,10 +1178,7 @@ export async function pushModelGalleryToSupabase(
   }
 }
 
-function emitCloudSaveStatus(
-  status: 'saving' | 'saved_cloud' | 'saved_local',
-  atIso?: string
-): void {
+function emitCloudSaveStatus(status: CloudSaveStatus, atIso?: string): void {
   if (
     typeof window !== 'undefined' &&
     typeof window.dispatchEvent === 'function' &&
@@ -250,8 +1196,28 @@ function emitCloudSaveStatus(
   }
 }
 
+function emitCloudConflictMerged(detail: CloudConflictEventDetail): void {
+  lastCloudConflictEvent = detail;
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.dispatchEvent === 'function' &&
+    typeof CustomEvent === 'function'
+  ) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('borners-cloud-conflict-merged', {
+          detail,
+        })
+      );
+    } catch {
+      // Игнорируем в тестовых окружениях без полноценного DOM EventTarget
+    }
+  }
+}
+
 export async function pushPortfolioCoreToSupabase(
-  input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>
+  input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>,
+  options?: CloudPushOptions
 ): Promise<boolean> {
   if (isAutomatedOrLocalhostWriteBlocked()) {
     emitCloudSaveStatus('saved_local');
@@ -314,7 +1280,7 @@ export async function pushPortfolioCoreToSupabase(
       stripBase64FromModelForCoreRow(m, failedUploadModelIds)
     );
     const nowIso = new Date().toISOString();
-    const payload: CloudPortfolioCorePayload = {
+    let currentPayload: CloudPortfolioCorePayload = {
       ...input,
       financeContourParams:
         input.financeContourParams !== undefined
@@ -333,16 +1299,123 @@ export async function pushPortfolioCoreToSupabase(
     };
     lastLocalCorePushIso = nowIso;
 
-    const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
-      {
-        key: SUPABASE_CORE_KEY,
-        payload,
-        updated_at: payload.updatedAtIso,
-      },
-      { onConflict: 'key' }
-    );
-    emitCloudSaveStatus(!error ? 'saved_cloud' : 'saved_local', nowIso);
-    return !error;
+    const initialExpectedRev =
+      options?.expectedRevision !== undefined
+        ? options.expectedRevision
+        : lastKnownCoreRevision;
+    let expectedRev: number | null = initialExpectedRev;
+    const maxRetries = Math.max(0, options?.maxConflictRetries ?? 2);
+    let hadConflictMerge = false;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (mySeq < latestCorePushSeq) {
+        return true;
+      }
+
+      const payloadForRpc: CloudPortfolioCorePayload = {
+        ...currentPayload,
+        serverRevision: undefined,
+      };
+      delete payloadForRpc.serverRevision;
+
+      const { data: rpcRaw, error: rpcError } = await client.rpc('upsert_portfolio_kv_safe', {
+        p_key: SUPABASE_CORE_KEY,
+        p_payload: payloadForRpc,
+        p_expected_revision: expectedRev,
+      });
+
+      if (rpcError) {
+        // Fallback на обычный upsert ТОЛЬКО если RPC ещё не развёрнут (404 / PGRST202 / 42883)
+        if (isMissingRpcError(rpcError)) {
+          const { error: upsertErr } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
+            {
+              key: SUPABASE_CORE_KEY,
+              payload: payloadForRpc,
+              updated_at: payloadForRpc.updatedAtIso,
+            },
+            { onConflict: 'key' }
+          );
+          emitCloudSaveStatus(!upsertErr ? 'saved_cloud' : 'saved_local', payloadForRpc.updatedAtIso);
+          return !upsertErr;
+        }
+        emitCloudSaveStatus('saved_local');
+        return false;
+      }
+
+      const rpcRes = (Array.isArray(rpcRaw) ? rpcRaw[0] : rpcRaw) as SafeUpsertRpcResponse | null;
+      if (rpcRes?.ok === true && !rpcRes?.conflict) {
+        const nextRev = parseRevisionNumber(rpcRes.server_revision);
+        if (nextRev !== null) {
+          lastKnownCoreRevision = nextRev;
+        }
+        const serverUpdatedAt =
+          typeof rpcRes.server_updated_at === 'string' && rpcRes.server_updated_at
+            ? rpcRes.server_updated_at
+            : currentPayload.updatedAtIso;
+        lastLocalCorePushIso = serverUpdatedAt;
+
+        if (hadConflictMerge) {
+          const hydratedForClient: CloudPortfolioCorePayload = {
+            ...currentPayload,
+            models: rehydrateLocalGalleriesAfterConflict(currentPayload.models, input.models),
+            serverRevision: nextRev ?? undefined,
+          };
+          emitCloudConflictMerged({
+            key: SUPABASE_CORE_KEY,
+            mergedAtIso: currentPayload.updatedAtIso,
+            previousRevision: initialExpectedRev,
+            serverRevision: nextRev ?? (expectedRev ?? 0),
+            mergedPayload: hydratedForClient,
+          });
+          emitCloudSaveStatus('conflict_merged', currentPayload.updatedAtIso);
+        } else {
+          emitCloudSaveStatus('saved_cloud', currentPayload.updatedAtIso);
+        }
+        return true;
+      }
+
+      if (rpcRes?.ok === false && rpcRes?.conflict === true) {
+        const serverRev = parseRevisionNumber(rpcRes.server_revision);
+        if (serverRev !== null) {
+          lastKnownCoreRevision = serverRev;
+        }
+        const rawServerPayload = rpcRes.server_payload as Partial<CloudPortfolioCorePayload> | null;
+        if (
+          !rawServerPayload ||
+          typeof rawServerPayload !== 'object' ||
+          !Array.isArray(rawServerPayload.models)
+        ) {
+          emitCloudSaveStatus('saved_local');
+          return false;
+        }
+
+        const serverPayload: CloudPortfolioCorePayload = {
+          ...(rawServerPayload as CloudPortfolioCorePayload),
+          updatedAtIso:
+            rawServerPayload.updatedAtIso ||
+            (typeof rpcRes.server_updated_at === 'string' ? rpcRes.server_updated_at : ''),
+          serverRevision: serverRev ?? undefined,
+        };
+
+        const merged = resolveConcurrentPortfolioConflict(currentPayload, serverPayload);
+        currentPayload = {
+          ...merged,
+          models: merged.models.map((m) =>
+            stripBase64FromModelForCoreRow(m, failedUploadModelIds)
+          ),
+        };
+        expectedRev = serverRev;
+        hadConflictMerge = true;
+        lastLocalCorePushIso = currentPayload.updatedAtIso;
+        continue;
+      }
+
+      emitCloudSaveStatus('saved_local');
+      return false;
+    }
+
+    emitCloudSaveStatus('saved_local');
+    return false;
   } catch {
     emitCloudSaveStatus('saved_local');
     return false;
@@ -356,77 +1429,96 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
 
   const task = (async (): Promise<CloudPortfolioCorePayload | null> => {
     try {
-      const { data, error } = await client
+      const orFilter = `key.eq.${SUPABASE_CORE_KEY},key.like.${SUPABASE_GALLERY_KEY_PREFIX}%`;
+      let data: SupabaseKvRow[] | null = null;
+      let error: { code?: string; message?: string } | null = null;
+
+      const firstAttempt = await client
         .from(SUPABASE_PORTFOLIO_TABLE)
-        .select('key, payload, updated_at')
-        .or(`key.eq.${SUPABASE_CORE_KEY},key.like.${SUPABASE_GALLERY_KEY_PREFIX}%`);
+        .select('key, payload, updated_at, revision')
+        .or(orFilter);
+      data = firstAttempt.data as SupabaseKvRow[] | null;
+      error = firstAttempt.error;
 
-    if (error || !Array.isArray(data) || data.length === 0) {
-      return null;
-    }
+      if (error && isMissingColumnError(error, 'revision')) {
+        const fallbackAttempt = await client
+          .from(SUPABASE_PORTFOLIO_TABLE)
+          .select('key, payload, updated_at')
+          .or(orFilter);
+        data = fallbackAttempt.data as SupabaseKvRow[] | null;
+        error = fallbackAttempt.error;
+      }
 
-    const coreRow = data.find((r) => r.key === SUPABASE_CORE_KEY);
-    if (!coreRow || !coreRow.payload || typeof coreRow.payload !== 'object') {
-      return null;
-    }
+      if (error || !Array.isArray(data) || data.length === 0) {
+        return null;
+      }
 
-    const core = coreRow.payload as CloudPortfolioCorePayload;
-    if (!Array.isArray(core.models) || core.models.length === 0) {
-      return null;
-    }
+      const coreRow = data.find((r) => r.key === SUPABASE_CORE_KEY);
+      if (!coreRow || !coreRow.payload || typeof coreRow.payload !== 'object') {
+        return null;
+      }
 
-    const galleriesByModelId = new Map<string, ScenarioModelSpec['gallery']>();
-    for (const row of data) {
-      if (
-        typeof row.key === 'string' &&
-        row.key.startsWith(SUPABASE_GALLERY_KEY_PREFIX) &&
-        row.payload &&
-        typeof row.payload === 'object'
-      ) {
-        const modelId = row.key.slice(SUPABASE_GALLERY_KEY_PREFIX.length);
-        const gal = (row.payload as { gallery?: ScenarioModelSpec['gallery'] }).gallery;
-        if (modelId && Array.isArray(gal)) {
-          galleriesByModelId.set(modelId, gal);
+      const core = coreRow.payload as CloudPortfolioCorePayload;
+      if (!Array.isArray(core.models) || core.models.length === 0) {
+        return null;
+      }
+
+      const serverRevision = parseRevisionNumber(coreRow.revision);
+      if (serverRevision !== null) {
+        lastKnownCoreRevision = serverRevision;
+      }
+
+      const galleriesByModelId = new Map<string, ScenarioModelSpec['gallery']>();
+      for (const row of data) {
+        if (
+          typeof row.key === 'string' &&
+          row.key.startsWith(SUPABASE_GALLERY_KEY_PREFIX) &&
+          row.payload &&
+          typeof row.payload === 'object'
+        ) {
+          const modelId = row.key.slice(SUPABASE_GALLERY_KEY_PREFIX.length);
+          const gal = (row.payload as { gallery?: ScenarioModelSpec['gallery'] }).gallery;
+          if (modelId && Array.isArray(gal)) {
+            galleriesByModelId.set(modelId, gal);
+          }
         }
       }
-    }
 
-    const hydratedModels = core.models.map((m) => {
-      const hasGalleryRef =
-        Array.isArray(m.gallery) &&
-        m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
-      const cloudGal = galleriesByModelId.get(m.id);
-      if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !Array.isArray(m.gallery))) {
-        lastSyncedGalleryFingerprintByModelId.set(m.id, computeGalleryFingerprint(cloudGal));
-        return {
-          ...m,
-          gallery: cloudGal,
-        };
-      }
-      if (cloudGal && cloudGal.length === 0) {
-        lastSyncedGalleryFingerprintByModelId.set(m.id, 'EMPTY');
-        return {
-          ...m,
-          gallery: [],
-        };
-      }
-      if (hasGalleryRef) {
-        return {
-          ...m,
-          gallery: m.gallery.filter((g) => g.url !== '__SUPABASE_GALLERY_REF__'),
-        };
-      }
-      return m;
-    });
+      const hydratedModels = core.models.map((m) => {
+        const hasGalleryRef =
+          Array.isArray(m.gallery) &&
+          m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
+        const cloudGal = galleriesByModelId.get(m.id);
+        if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !Array.isArray(m.gallery))) {
+          lastSyncedGalleryFingerprintByModelId.set(m.id, computeGalleryFingerprint(cloudGal));
+          return {
+            ...m,
+            gallery: cloudGal,
+          };
+        }
+        if (cloudGal && cloudGal.length === 0) {
+          lastSyncedGalleryFingerprintByModelId.set(m.id, 'EMPTY');
+          return {
+            ...m,
+            gallery: [],
+          };
+        }
+        if (hasGalleryRef) {
+          return {
+            ...m,
+            gallery: m.gallery.filter((g) => g.url !== '__SUPABASE_GALLERY_REF__'),
+          };
+        }
+        return m;
+      });
 
-    const rowUpdatedAt =
-      typeof (coreRow as { updated_at?: string }).updated_at === 'string'
-        ? (coreRow as { updated_at?: string }).updated_at
-        : '';
+      const rowUpdatedAt =
+        typeof coreRow.updated_at === 'string' ? coreRow.updated_at : '';
 
       return {
         ...core,
         updatedAtIso: core.updatedAtIso || rowUpdatedAt || '',
+        serverRevision: serverRevision ?? undefined,
         models: hydratedModels,
       };
     } catch {
@@ -454,7 +1546,8 @@ export function getLastLocalWorkspacePushIso(): string {
 }
 
 export async function pushPlatformWorkspaceToSupabase(
-  input: Omit<CloudPlatformWorkspacePayload, 'updatedAtIso'>
+  input: Omit<CloudPlatformWorkspacePayload, 'updatedAtIso'>,
+  options?: CloudPushOptions
 ): Promise<boolean> {
   if (isAutomatedOrLocalhostWriteBlocked()) return false;
   const client = getActiveSupabaseClient();
@@ -540,7 +1633,7 @@ export async function pushPlatformWorkspaceToSupabase(
       : undefined;
 
     const nowIso = new Date().toISOString();
-    const payload: CloudPlatformWorkspacePayload = {
+    let currentPayload: CloudPlatformWorkspacePayload = {
       ...input,
       concepts: compactConcepts,
       miroItems: compactMiro,
@@ -548,15 +1641,109 @@ export async function pushPlatformWorkspaceToSupabase(
     };
     lastLocalWorkspacePushIso = nowIso;
 
-    const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
-      {
-        key: SUPABASE_WORKSPACE_KEY,
-        payload,
-        updated_at: payload.updatedAtIso,
-      },
-      { onConflict: 'key' }
-    );
-    return !error;
+    const initialExpectedRev =
+      options?.expectedRevision !== undefined
+        ? options.expectedRevision
+        : lastKnownWorkspaceRevision;
+    let expectedRev: number | null = initialExpectedRev;
+    const maxRetries = Math.max(0, options?.maxConflictRetries ?? 2);
+    let hadConflictMerge = false;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (mySeq < latestWorkspacePushSeq) return true;
+
+      const payloadForRpc: CloudPlatformWorkspacePayload = {
+        ...currentPayload,
+        serverRevision: undefined,
+      };
+      delete payloadForRpc.serverRevision;
+
+      const { data: rpcRaw, error: rpcError } = await client.rpc('upsert_portfolio_kv_safe', {
+        p_key: SUPABASE_WORKSPACE_KEY,
+        p_payload: payloadForRpc,
+        p_expected_revision: expectedRev,
+      });
+
+      if (rpcError) {
+        if (isMissingRpcError(rpcError)) {
+          const { error: upsertErr } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
+            {
+              key: SUPABASE_WORKSPACE_KEY,
+              payload: payloadForRpc,
+              updated_at: payloadForRpc.updatedAtIso,
+            },
+            { onConflict: 'key' }
+          );
+          return !upsertErr;
+        }
+        return false;
+      }
+
+      const rpcRes = (Array.isArray(rpcRaw) ? rpcRaw[0] : rpcRaw) as SafeUpsertRpcResponse | null;
+      if (rpcRes?.ok === true && !rpcRes?.conflict) {
+        const nextRev = parseRevisionNumber(rpcRes.server_revision);
+        if (nextRev !== null) {
+          lastKnownWorkspaceRevision = nextRev;
+        }
+        const serverUpdatedAt =
+          typeof rpcRes.server_updated_at === 'string' && rpcRes.server_updated_at
+            ? rpcRes.server_updated_at
+            : currentPayload.updatedAtIso;
+        lastLocalWorkspacePushIso = serverUpdatedAt;
+
+        if (hadConflictMerge) {
+          const hydratedForClient: CloudPlatformWorkspacePayload = {
+            ...currentPayload,
+            concepts: rehydrateLocalConceptMediaAfterConflict(
+              currentPayload.concepts,
+              input.concepts
+            ),
+            serverRevision: nextRev ?? undefined,
+          };
+          emitCloudConflictMerged({
+            key: SUPABASE_WORKSPACE_KEY,
+            mergedAtIso: currentPayload.updatedAtIso,
+            previousRevision: initialExpectedRev,
+            serverRevision: nextRev ?? (expectedRev ?? 0),
+            mergedPayload: hydratedForClient,
+          });
+        }
+        return true;
+      }
+
+      if (rpcRes?.ok === false && rpcRes?.conflict === true) {
+        const serverRev = parseRevisionNumber(rpcRes.server_revision);
+        if (serverRev !== null) {
+          lastKnownWorkspaceRevision = serverRev;
+        }
+        const rawServerPayload = rpcRes.server_payload as Partial<CloudPlatformWorkspacePayload> | null;
+        if (
+          !rawServerPayload ||
+          typeof rawServerPayload !== 'object' ||
+          !Array.isArray(rawServerPayload.concepts)
+        ) {
+          return false;
+        }
+
+        const serverPayload: CloudPlatformWorkspacePayload = {
+          ...(rawServerPayload as CloudPlatformWorkspacePayload),
+          updatedAtIso:
+            rawServerPayload.updatedAtIso ||
+            (typeof rpcRes.server_updated_at === 'string' ? rpcRes.server_updated_at : ''),
+          serverRevision: serverRev ?? undefined,
+        };
+
+        currentPayload = resolveConcurrentWorkspaceConflict(currentPayload, serverPayload);
+        expectedRev = serverRev;
+        hadConflictMerge = true;
+        lastLocalWorkspacePushIso = currentPayload.updatedAtIso;
+        continue;
+      }
+
+      return false;
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -569,64 +1756,90 @@ export async function pullPlatformWorkspaceFromSupabase(): Promise<CloudPlatform
 
   const task = (async (): Promise<CloudPlatformWorkspacePayload | null> => {
     try {
-      const { data, error } = await client
+      const orFilter = `key.eq.${SUPABASE_WORKSPACE_KEY},key.like.${SUPABASE_CONCEPT_MEDIA_PREFIX}%`;
+      let data: SupabaseKvRow[] | null = null;
+      let error: { code?: string; message?: string } | null = null;
+
+      const firstAttempt = await client
         .from(SUPABASE_PORTFOLIO_TABLE)
-        .select('key, payload, updated_at')
-        .or(`key.eq.${SUPABASE_WORKSPACE_KEY},key.like.${SUPABASE_CONCEPT_MEDIA_PREFIX}%`);
+        .select('key, payload, updated_at, revision')
+        .or(orFilter);
+      data = firstAttempt.data as SupabaseKvRow[] | null;
+      error = firstAttempt.error;
 
-    if (error || !Array.isArray(data) || data.length === 0) return null;
-
-    const wsRow = data.find((r) => r.key === SUPABASE_WORKSPACE_KEY);
-    if (!wsRow || !wsRow.payload || typeof wsRow.payload !== 'object') return null;
-
-    const ws = wsRow.payload as CloudPlatformWorkspacePayload;
-    if (!Array.isArray(ws.concepts)) return null;
-
-    const mediaMap = new Map<
-      string,
-      { imageUrl?: string; galleryPhotos?: { id?: string; url?: string; caption?: string }[] }
-    >();
-    for (const row of data) {
-      if (
-        typeof row.key === 'string' &&
-        row.key.startsWith(SUPABASE_CONCEPT_MEDIA_PREFIX) &&
-        row.payload &&
-        typeof row.payload === 'object'
-      ) {
-        const cId = row.key.slice(SUPABASE_CONCEPT_MEDIA_PREFIX.length);
-        mediaMap.set(cId, row.payload as { imageUrl?: string; galleryPhotos?: { id?: string; url?: string; caption?: string }[] });
+      if (error && isMissingColumnError(error, 'revision')) {
+        const fallbackAttempt = await client
+          .from(SUPABASE_PORTFOLIO_TABLE)
+          .select('key, payload, updated_at')
+          .or(orFilter);
+        data = fallbackAttempt.data as SupabaseKvRow[] | null;
+        error = fallbackAttempt.error;
       }
-    }
 
-    const hydratedConcepts = ws.concepts.map((rawC) => {
-      if (!rawC || typeof rawC !== 'object') return rawC;
-      const c = rawC as Record<string, unknown>;
-      const cId = String(c.id || '').trim();
-      const media = cId ? mediaMap.get(cId) : undefined;
-      if (!media) return c;
-      const nextImg =
-        c.imageUrl === '__SUPABASE_CONCEPT_MEDIA_REF__' && media.imageUrl
-          ? media.imageUrl
-          : c.imageUrl;
-      const nextGallery = Array.isArray(media.galleryPhotos) && media.galleryPhotos.length > 0
-        ? media.galleryPhotos
-        : c.galleryPhotos;
-      return {
-        ...c,
-        imageUrl: nextImg,
-        galleryPhotos: nextGallery,
-      };
-    });
+      if (error || !Array.isArray(data) || data.length === 0) return null;
 
-    const rowUpdatedAt =
-      typeof (wsRow as { updated_at?: string }).updated_at === 'string'
-        ? (wsRow as { updated_at?: string }).updated_at
-        : '';
+      const wsRow = data.find((r) => r.key === SUPABASE_WORKSPACE_KEY);
+      if (!wsRow || !wsRow.payload || typeof wsRow.payload !== 'object') return null;
+
+      const ws = wsRow.payload as CloudPlatformWorkspacePayload;
+      if (!Array.isArray(ws.concepts)) return null;
+
+      const serverRevision = parseRevisionNumber(wsRow.revision);
+      if (serverRevision !== null) {
+        lastKnownWorkspaceRevision = serverRevision;
+      }
+
+      const mediaMap = new Map<
+        string,
+        { imageUrl?: string; galleryPhotos?: { id?: string; url?: string; caption?: string }[] }
+      >();
+      for (const row of data) {
+        if (
+          typeof row.key === 'string' &&
+          row.key.startsWith(SUPABASE_CONCEPT_MEDIA_PREFIX) &&
+          row.payload &&
+          typeof row.payload === 'object'
+        ) {
+          const cId = row.key.slice(SUPABASE_CONCEPT_MEDIA_PREFIX.length);
+          mediaMap.set(
+            cId,
+            row.payload as {
+              imageUrl?: string;
+              galleryPhotos?: { id?: string; url?: string; caption?: string }[];
+            }
+          );
+        }
+      }
+
+      const hydratedConcepts = ws.concepts.map((rawC) => {
+        if (!rawC || typeof rawC !== 'object') return rawC;
+        const c = rawC as Record<string, unknown>;
+        const cId = String(c.id || '').trim();
+        const media = cId ? mediaMap.get(cId) : undefined;
+        if (!media) return c;
+        const nextImg =
+          c.imageUrl === '__SUPABASE_CONCEPT_MEDIA_REF__' && media.imageUrl
+            ? media.imageUrl
+            : c.imageUrl;
+        const nextGallery =
+          Array.isArray(media.galleryPhotos) && media.galleryPhotos.length > 0
+            ? media.galleryPhotos
+            : c.galleryPhotos;
+        return {
+          ...c,
+          imageUrl: nextImg,
+          galleryPhotos: nextGallery,
+        };
+      });
+
+      const rowUpdatedAt =
+        typeof wsRow.updated_at === 'string' ? wsRow.updated_at : '';
 
       return {
         ...ws,
         concepts: hydratedConcepts,
         updatedAtIso: ws.updatedAtIso || rowUpdatedAt || '',
+        serverRevision: serverRevision ?? undefined,
       };
     } catch {
       return null;

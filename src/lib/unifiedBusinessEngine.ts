@@ -168,6 +168,10 @@ export interface FactoryProcurementParams {
   currency: 'RUB' | 'CNY' | 'USD';
   sizeSharesPct: Record<'S' | 'M' | 'L' | 'XL' | 'XXL', number>;
   customBatchPeriods?: CustomBatchPeriodDef[];
+  /** Цикл возврата невыкупленного товара в доступный сток WB (дней, по умолчанию 14 для обуви) */
+  returnCycleDays?: number;
+  /** Невозвратные потери/брак при возвратах (% от отказов, по умолчанию 2% для обуви, 0% при 100% выкупе) */
+  returnLossPct?: number;
 }
 
 export interface ApprovedPurchaseOrder {
@@ -285,6 +289,12 @@ export interface MonthlySupplyBalanceRow {
   monthLabel: string;
   demandPacks: number;
   demandUnits: number;
+  buyoutsPacks: number;
+  ordersPacks: number;
+  refusalsPacks: number;
+  returnsInTransitEndPacks: number;
+  returnedToStockPacks: number;
+  returnLossPacks: number;
   approvedReceiptsPacks: number;
   approvedReceiptsUnits: number;
   openingAvailablePacks: number;
@@ -300,8 +310,15 @@ export interface ProcurementComputationResult {
   buyoutRatePct: number;
   procureByOrdersVolume: boolean;
   orderMultiplier: number;
+  returnCycleDays: number;
+  returnLossPct: number;
   annualBuyoutsPacks: number;
   annualOrdersPacks: number;
+  annualRefusalsPacks: number;
+  annualReturnLossPacks: number;
+  annualReturnedToStockPacks: number;
+  openingReturnsInTransitPacks: number;
+  endingReturnsInTransitPacks: number;
   actualOpeningStockPacks: number;
   reservedStockPacks: number;
   netOpeningAvailablePacks: number;
@@ -1269,7 +1286,37 @@ export function computeProcurementPlan(
   const procureByOrdersVolume = isModelProcurementByOrdersActive(model);
   const orderMultiplier =
     buyoutRatePct > 0 ? Math.round((100 / buyoutRatePct) * 100) / 100 : 0;
-  const isAkushaModel = (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
+  const detectedBrandCode = normalizePortfolioBrandCode(
+    detectModelBrandPortfolioLabel(model)
+  );
+  const isAkushaModel =
+    detectedBrandCode === 'AKUSHA' ||
+    (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
+  const prodProfile = getBrandProductionProfile(
+    detectedBrandCode === 'ALL' ? 'BORNERS' : detectedBrandCode,
+    `${model.title || ''} ${model.categoryLabel || ''}`
+  );
+
+  // Модель движения товара и возвратов на маркетплейсе (Стр. 8 и Тест 02 ТЗ v1.0):
+  // заказ -> выкуп (списано навсегда) | отказ -> «в пути / возврат» (returnCycleDays, по умолч. 14 дн.)
+  // -> возврат в доступный остаток WB за вычетом невозвратных потерь/брака (returnLossPct, по умолч. 2% для обуви, 0% при 100% выкупе).
+  const returnsFlowActive =
+    procureByOrdersVolume && buyoutRatePct > 0 && buyoutRatePct < 100;
+  const returnCycleDays = Math.min(
+    29,
+    Math.max(1, Math.round(fp.returnCycleDays ?? prodProfile.defaultReturnCycleDays ?? 14))
+  );
+  const returnCycleFraction = Math.min(0.95, Math.max(0.05, returnCycleDays / 30));
+  const returnLossPct =
+    buyoutRatePct >= 100 || !returnsFlowActive
+      ? 0
+      : Math.min(
+          50,
+          Math.max(
+            0,
+            fp.returnLossPct ?? (isAkushaModel ? 2 : prodProfile.defaultReturnLossPct ?? 2)
+          )
+        );
 
   const getMonthOrdersPacks = (mIdx: number): number => {
     if (buyoutRatePct <= 0) return 0;
@@ -1285,12 +1332,6 @@ export function computeProcurementPlan(
       return Math.round(storedOrd);
     }
     return Math.round((buyouts * 100) / buyoutRatePct);
-  };
-
-  const getMonthProcurementDemandPacks = (mIdx: number): number => {
-    const buyouts = Math.max(0, Math.round(plan.monthlyPacks[mIdx] || 0));
-    if (!procureByOrdersVolume || buyoutRatePct <= 0 || buyoutRatePct >= 100) return buyouts;
-    return getMonthOrdersPacks(mIdx);
   };
 
   const annualBuyoutsPacks = plan.monthlyPacks.reduce(
@@ -1321,11 +1362,14 @@ export function computeProcurementPlan(
     0,
     shared.actualOpeningStockPacks - shared.reservedStockPacks
   );
+  let openingReturnsInTransitPacks = 0;
 
-  // Раздел 5.3 ТЗ: если это сценарий 2028 года, переносим конечный физический остаток 31 декабря 2027 года в начальный остаток января 2028 года
+  // Раздел 5.3 и Стр. 8 ТЗ: для 2028 года переносим И доступный остаток на 31.12.2027, И возвраты в пути!
   if (year >= 2028) {
     if (plan.initialStockPacks > 0) {
+      // plan.initialStockPacks уже хранит полный перенесённый физический остаток (доступный + возвраты в пути), без двойного счёта
       netOpeningAvailablePacks = Math.max(0, plan.initialStockPacks);
+      openingReturnsInTransitPacks = 0;
     } else {
       const fallbackPlan2027 = Object.values(model.plansByScenario).find(
         (p) => p.scenarioId !== scenario.id
@@ -1333,29 +1377,57 @@ export function computeProcurementPlan(
       const ref2027Id =
         scenario.copiedFromScenarioId ||
         (model.plansByScenario[1] ? 1 : fallbackPlan2027?.scenarioId || 1);
-      netOpeningAvailablePacks = computeCarryOverStock2027To2028(model, ref2027Id);
+      const carryDetails = computeCarryOverStockDetails2027To2028(model, ref2027Id);
+      netOpeningAvailablePacks = carryDetails.endingAvailablePacks;
+      openingReturnsInTransitPacks = returnsFlowActive
+        ? carryDetails.endingReturnsInTransitPacks
+        : 0;
     }
   }
 
-  // 1. Помесячный баланс реального обеспечения (ТОЛЬКО реальный остаток + подтверждённые фабрикой PO!)
+  // 1. Помесячный баланс реального обеспечения с учётом возвратного цикла WB (ТОЛЬКО реальный остаток + подтверждённые PO!)
   let runningAvailable = netOpeningAvailablePacks;
+  let prevReturnsInTransit = openingReturnsInTransitPacks;
   const monthlyBalance: MonthlySupplyBalanceRow[] = [];
+  const monthlyNetFlow: number[] = [];
   let coveredMonthsCount = 0;
   let totalDeficitPacks = 0;
 
   for (let m = 0; m < 12; m++) {
-    const demandPacks = getMonthProcurementDemandPacks(m);
+    const buyoutsPacks = Math.max(0, Math.round(plan.monthlyPacks[m] || 0));
+    const ordersPacks = getMonthOrdersPacks(m);
+    const refusalsPacks = Math.max(0, ordersPacks - buyoutsPacks);
+
+    let returnLossPacks = 0;
+    let returnsInTransitEndPacks = 0;
+    let returnedToStockPacks = refusalsPacks;
+    let netConsumptionPacks = buyoutsPacks;
+
+    if (returnsFlowActive) {
+      returnLossPacks = Math.round((refusalsPacks * returnLossPct) / 100);
+      const returnableRefusals = Math.max(0, refusalsPacks - returnLossPacks);
+      returnsInTransitEndPacks = Math.round(returnableRefusals * returnCycleFraction);
+      returnedToStockPacks = prevReturnsInTransit + (returnableRefusals - returnsInTransitEndPacks);
+      // Точное сохранение физического баланса:
+      // netConsumption = buyouts + irreversibleLoss + (returnsInTransitEnd - prevReturnsInTransit) === orders - returnedToStock
+      netConsumptionPacks =
+        buyoutsPacks + returnLossPacks + (returnsInTransitEndPacks - prevReturnsInTransit);
+    }
+
+    monthlyNetFlow.push(netConsumptionPacks);
+
+    const demandPacks = Math.max(0, netConsumptionPacks);
     const demandUnits = demandPacks * unitsInPack;
     const approvedReceiptsPacks = approvedByMonth[m] || 0;
     const approvedReceiptsUnits = approvedReceiptsPacks * unitsInPack;
     const openingAvailablePacks = runningAvailable;
 
     const afterReceipts = openingAvailablePacks + approvedReceiptsPacks;
-    const endingAvailablePacks = afterReceipts - demandPacks;
-    const monthUncovered = Math.max(0, demandPacks - Math.max(0, afterReceipts));
+    const endingAvailablePacks = afterReceipts - netConsumptionPacks;
+    const monthUncovered = Math.max(0, netConsumptionPacks - Math.max(0, afterReceipts));
 
-    if (demandPacks === 0 || afterReceipts >= demandPacks) {
-      if (demandPacks > 0) coveredMonthsCount += 1;
+    if (netConsumptionPacks <= 0 || afterReceipts >= netConsumptionPacks) {
+      if (buyoutsPacks > 0 || demandPacks > 0) coveredMonthsCount += 1;
     }
     totalDeficitPacks += monthUncovered;
 
@@ -1364,6 +1436,12 @@ export function computeProcurementPlan(
       monthLabel: MONTHS_SHORT[m],
       demandPacks,
       demandUnits,
+      buyoutsPacks,
+      ordersPacks,
+      refusalsPacks,
+      returnsInTransitEndPacks,
+      returnedToStockPacks,
+      returnLossPacks,
       approvedReceiptsPacks,
       approvedReceiptsUnits,
       openingAvailablePacks,
@@ -1373,10 +1451,19 @@ export function computeProcurementPlan(
     });
 
     runningAvailable = Math.max(0, endingAvailablePacks);
+    prevReturnsInTransit = returnsInTransitEndPacks;
   }
 
   const annualDemandPacks = monthlyBalance.reduce((s, r) => s + r.demandPacks, 0);
   const annualDemandUnits = annualDemandPacks * unitsInPack;
+  const annualRefusalsPacks = monthlyBalance.reduce((s, r) => s + r.refusalsPacks, 0);
+  const annualReturnLossPacks = monthlyBalance.reduce((s, r) => s + r.returnLossPacks, 0);
+  const annualReturnedToStockPacks = monthlyBalance.reduce(
+    (s, r) => s + r.returnedToStockPacks,
+    0
+  );
+  const endingReturnsInTransitPacks =
+    monthlyBalance[11]?.returnsInTransitEndPacks ?? 0;
   const totalApprovedReceiptsPacks = approvedByMonth.reduce((s, v) => s + v, 0);
   const totalApprovedReceiptsUnits = totalApprovedReceiptsPacks * unitsInPack;
   const hasDeficit = totalDeficitPacks > 0;
@@ -1402,7 +1489,7 @@ export function computeProcurementPlan(
 
     // Прокручиваем месяцы до начала периода, если между периодами был зазор
     while (currentCursorM < startM) {
-      const d = getMonthProcurementDemandPacks(currentCursorM);
+      const d = monthlyNetFlow[currentCursorM] ?? 0;
       const r = approvedByMonth[currentCursorM] || 0;
       const netStep = simStock + r - d;
       if (netStep < 0) {
@@ -1415,15 +1502,17 @@ export function computeProcurementPlan(
     }
 
     const openingAvailableAtStartPacks = simStock;
-    let periodDemandPacks = 0;
+    let periodNetFlowSum = 0;
+    let periodBuyoutsSum = 0;
     let confirmedReceiptsInPeriodPacks = 0;
     let tempRunning = openingAvailableAtStartPacks - unmetPriorDemandPacks;
     let maxIntraPeriodShortfall = Math.max(0, unmetPriorDemandPacks - openingAvailableAtStartPacks);
 
     for (let k = startM; k <= endM; k++) {
-      const d = getMonthProcurementDemandPacks(k);
+      const d = monthlyNetFlow[k] ?? 0;
       const r = approvedByMonth[k] || 0;
-      periodDemandPacks += d;
+      periodNetFlowSum += d;
+      periodBuyoutsSum += monthlyBalance[k]?.buyoutsPacks || 0;
       confirmedReceiptsInPeriodPacks += r;
       tempRunning += r - d;
       if (tempRunning < 0) {
@@ -1431,17 +1520,20 @@ export function computeProcurementPlan(
       }
     }
 
-    const endMonthDemand = getMonthProcurementDemandPacks(endM);
+    const periodDemandPacks = Math.max(0, periodNetFlowSum);
+    const endMonthBaseBurn = returnsFlowActive
+      ? (monthlyBalance[endM]?.buyoutsPacks || 0) + (monthlyBalance[endM]?.returnLossPacks || 0)
+      : monthlyBalance[endM]?.buyoutsPacks || 0;
     const targetSafety =
-      periodDemandPacks > 0
-        ? Math.ceil((endMonthDemand * Math.max(0, fp.safetyStockDays)) / 30)
+      periodBuyoutsSum > 0 || periodDemandPacks > 0
+        ? Math.ceil((endMonthBaseBurn * Math.max(0, fp.safetyStockDays)) / 30)
         : 0;
 
-    // Формула Раздела 4 ТЗ (с учётом переходящего дефицита, если предыдущая партия была уменьшена вручную):
-    // потребность = max(0, сумма плановых выкупов за месяцы покрытия + переходящий дефицит + целевой запас на конец периода - доступный остаток к началу покрытия - подтверждённые поступления)
+    // Формула Раздела 4 ТЗ (с учётом переходящего дефицита и возвратного потока WB):
+    // потребность = max(0, чистое физическое выбытие периода + переходящий дефицит + целевой запас на конец периода - доступный остаток - подтверждённые поступления)
     const formulaNeed = Math.max(
       0,
-      periodDemandPacks +
+      periodNetFlowSum +
         unmetPriorDemandPacks +
         targetSafety -
         openingAvailableAtStartPacks -
@@ -1549,10 +1641,10 @@ export function computeProcurementPlan(
       });
     }
 
-    // Продвигаем симулируемый остаток и переходящую потребность через месяцы startM..endM с учётом запланированной партии
+    // Продвигаем симулируемый остаток и переходящую потребность через месяцы startM..endM с учётом запланированной партии и возвратов
     const totalPeriodSupply =
       openingAvailableAtStartPacks + confirmedReceiptsInPeriodPacks + recommendedPacks;
-    const totalPeriodRequirement = periodDemandPacks + unmetPriorDemandPacks;
+    const totalPeriodRequirement = periodNetFlowSum + unmetPriorDemandPacks;
     const netAfterPeriod = totalPeriodSupply - totalPeriodRequirement;
     if (netAfterPeriod < 0) {
       simStock = 0;
@@ -1677,8 +1769,15 @@ export function computeProcurementPlan(
     buyoutRatePct,
     procureByOrdersVolume,
     orderMultiplier,
+    returnCycleDays,
+    returnLossPct,
     annualBuyoutsPacks,
     annualOrdersPacks,
+    annualRefusalsPacks,
+    annualReturnLossPacks,
+    annualReturnedToStockPacks,
+    openingReturnsInTransitPacks,
+    endingReturnsInTransitPacks,
     actualOpeningStockPacks: shared.actualOpeningStockPacks,
     reservedStockPacks: shared.reservedStockPacks,
     netOpeningAvailablePacks,
@@ -3103,8 +3202,16 @@ export interface ScenarioInvestmentSummary {
   annualSoldGoodsCostRub: number;
   annualGrossProfitRub: number;
   annualWbDeductionsAndAdsRub: number;
+  annualReverseLogisticsRub?: number;
+  annualTaxRub?: number;
+  annualOpexRub?: number;
   annualEstimatedOperatingProfitRub: number;
   operatingMarginPct: number;
+  excludedZeroCostRevenueRub?: number;
+  missingCostModelsCount?: number;
+  missingCostModelIds?: string[];
+  isProfitComplete?: boolean;
+  profitIncompleteReason?: string | null;
 
   // 3. Вложения до первых поступлений (Старт · Партия №1 / Q1 и аванс 30%)
   firstWavePacks: number;
@@ -3145,6 +3252,26 @@ export interface ScenarioInvestmentOptions {
   allScenarios?: GrowthScenarioDef[];
   selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
   includeGroupPortfolioInS1?: boolean;
+  financeContourParams?: FinanceContourParams | null;
+}
+
+export interface UnifiedEconomicSummary {
+  modelsCount: number;
+  revenueRub: number;
+  decemberRevenueRub: number;
+  procurementRub: number;
+  soldGoodsCostRub: number;
+  wbDeductionsRub: number;
+  reverseLogisticsRub: number;
+  taxRub: number;
+  opexRub: number;
+  expectedOperatingProfitRub: number;
+  expectedOperatingMarginPct: number;
+  excludedZeroCostRevenueRub: number;
+  missingCostModelsCount: number;
+  missingCostModelIds: string[];
+  isProfitComplete: boolean;
+  profitIncompleteReason: string | null;
 }
 
 /**
@@ -3196,6 +3323,12 @@ export function computeScenarioInvestmentSummary(
 
   let annualSoldGoodsCostRub = 0;
   let annualWbDeductionsAndAdsRub = 0;
+  let annualReverseLogisticsRub = 0;
+  let annualTaxRub = 0;
+  let annualOpexRub = 0;
+  let excludedZeroCostRevenueRub = 0;
+  const missingCostModelIds: string[] = [];
+  const activeBrandsForFixedOpex = new Set<CanonicalBrandCode>();
 
   let firstWavePacks = 0;
   let firstWaveUnits = 0;
@@ -3204,6 +3337,7 @@ export function computeScenarioInvestmentSummary(
 
   const monthlyGrossSalesRub = Array(12).fill(0) as number[];
   const monthlyWbDeductionsRub = Array(12).fill(0) as number[];
+  const monthlyEligibleWbNetInflowRub = Array(12).fill(0) as number[];
   const monthlyPrepayOutflowRub = Array(12).fill(0) as number[];
   const monthlyBalanceOutflowRub = Array(12).fill(0) as number[];
 
@@ -3213,11 +3347,20 @@ export function computeScenarioInvestmentSummary(
     const proc = computeProcurementPlan(m, scenario);
     const pnl = computeFinancialPnL(m, scenario, proc);
     const shared = m.sharedSupplyAndFact!;
+    const rawBrandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m));
+    const modelBrandCode: CanonicalBrandCode = rawBrandCode === 'ALL' ? 'BORNERS' : rawBrandCode;
+    const brandEcon = resolveBrandEconomicsProfile(modelBrandCode, options.financeContourParams);
 
     annualRevenueRub += pnl.annualRevenueRub;
     decemberRevenueRub += pnl.targetMonthRevenueRub;
     annualDemandPacks += proc.annualDemandPacks;
     annualDemandUnits += proc.annualDemandUnits;
+
+    const unitCost = Math.max(0, m.unitCostRub || 0);
+    const hasMissingCost = (proc.annualBuyoutsPacks > 0 || pnl.annualRevenueRub > 0) && unitCost <= 0;
+    if (hasMissingCost && !missingCostModelIds.includes(m.id)) {
+      missingCostModelIds.push(m.id);
+    }
 
     const confirmedPos = proc.approvedOrders.filter(
       (po) =>
@@ -3225,27 +3368,32 @@ export function computeScenarioInvestmentSummary(
         getPoArrivalYear(po) === scenarioYearForPos
     );
     const modelApprovedRub = confirmedPos.reduce((s, po) => s + po.totalOrderRub, 0);
-    const modelPlannedRub = proc.totalRecommendedBudgetRub || 0;
+    const modelPlannedRub = unitCost > 0 ? proc.totalRecommendedBudgetRub || 0 : 0;
 
     approvedOrdersCount += confirmedPos.length;
     approvedOrdersBudgetRub += modelApprovedRub;
-    plannedBatchesCount += proc.recommendedBatches.length;
-    plannedBatchesBudgetRub += modelPlannedRub;
+    if (unitCost > 0) {
+      plannedBatchesCount += proc.recommendedBatches.length;
+      plannedBatchesBudgetRub += modelPlannedRub;
+    }
 
     totalProcurementPacks +=
-      proc.totalApprovedReceiptsPacks + proc.totalRecommendedPacks;
+      proc.totalApprovedReceiptsPacks + (unitCost > 0 ? proc.totalRecommendedPacks : 0);
     totalProcurementUnits +=
-      proc.totalApprovedReceiptsUnits + proc.totalRecommendedUnits;
+      proc.totalApprovedReceiptsUnits + (unitCost > 0 ? proc.totalRecommendedUnits : 0);
     totalProcurementBudgetRub += modelApprovedRub + modelPlannedRub;
 
-    // 2. Себестоимость проданного товара (выкупы * себестоимость комплекта)
-    const unitCost = Math.max(0, m.unitCostRub || 0);
+    // 2. Себестоимость проданного товара (строго выкупы * себестоимость комплекта; 0 при незаполненной себестоимости)
     const soldCost =
-      pnl.annualCogsRub !== null ? pnl.annualCogsRub : proc.annualDemandPacks * unitCost;
+      unitCost > 0
+        ? pnl.annualCogsRub !== null
+          ? pnl.annualCogsRub
+          : proc.annualBuyoutsPacks * unitCost
+        : 0;
     annualSoldGoodsCostRub += soldCost;
 
     // 3. Вложения на старт (Партия №1 / Q1)
-    const firstDraft = proc.recommendedBatches[0];
+    const firstDraft = unitCost > 0 ? proc.recommendedBatches[0] : undefined;
     const earliestPo = [...confirmedPos].sort(
       (a, b) => a.arrivalMonthIdx - b.arrivalMonthIdx
     )[0];
@@ -3264,7 +3412,7 @@ export function computeScenarioInvestmentSummary(
       firstWavePrepaymentRub += firstDraft.prepaymentRub;
     }
 
-    // 4. Помесячные потоки WB и оплат фабрикам по модели
+    // 4. Помесячные потоки WB и оплат фабрикам по модели (единый профиль бренда без двойного счёта логистики!)
     const plan =
       m.plansByScenario[scenario.id] ||
       m.plansByScenario[202706] ||
@@ -3281,17 +3429,15 @@ export function computeScenarioInvestmentSummary(
         (pr, idx) => pr === actingSku.monthly[idx]?.realization_price_rub
       );
 
-    // Ставки удержаний WB и рекламы: Комиссия WB = 30%, Логистика и хранение = 0 ₽, ДРР = 10% (итого 40% от выручки)
-    const mpPct = 30;
-    const adsPct = 10;
-    const logRub = 0;
-    const otherVarRub = 0;
-
     const hasValidRevOverride =
       Array.isArray(plan.monthlyRevenuesRubOverride) &&
       plan.monthlyRevenuesRubOverride.length === 12 &&
       (plan.monthlyRevenuesRubOverride.some((r) => (r || 0) > 0) ||
         !plan.monthlyPacks.some((p) => (p || 0) > 0));
+
+    if (pnl.annualRevenueRub > 0) {
+      activeBrandsForFixedOpex.add(modelBrandCode);
+    }
 
     for (let idx = 0; idx < 12; idx++) {
       const act = shared.actualSalesByMonth[idx];
@@ -3311,17 +3457,43 @@ export function computeScenarioInvestmentSummary(
           ? plan.monthlyRevenuesRubOverride![idx]
           : packsM * effPlanPriceM;
 
-      const deductionsM =
-        Math.round((revM * (mpPct + adsPct)) / 100) +
-        packsM * (logRub + otherVarRub);
+      const ordersM =
+        act && act.actualBuyoutsPacks !== null
+          ? proc.buyoutRatePct > 0 && proc.buyoutRatePct < 100
+            ? Math.round((packsM * 100) / proc.buyoutRatePct)
+            : proc.buyoutRatePct <= 0
+            ? 0
+            : packsM
+          : proc.monthlyBalance[idx]?.ordersPacks ?? packsM;
+      const refusalsM = Math.max(0, ordersM - packsM);
+
+      const monthEcon = computeBrandMonthEconomics({
+        profile: brandEcon,
+        revenueRub: revM,
+        buyoutsPacks: packsM,
+        ordersPacks: ordersM,
+        refusalsPacks: refusalsM,
+        buyoutRatePct: proc.buyoutRatePct,
+      });
 
       monthlyGrossSalesRub[idx] += revM;
-      monthlyWbDeductionsRub[idx] += Math.min(revM, deductionsM);
-      annualWbDeductionsAndAdsRub += Math.min(revM, deductionsM);
+      monthlyWbDeductionsRub[idx] += monthEcon.totalWbDeductionsRub;
+      annualWbDeductionsAndAdsRub += monthEcon.totalWbDeductionsRub;
+      annualReverseLogisticsRub += monthEcon.reverseLogisticsRub;
+      annualTaxRub += monthEcon.taxRub;
+      annualOpexRub += monthEcon.opexRub;
+
+      // Тест 03 ТЗ v1.0: SKU с себестоимостью <= 0 НЕ вливают фантомный кэш в реинвестирование!
+      if (unitCost > 0) {
+        monthlyEligibleWbNetInflowRub[idx] += monthEcon.wbNetPayoutRub;
+      } else {
+        excludedZeroCostRevenueRub += revM;
+      }
     }
 
     // График оплат фабрикам: аванс (в месяц размещения заказа) + доплата (к приходу партии)
     for (const po of confirmedPos) {
+      if (po.totalOrderRub <= 0) continue;
       const arrivalM = Math.min(11, Math.max(0, po.arrivalMonthIdx));
       const orderM = Math.min(
         11,
@@ -3330,25 +3502,47 @@ export function computeScenarioInvestmentSummary(
       monthlyPrepayOutflowRub[orderM] += po.prepaymentRub;
       monthlyBalanceOutflowRub[arrivalM] += po.balancePaymentRub;
     }
-    for (const rb of proc.recommendedBatches) {
-      const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
-      const orderM = Math.min(
-        11,
-        Math.max(0, arrivalM - Math.ceil(rb.totalLeadDays / 30))
-      );
-      monthlyPrepayOutflowRub[orderM] += rb.prepaymentRub;
-      monthlyBalanceOutflowRub[arrivalM] += rb.balancePaymentRub;
+    if (unitCost > 0) {
+      for (const rb of proc.recommendedBatches) {
+        if (rb.estimatedTotalRub <= 0) continue;
+        const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
+        const orderM = Math.min(
+          11,
+          Math.max(0, arrivalM - Math.ceil(rb.totalLeadDays / 30))
+        );
+        monthlyPrepayOutflowRub[orderM] += rb.prepaymentRub;
+        monthlyBalanceOutflowRub[arrivalM] += rb.balancePaymentRub;
+      }
+    }
+  }
+
+  for (const bc of activeBrandsForFixedOpex) {
+    const brandEcon = resolveBrandEconomicsProfile(bc, options.financeContourParams);
+    if (brandEcon.fixedOpexRubPerMonth > 0) {
+      annualOpexRub += brandEcon.fixedOpexRubPerMonth * 12;
     }
   }
 
   const firstWaveBalanceRub = Math.max(0, firstWaveStartBudgetRub - firstWavePrepaymentRub);
   const annualGrossProfitRub = annualRevenueRub - annualSoldGoodsCostRub;
   const annualEstimatedOperatingProfitRub =
-    annualGrossProfitRub - annualWbDeductionsAndAdsRub;
+    annualRevenueRub -
+    annualWbDeductionsAndAdsRub -
+    annualTaxRub -
+    annualOpexRub -
+    annualSoldGoodsCostRub;
   const operatingMarginPct =
     annualRevenueRub > 0
       ? Math.round((annualEstimatedOperatingProfitRub / annualRevenueRub) * 1000) / 10
       : 0;
+  const missingCostModelsCount = missingCostModelIds.length;
+  const isProfitComplete = missingCostModelsCount === 0 && wbPayoutScheduleSpecified;
+  const profitIncompleteReason =
+    missingCostModelsCount > 0
+      ? `Не заполнена себестоимость у ${missingCostModelsCount} SKU — прибыль и реинвестирование предварительные`
+      : !wbPayoutScheduleSpecified
+      ? 'Не задан срок выплат Wildberries'
+      : null;
 
   const MONTHS_GENITIVE_FULL_RU = [
     'января',
@@ -3377,7 +3571,7 @@ export function computeScenarioInvestmentSummary(
     const srcM = m - settlementLagMonths;
     const grossSalesRub = srcM >= 0 ? monthlyGrossSalesRub[srcM] : 0;
     const wbDeductionsAndAdsRub = srcM >= 0 ? monthlyWbDeductionsRub[srcM] : 0;
-    const wbNetInflowRub = Math.max(0, grossSalesRub - wbDeductionsAndAdsRub);
+    const wbNetInflowRub = srcM >= 0 ? monthlyEligibleWbNetInflowRub[srcM] : 0;
 
     const factoryPrepaymentOutflowRub = monthlyPrepayOutflowRub[m] || 0;
     const factoryBalanceOutflowRub = monthlyBalanceOutflowRub[m] || 0;
@@ -3500,8 +3694,16 @@ export function computeScenarioInvestmentSummary(
     annualSoldGoodsCostRub,
     annualGrossProfitRub,
     annualWbDeductionsAndAdsRub,
+    annualReverseLogisticsRub,
+    annualTaxRub,
+    annualOpexRub,
     annualEstimatedOperatingProfitRub,
     operatingMarginPct,
+    excludedZeroCostRevenueRub,
+    missingCostModelsCount,
+    missingCostModelIds,
+    isProfitComplete,
+    profitIncompleteReason,
     firstWavePacks,
     firstWaveUnits,
     firstWaveStartBudgetRub,
@@ -3531,6 +3733,37 @@ export function computeScenarioInvestmentSummary(
     yearEndCashBalanceRub:
       monthlyRows[11]?.cumulativeCashBalanceRub ?? initialCashOnHandRub,
     monthlyRows,
+  };
+}
+
+/**
+ * Единая экономическая сводка (Тест 01 и Требование #05 ТЗ v1.0):
+ * Использует строго тот же путь расчёта (computeScenarioInvestmentSummary + resolveBrandEconomicsProfile),
+ * чтобы Главная, Сводка, Продажи, Закупки и Финансы показывали идентичную выручку, закупки, COGS и операционную прибыль.
+ */
+export function computeUnifiedEconomicSummary(
+  rawModels: ScenarioModelSpec[],
+  scenario: GrowthScenarioDef,
+  options: ScenarioInvestmentOptions = {}
+): UnifiedEconomicSummary {
+  const s = computeScenarioInvestmentSummary(rawModels, scenario, options);
+  return {
+    modelsCount: s.modelsCount,
+    revenueRub: s.annualRevenueRub,
+    decemberRevenueRub: s.decemberRevenueRub,
+    procurementRub: s.totalProcurementBudgetRub,
+    soldGoodsCostRub: s.annualSoldGoodsCostRub,
+    wbDeductionsRub: s.annualWbDeductionsAndAdsRub,
+    reverseLogisticsRub: s.annualReverseLogisticsRub ?? 0,
+    taxRub: s.annualTaxRub ?? 0,
+    opexRub: s.annualOpexRub ?? 0,
+    expectedOperatingProfitRub: s.annualEstimatedOperatingProfitRub,
+    expectedOperatingMarginPct: s.operatingMarginPct,
+    excludedZeroCostRevenueRub: s.excludedZeroCostRevenueRub ?? 0,
+    missingCostModelsCount: s.missingCostModelsCount ?? 0,
+    missingCostModelIds: s.missingCostModelIds ?? [],
+    isProfitComplete: s.isProfitComplete ?? true,
+    profitIncompleteReason: s.profitIncompleteReason ?? null,
   };
 }
 
@@ -3647,6 +3880,7 @@ export function computeGroupBrandsInvestmentReport(
         initialCashRub: 0,
         settlementLagMonths: options.settlementLagMonths ?? 0,
         wbPayoutScheduleSpecified: options.wbPayoutScheduleSpecified,
+        financeContourParams: options.financeContourParams,
       });
       return {
         brandCode: code,
@@ -4176,6 +4410,363 @@ export function getBrandUnitConfig(
   };
 }
 
+// =============================================================================
+// ТЗ v1.0 (Требование #04, Стр. 9): Единая экономика брендов и юрлиц БЕЗ двойного счёта логистики
+// =============================================================================
+
+export interface BrandEconomicsProfile {
+  brandCode: CanonicalBrandCode;
+  legalEntityLabel: string;
+  /** Общий % удержаний WB (при logisticsIncludedInWbPct = true включает комиссию + логистику + ДРР) */
+  wbTotalMarketplacePct: number;
+  /** Комиссия WB % (без логистики, когда logisticsIncludedInWbPct = false) */
+  wbCommissionPct: number;
+  /** Реклама / ДРР WB % */
+  adPct: number;
+  /** Прямая логистика WB на 1 заказ (₽/заказ), применяется ТОЛЬКО если !logisticsIncludedInWbPct */
+  forwardLogisticsPerOrderRub: number;
+  /** Обратная логистика WB за каждый невыкупленный возврат (₽/возврат), применяется ТОЛЬКО при выкупе < 100% и !logisticsIncludedInWbPct */
+  reverseLogisticsPerReturnRub: number;
+  /** Если true — логистика уже зашита в wbTotalMarketplacePct (защита от двойного счёта для BORNERS / FUKAI) */
+  logisticsIncludedInWbPct: boolean;
+  /** Налог % от выручки (например УСН Доходы 6%) */
+  taxPct: number;
+  /** Переменный OPEX % от выручки (по умолчанию 0) */
+  opexPct: number;
+  /** Постоянный OPEX бренда в месяц ₽ (по умолчанию 0) */
+  fixedOpexRubPerMonth: number;
+  /** OPEX на 1 выкупленную единицу ₽ (по умолчанию 0) */
+  opexRubPerPack: number;
+  /** Средний цикл возврата в доступный сток WB (дней) */
+  returnCycleDays: number;
+  /** Невозвратные потери/брак при возвратах (% от отказов) */
+  returnLossPct: number;
+}
+
+export interface FinanceContourParams {
+  initialCashMln?: number;
+  wbLagMonths?: number;
+  whatIfPriceDelta?: number;
+  whatIfCostDelta?: number;
+  whatIfMpAdsDelta?: number;
+  brandEconomics?: Partial<
+    Record<CanonicalBrandCode | 'BORNERS_FUKAI' | 'LISCANI', Partial<BrandEconomicsProfile>>
+  >;
+}
+
+export interface BrandMonthEconomicsResult {
+  wbCommissionRub: number;
+  wbAdsRub: number;
+  forwardLogisticsRub: number;
+  reverseLogisticsRub: number;
+  totalWbDeductionsRub: number;
+  wbNetPayoutRub: number;
+  taxRub: number;
+  opexRub: number;
+}
+
+const DEFAULT_BRAND_ECONOMICS_PROFILES: Record<CanonicalBrandCode, BrandEconomicsProfile> = {
+  BORNERS: {
+    brandCode: 'BORNERS',
+    legalEntityLabel: 'BORNERS / FUKAI (ИП Нерсесянц)',
+    wbTotalMarketplacePct: 40,
+    wbCommissionPct: 30,
+    adPct: 10,
+    forwardLogisticsPerOrderRub: 0,
+    reverseLogisticsPerReturnRub: 50,
+    logisticsIncludedInWbPct: true,
+    taxPct: 6,
+    opexPct: 0,
+    fixedOpexRubPerMonth: 0,
+    opexRubPerPack: 0,
+    returnCycleDays: 14,
+    returnLossPct: 0,
+  },
+  FUKAI: {
+    brandCode: 'FUKAI',
+    legalEntityLabel: 'BORNERS / FUKAI (ИП Нерсесянц)',
+    wbTotalMarketplacePct: 40,
+    wbCommissionPct: 30,
+    adPct: 10,
+    forwardLogisticsPerOrderRub: 0,
+    reverseLogisticsPerReturnRub: 50,
+    logisticsIncludedInWbPct: true,
+    taxPct: 6,
+    opexPct: 0,
+    fixedOpexRubPerMonth: 0,
+    opexRubPerPack: 0,
+    returnCycleDays: 14,
+    returnLossPct: 0,
+  },
+  AKUSHA: {
+    brandCode: 'AKUSHA',
+    legalEntityLabel: 'AKUSHA (Обувь)',
+    wbTotalMarketplacePct: 32,
+    wbCommissionPct: 25,
+    adPct: 7,
+    forwardLogisticsPerOrderRub: 120,
+    reverseLogisticsPerReturnRub: 50,
+    logisticsIncludedInWbPct: false,
+    taxPct: 6,
+    opexPct: 0,
+    fixedOpexRubPerMonth: 0,
+    opexRubPerPack: 0,
+    returnCycleDays: 14,
+    returnLossPct: 2,
+  },
+  LISKANI: {
+    brandCode: 'LISKANI',
+    legalEntityLabel: 'LISKANI (Шторы и интерьерный текстиль)',
+    wbTotalMarketplacePct: 30,
+    wbCommissionPct: 24,
+    adPct: 6,
+    forwardLogisticsPerOrderRub: 140,
+    reverseLogisticsPerReturnRub: 50,
+    logisticsIncludedInWbPct: false,
+    taxPct: 6,
+    opexPct: 0,
+    fixedOpexRubPerMonth: 0,
+    opexRubPerPack: 0,
+    returnCycleDays: 14,
+    returnLossPct: 1,
+  },
+  NA_TELE: {
+    brandCode: 'NA_TELE',
+    legalEntityLabel: 'НА ТЕЛЕ (Женское бельё)',
+    wbTotalMarketplacePct: 31,
+    wbCommissionPct: 24,
+    adPct: 7,
+    forwardLogisticsPerOrderRub: 95,
+    reverseLogisticsPerReturnRub: 50,
+    logisticsIncludedInWbPct: false,
+    taxPct: 6,
+    opexPct: 0,
+    fixedOpexRubPerMonth: 0,
+    opexRubPerPack: 0,
+    returnCycleDays: 14,
+    returnLossPct: 1,
+  },
+};
+
+/**
+ * Единая детерминированная точка расчёта ставок WB, логистики, возвратов, рекламы, налога и OPEX для бренда/юрлица.
+ * Используется одновременно в unifiedBusinessEngine.ts и investmentScheduleEngine.ts (Требование #04 ТЗ v1.0).
+ */
+export function resolveBrandEconomicsProfile(
+  brandCodeInput: string,
+  financeContourParams?: FinanceContourParams | null
+): BrandEconomicsProfile {
+  const isBF = isCombinedBornersFukaiFilter(brandCodeInput);
+  const norm = normalizePortfolioBrandCode(brandCodeInput);
+  const canonical: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+  const base = DEFAULT_BRAND_ECONOMICS_PROFILES[canonical];
+
+  const brandOverridesMap = financeContourParams?.brandEconomics;
+  const override: Partial<BrandEconomicsProfile> | undefined = brandOverridesMap
+    ? isBF
+      ? brandOverridesMap.BORNERS_FUKAI || brandOverridesMap.BORNERS
+      : canonical === 'LISKANI'
+      ? brandOverridesMap.LISKANI || brandOverridesMap.LISCANI
+      : canonical === 'BORNERS' || canonical === 'FUKAI'
+      ? brandOverridesMap[canonical] || brandOverridesMap.BORNERS_FUKAI
+      : brandOverridesMap[canonical]
+    : undefined;
+
+  const mpAdsDelta =
+    typeof financeContourParams?.whatIfMpAdsDelta === 'number' &&
+    Number.isFinite(financeContourParams.whatIfMpAdsDelta)
+      ? financeContourParams.whatIfMpAdsDelta
+      : 0;
+
+  const logisticsIncludedInWbPct =
+    typeof override?.logisticsIncludedInWbPct === 'boolean'
+      ? override.logisticsIncludedInWbPct
+      : base.logisticsIncludedInWbPct;
+
+  const wbCommissionPct = Math.max(
+    0,
+    Math.min(
+      95,
+      typeof override?.wbCommissionPct === 'number' && Number.isFinite(override.wbCommissionPct)
+        ? override.wbCommissionPct
+        : base.wbCommissionPct
+    )
+  );
+  const adPct = Math.max(
+    0,
+    Math.min(
+      80,
+      (typeof override?.adPct === 'number' && Number.isFinite(override.adPct)
+        ? override.adPct
+        : base.adPct) + mpAdsDelta
+    )
+  );
+
+  let wbTotalMarketplacePct: number;
+  if (
+    typeof override?.wbTotalMarketplacePct === 'number' &&
+    Number.isFinite(override.wbTotalMarketplacePct)
+  ) {
+    wbTotalMarketplacePct = Math.max(0, Math.min(95, override.wbTotalMarketplacePct + mpAdsDelta));
+  } else if (
+    override?.wbCommissionPct !== undefined ||
+    override?.adPct !== undefined
+  ) {
+    wbTotalMarketplacePct = Math.max(0, Math.min(95, wbCommissionPct + adPct));
+  } else {
+    wbTotalMarketplacePct = Math.max(0, Math.min(95, base.wbTotalMarketplacePct + mpAdsDelta));
+  }
+
+  return {
+    brandCode: canonical,
+    legalEntityLabel: override?.legalEntityLabel?.trim() || base.legalEntityLabel,
+    wbTotalMarketplacePct,
+    wbCommissionPct,
+    adPct,
+    forwardLogisticsPerOrderRub: Math.max(
+      0,
+      typeof override?.forwardLogisticsPerOrderRub === 'number' &&
+        Number.isFinite(override.forwardLogisticsPerOrderRub)
+        ? override.forwardLogisticsPerOrderRub
+        : base.forwardLogisticsPerOrderRub
+    ),
+    reverseLogisticsPerReturnRub: Math.max(
+      0,
+      typeof override?.reverseLogisticsPerReturnRub === 'number' &&
+        Number.isFinite(override.reverseLogisticsPerReturnRub)
+        ? override.reverseLogisticsPerReturnRub
+        : base.reverseLogisticsPerReturnRub
+    ),
+    logisticsIncludedInWbPct,
+    taxPct: Math.max(
+      0,
+      Math.min(
+        50,
+        typeof override?.taxPct === 'number' && Number.isFinite(override.taxPct)
+          ? override.taxPct
+          : base.taxPct
+      )
+    ),
+    opexPct: Math.max(
+      0,
+      Math.min(
+        80,
+        typeof override?.opexPct === 'number' && Number.isFinite(override.opexPct)
+          ? override.opexPct
+          : base.opexPct
+      )
+    ),
+    fixedOpexRubPerMonth: Math.max(
+      0,
+      typeof override?.fixedOpexRubPerMonth === 'number' &&
+        Number.isFinite(override.fixedOpexRubPerMonth)
+        ? Math.round(override.fixedOpexRubPerMonth)
+        : base.fixedOpexRubPerMonth
+    ),
+    opexRubPerPack: Math.max(
+      0,
+      typeof override?.opexRubPerPack === 'number' && Number.isFinite(override.opexRubPerPack)
+        ? Math.round(override.opexRubPerPack)
+        : base.opexRubPerPack
+    ),
+    returnCycleDays: Math.min(
+      29,
+      Math.max(
+        1,
+        typeof override?.returnCycleDays === 'number' && Number.isFinite(override.returnCycleDays)
+          ? Math.round(override.returnCycleDays)
+          : base.returnCycleDays
+      )
+    ),
+    returnLossPct: Math.min(
+      50,
+      Math.max(
+        0,
+        typeof override?.returnLossPct === 'number' && Number.isFinite(override.returnLossPct)
+          ? override.returnLossPct
+          : base.returnLossPct
+      )
+    ),
+  };
+}
+
+/**
+ * Единый расчёт удержаний WB, прямой/обратной логистики, налога и переменного OPEX за 1 месяц по SKU.
+ * Гарантирует отсутствие двойного счёта логистики при logisticsIncludedInWbPct === true (BORNERS / FUKAI).
+ */
+export function computeBrandMonthEconomics(input: {
+  profile: BrandEconomicsProfile;
+  revenueRub: number;
+  buyoutsPacks: number;
+  ordersPacks: number;
+  refusalsPacks: number;
+  buyoutRatePct: number;
+}): BrandMonthEconomicsResult {
+  const rev = Math.max(0, Math.round(input.revenueRub || 0));
+  const buyouts = Math.max(0, Math.round(input.buyoutsPacks || 0));
+  const orders = Math.max(0, Math.round(input.ordersPacks || 0));
+  const refusals = Math.max(0, Math.round(input.refusalsPacks || 0));
+  const p = input.profile;
+
+  if (rev <= 0 && orders <= 0) {
+    return {
+      wbCommissionRub: 0,
+      wbAdsRub: 0,
+      forwardLogisticsRub: 0,
+      reverseLogisticsRub: 0,
+      totalWbDeductionsRub: 0,
+      wbNetPayoutRub: 0,
+      taxRub: 0,
+      opexRub: 0,
+    };
+  }
+
+  let wbCommissionRub = 0;
+  let wbAdsRub = 0;
+  let forwardLogisticsRub = 0;
+  let reverseLogisticsRub = 0;
+  let totalWbDeductionsRub = 0;
+
+  if (p.logisticsIncludedInWbPct) {
+    // Логистика уже включена в wbTotalMarketplacePct — НИКОГДА не добавляем прямую/обратную логистику повторно!
+    const totalPctRub = Math.round((rev * p.wbTotalMarketplacePct) / 100);
+    wbAdsRub = Math.min(totalPctRub, Math.round((rev * p.adPct) / 100));
+    wbCommissionRub = Math.max(0, totalPctRub - wbAdsRub);
+    forwardLogisticsRub = 0;
+    reverseLogisticsRub = 0;
+    totalWbDeductionsRub = Math.min(rev, Math.max(0, totalPctRub));
+  } else {
+    wbCommissionRub = Math.round((rev * p.wbCommissionPct) / 100);
+    wbAdsRub = Math.round((rev * p.adPct) / 100);
+    forwardLogisticsRub =
+      orders > 0 ? Math.round(orders * p.forwardLogisticsPerOrderRub) : 0;
+    reverseLogisticsRub =
+      input.buyoutRatePct < 100 && refusals > 0
+        ? Math.round(refusals * p.reverseLogisticsPerReturnRub)
+        : 0;
+    totalWbDeductionsRub = Math.min(
+      rev,
+      wbCommissionRub + wbAdsRub + forwardLogisticsRub + reverseLogisticsRub
+    );
+  }
+
+  const wbNetPayoutRub = Math.max(0, rev - totalWbDeductionsRub);
+  const taxRub = Math.round((rev * p.taxPct) / 100);
+  const opexRub =
+    Math.round((rev * p.opexPct) / 100) + Math.round(buyouts * p.opexRubPerPack);
+
+  return {
+    wbCommissionRub,
+    wbAdsRub,
+    forwardLogisticsRub,
+    reverseLogisticsRub,
+    totalWbDeductionsRub,
+    wbNetPayoutRub,
+    taxRub,
+    opexRub,
+  };
+}
+
 /**
  * Раздел 3 и Тест 1, 8 ТЗ: Получение независимых сценариев конкретного бренда.
  * Если строгий режим (onlyExplicitForNewBrands = true), для брендов AKUSHA / LISCANI / НА ТЕЛЕ
@@ -4254,15 +4845,25 @@ export function isScenarioCompatibleWithBrand(
   return false;
 }
 
+export interface CarryOverStockDetails2027To2028 {
+  endingAvailablePacks: number;
+  endingReturnsInTransitPacks: number;
+  totalCarryOverPacks: number;
+  totalBuyouts2027Packs: number;
+  totalReturnLoss2027Packs: number;
+}
+
 /**
- * Раздел 5.3 и Тест 6 ТЗ: Расчёт переходящего физического остатка с 31 декабря 2027 года на 1 января 2028 года.
+ * Раздел 5.3, Стр. 8 и Тесты 02/10 ТЗ: Детальный расчёт переходящего физического остатка с 31.12.2027 на 01.01.2028,
+ * включающий И доступный складской остаток WB, И возвраты в пути (returning in early Jan 2028).
  */
-export function computeCarryOverStock2027To2028(
+export function computeCarryOverStockDetails2027To2028(
   rawModel: ScenarioModelSpec,
   scenario2027OrId?: GrowthScenarioDef | number
-): number {
+): CarryOverStockDetails2027To2028 {
   const model = ensureModelUnifiedV11(rawModel);
   const shared = model.sharedSupplyAndFact!;
+  const fp = shared.factoryParams;
   const scen2027Id =
     typeof scenario2027OrId === 'number'
       ? scenario2027OrId
@@ -4282,12 +4883,20 @@ export function computeCarryOverStock2027To2028(
     }
   }
 
-  let running = Math.max(
+  let runningAvailable = Math.max(
     0,
     (shared.actualOpeningStockPacks || plan2027?.initialStockPacks || 0) -
       shared.reservedStockPacks
   );
-  if (!plan2027) return running;
+  if (!plan2027) {
+    return {
+      endingAvailablePacks: runningAvailable,
+      endingReturnsInTransitPacks: 0,
+      totalCarryOverPacks: runningAvailable,
+      totalBuyouts2027Packs: 0,
+      totalReturnLoss2027Packs: 0,
+    };
+  }
 
   const receiptsEqualToPacks =
     Array.isArray(plan2027.monthlyReceiptsPacks) &&
@@ -4302,6 +4911,37 @@ export function computeCarryOverStock2027To2028(
     plan2027.scenarioId || scen2027Id
   );
   const procureByOrdersVolume = isModelProcurementByOrdersActive(model);
+  const returnsFlowActive =
+    procureByOrdersVolume && buyoutRatePct > 0 && buyoutRatePct < 100;
+
+  const detectedBrandCode = normalizePortfolioBrandCode(
+    detectModelBrandPortfolioLabel(model)
+  );
+  const isAkushaModel =
+    detectedBrandCode === 'AKUSHA' ||
+    (model.customBrandLabel || '').toUpperCase().includes('AKUSHA');
+  const prodProfile = getBrandProductionProfile(
+    detectedBrandCode === 'ALL' ? 'BORNERS' : detectedBrandCode,
+    `${model.title || ''} ${model.categoryLabel || ''}`
+  );
+  const returnCycleDays = Math.min(
+    29,
+    Math.max(1, Math.round(fp.returnCycleDays ?? prodProfile.defaultReturnCycleDays ?? 14))
+  );
+  const returnCycleFraction = Math.min(0.95, Math.max(0.05, returnCycleDays / 30));
+  const returnLossPct = !returnsFlowActive
+    ? 0
+    : Math.min(
+        50,
+        Math.max(
+          0,
+          fp.returnLossPct ?? (isAkushaModel ? 2 : prodProfile.defaultReturnLossPct ?? 2)
+        )
+      );
+
+  let prevReturnsInTransit = 0;
+  let totalBuyouts2027Packs = 0;
+  let totalReturnLoss2027Packs = 0;
 
   for (let m = 0; m < 12; m++) {
     const extraManualReceipts =
@@ -4310,23 +4950,83 @@ export function computeCarryOverStock2027To2028(
         : plan2027.monthlyReceiptsPacks?.[m] || 0;
     const receipts = (approvedByMonth[m] || 0) + extraManualReceipts;
     const buyouts = Math.max(0, Math.round(plan2027.monthlyPacks?.[m] || 0));
-    let demand = buyouts;
-    if (procureByOrdersVolume && buyoutRatePct > 0 && buyoutRatePct < 100) {
-      const storedOrd = plan2027.monthlyOrdersPacks?.[m];
-      if (
-        typeof storedOrd === 'number' &&
-        storedOrd >= 0 &&
-        (storedOrd === Math.ceil((buyouts * 100) / buyoutRatePct) ||
-          Math.round((storedOrd * buyoutRatePct) / 100) === buyouts)
-      ) {
-        demand = Math.round(storedOrd);
+
+    if (!returnsFlowActive) {
+      const avail = runningAvailable + receipts;
+      const fulfilled = Math.min(avail, buyouts);
+      totalBuyouts2027Packs += fulfilled;
+      runningAvailable = Math.max(0, avail - buyouts);
+      continue;
+    }
+
+    const storedOrd = plan2027.monthlyOrdersPacks?.[m];
+    const orders =
+      typeof storedOrd === 'number' &&
+      storedOrd >= 0 &&
+      (storedOrd === Math.ceil((buyouts * 100) / buyoutRatePct) ||
+        Math.round((storedOrd * buyoutRatePct) / 100) === buyouts)
+        ? Math.round(storedOrd)
+        : Math.round((buyouts * 100) / buyoutRatePct);
+
+    const refusals = Math.max(0, orders - buyouts);
+    const returnLoss = Math.round((refusals * returnLossPct) / 100);
+    const returnable = Math.max(0, refusals - returnLoss);
+    const inTransitEnd = Math.round(returnable * returnCycleFraction);
+    const returnedSameMonth = Math.max(0, returnable - inTransitEnd);
+    const returnedTotal = prevReturnsInTransit + returnedSameMonth;
+
+    // Если на складе (с учётом приходов и возвратов) достаточно товара для всех заказов — проводим полный цикл;
+    // иначе отгружается только фактически доступный физический остаток (никаких фантомных возвратов из нуля!)
+    const grossSupplyWithReturns = runningAvailable + receipts + returnedTotal;
+    if (grossSupplyWithReturns >= orders) {
+      runningAvailable = grossSupplyWithReturns - orders;
+      prevReturnsInTransit = inTransitEnd;
+      totalBuyouts2027Packs += buyouts;
+      totalReturnLoss2027Packs += returnLoss;
+    } else {
+      const physicalAvailBeforeSameMonth = runningAvailable + receipts + prevReturnsInTransit;
+      if (physicalAvailBeforeSameMonth <= 0 || orders <= 0) {
+        runningAvailable = Math.max(0, physicalAvailBeforeSameMonth);
+        prevReturnsInTransit = 0;
       } else {
-        demand = Math.round((buyouts * 100) / buyoutRatePct);
+        const shipped = Math.min(orders, physicalAvailBeforeSameMonth);
+        const actualBuyouts = Math.round((shipped * buyoutRatePct) / 100);
+        const actualRefusals = Math.max(0, shipped - actualBuyouts);
+        const actualLoss = Math.round((actualRefusals * returnLossPct) / 100);
+        const actualReturnable = Math.max(0, actualRefusals - actualLoss);
+        const actualInTransitEnd = Math.round(actualReturnable * returnCycleFraction);
+        const actualReturnedSameMonth = Math.max(0, actualReturnable - actualInTransitEnd);
+        runningAvailable = Math.max(
+          0,
+          physicalAvailBeforeSameMonth - shipped + actualReturnedSameMonth
+        );
+        prevReturnsInTransit = actualInTransitEnd;
+        totalBuyouts2027Packs += actualBuyouts;
+        totalReturnLoss2027Packs += actualLoss;
       }
     }
-    running = Math.max(0, running + receipts - demand);
   }
-  return running;
+
+  const endingAvailablePacks = Math.max(0, Math.round(runningAvailable));
+  const endingReturnsInTransitPacks = Math.max(0, Math.round(prevReturnsInTransit));
+  return {
+    endingAvailablePacks,
+    endingReturnsInTransitPacks,
+    totalCarryOverPacks: endingAvailablePacks + endingReturnsInTransitPacks,
+    totalBuyouts2027Packs,
+    totalReturnLoss2027Packs,
+  };
+}
+
+/**
+ * Раздел 5.3 и Тест 6/10 ТЗ: Расчёт переходящего физического остатка с 31 декабря 2027 года на 1 января 2028 года
+ * (включает и доступный складской остаток WB, и возвраты в пути, возвращающиеся на WB в начале января 2028).
+ */
+export function computeCarryOverStock2027To2028(
+  rawModel: ScenarioModelSpec,
+  scenario2027OrId?: GrowthScenarioDef | number
+): number {
+  return computeCarryOverStockDetails2027To2028(rawModel, scenario2027OrId).totalCarryOverPacks;
 }
 
 /**
@@ -4919,6 +5619,7 @@ export function computeMultiBrandPortfolioSummary(
 
   const combinedMonthlyGrossSalesRub = Array(12).fill(0) as number[];
   const combinedMonthlyWbDeductionsRub = Array(12).fill(0) as number[];
+  const combinedMonthlyWbNetInflowRub = Array(12).fill(0) as number[];
   const combinedMonthlyPrepayOutflowRub = Array(12).fill(0) as number[];
   const combinedMonthlyBalanceOutflowRub = Array(12).fill(0) as number[];
 
@@ -5069,6 +5770,7 @@ export function computeMultiBrandPortfolioSummary(
           initialCashRub: 0,
           settlementLagMonths,
           wbPayoutScheduleSpecified,
+          financeContourParams: options.financeContourParams,
         }
       );
 
@@ -5095,6 +5797,7 @@ export function computeMultiBrandPortfolioSummary(
         if (!r) continue;
         combinedMonthlyGrossSalesRub[m] += r.grossSalesRub;
         combinedMonthlyWbDeductionsRub[m] += r.wbDeductionsAndAdsRub;
+        combinedMonthlyWbNetInflowRub[m] += r.wbNetInflowRub;
         combinedMonthlyPrepayOutflowRub[m] += r.factoryPrepaymentOutflowRub;
         combinedMonthlyBalanceOutflowRub[m] += r.factoryBalanceOutflowRub;
       }
@@ -5144,7 +5847,7 @@ export function computeMultiBrandPortfolioSummary(
   for (let m = 0; m < 12; m++) {
     const grossSalesRub = combinedMonthlyGrossSalesRub[m] || 0;
     const wbDeductionsAndAdsRub = combinedMonthlyWbDeductionsRub[m] || 0;
-    const wbNetInflowRub = Math.max(0, grossSalesRub - wbDeductionsAndAdsRub);
+    const wbNetInflowRub = combinedMonthlyWbNetInflowRub[m] || 0;
     const factoryPrepaymentOutflowRub = combinedMonthlyPrepayOutflowRub[m] || 0;
     const factoryBalanceOutflowRub = combinedMonthlyBalanceOutflowRub[m] || 0;
     const factoryTotalOutflowRub =
@@ -7251,7 +7954,7 @@ export function computePortfolioProcurementWavesSummary(
     }
 
     for (const rb of proc.recommendedBatches) {
-      if (rb.recommendedPacks <= 0 && rb.estimatedTotalRub <= 0) continue;
+      if (rb.recommendedPacks <= 0 || rb.estimatedTotalRub <= 0) continue;
       const arrivalM = Math.min(11, Math.max(0, rb.firstCoveredMonthIdx));
       const orderM = Math.max(
         0,

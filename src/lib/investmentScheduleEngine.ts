@@ -11,9 +11,14 @@ import {
 import { isUnverifiedActingSku } from './scenarioS1_100M.ts';
 import {
   BRAND_UNIT_CONFIGS,
+  type BrandEconomicsProfile,
   type CanonicalBrandCode,
+  type FinanceContourParams,
+  computeBrandMonthEconomics,
   computeCarryOverStock2027To2028,
+  computeCarryOverStockDetails2027To2028,
   computeProcurementPlan,
+  computeUnifiedEconomicSummary,
   detectModelBrandPortfolioLabel,
   ensureModelUnifiedV11,
   getBrandUnitConfig,
@@ -23,7 +28,15 @@ import {
   isScenarioCompatibleWithBrand,
   matchesBrandFilter,
   normalizePortfolioBrandCode,
+  resolveBrandEconomicsProfile,
 } from './unifiedBusinessEngine.ts';
+export {
+  type BrandEconomicsProfile,
+  type FinanceContourParams,
+  computeBrandMonthEconomics,
+  computeUnifiedEconomicSummary,
+  resolveBrandEconomicsProfile,
+};
 import { safeGetStorageJson, safeSetStorageJson } from './safeStorage.ts';
 
 export const STORAGE_KEY_INVESTMENT_LEDGER = 'borners_investment_ledger_v1';
@@ -43,6 +56,10 @@ export interface ManualPaymentOverride {
   batchKey: string;
   customDateIso?: string;
   customAmountRub?: number;
+  /** Процент предоплаты (0..100), если задаётся напрямую на платеже предоплаты — автоматически пересчитывает связанную доплату */
+  depositPct?: number;
+  /** Опциональная дата связанной доплаты (balance) при совместной правке аванса */
+  balanceDateIso?: string;
   customFactoryName?: string;
   status?: OperationPaymentStatus;
   splitTranches?: PaymentTrancheSpec[];
@@ -120,6 +137,8 @@ export interface InvestmentLedgerAuditEntry {
   afterValue: string;
 }
 
+export type GroupCapitalMode = 'common_pool' | 'per_brand';
+
 export interface InvestmentLedgerGlobalSettings {
   initialCashRub: number; // первоначальный собственный капитал на счёте на старте
   minCashReserveRub: number; // неснижаемый денежный резерв
@@ -127,6 +146,10 @@ export interface InvestmentLedgerGlobalSettings {
   wbPayoutScheduleSpecified: boolean; // если false — честное предупреждение вместо выдуманной суммы
   wbPayoutFrequency: 'twice_monthly' | 'weekly' | 'month_end';
   selectedFinanceYear?: 2027 | 2028; // переключатель Год: 2027 / 2028 (Раздел 2 ТЗ v14)
+  /** Режим капитала группы при выборе «Все бренды» (Тест 09 ТЗ v1.0): общий котёл или каждый бренд сам */
+  groupCapitalMode?: GroupCapitalMode;
+  /** Явное переопределение стартового кэша 2028 года (если не задано — переносится остаток 31.12.2027) */
+  initialCash2028OverrideRub?: number;
 }
 
 export interface InvestmentLedgerState {
@@ -178,6 +201,8 @@ export interface LinkedProcurementBatchDetails {
   sizeBreakdownText: string;
   hasArrivalShiftDeficit: boolean;
   arrivalShiftDeficitPacks: number;
+  /** Главное фото SKU из галереи карточки модели (Стр. 6 ТЗ v1.0) */
+  thumbnailUrl?: string;
 }
 
 export interface ChronologicalCashEvent {
@@ -185,6 +210,10 @@ export interface ChronologicalCashEvent {
   opKey: string;
   dateIso: string; // YYYY-MM-DD (фактическая хронологическая дата операции)
   calendarMonthIdx: number; // 0..11 в календаре года сценария (операции старта Q1 до 1 янв попадают в Янв с точной датой)
+  /** true для событий до 1 января года продаж (например, авансы в ноябре–декабре 2026 для плана 2027) */
+  isPreSalesYearPeriod?: boolean;
+  /** true для переходящих операций с прошлого года (выплаты WB за дек 2027 в янв 2028 или доплаты PO Q4 2027 в Q1 2028) */
+  isCarriedOverFromPriorYear?: boolean;
   type: 'wb_inflow' | 'other_inflow' | 'factory_payment' | 'other_expense' | 'capital_injection';
   paymentRole?: 'prepay' | 'balance' | 'tranche' | 'extra';
   status: OperationPaymentStatus;
@@ -298,6 +327,8 @@ export interface WhenAndHowMuchFactoryPaymentItem {
   batchKey: string;
   modelId: string;
   modelCode: string;
+  brandCode?: CanonicalBrandCode;
+  thumbnailUrl?: string;
   productTitle: string; // 1. Название товара
   batchNumber: string; // 2. Номер партии
   factoryName: string; // 3. Фабрика
@@ -308,6 +339,7 @@ export interface WhenAndHowMuchFactoryPaymentItem {
   arrivalDateIso: string; // 7. Дата поступления товара (ISO)
   arrivalDateDotRu: string; // 7. Дата поступления товара (ДД.ММ.ГГГГ)
   packsQty: number;
+  qtyPacks?: number;
   defaultPacksQty: number;
   unitLabel: string;
   prepaymentPct: number;
@@ -375,7 +407,7 @@ export interface PlanComparisonWithBaseline {
   summaryVerdictRu: string;
 }
 
-// Раздел 10 ТЗ v14: Строка таблицы «Общая сводка группы» при выборе «Все бренды»
+// Раздел 10 ТЗ v14 + ТЗ v1.0: Строка таблицы «Общая сводка группы» при выборе «Все бренды»
 export interface HoldingBrandSummaryRow {
   brandCode: CanonicalBrandCode | 'BORNERS_FUKAI';
   displayBrandName: string; // BORNERS / FUKAI / AKUSHA / LISKANI / НА ТЕЛЕ
@@ -387,6 +419,15 @@ export interface HoldingBrandSummaryRow {
   ownMoneyNeedRub: number | null;
   remainingOwnMoneyRub: number | null;
   reinvestedRub: number | null;
+  totalSoldGoodsCostRub?: number;
+  totalWbDeductionsRub?: number;
+  totalReverseLogisticsRub?: number;
+  totalTaxRub?: number;
+  totalOpexRub?: number;
+  expectedOperatingProfitRub?: number;
+  expectedOperatingMarginPct?: number;
+  isProfitComplete?: boolean;
+  profitIncompleteReason?: string | null;
   isPreliminary: boolean;
   nextPayment: {
     dateIso: string;
@@ -406,6 +447,113 @@ export interface HoldingGroupOverviewSummary {
   unifiedGroupSynergySavingsRub: number;
 }
 
+export interface IncompleteDataReason {
+  code: string;
+  label: string;
+  actionLabel: string;
+  modelId?: string;
+  modelCode?: string;
+}
+
+export interface CapitalReturnForecast {
+  eligibleDateIso: string | null;
+  eligibleDateHumanRu: string | null;
+  eligibleDateDotRu: string | null;
+  deployedOwnCapitalRub: number;
+  freeCashAboveReserveAtYearEndRub: number;
+  canReturnWithinHorizon: boolean;
+  disclaimerRu: string;
+}
+
+export interface CompatibleUnitBreakdownRow {
+  unitCategory: 'sets' | 'pairs' | 'curtains' | 'items';
+  labelRu: string;
+  buyoutsQty: number;
+  procurementQty: number;
+  batchesCount: number;
+  brandCodes: string[];
+}
+
+export interface DeferredWbPayoutToNextYear {
+  dateIso: string;
+  amountRub: number;
+  sourceMonthIdx: number;
+  sourceMonthLabel: string;
+  title: string;
+  purposeShort: string;
+  brandCode: CanonicalBrandCode | 'ALL';
+  brandTitle: string;
+}
+
+export interface DeferredFactoryPayableToNextYear {
+  opKey: string;
+  batchKey?: string;
+  dateIso: string;
+  amountRub: number;
+  status: OperationPaymentStatus;
+  isApprovedLocked: boolean;
+  hasManualOverride: boolean;
+  scenarioScopeKey: string;
+  brandCode: CanonicalBrandCode | 'ALL';
+  brandTitle: string;
+  title: string;
+  purposeShort: string;
+  factoryName?: string;
+  paymentRole?: 'prepay' | 'balance' | 'tranche' | 'extra';
+  batchDetails?: LinkedProcurementBatchDetails;
+}
+
+export interface YearBoundaryCarryoverSummary {
+  fromYear: number;
+  toYear: number;
+  carriedOverCashFrom2027Rub: number;
+  carriedOverCashAppliedToStart: boolean;
+  carriedOverWbPayoutsFromDec2027Rub: number;
+  carriedOverWbPayoutsEventsCount: number;
+  carriedOverPayablesFrom2027Rub: number;
+  carriedOverPayablesEventsCount: number;
+  carriedOverStockUnitsFrom2027: number;
+  carriedOverReturnsInTransitUnitsFrom2027: number;
+}
+
+export interface DraftPaymentOrBatchEditPatch {
+  scenarioScopeKey?: string;
+  batchKey?: string;
+  opKey?: string;
+  isApprovedPo?: boolean;
+  batchOverride?: Partial<
+    Omit<BatchTermsManualOverride, 'batchKey' | 'updatedAtIso' | 'updatedBy'>
+  >;
+  paymentOverride?: Partial<
+    Omit<ManualPaymentOverride, 'opKey' | 'batchKey' | 'updatedAtIso' | 'updatedBy'>
+  >;
+  balancePaymentOverride?: Partial<
+    Omit<ManualPaymentOverride, 'opKey' | 'batchKey' | 'updatedAtIso' | 'updatedBy'>
+  >;
+  globalSettingsPatch?: Partial<InvestmentLedgerGlobalSettings>;
+  extraCapitalInjection?: Omit<CapitalInjectionRecord, 'updatedAtIso' | 'updatedBy'>;
+  extraCustomOperation?: Omit<CustomCashOperationRecord, 'updatedAtIso' | 'updatedBy'>;
+  nextLedgerState?: InvestmentLedgerState;
+}
+
+export interface PaymentOrBatchEditPreviewResult {
+  before: ComputedInvestmentScheduleResult;
+  after: ComputedInvestmentScheduleResult;
+  deltaPeakCapitalRub: number | null;
+  deltaRemainingNeedRub: number | null;
+  deltaReinvestedRub: number | null;
+  deltaProcurementCostRub: number;
+  oldPrepaymentRub: number;
+  newPrepaymentRub: number;
+  oldBalancePaymentRub: number;
+  newBalancePaymentRub: number;
+  oldArrivalDateIso: string | null;
+  newArrivalDateIso: string | null;
+  newSupplyDeficits: SupplyDeficitWarning[];
+  supplyDeficitDeltaPacks: number;
+  summaryLinesRu: string[];
+}
+
 export interface ComputedInvestmentScheduleResult {
   scenarioYear: number;
   isGroupAllBrands: boolean;
@@ -415,6 +563,12 @@ export interface ComputedInvestmentScheduleResult {
   wbPayoutDelayDays: number;
   initialCashRub: number;
   minCashReserveRub: number;
+
+  // Режимы капитала группы (Тест 09 ТЗ v1.0):
+  groupCapitalMode: GroupCapitalMode;
+  commonPoolCapitalNeedRub: number | null;
+  perBrandSumCapitalNeedRub: number | null;
+  commonPoolSavingsRub: number;
 
   // 4 главных показателя (Раздел 3 ТЗ v14) + обратная совместимость v13:
   totalProcurementCostRub: number; // 2. Стоимость закупок
@@ -426,19 +580,46 @@ export interface ComputedInvestmentScheduleResult {
   reinvestedFromSalesRub: number | null; // 4. Реинвестирование (строго по хронологии денежных операций!)
   reinvestedSharePct: number; // Доля закупок, покрытая реинвестированием (%)
 
-  // Отдельная разбивка капитала (Раздел 5 ТЗ v14):
+  // Отдельная разбивка капитала: План vs Факт (Раздел 5 ТЗ v14 + Тест 06 ТЗ v1.0):
   factualOwnMoneyContributedRub: number; // Фактически внесённые («Оплачено» + стартовый кэш)
   approvedOwnMoneyInjectionsRub: number; // Утверждённые вложения («Утверждено»)
   alreadyInvestedOwnMoneyRub: number; // Стартовый капитал + утверждённые/оплаченные вложения
   plannedUserInjectionsRub: number; // Плановые вложения («Запланировано»)
+  plannedOwnMoneyInjectionsRub: number; // Все нефактические вложения («Запланировано» + «Утверждено», НЕ считаются оплаченными!)
   totalOwnMoneyConfiguredRub: number; // Все внесённые и запланированные собственные деньги
-  remainingOwnMoneyNeededRub: number | null; // Оставшаяся непокрытая сумма финансирования
+  remainingNeedAfterFactualOnlyRub: number | null; // Непокрытый дефицит по датам с учётом ТОЛЬКО фактических денег!
+  remainingOwnMoneyNeededRub: number | null; // Оставшаяся непокрытая сумма финансирования по датам (факт + план)
   additionalOwnMoneyStillNeededRub: number | null; // Синоним для тестов v13
+  capitalReturnForecast: CapitalReturnForecast;
 
-  // Пометка предварительного расчёта (Раздел 7 и 11 ТЗ v14):
+  // Пометка предварительного расчёта и защита от нулевой себестоимости (Тест 03 ТЗ v1.0):
   isPreliminaryCalculation: boolean;
   missingCostModelsCount: number;
   missingCostModelIds: string[];
+  excludedZeroCostRevenueRub: number;
+  excludedZeroCostWbPayoutRub: number;
+  incompleteDataReasons: IncompleteDataReason[];
+
+  // Единая побрендовая экономика и P&L без двойного счёта логистики (Требование #04 ТЗ v1.0):
+  totalWbDeductionsRub: number;
+  totalReverseLogisticsRub: number;
+  totalTaxRub: number;
+  totalOpexRub: number;
+  totalSoldGoodsCostRub: number;
+  expectedOperatingProfitRub: number;
+  expectedOperatingMarginPct: number;
+  isProfitComplete: boolean;
+  profitIncompleteReason: string | null;
+
+  // Раздельные совместимые единицы измерения (Тест 09 ТЗ v1.0):
+  compatibleUnitsBreakdown: CompatibleUnitBreakdownRow[];
+
+  // Сквозной перенос через границу лет 2026 -> 2027 -> 2028 (Тест 10 ТЗ v1.0):
+  yearBoundaryCarryover: YearBoundaryCarryoverSummary | null;
+  preSalesYearOutflowsRub: number;
+  preSalesYearEventsCount: number;
+  deferredWbPayoutsToNextYear: DeferredWbPayoutToNextYear[];
+  deferredFactoryPayablesToNextYear: DeferredFactoryPayableToNextYear[];
 
   // Ближайший платёж:
   nextUpcomingPayment: {
@@ -458,7 +639,7 @@ export interface ComputedInvestmentScheduleResult {
   // Детализация продаж, реинвестирования и пика потребности:
   totalWbCashInflowRub: number; // Сколько денег вернётся от продаж на расчётный счёт за период
   totalGrossSalesRevenueRub: number; // 1. План продаж (общая прогнозируемая выручка выбранного сценария)
-  totalAccrualOperatingProfitRub: number; // Справочно для «Подробной аналитики»
+  totalAccrualOperatingProfitRub: number; // Синоним expectedOperatingProfitRub для совместимости
   totalOtherExpensesRub: number;
   batchesTotalCount: number;
   batchesFundedBySalesCount: number;
@@ -493,6 +674,8 @@ export interface ComputedInvestmentScheduleResult {
   manualOverridesCount: number;
   lockedOperationsCount: number;
 }
+
+export type InvestmentScheduleResult = ComputedInvestmentScheduleResult;
 
 const MONTHS_SHORT_RU = [
   'Янв',
@@ -675,6 +858,7 @@ export function createDefaultInvestmentLedgerState(): InvestmentLedgerState {
       wbPayoutDelayDays: 0,
       wbPayoutScheduleSpecified: true,
       wbPayoutFrequency: 'twice_monthly',
+      groupCapitalMode: 'common_pool',
     },
     sharedCommitted: {
       committedPaymentOverrides: {},
@@ -780,6 +964,13 @@ export function normalizeInvestmentLedgerState(
           ? 2028
           : rawGs.selectedFinanceYear === 2027
           ? 2027
+          : undefined,
+      groupCapitalMode:
+        rawGs.groupCapitalMode === 'per_brand' ? 'per_brand' : 'common_pool',
+      initialCash2028OverrideRub:
+        typeof rawGs.initialCash2028OverrideRub === 'number' &&
+        Number.isFinite(rawGs.initialCash2028OverrideRub)
+          ? Math.max(0, Math.round(rawGs.initialCash2028OverrideRub))
           : undefined,
     },
     sharedCommitted: {
@@ -1299,6 +1490,51 @@ export interface ComputeInvestmentScheduleParams {
   explicitWbScheduleSpecified?: boolean;
   targetYear?: 2027 | 2028;
   combineBornersAndFukai?: boolean;
+  /** Явные настройки экономики брендов (если не переданы — читаются из borners_finance_contour_params_v1 с дефолтами брендов) */
+  financeContourParams?: FinanceContourParams | null;
+  /** Режим расчёта капитала группы при brandFilter === 'ALL' (Тест 09 ТЗ v1.0) */
+  groupCapitalMode?: GroupCapitalMode;
+  /** Внутренний флаг защиты от рекурсии при переносе остатков/денег с 2027 на 2028 год */
+  skipCarryoverFromPriorYear?: boolean;
+  /** Внутренний флаг защиты от рекурсии при сравнении режимов common_pool / per_brand */
+  _skipGroupModeComparison?: boolean;
+}
+
+export type InvestmentScheduleInput = ComputeInvestmentScheduleParams;
+
+function extractValidModelThumbnailUrl(model: ScenarioModelSpec): string | undefined {
+  const isUsableUrl = (u?: string): u is string => {
+    if (typeof u !== 'string') return false;
+    const trimmed = u.trim();
+    return trimmed.length > 0 && trimmed !== '__SUPABASE_GALLERY_REF__';
+  };
+  const gallery = Array.isArray(model.gallery) ? model.gallery : [];
+  const mainPhoto =
+    gallery.find((g) => g?.isMain && isUsableUrl(g.url)) ||
+    gallery.find((g) => isUsableUrl(g?.url));
+  return mainPhoto && isUsableUrl(mainPhoto.url) ? mainPhoto.url.trim() : undefined;
+}
+
+function classifyCompatibleUnitCategory(
+  brandCode: CanonicalBrandCode,
+  primaryUnitLabel: string
+): { unitCategory: CompatibleUnitBreakdownRow['unitCategory']; labelRu: string } {
+  const uLower = (primaryUnitLabel || '').toLowerCase();
+  if (brandCode === 'AKUSHA' || uLower.includes('пар')) {
+    return { unitCategory: 'pairs', labelRu: 'Обувь (пар)' };
+  }
+  if (brandCode === 'LISKANI' || uLower.includes('штор')) {
+    return { unitCategory: 'curtains', labelRu: 'Шторы и текстиль (компл. штор / шт.)' };
+  }
+  if (
+    brandCode === 'BORNERS' ||
+    brandCode === 'FUKAI' ||
+    brandCode === 'NA_TELE' ||
+    uLower.includes('компл')
+  ) {
+    return { unitCategory: 'sets', labelRu: 'Бельё (компл.)' };
+  }
+  return { unitCategory: 'items', labelRu: 'Прочие товары (шт.)' };
 }
 
 export function computeInvestmentSchedule(
@@ -1308,10 +1544,13 @@ export function computeInvestmentSchedule(
     ? normalizeInvestmentLedgerState(params.ledgerState)
     : loadInvestmentLedgerState();
 
-  const initialCashRub =
-    params.explicitInitialCashRub !== undefined
-      ? Math.max(0, Math.round(params.explicitInitialCashRub))
-      : baseLedger.globalSettings.initialCashRub;
+  const effectiveFinanceContourParams: FinanceContourParams | undefined =
+    params.financeContourParams !== undefined
+      ? params.financeContourParams || undefined
+      : safeGetStorageJson<FinanceContourParams>('borners_finance_contour_params_v1') || undefined;
+
+  const groupCapitalMode: GroupCapitalMode =
+    params.groupCapitalMode || baseLedger.globalSettings.groupCapitalMode || 'common_pool';
 
   const minCashReserveRub = Math.max(0, Math.round(baseLedger.globalSettings.minCashReserveRub || 0));
 
@@ -1370,22 +1609,97 @@ export function computeInvestmentSchedule(
     ? `BORNERS_FUKAI:${params.activeScenario?.id ?? 1}${scenarioYear === 2028 ? '@2028' : ''}`
     : null;
 
+  // Тест 10 ТЗ v1.0: Бесшовный перенос 2027 -> 2028 (остаток денег на 31.12.2027, выплаты WB за дек 2027 в янв 2028,
+  // неоплаченные доплаты PO Q4 2027 в Q1 2028, складской остаток + возвраты в пути)
+  let prior2027Schedule: ComputedInvestmentScheduleResult | null = null;
+  if (scenarioYear === 2028 && !params.skipCarryoverFromPriorYear) {
+    prior2027Schedule = computeInvestmentSchedule({
+      ...params,
+      targetYear: 2027,
+      skipCarryoverFromPriorYear: true,
+      _skipGroupModeComparison: true,
+    });
+  }
+
+  const endingTotalCashOnDec31_2027 =
+    prior2027Schedule && prior2027Schedule.wbPayoutScheduleSpecified
+      ? Math.max(0, Math.round(prior2027Schedule.monthlyCalendarRows[11]?.endingTotalCashRub ?? 0))
+      : 0;
+
+  let carriedOverCashAppliedToStart = false;
+  let initialCashRub: number;
+  if (params.explicitInitialCashRub !== undefined) {
+    initialCashRub = Math.max(0, Math.round(params.explicitInitialCashRub));
+  } else if (
+    scenarioYear === 2028 &&
+    baseLedger.globalSettings.initialCash2028OverrideRub !== undefined
+  ) {
+    initialCashRub = Math.max(0, Math.round(baseLedger.globalSettings.initialCash2028OverrideRub));
+  } else if (scenarioYear === 2028 && prior2027Schedule) {
+    initialCashRub = endingTotalCashOnDec31_2027;
+    carriedOverCashAppliedToStart = true;
+  } else {
+    initialCashRub = baseLedger.globalSettings.initialCashRub;
+  }
+
   const batchesCatalog: LinkedProcurementBatchDetails[] = [];
   const suppliersSet = new Set<string>();
   const supplyDeficitWarnings: SupplyDeficitWarning[] = [];
   const missingCostSkus: string[] = [];
   const missingCostModelIds: string[] = [];
+  const incompleteDataReasons: IncompleteDataReason[] = [];
+  const deferredWbPayoutsToNextYear: DeferredWbPayoutToNextYear[] = [];
+  const deferredFactoryPayablesToNextYear: DeferredFactoryPayableToNextYear[] = [];
 
   const monthlyGrossSalesByMonth = Array(12).fill(0) as number[];
   const monthlyWbNetPayoutGeneratedByMonth = Array(12).fill(0) as number[];
   let totalGrossSalesRevenueRub = 0;
   let totalSoldGoodsCostRub = 0;
   let totalWbDeductionsRub = 0;
+  let totalReverseLogisticsRub = 0;
+  let totalTaxRub = 0;
+  let totalOpexRub = 0;
+  let excludedZeroCostRevenueRub = 0;
+  let excludedZeroCostWbPayoutRub = 0;
+  let carriedOverStockUnitsFrom2027 = 0;
+  let carriedOverReturnsInTransitUnitsFrom2027 = 0;
 
   let approvedProcurementCostRub = 0;
   let plannedProcurementCostRub = 0;
 
+  // Раздельные совместимые единицы измерения (компл. / пар / компл. штор / шт.) — Тест 09 ТЗ v1.0
+  const compatibleUnitsMap = new Map<
+    CompatibleUnitBreakdownRow['unitCategory'],
+    {
+      labelRu: string;
+      buyoutsQty: number;
+      procurementQty: number;
+      batchesCount: number;
+      brandCodesSet: Set<string>;
+    }
+  >();
+  const touchCompatibleUnit = (
+    brandCode: CanonicalBrandCode,
+    primaryUnitLabel: string,
+    delta: { buyoutsQty?: number; procurementQty?: number; batchesCount?: number }
+  ) => {
+    const { unitCategory, labelRu } = classifyCompatibleUnitCategory(brandCode, primaryUnitLabel);
+    const cur = compatibleUnitsMap.get(unitCategory) || {
+      labelRu,
+      buyoutsQty: 0,
+      procurementQty: 0,
+      batchesCount: 0,
+      brandCodesSet: new Set<string>(),
+    };
+    cur.buyoutsQty += delta.buyoutsQty || 0;
+    cur.procurementQty += delta.procurementQty || 0;
+    cur.batchesCount += delta.batchesCount || 0;
+    cur.brandCodesSet.add(brandCode);
+    compatibleUnitsMap.set(unitCategory, cur);
+  };
+
   const rawEvents: ChronologicalCashEvent[] = [];
+  const emittedFactoryOpKeys = new Set<string>();
   let manualOverridesCount = 0;
   let lockedOperationsCount = 0;
 
@@ -1433,6 +1747,8 @@ export function computeInvestmentSchedule(
     return { override: scenOvr, isSharedCommitted: false };
   };
 
+  const activeBrandsWithRevenue = new Set<CanonicalBrandCode>();
+
   for (const scoped of scopedInputs) {
     const {
       brandCode,
@@ -1443,13 +1759,23 @@ export function computeInvestmentSchedule(
       models: brandModels,
     } = scoped;
     const yr = scenario.year || scenarioYear;
+    const brandEcon = resolveBrandEconomicsProfile(brandCode, effectiveFinanceContourParams);
 
     for (const m of brandModels) {
+      let modelCarryOverDetails: ReturnType<typeof computeCarryOverStockDetails2027To2028> | null =
+        null;
+      if (yr >= 2028) {
+        const ref2027Id = scenario.copiedFromScenarioId || scenario.id || 1;
+        modelCarryOverDetails = computeCarryOverStockDetails2027To2028(m, ref2027Id);
+        carriedOverStockUnitsFrom2027 += modelCarryOverDetails.totalCarryOverPacks;
+        carriedOverReturnsInTransitUnitsFrom2027 +=
+          modelCarryOverDetails.endingReturnsInTransitPacks;
+      }
+
       const mForCalc: ScenarioModelSpec =
-        isProjectedYear && yr >= 2028
+        isProjectedYear && yr >= 2028 && modelCarryOverDetails
           ? (() => {
-              const ref2027Id = scenario.copiedFromScenarioId || scenario.id || 1;
-              const carryOverPacks = computeCarryOverStock2027To2028(m, ref2027Id);
+              const carryOverPacks = modelCarryOverDetails!.totalCarryOverPacks;
               const baseShared = m.sharedSupplyAndFact!;
               const existingPlan = m.plansByScenario[scenario.id];
               return {
@@ -1474,11 +1800,12 @@ export function computeInvestmentSchedule(
       const proc = computeProcurementPlan(mForCalc, scenario);
       const shared = mForCalc.sharedSupplyAndFact!;
       const unitCfg = getBrandUnitConfig(m);
+      const modelThumbnailUrl = extractValidModelThumbnailUrl(m);
       if (shared.factoryParams?.factoryName) {
         suppliersSet.add(shared.factoryParams.factoryName);
       }
 
-      // 1. Помесячная выручка и генерация выплат WB по модели
+      // 1. Помесячная выручка и генерация выплат WB по модели (единый профиль бренда без двойного счёта логистики!)
       const planScenarioKey =
         m.plansByScenario[scenario.id]
           ? scenario.id
@@ -1507,16 +1834,11 @@ export function computeInvestmentSchedule(
           !plan.monthlyPacks.some((p) => (p || 0) > 0));
 
       const monthlyDemandPacks = proc.monthlyBalance.map((mb) => mb.demandPacks);
-      const hasAnySales = proc.annualDemandPacks > 0;
-      if (hasAnySales && (m.unitCostRub || 0) <= 0) {
-        missingCostSkus.push(`${m.code} (${m.title})`);
-        if (!missingCostModelIds.includes(m.id)) {
-          missingCostModelIds.push(m.id);
-        }
-      }
-
       const unitCost = Math.max(0, m.unitCostRub || 0);
-      totalSoldGoodsCostRub += proc.annualBuyoutsPacks * unitCost;
+      const isZeroCostModel = unitCost <= 0;
+
+      let modelAnnualRevRub = 0;
+      let modelEffectiveAnnualBuyouts = 0;
 
       for (let idx = 0; idx < 12; idx++) {
         // Фактические продажи за 2027 год не подмешиваем при прогнозе на 2028 год
@@ -1536,14 +1858,77 @@ export function computeInvestmentSchedule(
             ? plan.monthlyRevenuesRubOverride![idx]
             : packsM * effPriceM;
 
-        const wbDedM = Math.min(revM, Math.round((revM * 40) / 100));
-        const netPayoutM = Math.max(0, revM - wbDedM);
+        const ordersM =
+          act && act.actualBuyoutsPacks !== null
+            ? proc.buyoutRatePct > 0 && proc.buyoutRatePct < 100
+              ? Math.round((packsM * 100) / proc.buyoutRatePct)
+              : proc.buyoutRatePct <= 0
+              ? 0
+              : packsM
+            : proc.monthlyBalance[idx]?.ordersPacks ?? packsM;
+        const refusalsM = Math.max(0, ordersM - packsM);
 
+        const monthEcon = computeBrandMonthEconomics({
+          profile: brandEcon,
+          revenueRub: revM,
+          buyoutsPacks: packsM,
+          ordersPacks: ordersM,
+          refusalsPacks: refusalsM,
+          buyoutRatePct: proc.buyoutRatePct,
+        });
+
+        modelAnnualRevRub += revM;
+        modelEffectiveAnnualBuyouts += packsM;
         monthlyGrossSalesByMonth[idx] += revM;
-        monthlyWbNetPayoutGeneratedByMonth[idx] += netPayoutM;
         totalGrossSalesRevenueRub += revM;
-        totalWbDeductionsRub += wbDedM;
+        totalWbDeductionsRub += monthEcon.totalWbDeductionsRub;
+        totalReverseLogisticsRub += monthEcon.reverseLogisticsRub;
+        totalTaxRub += monthEcon.taxRub;
+        totalOpexRub += monthEcon.opexRub;
+
+        // Тест 03 ТЗ v1.0: При себестоимости <= 0 НЕ добавляем выплату WB этого SKU в общий пул реинвестирования!
+        // План продаж учитывает выручку, но «бесплатный» SKU не создаёт фантомный кэш для оплаты закупок других SKU.
+        if (!isZeroCostModel) {
+          monthlyWbNetPayoutGeneratedByMonth[idx] += monthEcon.wbNetPayoutRub;
+        } else {
+          excludedZeroCostRevenueRub += revM;
+          excludedZeroCostWbPayoutRub += monthEcon.wbNetPayoutRub;
+        }
       }
+
+      if (modelAnnualRevRub > 0) {
+        activeBrandsWithRevenue.add(brandCode);
+      }
+
+      if (modelEffectiveAnnualBuyouts > 0) {
+        touchCompatibleUnit(brandCode, unitCfg.primaryUnit, {
+          buyoutsQty: modelEffectiveAnnualBuyouts,
+        });
+      }
+
+      const hasAnySales =
+        proc.annualDemandPacks > 0 || modelEffectiveAnnualBuyouts > 0 || modelAnnualRevRub > 0;
+      if (hasAnySales && isZeroCostModel) {
+        missingCostSkus.push(`${m.code} (${m.title})`);
+        if (!missingCostModelIds.includes(m.id)) {
+          missingCostModelIds.push(m.id);
+          incompleteDataReasons.push({
+            code: 'missing_unit_cost',
+            label: `Не заполнена себестоимость: ${m.code} — ${m.title} (исключена из реинвестирования и закупочных платежей)`,
+            actionLabel: 'Заполнить себестоимость',
+            modelId: m.id,
+            modelCode: m.code,
+          });
+        }
+      }
+
+      // Единый COGS проданного товара (строго выкупы * себестоимость, 0 при незаполненной себестоимости)
+      const modelSoldGoodsCostRub = !isZeroCostModel
+        ? isUnmodifiedActing && unitCost === actingSku.unitCogRub && !isProjectedYear && yr === 2027
+          ? actingSku.totalCostOfGoodsRub
+          : modelEffectiveAnnualBuyouts * unitCost
+        : 0;
+      totalSoldGoodsCostRub += modelSoldGoodsCostRub;
 
       // Собираем исходные приходы по месяцам (PO + рекомендованные партии) для проверки дефицита при сдвиге поставки/оплаты или изменении объёма
       const confirmedPos = proc.approvedOrders.filter(
@@ -1554,9 +1939,11 @@ export function computeInvestmentSchedule(
         const am = Math.max(0, Math.min(11, po.arrivalMonthIdx));
         originalReceiptsByMonth[am] += po.packsQty;
       }
-      for (const rb of proc.recommendedBatches) {
-        const am = Math.max(0, Math.min(11, rb.firstCoveredMonthIdx));
-        originalReceiptsByMonth[am] += rb.recommendedPacks;
+      if (!isZeroCostModel) {
+        for (const rb of proc.recommendedBatches) {
+          const am = Math.max(0, Math.min(11, rb.firstCoveredMonthIdx));
+          originalReceiptsByMonth[am] += rb.recommendedPacks;
+        }
       }
 
       const pushBatchPayments = (opts: {
@@ -1581,7 +1968,8 @@ export function computeInvestmentSchedule(
         totalLeadDays: number;
         sizeBreakdownText: string;
       }) => {
-        if (opts.totalBatchRub <= 0 && opts.packsQty <= 0) return;
+        // Тест 03 ТЗ v1.0: НИКОГДА не создаём 0 ₽ закупочные партии/платежи для SKU с нулевой себестоимостью!
+        if (opts.totalBatchRub <= 0 || opts.packsQty <= 0 || opts.batchUnitCostRub <= 0) return;
 
         const batchOvr = resolveBatchOverride(opts.batchKey, scopeKey, opts.isApprovedPo);
         const effectiveFactoryName =
@@ -1608,25 +1996,6 @@ export function computeInvestmentSchedule(
           plannedProcurementCostRub += effectiveTotalBatchRub - opts.totalBatchRub;
         }
 
-        const effectivePrepayPct =
-          batchOvr?.customPrepaymentPct !== undefined
-            ? Math.max(0, Math.min(100, Math.round(batchOvr.customPrepaymentPct)))
-            : opts.defaultPrepayPct;
-        const effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
-
-        const recomputeLegs = batchOvr?.customPrepaymentPct !== undefined || hasCustomPacks;
-        const effectivePrepayRub = recomputeLegs
-          ? Math.round((effectiveTotalBatchRub * effectivePrepayPct) / 100)
-          : opts.defaultPrepayRub;
-        const effectiveBalanceRub = recomputeLegs
-          ? Math.max(0, effectiveTotalBatchRub - effectivePrepayRub)
-          : opts.defaultBalanceRub;
-
-        const effectiveOrderDateIso =
-          batchOvr?.customOrderDateIso || opts.defaultOrderDateIso;
-        const effectiveArrivalDateIso =
-          batchOvr?.customArrivalDateIso || opts.defaultArrivalDateIso;
-
         // Проверяем также ручной перенос предоплаты или окончательного расчёта, который сдвигает выпуск/выдачу партии
         const prepayOvrInfo = resolvePaymentOverride(
           `${opts.batchKey}::prepay`,
@@ -1638,6 +2007,80 @@ export function computeInvestmentSchedule(
           scopeKey,
           opts.isApprovedPo
         );
+
+        // Тест 04 ТЗ v1.0: Инвариант сохранения полной стоимости партии!
+        // При изменении % аванса (например 30% -> 10%) ИЛИ суммы аванса связанная доплата (balance)
+        // автоматически пересчитывается так, что effectivePrepayRub + effectiveBalanceRub === effectiveTotalBatchRub ВСЕГДА!
+        let effectivePrepayPct = opts.defaultPrepayPct;
+        let effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
+        let effectivePrepayRub = opts.defaultPrepayRub;
+        let effectiveBalanceRub = Math.max(0, effectiveTotalBatchRub - effectivePrepayRub);
+
+        const hasPrepaySplitTranches =
+          Array.isArray(prepayOvrInfo.override?.splitTranches) &&
+          prepayOvrInfo.override!.splitTranches!.length > 0;
+        const hasBalanceSplitTranches =
+          Array.isArray(balanceOvrInfo.override?.splitTranches) &&
+          balanceOvrInfo.override!.splitTranches!.length > 0;
+
+        if (hasPrepaySplitTranches) {
+          const trancheSum = prepayOvrInfo.override!.splitTranches!.reduce(
+            (s, t) => s + Math.max(0, Math.round(t.amountRub || 0)),
+            0
+          );
+          effectivePrepayRub = Math.min(effectiveTotalBatchRub, trancheSum);
+          effectiveBalanceRub = Math.max(0, effectiveTotalBatchRub - effectivePrepayRub);
+          effectivePrepayPct =
+            effectiveTotalBatchRub > 0
+              ? Math.round((effectivePrepayRub / effectiveTotalBatchRub) * 100)
+              : 0;
+          effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
+        } else if (prepayOvrInfo.override?.depositPct !== undefined) {
+          effectivePrepayPct = Math.max(
+            0,
+            Math.min(100, Math.round(prepayOvrInfo.override.depositPct))
+          );
+          effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
+          effectivePrepayRub = Math.round((effectiveTotalBatchRub * effectivePrepayPct) / 100);
+          effectiveBalanceRub = Math.max(0, effectiveTotalBatchRub - effectivePrepayRub);
+        } else if (prepayOvrInfo.override?.customAmountRub !== undefined) {
+          effectivePrepayRub = Math.max(
+            0,
+            Math.min(effectiveTotalBatchRub, Math.round(prepayOvrInfo.override.customAmountRub))
+          );
+          effectiveBalanceRub = Math.max(0, effectiveTotalBatchRub - effectivePrepayRub);
+          effectivePrepayPct =
+            effectiveTotalBatchRub > 0
+              ? Math.round((effectivePrepayRub / effectiveTotalBatchRub) * 100)
+              : 0;
+          effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
+        } else if (batchOvr?.customPrepaymentPct !== undefined || hasCustomPacks) {
+          effectivePrepayPct =
+            batchOvr?.customPrepaymentPct !== undefined
+              ? Math.max(0, Math.min(100, Math.round(batchOvr.customPrepaymentPct)))
+              : opts.defaultPrepayPct;
+          effectiveBalancePct = Math.max(0, 100 - effectivePrepayPct);
+          effectivePrepayRub = Math.round((effectiveTotalBatchRub * effectivePrepayPct) / 100);
+          effectiveBalanceRub = Math.max(0, effectiveTotalBatchRub - effectivePrepayRub);
+        } else if (!hasBalanceSplitTranches && balanceOvrInfo.override?.customAmountRub !== undefined) {
+          effectiveBalanceRub = Math.max(
+            0,
+            Math.min(effectiveTotalBatchRub, Math.round(balanceOvrInfo.override.customAmountRub))
+          );
+          effectivePrepayRub = Math.max(0, effectiveTotalBatchRub - effectiveBalanceRub);
+          effectiveBalancePct =
+            effectiveTotalBatchRub > 0
+              ? Math.round((effectiveBalanceRub / effectiveTotalBatchRub) * 100)
+              : 0;
+          effectivePrepayPct = Math.max(0, 100 - effectiveBalancePct);
+        }
+
+        const effectiveOrderDateIso =
+          batchOvr?.customOrderDateIso || opts.defaultOrderDateIso;
+        const effectiveArrivalDateIso =
+          batchOvr?.customArrivalDateIso || opts.defaultArrivalDateIso;
+        const effectiveBalanceAutoDateIso =
+          prepayOvrInfo.override?.balanceDateIso || effectiveArrivalDateIso;
 
         let simulatedSupplyArrivalDateIso = effectiveArrivalDateIso;
         let deficitTriggerKind: 'arrival_shift' | 'payment_delay' | 'volume_reduction' =
@@ -1665,7 +2108,7 @@ export function computeInvestmentSchedule(
           balanceOvrInfo.override?.splitTranches &&
           balanceOvrInfo.override.splitTranches.length > 0
             ? balanceOvrInfo.override.splitTranches[0]?.dateIso
-            : balanceOvrInfo.override?.customDateIso;
+            : balanceOvrInfo.override?.customDateIso || prepayOvrInfo.override?.balanceDateIso;
         if (delayedBalanceDate && delayedBalanceDate > simulatedSupplyArrivalDateIso) {
           simulatedSupplyArrivalDateIso = delayedBalanceDate;
           if (deficitTriggerKind !== 'arrival_shift') {
@@ -1761,13 +2204,19 @@ export function computeInvestmentSchedule(
           sizeBreakdownText: opts.sizeBreakdownText,
           hasArrivalShiftDeficit: hasDeficit,
           arrivalShiftDeficitPacks: deficitPacks,
+          thumbnailUrl: modelThumbnailUrl,
         };
         batchesCatalog.push(batchDetails);
+
+        touchCompatibleUnit(brandCode, unitCfg.primaryUnit, {
+          procurementQty: effectivePacksQty,
+          batchesCount: 1,
+        });
 
         const emitLeg = (
           legRole: 'prepay' | 'balance',
           autoDateIso: string,
-          baseLegAmountRub: number,
+          conservedLegAmountRub: number,
           legPct: number
         ) => {
           const opKey = `${opts.batchKey}::${legRole}`;
@@ -1799,6 +2248,8 @@ export function computeInvestmentSchedule(
             payOvr &&
               (payOvr.customDateIso ||
                 payOvr.customAmountRub !== undefined ||
+                payOvr.depositPct !== undefined ||
+                payOvr.balanceDateIso ||
                 payOvr.customFactoryName ||
                 (Array.isArray(payOvr.splitTranches) && payOvr.splitTranches.length > 0))
           );
@@ -1817,18 +2268,41 @@ export function computeInvestmentSchedule(
           if (payOvr?.splitTranches && payOvr.splitTranches.length > 0) {
             const totalTranches = payOvr.splitTranches.length;
             payOvr.splitTranches.forEach((tr, tIdx) => {
-              if ((tr.amountRub || 0) <= 0) return;
+              const trAmount = Math.round(tr.amountRub || 0);
+              if (trAmount <= 0) return;
+              const trDateIso = tr.dateIso || autoDateIso;
               const trStatus = tr.status || effectiveStatus;
               const trLocked =
                 opts.isApprovedPo || trStatus === 'Утверждено' || trStatus === 'Оплачено';
+              const trParsedYr = Number(trDateIso.slice(0, 4));
+              if (trParsedYr > scenarioYear) {
+                if (trStatus !== 'Оплачено') {
+                  deferredFactoryPayablesToNextYear.push({
+                    opKey: `${opKey}::tr:${tr.id || tIdx}`,
+                    batchKey: opts.batchKey,
+                    dateIso: trDateIso,
+                    amountRub: trAmount,
+                    status: trStatus,
+                    isApprovedLocked: trLocked,
+                    hasManualOverride: true,
+                    scenarioScopeKey: scopeKey,
+                    brandCode,
+                    brandTitle,
+                    title: `${tr.label || `Транш ${tIdx + 1}/${totalTranches}`} · ${m.code} (${opts.coverageMonthsLabel})`,
+                    purposeShort: `${tr.label || `Транш ${tIdx + 1}/${totalTranches}`} · ${m.code}`,
+                    factoryName: supName,
+                    paymentRole: 'tranche',
+                    batchDetails,
+                  });
+                }
+                return;
+              }
+              emittedFactoryOpKeys.add(`${opKey}::tr:${tr.id || tIdx}`);
               rawEvents.push({
                 id: `${opKey}::tr:${tr.id || tIdx}`,
                 opKey,
-                dateIso: tr.dateIso || autoDateIso,
-                calendarMonthIdx: resolveCalendarMonthIdxForYear(
-                  tr.dateIso || autoDateIso,
-                  yr
-                ),
+                dateIso: trDateIso,
+                calendarMonthIdx: resolveCalendarMonthIdxForYear(trDateIso, yr),
                 type: 'factory_payment',
                 paymentRole: 'tranche',
                 status: trStatus,
@@ -1846,10 +2320,10 @@ export function computeInvestmentSchedule(
                 trancheIndex: tIdx + 1,
                 tranchesTotal: totalTranches,
                 autoDateIso,
-                autoAmountRub: baseLegAmountRub,
-                amountRub: Math.round(tr.amountRub),
+                autoAmountRub: conservedLegAmountRub,
+                amountRub: trAmount,
                 inflowRub: 0,
-                outflowRub: Math.round(tr.amountRub),
+                outflowRub: trAmount,
                 userCapitalInjectionRub: 0,
                 reinvestedFromSalesRub: 0,
                 coveredByOwnCapitalOnAccountRub: 0,
@@ -1861,16 +2335,40 @@ export function computeInvestmentSchedule(
             return;
           }
 
-          const finalAmountRub =
-            payOvr?.customAmountRub !== undefined
-              ? Math.max(0, Math.round(payOvr.customAmountRub))
-              : Math.max(0, Math.round(baseLegAmountRub));
+          // Строго используем сохранённую сумму conservedLegAmountRub, чтобы prepay + balance === totalBatchCostRub без утечек!
+          const finalAmountRub = Math.max(0, Math.round(conservedLegAmountRub));
           if (finalAmountRub <= 0) return;
 
           const finalDateIso = payOvr?.customDateIso || autoDateIso;
           const roleWord = legRole === 'prepay' ? `Аванс ${legPct}%` : `Доплата ${legPct}%`;
           const poPrefix = opts.poNumber ? `${opts.poNumber} · ` : '';
+          const parsedPayYr = Number(finalDateIso.slice(0, 4));
 
+          // Тест 10 ТЗ v1.0: Если дата доплаты Q4 партии переходит на следующий год (2028), переносим её в календарь 2028!
+          if (parsedPayYr > scenarioYear) {
+            if (effectiveStatus !== 'Оплачено') {
+              deferredFactoryPayablesToNextYear.push({
+                opKey,
+                batchKey: opts.batchKey,
+                dateIso: finalDateIso,
+                amountRub: finalAmountRub,
+                status: effectiveStatus,
+                isApprovedLocked: isLocked,
+                hasManualOverride: hasPayEdit || hasBatchTermEdit,
+                scenarioScopeKey: scopeKey,
+                brandCode,
+                brandTitle,
+                title: `${poPrefix}${roleWord} · ${m.code} — ${m.title} (${opts.coverageMonthsLabel})`,
+                purposeShort: `${roleWord} · ${m.code} (${opts.coverageMonthsLabel})`,
+                factoryName: supName,
+                paymentRole: legRole,
+                batchDetails,
+              });
+            }
+            return;
+          }
+
+          emittedFactoryOpKeys.add(opKey);
           rawEvents.push({
             id: opKey,
             opKey,
@@ -1891,7 +2389,8 @@ export function computeInvestmentSchedule(
             batchKey: opts.batchKey,
             batchDetails,
             autoDateIso,
-            autoAmountRub: baseLegAmountRub,
+            autoAmountRub:
+              legRole === 'prepay' ? opts.defaultPrepayRub : opts.defaultBalanceRub,
             amountRub: finalAmountRub,
             inflowRub: 0,
             outflowRub: finalAmountRub,
@@ -1912,7 +2411,7 @@ export function computeInvestmentSchedule(
         );
         emitLeg(
           'balance',
-          effectiveArrivalDateIso,
+          effectiveBalanceAutoDateIso,
           effectiveBalanceRub,
           effectiveBalancePct
         );
@@ -1920,6 +2419,7 @@ export function computeInvestmentSchedule(
 
       // А) Общие утверждённые заказы фабрикам (PO) — не дублируются между сценариями и защищены от автопересчёта
       for (const po of confirmedPos) {
+        if (po.totalOrderRub <= 0) continue;
         approvedProcurementCostRub += po.totalOrderRub;
         const poPrepayPct =
           po.totalOrderRub > 0
@@ -1950,35 +2450,125 @@ export function computeInvestmentSchedule(
         });
       }
 
-      // Б) Плановые рекомендованные партии выбранного сценария
-      for (const rb of proc.recommendedBatches) {
-        plannedProcurementCostRub += rb.estimatedTotalRub;
-        const rbPrepayPct =
-          rb.estimatedTotalRub > 0
-            ? Math.round((rb.prepaymentRub / rb.estimatedTotalRub) * 100)
-            : shared.factoryParams.prepaymentPct || 30;
-        pushBatchPayments({
-          batchKey: `${m.id}::rb:${rb.periodId}`,
-          isApprovedPo: false,
-          periodId: rb.periodId,
-          defaultFactoryName: rb.factoryName || shared.factoryParams.factoryName,
-          coverageMonthsLabel: rb.coverageMonthsLabel,
-          firstCoveredMonthIdx: rb.firstCoveredMonthIdx,
-          endCoveredMonthIdx: rb.endCoveredMonthIdx,
-          packsQty: rb.recommendedPacks,
-          physicalUnitsQty: rb.physicalUnitsQty,
-          batchUnitCostRub: rb.unitCostRub,
-          totalBatchRub: rb.estimatedTotalRub,
-          defaultPrepayPct: rbPrepayPct,
-          defaultPrepayRub: rb.prepaymentRub,
-          defaultBalanceRub: rb.balancePaymentRub,
-          defaultOrderDateIso: rb.recommendedOrderDateIso,
-          defaultArrivalDateIso: rb.requiredArrivalDateIso,
-          totalLeadDays: rb.totalLeadDays,
-          sizeBreakdownText: formatSizeBreakdownSummary(rb.sizeBreakdownPacks),
-        });
+      // Б) Плановые рекомендованные партии выбранного сценария (СТРОГО пропускаем 0 ₽ партии SKU без себестоимости!)
+      if (!isZeroCostModel) {
+        for (const rb of proc.recommendedBatches) {
+          if (rb.estimatedTotalRub <= 0) continue;
+          plannedProcurementCostRub += rb.estimatedTotalRub;
+          const rbPrepayPct =
+            rb.estimatedTotalRub > 0
+              ? Math.round((rb.prepaymentRub / rb.estimatedTotalRub) * 100)
+              : shared.factoryParams.prepaymentPct || 30;
+          pushBatchPayments({
+            batchKey: `${m.id}::rb:${rb.periodId}`,
+            isApprovedPo: false,
+            periodId: rb.periodId,
+            defaultFactoryName: rb.factoryName || shared.factoryParams.factoryName,
+            coverageMonthsLabel: rb.coverageMonthsLabel,
+            firstCoveredMonthIdx: rb.firstCoveredMonthIdx,
+            endCoveredMonthIdx: rb.endCoveredMonthIdx,
+            packsQty: rb.recommendedPacks,
+            physicalUnitsQty: rb.physicalUnitsQty,
+            batchUnitCostRub: rb.unitCostRub,
+            totalBatchRub: rb.estimatedTotalRub,
+            defaultPrepayPct: rbPrepayPct,
+            defaultPrepayRub: rb.prepaymentRub,
+            defaultBalanceRub: rb.balancePaymentRub,
+            defaultOrderDateIso: rb.recommendedOrderDateIso,
+            defaultArrivalDateIso: rb.requiredArrivalDateIso,
+            totalLeadDays: rb.totalLeadDays,
+            sizeBreakdownText: formatSizeBreakdownSummary(rb.sizeBreakdownPacks),
+          });
+        }
       }
     }
+  }
+
+  // Постоянный OPEX активных брендов (если задан в financeContourParams, 1 раз на бренд, не на каждый SKU)
+  for (const bc of activeBrandsWithRevenue) {
+    const brandEcon = resolveBrandEconomicsProfile(bc, effectiveFinanceContourParams);
+    if (brandEcon.fixedOpexRubPerMonth > 0) {
+      totalOpexRub += brandEcon.fixedOpexRubPerMonth * 12;
+    }
+  }
+
+  // Тест 10 ТЗ v1.0: В 2028 году вливаем переходящие выплаты WB за Декабрь 2027 и неоплаченные доплаты Q4 2027!
+  let carriedOverWbPayoutsFromDec2027Rub = 0;
+  let carriedOverWbPayoutsEventsCount = 0;
+  let carriedOverPayablesFrom2027Rub = 0;
+  let carriedOverPayablesEventsCount = 0;
+
+  if (scenarioYear === 2028 && prior2027Schedule) {
+    if (wbPayoutScheduleSpecified) {
+      prior2027Schedule.deferredWbPayoutsToNextYear.forEach((wp, idx) => {
+        if (wp.amountRub <= 0) return;
+        carriedOverWbPayoutsFromDec2027Rub += wp.amountRub;
+        carriedOverWbPayoutsEventsCount += 1;
+        rawEvents.push({
+          id: `wb-inflow-carryover-2027-${idx}`,
+          opKey: `wb-inflow-carryover-2027-${idx}`,
+          dateIso: wp.dateIso,
+          calendarMonthIdx: resolveCalendarMonthIdxForYear(wp.dateIso, scenarioYear),
+          isCarriedOverFromPriorYear: true,
+          type: 'wb_inflow',
+          status: 'Запланировано',
+          isFactual: false,
+          isApprovedLocked: false,
+          hasManualOverride: false,
+          scenarioScopeKey: activeScopeKey,
+          brandCode: wp.brandCode,
+          brandTitle: wp.brandTitle,
+          title: `${wp.title} (переход с 2027 г.)`,
+          purposeShort: `Выплата WB за ${wp.sourceMonthLabel} 2027`,
+          amountRub: wp.amountRub,
+          inflowRub: wp.amountRub,
+          outflowRub: 0,
+          userCapitalInjectionRub: 0,
+          reinvestedFromSalesRub: 0,
+          coveredByOwnCapitalOnAccountRub: 0,
+          needToInvestRub: 0,
+          closingTotalCashRub: 0,
+          closingFreeCashRub: 0,
+        });
+      });
+    }
+
+    prior2027Schedule.deferredFactoryPayablesToNextYear.forEach((fp, idx) => {
+      if (fp.amountRub <= 0 || emittedFactoryOpKeys.has(fp.opKey)) return;
+      emittedFactoryOpKeys.add(fp.opKey);
+      carriedOverPayablesFrom2027Rub += fp.amountRub;
+      carriedOverPayablesEventsCount += 1;
+      rawEvents.push({
+        id: `carryover-pay-2027-${idx}-${fp.opKey}`,
+        opKey: fp.opKey,
+        dateIso: fp.dateIso,
+        calendarMonthIdx: resolveCalendarMonthIdxForYear(fp.dateIso, scenarioYear),
+        isCarriedOverFromPriorYear: true,
+        type: 'factory_payment',
+        paymentRole: fp.paymentRole || 'balance',
+        status: fp.status,
+        isFactual: fp.status === 'Оплачено',
+        isApprovedLocked: fp.isApprovedLocked,
+        hasManualOverride: fp.hasManualOverride,
+        scenarioScopeKey: fp.scenarioScopeKey,
+        brandCode: fp.brandCode,
+        brandTitle: fp.brandTitle,
+        title: `${fp.title} (переход Q4 2027)`,
+        purposeShort: `${fp.purposeShort} (2027→2028)`,
+        factoryName: fp.factoryName,
+        batchKey: fp.batchKey,
+        batchDetails: fp.batchDetails,
+        amountRub: fp.amountRub,
+        inflowRub: 0,
+        outflowRub: fp.amountRub,
+        userCapitalInjectionRub: 0,
+        reinvestedFromSalesRub: 0,
+        coveredByOwnCapitalOnAccountRub: 0,
+        needToInvestRub: 0,
+        closingTotalCashRub: 0,
+        closingFreeCashRub: 0,
+      });
+    });
   }
 
   // 2. Генерируем хронологические поступления от продаж WB по конкретным датам (с учётом задержки wbPayoutDelayDays)
@@ -2026,6 +2616,13 @@ export function computeInvestmentSchedule(
         );
       }
 
+      const wbBrandCode = isGroupAllBrands ? 'ALL' : scopedInputs[0]?.brandCode || 'BORNERS';
+      const wbBrandTitle = isGroupAllBrands
+        ? 'BORNERS GROUP'
+        : isCombinedBF
+        ? 'BORNERS / FUKAI'
+        : scopedInputs[0]?.brandTitle || 'BORNERS';
+
       tranches.forEach((tr, idx) => {
         if (tr.amountRub <= 0) return;
         const effectiveDateIso =
@@ -2033,10 +2630,23 @@ export function computeInvestmentSchedule(
             ? addDaysToIsoDate(tr.rawDateIso, wbPayoutDelayDays)
             : tr.rawDateIso;
 
-        // Если задержка WB уводит выплату за пределы анализируемого года (например Декабрь + 30 дн. -> Январь 2028),
-        // в рамках 12-месячного горизонта 2027 года эти деньги ещё НЕ поступили на расчётный счёт в 2027 году!
+        // Если задержка WB уводит выплату за пределы анализируемого года (например Декабрь 2027 + 30 дн. -> Январь 2028),
+        // в 2027 году эти деньги ещё не поступили, НО мы сохраняем их для бесшовного переноса в Январь 2028 (Тест 10)!
         const parsedYr = Number(effectiveDateIso.slice(0, 4));
         if (parsedYr > scenarioYear) {
+          deferredWbPayoutsToNextYear.push({
+            dateIso: effectiveDateIso,
+            amountRub: tr.amountRub,
+            sourceMonthIdx: m,
+            sourceMonthLabel: MONTHS_SHORT_RU[m],
+            title:
+              wbPayoutDelayDays > 0
+                ? `${tr.label} (лаг +${wbPayoutDelayDays} дн.)`
+                : tr.label,
+            purposeShort: `Выручка WB на р/с (${MONTHS_SHORT_RU[m]})`,
+            brandCode: wbBrandCode,
+            brandTitle: wbBrandTitle,
+          });
           return;
         }
 
@@ -2051,12 +2661,8 @@ export function computeInvestmentSchedule(
           isApprovedLocked: false,
           hasManualOverride: false,
           scenarioScopeKey: activeScopeKey,
-          brandCode: isGroupAllBrands ? 'ALL' : scopedInputs[0]?.brandCode || 'BORNERS',
-          brandTitle: isGroupAllBrands
-            ? 'BORNERS GROUP'
-            : isCombinedBF
-            ? 'BORNERS / FUKAI'
-            : scopedInputs[0]?.brandTitle || 'BORNERS',
+          brandCode: wbBrandCode,
+          brandTitle: wbBrandTitle,
           title:
             wbPayoutDelayDays > 0
               ? `${tr.label} (лаг +${wbPayoutDelayDays} дн.)`
@@ -2258,6 +2864,20 @@ export function computeInvestmentSchedule(
     return a.id.localeCompare(b.id);
   });
 
+  // Тест 10 ТЗ v1.0: Тегируем предпродажные операции (например ноябрь–декабрь 2026 для плана 2027)
+  const salesYearStartIso = `${scenarioYear}-01-01`;
+  let preSalesYearOutflowsRub = 0;
+  let preSalesYearEventsCount = 0;
+  for (const ev of sortedEvents) {
+    if (ev.dateIso < salesYearStartIso) {
+      ev.isPreSalesYearPeriod = true;
+      preSalesYearEventsCount += 1;
+      preSalesYearOutflowsRub += ev.outflowRub;
+    } else {
+      ev.isPreSalesYearPeriod = false;
+    }
+  }
+
   // 5А. ЧИСТЫЙ РАСЧЁТНЫЙ ПРОХОД (без стартового кэша и без собственных вложений пользователя — Раздел 5 ТЗ v14):
   // Собственные вложения НЕ должны искусственно уменьшать расчётную потребность в капитале!
   let pureCashOnAccountRub = 0;
@@ -2433,6 +3053,53 @@ export function computeInvestmentSchedule(
     }
   }
 
+  // 5В. ПАРАЛЛЕЛЬНЫЙ ФАКТИЧЕСКИЙ ПРОХОД (ТОЛЬКО стартовый кэш + оплаченные «Оплачено» вложения;
+  // плановые «Запланировано» и «Утверждено» вложения НЕ считаются фактически внесёнными — Тест 06 ТЗ v1.0!)
+  let factCashOnAccountRub = initialCashRub;
+  let factSalesPoolRub = 0;
+  let totalRemainingNeedAfterFactualOnlyRub = 0;
+
+  for (const ev of sortedEvents) {
+    if (ev.type === 'capital_injection') {
+      if (ev.status === 'Оплачено') {
+        factCashOnAccountRub += ev.userCapitalInjectionRub;
+      }
+      continue;
+    }
+    if (ev.type === 'wb_inflow' || ev.type === 'other_inflow') {
+      factCashOnAccountRub += ev.inflowRub;
+      if (ev.type === 'wb_inflow') {
+        factSalesPoolRub += ev.inflowRub;
+      }
+      continue;
+    }
+    if (ev.type === 'other_expense') {
+      const deductSales = Math.min(factSalesPoolRub, ev.outflowRub);
+      factSalesPoolRub = Math.max(0, factSalesPoolRub - deductSales);
+      factCashOnAccountRub -= ev.outflowRub;
+      if (factCashOnAccountRub < minCashReserveRub) {
+        const def = minCashReserveRub - factCashOnAccountRub;
+        totalRemainingNeedAfterFactualOnlyRub += def;
+        factCashOnAccountRub += def;
+      }
+      continue;
+    }
+    // factory_payment
+    const payRub = ev.outflowRub;
+    const factFreeAboveReserve = Math.max(0, factCashOnAccountRub - minCashReserveRub);
+    const factAvailSales = Math.min(factFreeAboveReserve, Math.max(0, factSalesPoolRub));
+    const factReinv = wbPayoutScheduleSpecified ? Math.min(payRub, factAvailSales) : 0;
+    factSalesPoolRub = Math.max(0, factSalesPoolRub - factReinv);
+    const factRem = payRub - factReinv;
+    const factAvailOwn = Math.max(0, factFreeAboveReserve - factReinv);
+    const factCovOwn = Math.min(factRem, factAvailOwn);
+    const factReserveGap = Math.max(0, minCashReserveRub - factCashOnAccountRub);
+    const factNeedHere = Math.max(0, factRem - factCovOwn) + factReserveGap;
+
+    totalRemainingNeedAfterFactualOnlyRub += factNeedHere;
+    factCashOnAccountRub = factCashOnAccountRub - payRub + factNeedHere;
+  }
+
   let batchesFundedBySalesCount = 0;
   let batchesFullyFundedBySalesCount = 0;
   for (const [, st] of batchFundingStats.entries()) {
@@ -2445,30 +3112,216 @@ export function computeInvestmentSchedule(
   }
 
   const totalProcurementCostRub = approvedProcurementCostRub + plannedProcurementCostRub;
-  const factualOwnMoneyContributedRub = initialCashRub + factualInjectionsOnlyRub;
+  const factualOwnMoneyContributedRub =
+    (carriedOverCashAppliedToStart ? 0 : initialCashRub) + factualInjectionsOnlyRub;
   const approvedOwnMoneyInjectionsRub = approvedInjectionsOnlyRub;
-  const alreadyInvestedOwnMoneyRub = initialCashRub + alreadyCommittedInjectionsRub;
+  const alreadyInvestedOwnMoneyRub =
+    (carriedOverCashAppliedToStart ? 0 : initialCashRub) + alreadyCommittedInjectionsRub;
+  const plannedOwnMoneyInjectionsRub = approvedInjectionsOnlyRub + plannedUserInjectionsRub;
   const totalOwnMoneyConfiguredRub = alreadyInvestedOwnMoneyRub + plannedUserInjectionsRub;
 
   const rawGrossPeakRub = Math.max(
     Math.abs(Math.min(0, minRawCashFromZeroRub)),
     totalPureCalculatedNeedRub
   );
-  const grossOwnCapitalPeakFromZeroRub = wbPayoutScheduleSpecified ? rawGrossPeakRub : null;
-  const calculatedCapitalNeedRub = grossOwnCapitalPeakFromZeroRub;
+  const commonPoolCapitalNeedRub: number | null = wbPayoutScheduleSpecified
+    ? rawGrossPeakRub
+    : null;
+  let grossOwnCapitalPeakFromZeroRub: number | null = commonPoolCapitalNeedRub;
+  let calculatedCapitalNeedRub: number | null = commonPoolCapitalNeedRub;
 
-  const maxOwnMoneyNeededRub = wbPayoutScheduleSpecified
+  let maxOwnMoneyNeededRub: number | null = wbPayoutScheduleSpecified
     ? totalAdditionalNeedToInvestRub
     : null;
-  const remainingOwnMoneyNeededRub = maxOwnMoneyNeededRub;
+  let remainingOwnMoneyNeededRub: number | null = maxOwnMoneyNeededRub;
+  let remainingNeedAfterFactualOnlyRub: number | null = wbPayoutScheduleSpecified
+    ? totalRemainingNeedAfterFactualOnlyRub
+    : null;
+  let effectiveReinvestedFromSalesRub: number | null = wbPayoutScheduleSpecified
+    ? totalReinvestedFromSalesRub
+    : null;
+
+  // Тест 09 ТЗ v1.0: Два режима капитала группы («Общий котёл» common_pool и «Каждый бренд сам» per_brand)
+  let perBrandSumCapitalNeedRub: number | null = commonPoolCapitalNeedRub;
+  let commonPoolSavingsRub = 0;
+
+  if (isGroupAllBrands && !params._skipGroupModeComparison) {
+    const zeroReserveLedger: InvestmentLedgerState = {
+      ...baseLedger,
+      globalSettings: {
+        ...baseLedger.globalSettings,
+        initialCashRub: 0,
+        minCashReserveRub: 0,
+        groupCapitalMode: 'common_pool',
+      },
+      // Убираем ALL-инъекции при расчёте индивидуальных брендов, чтобы не умножать общий кэш на число брендов!
+      sharedCommitted: {
+        ...baseLedger.sharedCommitted,
+        committedCapitalInjections: (
+          baseLedger.sharedCommitted.committedCapitalInjections || []
+        ).filter((inj) => inj.brandCode && inj.brandCode !== 'ALL'),
+      },
+    };
+
+    const brandTargets: { filter: string; scenario: GrowthScenarioDef }[] = [];
+    const hasBornersScoped = scopedInputs.some((s) => s.brandCode === 'BORNERS');
+    const hasFukaiScoped = scopedInputs.some((s) => s.brandCode === 'FUKAI');
+
+    if (params.combineBornersAndFukai && (hasBornersScoped || hasFukaiScoped)) {
+      const bfScen =
+        scopedInputs.find((s) => s.brandCode === 'BORNERS')?.scenario ||
+        scopedInputs.find((s) => s.brandCode === 'FUKAI')?.scenario ||
+        params.activeScenario;
+      brandTargets.push({ filter: 'BORNERS_FUKAI', scenario: bfScen });
+    }
+
+    for (const sc of scopedInputs) {
+      if (
+        params.combineBornersAndFukai &&
+        (sc.brandCode === 'BORNERS' || sc.brandCode === 'FUKAI')
+      ) {
+        continue;
+      }
+      brandTargets.push({ filter: sc.brandCode, scenario: sc.scenario });
+    }
+
+    let sumZeroReserveBrandPeaks = 0;
+    let sumBrandRemainingWithOwnInj = 0;
+    let sumBrandRemainingFactualOnly = 0;
+    let sumBrandReinvested = 0;
+
+    for (const bt of brandTargets) {
+      const bRes = computeInvestmentSchedule({
+        ...params,
+        activeScenario: bt.scenario,
+        brandFilter: bt.filter,
+        ledgerState: zeroReserveLedger,
+        explicitInitialCashRub: 0,
+        groupCapitalMode: 'common_pool',
+        _skipGroupModeComparison: true,
+      });
+      sumZeroReserveBrandPeaks += bRes.calculatedCapitalNeedRub || 0;
+      sumBrandRemainingWithOwnInj += bRes.remainingOwnMoneyNeededRub || 0;
+      sumBrandRemainingFactualOnly += bRes.remainingNeedAfterFactualOnlyRub || 0;
+      sumBrandReinvested += bRes.reinvestedFromSalesRub || 0;
+    }
+
+    // Неснижаемый резерв группы применяется РОВНО 1 РАЗ (никогда не умножается на 4 или 5 брендов!)
+    perBrandSumCapitalNeedRub = wbPayoutScheduleSpecified
+      ? sumZeroReserveBrandPeaks + minCashReserveRub
+      : null;
+
+    if (
+      wbPayoutScheduleSpecified &&
+      perBrandSumCapitalNeedRub !== null &&
+      commonPoolCapitalNeedRub !== null
+    ) {
+      commonPoolSavingsRub = Math.max(0, perBrandSumCapitalNeedRub - commonPoolCapitalNeedRub);
+    }
+
+    if (groupCapitalMode === 'per_brand' && wbPayoutScheduleSpecified) {
+      // Групповые ALL-вложения (с датой до/включая год) и стартовый кэш применяются ровно 1 раз
+      let allScopedFactualInjRub = 0;
+      let allScopedAllInjRub = 0;
+      for (const ev of sortedEvents) {
+        if (ev.type === 'capital_injection' && (!ev.brandCode || ev.brandCode === 'ALL')) {
+          allScopedAllInjRub += ev.userCapitalInjectionRub;
+          if (ev.status === 'Оплачено') {
+            allScopedFactualInjRub += ev.userCapitalInjectionRub;
+          }
+        }
+      }
+      calculatedCapitalNeedRub = perBrandSumCapitalNeedRub;
+      grossOwnCapitalPeakFromZeroRub = perBrandSumCapitalNeedRub;
+      remainingOwnMoneyNeededRub = Math.max(
+        0,
+        sumBrandRemainingWithOwnInj + minCashReserveRub - initialCashRub - allScopedAllInjRub
+      );
+      maxOwnMoneyNeededRub = remainingOwnMoneyNeededRub;
+      remainingNeedAfterFactualOnlyRub = Math.max(
+        0,
+        sumBrandRemainingFactualOnly + minCashReserveRub - initialCashRub - allScopedFactualInjRub
+      );
+      effectiveReinvestedFromSalesRub = sumBrandReinvested;
+    }
+  }
 
   const reinvestedSharePct =
-    wbPayoutScheduleSpecified && totalProcurementCostRub > 0
+    wbPayoutScheduleSpecified &&
+    totalProcurementCostRub > 0 &&
+    effectiveReinvestedFromSalesRub !== null
       ? Math.min(
           100,
-          Math.max(0, Math.round((totalReinvestedFromSalesRub / totalProcurementCostRub) * 100))
+          Math.max(
+            0,
+            Math.round((effectiveReinvestedFromSalesRub / totalProcurementCostRub) * 100)
+          )
         )
       : 0;
+
+  // Прогнозная дата возврата собственного капитала (Стр. 9 ТЗ v1.0):
+  // Ищем самую раннюю дату d, на которую closingCash >= minCashReserveRub + deployedOwnCapital + maxFutureRequiredCashBuffer(after d),
+  // чтобы после вывода deployedOwnCapital остаток на счёте НИ НА ОДНОЙ последующей операции периода не опустился ниже резерва!
+  const deployedOwnCapitalRub = wbPayoutScheduleSpecified
+    ? Math.max(calculatedCapitalNeedRub || 0, factualOwnMoneyContributedRub)
+    : factualOwnMoneyContributedRub;
+
+  const yearEndTotalCashRub =
+    sortedEvents.length > 0
+      ? sortedEvents[sortedEvents.length - 1]!.closingTotalCashRub
+      : initialCashRub;
+  const freeCashAboveReserveAtYearEndRub = Math.max(0, yearEndTotalCashRub - minCashReserveRub);
+
+  let capitalReturnEligibleDateIso: string | null = null;
+  if (wbPayoutScheduleSpecified && deployedOwnCapitalRub > 0 && sortedEvents.length > 0) {
+    const nEv = sortedEvents.length;
+    const minCumFutureDeltaAfter = new Array<number>(nEv).fill(0);
+    const hasFutureShortageAfter = new Array<boolean>(nEv).fill(false);
+
+    for (let i = nEv - 2; i >= 0; i--) {
+      const nextEv = sortedEvents[i + 1]!;
+      const nextActualDelta =
+        nextEv.inflowRub + nextEv.userCapitalInjectionRub - nextEv.outflowRub;
+      minCumFutureDeltaAfter[i] = Math.min(
+        0,
+        nextActualDelta + minCumFutureDeltaAfter[i + 1]!
+      );
+      hasFutureShortageAfter[i] =
+        hasFutureShortageAfter[i + 1]! || nextEv.needToInvestRub > 0;
+    }
+
+    // Проверяем конец каждого уникального календарного дня (последняя операция за дату d)
+    for (let i = 0; i < nEv; i++) {
+      const isLastEventOfDate =
+        i === nEv - 1 || sortedEvents[i + 1]!.dateIso !== sortedEvents[i]!.dateIso;
+      if (!isLastEventOfDate) continue;
+      if (hasFutureShortageAfter[i]) continue;
+      const closingCashOnDate = sortedEvents[i]!.closingTotalCashRub;
+      const maxFutureRequiredCashBuffer = Math.max(0, -minCumFutureDeltaAfter[i]!);
+      if (
+        closingCashOnDate >=
+        minCashReserveRub + deployedOwnCapitalRub + maxFutureRequiredCashBuffer
+      ) {
+        capitalReturnEligibleDateIso = sortedEvents[i]!.dateIso;
+        break;
+      }
+    }
+  }
+
+  const capitalReturnForecast: CapitalReturnForecast = {
+    eligibleDateIso: capitalReturnEligibleDateIso,
+    eligibleDateHumanRu: capitalReturnEligibleDateIso
+      ? formatIsoDateHumanRu(capitalReturnEligibleDateIso)
+      : null,
+    eligibleDateDotRu: capitalReturnEligibleDateIso
+      ? formatIsoDateDotRu(capitalReturnEligibleDateIso)
+      : null,
+    deployedOwnCapitalRub,
+    freeCashAboveReserveAtYearEndRub,
+    canReturnWithinHorizon: capitalReturnEligibleDateIso !== null,
+    disclaimerRu:
+      'Прогнозная дата при сохранении резерва и будущих обязательных платежей; не является обещанием вывода денег',
+  };
 
   // 6. ГРУППИРУЕМ В 12-МЕСЯЧНЫЙ КАЛЕНДАРЬ С РАСКРЫТИЕМ ПО КОНКРЕТНЫМ ДАТАМ (Раздел 3 и 8 ТЗ)
   const monthlyCalendarRows: MonthlyInvestmentCalendarRow[] = [];
@@ -2688,6 +3541,8 @@ export function computeInvestmentSchedule(
             batchKey: bKey,
             modelId: bd?.modelId || '',
             modelCode: bd?.modelCode || '',
+            brandCode: bd?.brandCode,
+            thumbnailUrl: bd?.thumbnailUrl,
             productTitle: bd ? `${bd.modelCode} — ${bd.modelTitle}` : ev.title,
             batchNumber: batchNumberLabel,
             factoryName: ev.factoryName || bd?.factoryName || 'Фабрика',
@@ -2698,6 +3553,7 @@ export function computeInvestmentSchedule(
             arrivalDateIso: arrivalIso,
             arrivalDateDotRu: formatIsoDateDotRu(arrivalIso),
             packsQty: bd?.packsQty ?? 0,
+            qtyPacks: bd?.packsQty ?? 0,
             defaultPacksQty: bd?.defaultPacksQty ?? bd?.packsQty ?? 0,
             unitLabel: bd?.primaryUnitLabel || 'ед.',
             prepaymentPct: bd?.prepaymentPct ?? 30,
@@ -2872,8 +3728,74 @@ export function computeInvestmentSchedule(
     });
   }
 
-  const totalAccrualOperatingProfitRub =
-    totalGrossSalesRevenueRub - totalSoldGoodsCostRub - totalWbDeductionsRub;
+  if (!wbPayoutScheduleSpecified) {
+    incompleteDataReasons.unshift({
+      code: 'wb_schedule_unspecified',
+      label: 'Не задан срок выплат Wildberries — реинвестирование и кассовый пик не рассчитаны',
+      actionLabel: 'Указать график выплат WB',
+    });
+  }
+
+  const expectedOperatingProfitRub =
+    totalGrossSalesRevenueRub -
+    totalWbDeductionsRub -
+    totalTaxRub -
+    totalOpexRub -
+    totalSoldGoodsCostRub;
+  const expectedOperatingMarginPct =
+    totalGrossSalesRevenueRub > 0
+      ? Math.round((expectedOperatingProfitRub / totalGrossSalesRevenueRub) * 1000) / 10
+      : 0;
+  const isProfitComplete = missingCostModelsCount === 0 && wbPayoutScheduleSpecified;
+  const profitIncompleteReason =
+    missingCostModelsCount > 0
+      ? `Не заполнена себестоимость у ${missingCostModelsCount} ${pluralizeModelsGenitiveRu(
+          missingCostModelsCount
+        )} — прибыль и реинвестирование предварительные`
+      : !wbPayoutScheduleSpecified
+      ? 'Не задан срок выплат Wildberries — денежный поток предварительный'
+      : null;
+  const totalAccrualOperatingProfitRub = expectedOperatingProfitRub;
+
+  const compatibleUnitOrder: CompatibleUnitBreakdownRow['unitCategory'][] = [
+    'sets',
+    'pairs',
+    'curtains',
+    'items',
+  ];
+  const compatibleUnitsBreakdown: CompatibleUnitBreakdownRow[] = compatibleUnitOrder
+    .map((cat) => {
+      const entry = compatibleUnitsMap.get(cat);
+      if (!entry) return null;
+      if (entry.buyoutsQty === 0 && entry.procurementQty === 0 && entry.batchesCount === 0) {
+        return null;
+      }
+      return {
+        unitCategory: cat,
+        labelRu: entry.labelRu,
+        buyoutsQty: entry.buyoutsQty,
+        procurementQty: entry.procurementQty,
+        batchesCount: entry.batchesCount,
+        brandCodes: Array.from(entry.brandCodesSet),
+      };
+    })
+    .filter((row): row is CompatibleUnitBreakdownRow => row !== null);
+
+  const yearBoundaryCarryover: YearBoundaryCarryoverSummary | null =
+    scenarioYear === 2028
+      ? {
+          fromYear: 2027,
+          toYear: 2028,
+          carriedOverCashFrom2027Rub: endingTotalCashOnDec31_2027,
+          carriedOverCashAppliedToStart,
+          carriedOverWbPayoutsFromDec2027Rub,
+          carriedOverWbPayoutsEventsCount,
+          carriedOverPayablesFrom2027Rub,
+          carriedOverPayablesEventsCount,
+          carriedOverStockUnitsFrom2027,
+          carriedOverReturnsInTransitUnitsFrom2027,
+        }
+      : null;
 
   const peakShortageMonthFullRu = formatMonthYearFullRu(
     wbPayoutScheduleSpecified ? peakShortageDateIso : null,
@@ -2890,24 +3812,49 @@ export function computeInvestmentSchedule(
     wbPayoutDelayDays,
     initialCashRub,
     minCashReserveRub,
+    groupCapitalMode,
+    commonPoolCapitalNeedRub,
+    perBrandSumCapitalNeedRub,
+    commonPoolSavingsRub,
     totalProcurementCostRub,
     approvedProcurementCostRub,
     plannedProcurementCostRub,
     calculatedCapitalNeedRub,
     maxOwnMoneyNeededRub,
     grossOwnCapitalPeakFromZeroRub,
-    reinvestedFromSalesRub: wbPayoutScheduleSpecified ? totalReinvestedFromSalesRub : null,
+    reinvestedFromSalesRub: effectiveReinvestedFromSalesRub,
     reinvestedSharePct,
     factualOwnMoneyContributedRub,
     approvedOwnMoneyInjectionsRub,
     alreadyInvestedOwnMoneyRub,
     plannedUserInjectionsRub,
+    plannedOwnMoneyInjectionsRub,
     totalOwnMoneyConfiguredRub,
+    remainingNeedAfterFactualOnlyRub,
     remainingOwnMoneyNeededRub,
     additionalOwnMoneyStillNeededRub: remainingOwnMoneyNeededRub,
+    capitalReturnForecast,
     isPreliminaryCalculation,
     missingCostModelsCount,
     missingCostModelIds,
+    excludedZeroCostRevenueRub,
+    excludedZeroCostWbPayoutRub,
+    incompleteDataReasons,
+    totalWbDeductionsRub,
+    totalReverseLogisticsRub,
+    totalTaxRub,
+    totalOpexRub,
+    totalSoldGoodsCostRub,
+    expectedOperatingProfitRub,
+    expectedOperatingMarginPct,
+    isProfitComplete,
+    profitIncompleteReason,
+    compatibleUnitsBreakdown,
+    yearBoundaryCarryover,
+    preSalesYearOutflowsRub,
+    preSalesYearEventsCount,
+    deferredWbPayoutsToNextYear,
+    deferredFactoryPayablesToNextYear,
     nextUpcomingPayment,
     totalWbCashInflowRub,
     totalGrossSalesRevenueRub,
@@ -2929,10 +3876,10 @@ export function computeInvestmentSchedule(
     peakShortageMonthLabel: MONTHS_SHORT_RU[peakShortageMonthIdx] || 'Янв',
     peakShortageMonthFullRu,
     peakShortageAmountRub: wbPayoutScheduleSpecified
-      ? Math.max(0, rawGrossPeakRub - initialCashRub)
+      ? Math.max(0, (calculatedCapitalNeedRub || rawGrossPeakRub) - initialCashRub)
       : null,
     isAddedCapitalSufficientForSubsequentPayments:
-      wbPayoutScheduleSpecified && totalAdditionalNeedToInvestRub <= 0,
+      wbPayoutScheduleSpecified && (remainingOwnMoneyNeededRub ?? totalAdditionalNeedToInvestRub) <= 0,
     datesRequiringOwnInjection,
     whenAndHowMuchRows,
     recommendations: top3Recommendations,
@@ -2944,6 +3891,232 @@ export function computeInvestmentSchedule(
     dataWarnings,
     manualOverridesCount,
     lockedOperationsCount,
+  };
+}
+
+export const computeInvestmentScheduleForScope = computeInvestmentSchedule;
+
+/**
+ * Чистая функция предпросмотра «Было -> Стало» ДО сохранения (Стр. 6 и 10 ТЗ v1.0):
+ * Не мутирует исходный ledgerState и не пишет в localStorage!
+ */
+export function previewPaymentOrBatchEdit(
+  baseParams: ComputeInvestmentScheduleParams,
+  draftLedgerPatch: DraftPaymentOrBatchEditPatch
+): PaymentOrBatchEditPreviewResult {
+  const before = computeInvestmentSchedule(baseParams);
+  const srcLedger = baseParams.ledgerState
+    ? normalizeInvestmentLedgerState(baseParams.ledgerState)
+    : loadInvestmentLedgerState();
+
+  let draftLedger: InvestmentLedgerState;
+  if (draftLedgerPatch.nextLedgerState) {
+    draftLedger = normalizeInvestmentLedgerState(draftLedgerPatch.nextLedgerState);
+  } else {
+    draftLedger = {
+      ...srcLedger,
+      globalSettings: {
+        ...srcLedger.globalSettings,
+        ...(draftLedgerPatch.globalSettingsPatch || {}),
+      },
+      sharedCommitted: {
+        committedPaymentOverrides: { ...srcLedger.sharedCommitted.committedPaymentOverrides },
+        committedBatchOverrides: { ...srcLedger.sharedCommitted.committedBatchOverrides },
+        committedCapitalInjections: [...srcLedger.sharedCommitted.committedCapitalInjections],
+        committedOtherOperations: [...srcLedger.sharedCommitted.committedOtherOperations],
+      },
+      scenarioPlans: { ...srcLedger.scenarioPlans },
+    };
+
+    const targetScope =
+      draftLedgerPatch.scenarioScopeKey && draftLedgerPatch.scenarioScopeKey !== 'SHARED'
+        ? draftLedgerPatch.scenarioScopeKey.replace(/^BORNERS_FUKAI:/i, 'BORNERS:')
+        : before.activeScopeKey;
+    const slot = ensureScenarioPlanSlot(draftLedger, targetScope);
+    const nowIso = new Date().toISOString();
+
+    const inferredBatchKey =
+      draftLedgerPatch.batchKey ||
+      (draftLedgerPatch.opKey ? draftLedgerPatch.opKey.replace(/::(prepay|balance)$/, '') : undefined);
+
+    if (inferredBatchKey && draftLedgerPatch.batchOverride) {
+      const baseB =
+        draftLedger.sharedCommitted.committedBatchOverrides[inferredBatchKey] ||
+        slot.batchOverrides[inferredBatchKey];
+      const mergedBatch: BatchTermsManualOverride = {
+        ...baseB,
+        ...draftLedgerPatch.batchOverride,
+        batchKey: inferredBatchKey,
+        updatedAtIso: nowIso,
+        updatedBy: 'Предпросмотр',
+      };
+      if (draftLedgerPatch.isApprovedPo || draftLedger.sharedCommitted.committedBatchOverrides[inferredBatchKey]) {
+        draftLedger.sharedCommitted.committedBatchOverrides[inferredBatchKey] = mergedBatch;
+      } else {
+        slot.batchOverrides[inferredBatchKey] = mergedBatch;
+      }
+    }
+
+    const applyPayPatch = (
+      opKey: string,
+      patch: Partial<Omit<ManualPaymentOverride, 'opKey' | 'batchKey' | 'updatedAtIso' | 'updatedBy'>>
+    ) => {
+      const bKey = inferredBatchKey || opKey.replace(/::(prepay|balance)$/, '');
+      const baseP =
+        draftLedger.sharedCommitted.committedPaymentOverrides[opKey] ||
+        slot.paymentOverrides[opKey];
+      const mergedPay: ManualPaymentOverride = {
+        ...baseP,
+        ...patch,
+        opKey,
+        batchKey: bKey,
+        updatedAtIso: nowIso,
+        updatedBy: 'Предпросмотр',
+      };
+      const storeShared =
+        Boolean(draftLedgerPatch.isApprovedPo) ||
+        mergedPay.status === 'Утверждено' ||
+        mergedPay.status === 'Оплачено';
+      if (storeShared) {
+        draftLedger.sharedCommitted.committedPaymentOverrides[opKey] = mergedPay;
+        delete slot.paymentOverrides[opKey];
+      } else {
+        delete draftLedger.sharedCommitted.committedPaymentOverrides[opKey];
+        slot.paymentOverrides[opKey] = mergedPay;
+      }
+    };
+
+    if (draftLedgerPatch.opKey && draftLedgerPatch.paymentOverride) {
+      applyPayPatch(draftLedgerPatch.opKey, draftLedgerPatch.paymentOverride);
+    } else if (inferredBatchKey && draftLedgerPatch.paymentOverride) {
+      applyPayPatch(`${inferredBatchKey}::prepay`, draftLedgerPatch.paymentOverride);
+    }
+
+    if (inferredBatchKey && draftLedgerPatch.balancePaymentOverride) {
+      applyPayPatch(`${inferredBatchKey}::balance`, draftLedgerPatch.balancePaymentOverride);
+    }
+
+    if (draftLedgerPatch.extraCapitalInjection) {
+      const inj: CapitalInjectionRecord = {
+        ...draftLedgerPatch.extraCapitalInjection,
+        updatedAtIso: nowIso,
+        updatedBy: 'Предпросмотр',
+      };
+      if (inj.status === 'Утверждено' || inj.status === 'Оплачено') {
+        draftLedger.sharedCommitted.committedCapitalInjections.push(inj);
+      } else {
+        slot.plannedCapitalInjections.push(inj);
+      }
+    }
+
+    if (draftLedgerPatch.extraCustomOperation) {
+      const op: CustomCashOperationRecord = {
+        ...draftLedgerPatch.extraCustomOperation,
+        updatedAtIso: nowIso,
+        updatedBy: 'Предпросмотр',
+      };
+      if (op.status === 'Утверждено' || op.status === 'Оплачено') {
+        draftLedger.sharedCommitted.committedOtherOperations.push(op);
+      } else {
+        slot.plannedOtherOperations.push(op);
+      }
+    }
+
+    draftLedger.scenarioPlans[targetScope] = slot;
+  }
+
+  const after = computeInvestmentSchedule({
+    ...baseParams,
+    ledgerState: draftLedger,
+  });
+
+  const targetBatchKey =
+    draftLedgerPatch.batchKey ||
+    (draftLedgerPatch.opKey ? draftLedgerPatch.opKey.replace(/::(prepay|balance)$/, '') : undefined);
+
+  const oldBatch = targetBatchKey
+    ? before.batchesCatalog.find((b) => b.batchKey === targetBatchKey)
+    : undefined;
+  const newBatch = targetBatchKey
+    ? after.batchesCatalog.find((b) => b.batchKey === targetBatchKey)
+    : undefined;
+
+  const deltaPeakCapitalRub =
+    before.calculatedCapitalNeedRub !== null && after.calculatedCapitalNeedRub !== null
+      ? after.calculatedCapitalNeedRub - before.calculatedCapitalNeedRub
+      : null;
+  const deltaRemainingNeedRub =
+    before.remainingOwnMoneyNeededRub !== null && after.remainingOwnMoneyNeededRub !== null
+      ? after.remainingOwnMoneyNeededRub - before.remainingOwnMoneyNeededRub
+      : null;
+  const deltaReinvestedRub =
+    before.reinvestedFromSalesRub !== null && after.reinvestedFromSalesRub !== null
+      ? after.reinvestedFromSalesRub - before.reinvestedFromSalesRub
+      : null;
+  const deltaProcurementCostRub = after.totalProcurementCostRub - before.totalProcurementCostRub;
+
+  const beforeDeficitByBatch = new Map<string, number>();
+  for (const w of before.supplyDeficitWarnings) {
+    beforeDeficitByBatch.set(w.batchKey, w.deficitPacks);
+  }
+  const newSupplyDeficits = after.supplyDeficitWarnings.filter(
+    (w) => (beforeDeficitByBatch.get(w.batchKey) || 0) < w.deficitPacks
+  );
+  const beforeTotalDeficitPacks = before.supplyDeficitWarnings.reduce(
+    (s, w) => s + w.deficitPacks,
+    0
+  );
+  const afterTotalDeficitPacks = after.supplyDeficitWarnings.reduce(
+    (s, w) => s + w.deficitPacks,
+    0
+  );
+  const supplyDeficitDeltaPacks = afterTotalDeficitPacks - beforeTotalDeficitPacks;
+
+  const oldPrepaymentRub = oldBatch?.prepaymentRub ?? 0;
+  const newPrepaymentRub = newBatch?.prepaymentRub ?? 0;
+  const oldBalancePaymentRub = oldBatch?.balancePaymentRub ?? 0;
+  const newBalancePaymentRub = newBatch?.balancePaymentRub ?? 0;
+  const oldArrivalDateIso = oldBatch?.arrivalDateIso ?? null;
+  const newArrivalDateIso = newBatch?.arrivalDateIso ?? null;
+
+  const summaryLinesRu: string[] = [];
+  if (oldBalancePaymentRub !== newBalancePaymentRub) {
+    summaryLinesRu.push(
+      `Доплата по партии: ${formatMillionsCompactRu(oldBalancePaymentRub)} → ${formatMillionsCompactRu(newBalancePaymentRub)}`
+    );
+  }
+  if (deltaPeakCapitalRub !== null && deltaPeakCapitalRub !== 0) {
+    summaryLinesRu.push(
+      `Пик потребности в капитале: ${deltaPeakCapitalRub > 0 ? '+' : ''}${formatMillionsCompactRu(deltaPeakCapitalRub)}`
+    );
+  }
+  if (deltaRemainingNeedRub !== null && deltaRemainingNeedRub !== 0) {
+    summaryLinesRu.push(
+      `Осталось вложить: ${deltaRemainingNeedRub > 0 ? '+' : ''}${formatMillionsCompactRu(deltaRemainingNeedRub)}`
+    );
+  }
+  if (supplyDeficitDeltaPacks > 0) {
+    summaryLinesRu.push(
+      `Риск нехватки товара: +${supplyDeficitDeltaPacks.toLocaleString('ru-RU')} ед.`
+    );
+  }
+
+  return {
+    before,
+    after,
+    deltaPeakCapitalRub,
+    deltaRemainingNeedRub,
+    deltaReinvestedRub,
+    deltaProcurementCostRub,
+    oldPrepaymentRub,
+    newPrepaymentRub,
+    oldBalancePaymentRub,
+    newBalancePaymentRub,
+    oldArrivalDateIso,
+    newArrivalDateIso,
+    newSupplyDeficits,
+    supplyDeficitDeltaPacks,
+    summaryLinesRu,
   };
 }
 
@@ -3317,6 +4490,15 @@ export function computeHoldingBrandsOverviewRows(
         ownMoneyNeedRub: combinedSchedule.calculatedCapitalNeedRub,
         remainingOwnMoneyRub: combinedSchedule.remainingOwnMoneyNeededRub,
         reinvestedRub: combinedSchedule.reinvestedFromSalesRub,
+        totalSoldGoodsCostRub: combinedSchedule.totalSoldGoodsCostRub,
+        totalWbDeductionsRub: combinedSchedule.totalWbDeductionsRub,
+        totalReverseLogisticsRub: combinedSchedule.totalReverseLogisticsRub,
+        totalTaxRub: combinedSchedule.totalTaxRub,
+        totalOpexRub: combinedSchedule.totalOpexRub,
+        expectedOperatingProfitRub: combinedSchedule.expectedOperatingProfitRub,
+        expectedOperatingMarginPct: combinedSchedule.expectedOperatingMarginPct,
+        isProfitComplete: combinedSchedule.isProfitComplete,
+        profitIncompleteReason: combinedSchedule.profitIncompleteReason,
         isPreliminary: combinedSchedule.isPreliminaryCalculation,
         nextPayment: combinedSchedule.nextUpcomingPayment
           ? {
@@ -3414,6 +4596,15 @@ export function computeHoldingBrandsOverviewRows(
       ownMoneyNeedRub: brandSchedule.calculatedCapitalNeedRub,
       remainingOwnMoneyRub: brandSchedule.remainingOwnMoneyNeededRub,
       reinvestedRub: brandSchedule.reinvestedFromSalesRub,
+      totalSoldGoodsCostRub: brandSchedule.totalSoldGoodsCostRub,
+      totalWbDeductionsRub: brandSchedule.totalWbDeductionsRub,
+      totalReverseLogisticsRub: brandSchedule.totalReverseLogisticsRub,
+      totalTaxRub: brandSchedule.totalTaxRub,
+      totalOpexRub: brandSchedule.totalOpexRub,
+      expectedOperatingProfitRub: brandSchedule.expectedOperatingProfitRub,
+      expectedOperatingMarginPct: brandSchedule.expectedOperatingMarginPct,
+      isProfitComplete: brandSchedule.isProfitComplete,
+      profitIncompleteReason: brandSchedule.profitIncompleteReason,
       isPreliminary: brandSchedule.isPreliminaryCalculation,
       nextPayment: brandSchedule.nextUpcomingPayment
         ? {

@@ -10,14 +10,16 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock,
   GitCompare,
   History,
+  Layers,
   Lock,
   Plus,
   RotateCcw,
+  ShieldAlert,
   Split,
   Trash2,
-  Unlock,
   Wallet,
   X,
 } from 'lucide-react';
@@ -36,9 +38,12 @@ import {
 import {
   type CapitalInjectionRecord,
   type ChronologicalCashEvent,
-  type ComputedInvestmentScheduleResult,
+  type CompatibleUnitBreakdownRow,
   type CustomCashOperationRecord,
+  type DraftPaymentOrBatchEditPatch,
+  type GroupCapitalMode,
   type OperationPaymentStatus,
+  type PaymentOrBatchEditPreviewResult,
   type PaymentTrancheSpec,
   type SystemActionRecommendation,
   type WhenAndHowMuchFactoryPaymentItem,
@@ -70,6 +75,75 @@ function fmtSignedDeltaMln(valRub: number): string {
 
 function fmtRub(valRub: number): string {
   return `${Math.round(valRub).toLocaleString('ru-RU')} ₽`;
+}
+
+function pluralizeBatchesRu(count: number): string {
+  const n = Math.abs(Math.round(count)) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) return `${count} партий`;
+  if (n1 === 1) return `${count} партия`;
+  if (n1 >= 2 && n1 <= 4) return `${count} партии`;
+  return `${count} партий`;
+}
+
+function getCompatibleUnitShortDisplay(row: CompatibleUnitBreakdownRow): {
+  categoryName: string;
+  shortUnit: string;
+} {
+  if (row.unitCategory === 'pairs') {
+    return { categoryName: 'Обувь', shortUnit: 'пар' };
+  }
+  if (row.unitCategory === 'curtains') {
+    return { categoryName: 'Шторы', shortUnit: 'компл.' };
+  }
+  if (row.unitCategory === 'sets') {
+    return { categoryName: 'Бельё', shortUnit: 'компл.' };
+  }
+  return { categoryName: 'Товары', shortUnit: 'шт.' };
+}
+
+function SkuPaymentThumbnail({
+  src,
+  alt,
+  code,
+}: {
+  src?: string;
+  alt: string;
+  code?: string;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [src]);
+
+  if (src && !imgFailed) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onError={() => setImgFailed(true)}
+        className="h-14 w-12 rounded-lg object-cover border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] shrink-0"
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-label={`SKU ${code || alt}`}
+      className="h-14 w-12 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] shrink-0 flex flex-col items-center justify-center text-center px-1 select-none"
+    >
+      <span className="font-mono text-[9.5px] font-semibold tracking-wider text-[#5C5953] dark:text-[#9A968E]">
+        SKU
+      </span>
+      {code && (
+        <span className="font-mono text-[8.5px] text-[#78746C] truncate max-w-full">
+          {code.slice(0, 6)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function shiftIsoDateToNextMonth(dateIso: string, targetYear = 2027): string {
@@ -109,7 +183,9 @@ export interface InvestmentSchedulePanelProps {
   scenarios: GrowthScenarioDef[];
   activeScenario: GrowthScenarioDef;
   brandFilter: string;
-  selectedScenarioByBrand?: Partial<Record<CanonicalBrandCode | 'LISCANI', number | null>>;
+  selectedScenarioByBrand?: Partial<
+    Record<CanonicalBrandCode | 'BORNERS_FUKAI' | 'LISCANI', number | null>
+  >;
   includeGroupPortfolioInS1?: boolean;
   onSelectBrandFilter?: (brand: string) => void;
   onSelectScenarioId?: (scenarioId: number, brandOverride?: string) => void;
@@ -192,6 +268,9 @@ export function InvestmentSchedulePanel({
     activeCapitalInjections,
     selectedYear,
     setSelectedYear,
+    groupCapitalMode,
+    setGroupCapitalMode,
+    previewEdit,
     saveStatus,
     updateGlobalSettings,
     updatePaymentOperation,
@@ -308,6 +387,7 @@ export function InvestmentSchedulePanel({
 
   const [editDateIso, setEditDateIso] = useState('');
   const [editAmountRub, setEditAmountRub] = useState('');
+  const [amountManuallyEdited, setAmountManuallyEdited] = useState(false);
   const [editSupplier, setEditSupplier] = useState('');
   const [editStatus, setEditStatus] = useState<OperationPaymentStatus>('Запланировано');
   const [editPrepayPct, setEditPrepayPct] = useState('30');
@@ -332,9 +412,21 @@ export function InvestmentSchedulePanel({
   }, [initialFocusOpKey, schedule.allEvents]);
 
   useEffect(() => {
+    if (!selectedOpId || typeof window === 'undefined') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedOpId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedOpId]);
+
+  useEffect(() => {
     if (!selectedEvent) return;
     setEditDateIso(selectedEvent.dateIso);
     setEditAmountRub(String(selectedEvent.amountRub));
+    setAmountManuallyEdited(false);
     setEditSupplier(
       selectedEvent.factoryName || selectedEvent.batchDetails?.factoryName || ''
     );
@@ -368,6 +460,168 @@ export function InvestmentSchedulePanel({
       },
     ]);
   }, [selectedEvent, linkedWhenPaymentItem, pairedBalanceEvent]);
+
+  const parsedDraftPrepayPct = useMemo(() => {
+    const bd = selectedEvent?.batchDetails;
+    if (!bd) return undefined;
+    if (editPrepayPct.trim() === '') return bd.prepaymentPct;
+    const n = Number(editPrepayPct);
+    if (!Number.isFinite(n)) return bd.prepaymentPct;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }, [selectedEvent, editPrepayPct]);
+
+  const parsedDraftPacksQty = useMemo(() => {
+    const bd = selectedEvent?.batchDetails;
+    if (!bd) return undefined;
+    if (editPacksQty.trim() === '') return bd.packsQty;
+    const n = Number(editPacksQty);
+    if (!Number.isFinite(n)) return bd.packsQty;
+    return Math.max(0, Math.round(n));
+  }, [selectedEvent, editPacksQty]);
+
+  const draftEditPatch = useMemo<DraftPaymentOrBatchEditPatch | null>(() => {
+    if (!selectedEvent) return null;
+    const bd = selectedEvent.batchDetails;
+    const bKey = selectedEvent.batchKey;
+    const isPrepay = selectedEvent.paymentRole === 'prepay';
+    const isBalance = selectedEvent.paymentRole === 'balance';
+    const cleanAmount = Math.max(0, Math.round(Number(editAmountRub) || 0));
+
+    const pctChanged =
+      bd !== undefined &&
+      parsedDraftPrepayPct !== undefined &&
+      parsedDraftPrepayPct !== bd.prepaymentPct;
+    const packsChanged =
+      bd !== undefined &&
+      editPacksQty.trim() !== '' &&
+      parsedDraftPacksQty !== undefined &&
+      parsedDraftPacksQty !== bd.packsQty;
+    const arrivalChanged =
+      bd !== undefined &&
+      Boolean(editArrivalDateIso) &&
+      editArrivalDateIso !== bd.arrivalDateIso;
+    const supplierChanged =
+      Boolean(editSupplier.trim()) &&
+      editSupplier.trim() !== (selectedEvent.factoryName || bd?.factoryName || '');
+    const dateChanged = Boolean(editDateIso) && editDateIso !== selectedEvent.dateIso;
+    const statusChanged = editStatus !== selectedEvent.status;
+    const balanceDateChanged = Boolean(
+      pairedBalanceEvent &&
+        pairedBalanceEvent.opKey !== selectedEvent.opKey &&
+        editBalanceDateIso &&
+        editBalanceDateIso !== pairedBalanceEvent.dateIso
+    );
+
+    const batchOverride: DraftPaymentOrBatchEditPatch['batchOverride'] =
+      bd && (pctChanged || packsChanged || arrivalChanged || supplierChanged)
+        ? {
+            ...(pctChanged ? { customPrepaymentPct: parsedDraftPrepayPct } : {}),
+            ...(packsChanged ? { customPacksQty: parsedDraftPacksQty } : {}),
+            ...(arrivalChanged ? { customArrivalDateIso: editArrivalDateIso } : {}),
+            ...(supplierChanged ? { customFactoryName: editSupplier.trim() } : {}),
+          }
+        : undefined;
+
+    if (bd && bKey && isBalance) {
+      const prepayOverride: DraftPaymentOrBatchEditPatch['paymentOverride'] = pctChanged
+        ? { depositPct: parsedDraftPrepayPct, customAmountRub: undefined }
+        : packsChanged
+        ? { depositPct: undefined, customAmountRub: undefined }
+        : undefined;
+      const balanceOverride: DraftPaymentOrBatchEditPatch['balancePaymentOverride'] = {
+        ...(dateChanged ? { customDateIso: editDateIso } : {}),
+        ...(amountManuallyEdited && !pctChanged && !packsChanged
+          ? { customAmountRub: cleanAmount }
+          : pctChanged || packsChanged
+          ? { customAmountRub: undefined }
+          : {}),
+        ...(supplierChanged ? { customFactoryName: editSupplier.trim() } : {}),
+        ...(statusChanged ? { status: editStatus } : {}),
+        ...(splitModeOpen ? { splitTranches: splitDrafts } : {}),
+      };
+      return {
+        scenarioScopeKey: selectedEvent.scenarioScopeKey,
+        batchKey: bKey,
+        opKey: `${bKey}::prepay`,
+        isApprovedPo: Boolean(bd.isApprovedPo),
+        batchOverride,
+        paymentOverride: prepayOverride,
+        balancePaymentOverride: balanceOverride,
+      };
+    }
+
+    const paymentOverride: DraftPaymentOrBatchEditPatch['paymentOverride'] = {
+      ...(dateChanged ? { customDateIso: editDateIso } : {}),
+      ...(isPrepay && pctChanged
+        ? { depositPct: parsedDraftPrepayPct, customAmountRub: undefined }
+        : amountManuallyEdited && !packsChanged
+        ? { customAmountRub: cleanAmount, depositPct: undefined }
+        : packsChanged
+        ? { customAmountRub: undefined, depositPct: undefined }
+        : {}),
+      ...(supplierChanged ? { customFactoryName: editSupplier.trim() } : {}),
+      ...(statusChanged ? { status: editStatus } : {}),
+      ...(splitModeOpen ? { splitTranches: splitDrafts } : {}),
+      ...(balanceDateChanged ? { balanceDateIso: editBalanceDateIso } : {}),
+    };
+
+    const balancePaymentOverride: DraftPaymentOrBatchEditPatch['balancePaymentOverride'] =
+      balanceDateChanged || pctChanged || packsChanged || (isPrepay && amountManuallyEdited)
+        ? {
+            ...(balanceDateChanged ? { customDateIso: editBalanceDateIso } : {}),
+            ...(pctChanged || packsChanged || (isPrepay && amountManuallyEdited)
+              ? { customAmountRub: undefined }
+              : {}),
+          }
+        : undefined;
+
+    return {
+      scenarioScopeKey: selectedEvent.scenarioScopeKey,
+      batchKey: bKey,
+      opKey: selectedEvent.opKey,
+      isApprovedPo: Boolean(bd?.isApprovedPo),
+      batchOverride,
+      paymentOverride,
+      balancePaymentOverride,
+    };
+  }, [
+    selectedEvent,
+    editDateIso,
+    editAmountRub,
+    amountManuallyEdited,
+    editSupplier,
+    editStatus,
+    parsedDraftPrepayPct,
+    parsedDraftPacksQty,
+    editPacksQty,
+    editArrivalDateIso,
+    editBalanceDateIso,
+    pairedBalanceEvent,
+    splitModeOpen,
+    splitDrafts,
+  ]);
+
+  const liveEditPreview: PaymentOrBatchEditPreviewResult | null = useMemo(() => {
+    if (!selectedEvent || !draftEditPatch) return null;
+    return previewEdit(draftEditPatch);
+  }, [selectedEvent, draftEditPatch, previewEdit]);
+
+  const nextRequiredCashRow = useMemo(() => {
+    return (
+      schedule.whenAndHowMuchRows.find((r) => r.remainingNeedRub > 0) ||
+      schedule.whenAndHowMuchRows[0] ||
+      null
+    );
+  }, [schedule.whenAndHowMuchRows]);
+
+  // Данные для графика «Свободные деньги бизнеса» (Раздел 8) — объявлено до раннего return по правилам React Hooks
+  const maxAbsFreeCash = useMemo(() => {
+    let m = 1_000_000;
+    for (const row of schedule.monthlyCalendarRows) {
+      m = Math.max(m, Math.abs(row.businessFreeCashRub));
+    }
+    return m;
+  }, [schedule.monthlyCalendarRows]);
 
   const availableBrandScenarios = useMemo(() => {
     if (normBrand === 'ALL') return [];
@@ -444,7 +698,8 @@ export function InvestmentSchedulePanel({
 
   const handleJumpToProcurementBatch = (
     modelId: string,
-    brandCode?: CanonicalBrandCode | 'BORNERS_FUKAI' | string
+    brandCode?: CanonicalBrandCode | 'BORNERS_FUKAI' | string,
+    meta?: { batchKey?: string; modelCode?: string; dateIso?: string }
   ) => {
     const resolvedBrandCode: CanonicalBrandCode | undefined =
       !brandCode || brandCode === 'ALL'
@@ -455,42 +710,112 @@ export function InvestmentSchedulePanel({
             const norm = normalizePortfolioBrandCode(brandCode);
             return norm === 'ALL' ? undefined : norm;
           })();
-    if (onOpenBatchInProcurement) {
-      onOpenBatchInProcurement(modelId, resolvedBrandCode);
-      if (onCloseModal) onCloseModal();
-      return;
-    }
+
     if (typeof window !== 'undefined') {
+      const focusDetail = {
+        modelId,
+        brandCode: resolvedBrandCode,
+        batchKey: meta?.batchKey || '',
+        modelCode: meta?.modelCode || '',
+        dateIso: meta?.dateIso || '',
+      };
       try {
+        window.sessionStorage.setItem(
+          'borners_focus_procurement_batch',
+          JSON.stringify(focusDetail)
+        );
         window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
         window.localStorage.setItem('borners_procurement_selected_sku_v1', modelId);
         window.sessionStorage.setItem('borners_focus_procurement_sku_id', modelId);
       } catch {
         // ignore
       }
+      window.dispatchEvent(
+        new CustomEvent('borners-open-procurement-batch', { detail: focusDetail })
+      );
+    }
+
+    if (onOpenBatchInProcurement) {
+      onOpenBatchInProcurement(modelId, resolvedBrandCode);
+      if (onCloseModal) onCloseModal();
+      return;
     }
     navigateTo('roadmap-tasks', resolvedBrandCode ? { brandId: resolvedBrandCode } : undefined);
     if (onCloseModal) onCloseModal();
   };
 
+  const handleFocusWhenDate = (dateIso?: string | null) => {
+    const targetIso = dateIso || nextRequiredCashRow?.dateIso || null;
+    if (targetIso) {
+      setExpandedWhenDates((prev) => new Set(prev).add(targetIso));
+    }
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const targetEl =
+          (targetIso
+            ? document.querySelector(`[data-testid="when-row-${targetIso}"]`)
+            : null) || document.getElementById('when-and-how-much-anchor');
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
+  };
+
+  const handleOpenWhatToFill = () => {
+    const firstMissingModelId =
+      schedule.missingCostModelIds[0] ||
+      schedule.incompleteDataReasons.find((r) => r.modelId)?.modelId;
+    if (firstMissingModelId) {
+      if (onOpenMissingCostSku) {
+        onOpenMissingCostSku(
+          firstMissingModelId,
+          normBrand === 'ALL' ? undefined : normBrand
+        );
+        if (onCloseModal) onCloseModal();
+        return;
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem(
+            'borners_focus_procurement_sku_id',
+            firstMissingModelId
+          );
+          window.localStorage.setItem(
+            'borners_procurement_selected_sku_v1',
+            firstMissingModelId
+          );
+        } catch {
+          // ignore
+        }
+      }
+      navigateTo(
+        'product-catalog',
+        normBrand === 'ALL' ? undefined : { brandId: normBrand }
+      );
+      if (onCloseModal) onCloseModal();
+      return;
+    }
+    setShowEditInvestmentPlan(true);
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const el = document.querySelector('[data-testid="inv-wb-delay-select"]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  };
+
   const handleRecommendationAction = (rec: SystemActionRecommendation) => {
     if (rec.actionTarget === 'focus_payment_date') {
-      const targetIso =
-        rec.targetDateIso || schedule.whenAndHowMuchRows[0]?.dateIso || null;
-      if (targetIso) {
-        setExpandedWhenDates((prev) => new Set(prev).add(targetIso));
-      }
-      if (typeof document !== 'undefined') {
-        const el = document.getElementById('when-and-how-much-anchor');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      handleFocusWhenDate(rec.targetDateIso);
       return;
     }
     if (rec.actionTarget === 'open_procurement') {
       if (rec.modelId) {
         handleJumpToProcurementBatch(
           rec.modelId,
-          normBrand === 'ALL' ? undefined : normBrand
+          normBrand === 'ALL' ? undefined : normBrand,
+          { batchKey: rec.batchKey }
         );
       } else {
         navigateTo('roadmap-tasks');
@@ -528,7 +853,7 @@ export function InvestmentSchedulePanel({
   };
 
   const handleQuickShiftFactoryPaymentNextMonth = (ev: ChronologicalCashEvent) => {
-    if (!canEdit || ev.isApprovedLocked) {
+    if (!canEdit || ev.isApprovedLocked || ev.isFactual) {
       setSelectedOpId(ev.id);
       return;
     }
@@ -545,28 +870,120 @@ export function InvestmentSchedulePanel({
     });
   };
 
+  const handleEditPrepayPctChange = (nextVal: string) => {
+    setEditPrepayPct(nextVal);
+    setAmountManuallyEdited(false);
+    const bd = selectedEvent?.batchDetails;
+    if (!bd) return;
+    const parsedPct = nextVal.trim() === '' ? NaN : Number(nextVal);
+    const parsedPacks =
+      editPacksQty.trim() === '' ? bd.packsQty : Number(editPacksQty);
+    if (!Number.isFinite(parsedPct) || !Number.isFinite(parsedPacks)) return;
+    const clampedPct = Math.max(0, Math.min(100, Math.round(parsedPct)));
+    const cleanPacks = Math.max(0, Math.round(parsedPacks));
+    const unitCost =
+      bd.unitCostRub > 0
+        ? bd.unitCostRub
+        : bd.packsQty > 0
+        ? bd.totalBatchCostRub / bd.packsQty
+        : 0;
+    const totalBatchRub = Math.round(cleanPacks * unitCost);
+    const nextPrepayRub = Math.round((totalBatchRub * clampedPct) / 100);
+    const nextBalanceRub = Math.max(0, totalBatchRub - nextPrepayRub);
+    if (selectedEvent?.paymentRole === 'prepay') {
+      setEditAmountRub(String(nextPrepayRub));
+    } else if (selectedEvent?.paymentRole === 'balance') {
+      setEditAmountRub(String(nextBalanceRub));
+    }
+  };
+
+  const handleEditPacksQtyChange = (nextVal: string) => {
+    setEditPacksQty(nextVal);
+    setAmountManuallyEdited(false);
+    const bd = selectedEvent?.batchDetails;
+    if (!bd) return;
+    const parsedPacks = nextVal.trim() === '' ? NaN : Number(nextVal);
+    const parsedPct =
+      editPrepayPct.trim() === '' ? bd.prepaymentPct : Number(editPrepayPct);
+    if (!Number.isFinite(parsedPacks) || !Number.isFinite(parsedPct)) return;
+    const cleanPacks = Math.max(0, Math.round(parsedPacks));
+    const clampedPct = Math.max(0, Math.min(100, Math.round(parsedPct)));
+    const unitCost =
+      bd.unitCostRub > 0
+        ? bd.unitCostRub
+        : bd.packsQty > 0
+        ? bd.totalBatchCostRub / bd.packsQty
+        : 0;
+    const totalBatchRub = Math.round(cleanPacks * unitCost);
+    const nextPrepayRub = Math.round((totalBatchRub * clampedPct) / 100);
+    const nextBalanceRub = Math.max(0, totalBatchRub - nextPrepayRub);
+    if (selectedEvent?.paymentRole === 'prepay') {
+      setEditAmountRub(String(nextPrepayRub));
+    } else if (selectedEvent?.paymentRole === 'balance') {
+      setEditAmountRub(String(nextBalanceRub));
+    }
+  };
+
   const handleSaveSelectedPaymentInspector = () => {
     if (!selectedEvent || !canEdit) return;
-    if (selectedEvent.isApprovedLocked && !lockedEditConfirmed) return;
+    // Фактический платёж («Оплачено») защищён от перезаписи (Стр. 6 и 10 ТЗ v1.0)
+    if (selectedEvent.status === 'Оплачено' || selectedEvent.isFactual) return;
+    // Перенос / правка согласованного заказа требует явного подтверждения чекбоксом
+    const requiresApprovedConfirm = Boolean(
+      selectedEvent.batchDetails?.isApprovedPo || selectedEvent.isApprovedLocked
+    );
+    if (requiresApprovedConfirm && !lockedEditConfirmed) return;
 
+    const bd = selectedEvent.batchDetails;
+    const isPrepay = selectedEvent.paymentRole === 'prepay';
+    const isBalance = selectedEvent.paymentRole === 'balance';
     const cleanAmount = Math.max(
       0,
       Math.round(Number(editAmountRub) || selectedEvent.amountRub)
     );
+    const pctNum = parsedDraftPrepayPct ?? bd?.prepaymentPct ?? 30;
+    const packsNum = parsedDraftPacksQty ?? bd?.packsQty ?? 0;
+    const pctChanged = Boolean(bd && pctNum !== bd.prepaymentPct);
+    const arrivalChanged = Boolean(
+      bd && editArrivalDateIso && editArrivalDateIso !== bd.arrivalDateIso
+    );
+    const supplierChanged = Boolean(
+      editSupplier.trim() &&
+        editSupplier.trim() !== (selectedEvent.factoryName || bd?.factoryName || '')
+    );
+    const packsChanged = Boolean(
+      bd && editPacksQty.trim() !== '' && packsNum !== bd.packsQty
+    );
+
     updatePaymentOperation({
       opKey: selectedEvent.opKey,
       batchKey: selectedEvent.batchKey || '',
       scenarioScopeKey: selectedEvent.scenarioScopeKey,
-      isApprovedPo: Boolean(selectedEvent.batchDetails?.isApprovedPo),
+      isApprovedPo: Boolean(bd?.isApprovedPo),
       currentTitle: selectedEvent.title,
       beforeSummary: `${formatIsoDateHumanRu(selectedEvent.dateIso)} · ${fmtRub(selectedEvent.amountRub)} (${selectedEvent.status})`,
       patch: {
         customDateIso: editDateIso || selectedEvent.dateIso,
-        customAmountRub:
-          cleanAmount !== selectedEvent.autoAmountRub ? cleanAmount : undefined,
+        ...(isPrepay && pctChanged
+          ? { depositPct: pctNum, customAmountRub: undefined }
+          : amountManuallyEdited && !pctChanged && !packsChanged
+          ? {
+              customAmountRub:
+                cleanAmount !== selectedEvent.autoAmountRub ? cleanAmount : undefined,
+              depositPct: undefined,
+            }
+          : packsChanged || (isBalance && pctChanged)
+          ? { customAmountRub: undefined }
+          : {}),
         customFactoryName: editSupplier.trim() || undefined,
         status: editStatus,
         splitTranches: splitModeOpen ? splitDrafts : undefined,
+        ...(pairedBalanceEvent &&
+        pairedBalanceEvent.opKey !== selectedEvent.opKey &&
+        editBalanceDateIso &&
+        editBalanceDateIso !== pairedBalanceEvent.dateIso
+          ? { balanceDateIso: editBalanceDateIso }
+          : {}),
       },
       author: authorName,
     });
@@ -590,36 +1007,15 @@ export function InvestmentSchedulePanel({
       });
     }
 
-    // Раздел 6: Изменение предоплаты (%), поставщика, объёма или срока поставки плановой партии
-    if (selectedEvent.batchDetails && selectedEvent.batchKey) {
-      const pctNum = Math.max(
-        0,
-        Math.min(
-          100,
-          Math.round(Number(editPrepayPct) || selectedEvent.batchDetails.prepaymentPct)
-        )
-      );
-      const packsNum = Math.max(
-        0,
-        Math.round(Number(editPacksQty) || selectedEvent.batchDetails.packsQty)
-      );
-      const pctChanged = pctNum !== selectedEvent.batchDetails.prepaymentPct;
-      const arrivalChanged =
-        Boolean(editArrivalDateIso) &&
-        editArrivalDateIso !== selectedEvent.batchDetails.arrivalDateIso;
-      const supplierChanged =
-        Boolean(editSupplier.trim()) &&
-        editSupplier.trim() !== selectedEvent.batchDetails.factoryName;
-      const packsChanged =
-        editPacksQty !== '' && packsNum !== selectedEvent.batchDetails.packsQty;
-
+    // Раздел 6: Изменение предоплаты (%), поставщика, объёма или срока поставки партии
+    if (bd && selectedEvent.batchKey) {
       if (pctChanged || arrivalChanged || supplierChanged || packsChanged) {
         updateBatchTerms({
           batchKey: selectedEvent.batchKey,
           scenarioScopeKey: selectedEvent.scenarioScopeKey,
-          isApprovedPo: selectedEvent.batchDetails.isApprovedPo,
-          batchTitle: `${selectedEvent.batchDetails.modelCode} · ${selectedEvent.batchDetails.periodId.toUpperCase()}`,
-          beforeSummary: `Объём ${selectedEvent.batchDetails.packsQty.toLocaleString('ru-RU')} ${selectedEvent.batchDetails.primaryUnitLabel}, аванс ${selectedEvent.batchDetails.prepaymentPct}%, поставка ${formatIsoDateHumanRu(selectedEvent.batchDetails.arrivalDateIso)}`,
+          isApprovedPo: bd.isApprovedPo,
+          batchTitle: `${bd.modelCode} · ${bd.periodId.toUpperCase()}`,
+          beforeSummary: `Объём ${bd.packsQty.toLocaleString('ru-RU')} ${bd.primaryUnitLabel}, аванс ${bd.prepaymentPct}%, поставка ${formatIsoDateHumanRu(bd.arrivalDateIso)}`,
           patch: {
             customPrepaymentPct: pctChanged ? pctNum : undefined,
             customArrivalDateIso: arrivalChanged ? editArrivalDateIso : undefined,
@@ -695,45 +1091,36 @@ export function InvestmentSchedulePanel({
     ? 'unset'
     : String(schedule.wbPayoutDelayDays);
 
-  // Данные для графика «Свободные деньги бизнеса» (Раздел 8)
-  const maxAbsFreeCash = useMemo(() => {
-    let m = 1_000_000;
-    for (const row of schedule.monthlyCalendarRows) {
-      m = Math.max(m, Math.abs(row.businessFreeCashRub));
-    }
-    return m;
-  }, [schedule.monthlyCalendarRows]);
-
   const selectedFreeCashRow =
     selectedFreeCashMonthIdx !== null
       ? schedule.monthlyCalendarRows[selectedFreeCashMonthIdx] || null
       : null;
 
-  const scheduleWithPnl = schedule as ComputedInvestmentScheduleResult & {
-    totalWbDeductionsRub?: number;
-    totalSoldGoodsCostRub?: number;
-  };
-  const resolvedWbDeductionsRub =
-    typeof scheduleWithPnl.totalWbDeductionsRub === 'number'
-      ? scheduleWithPnl.totalWbDeductionsRub
-      : Math.round(schedule.totalGrossSalesRevenueRub * 0.4);
+  const resolvedWbDeductionsRub = schedule.totalWbDeductionsRub;
+  const resolvedReverseLogisticsRub = schedule.totalReverseLogisticsRub;
+  const resolvedTaxRub = schedule.totalTaxRub;
+  const resolvedOpexRub = schedule.totalOpexRub;
+  const resolvedTaxAndOpexTotalRub =
+    resolvedTaxRub + resolvedOpexRub + schedule.totalOtherExpensesRub;
   const resolvedNetWbProceedsRub = Math.max(
     0,
     schedule.totalGrossSalesRevenueRub - resolvedWbDeductionsRub
   );
-  const resolvedSoldGoodsCostRub =
-    typeof scheduleWithPnl.totalSoldGoodsCostRub === 'number'
-      ? scheduleWithPnl.totalSoldGoodsCostRub
-      : Math.max(
-          0,
-          schedule.totalGrossSalesRevenueRub -
-            resolvedWbDeductionsRub -
-            schedule.totalAccrualOperatingProfitRub
-        );
-  const resolvedOperatingProfitRub =
-    schedule.totalAccrualOperatingProfitRub - schedule.totalOtherExpensesRub;
-  const resolvedOperatingMarginPct =
+  const resolvedWbDeductionsPct =
     schedule.totalGrossSalesRevenueRub > 0
+      ? Math.round((resolvedWbDeductionsRub / schedule.totalGrossSalesRevenueRub) * 1000) / 10
+      : 0;
+  const resolvedNetWbProceedsPct =
+    schedule.totalGrossSalesRevenueRub > 0
+      ? Math.round((resolvedNetWbProceedsRub / schedule.totalGrossSalesRevenueRub) * 1000) / 10
+      : 0;
+  const resolvedSoldGoodsCostRub = schedule.totalSoldGoodsCostRub;
+  const resolvedOperatingProfitRub =
+    schedule.expectedOperatingProfitRub - schedule.totalOtherExpensesRub;
+  const resolvedOperatingMarginPct =
+    schedule.totalOtherExpensesRub === 0
+      ? schedule.expectedOperatingMarginPct
+      : schedule.totalGrossSalesRevenueRub > 0
       ? Math.round((resolvedOperatingProfitRub / schedule.totalGrossSalesRevenueRub) * 1000) / 10
       : 0;
 
@@ -895,7 +1282,85 @@ export function InvestmentSchedulePanel({
         </div>
       </div>
 
-      {/* РАЗДЕЛ 3 ТЗ: ГЛАВНЫЙ ЭКРАН — ТОЛЬКО ЧЕТЫРЕ ПОКАЗАТЕЛЯ */}
+      {/* СКВОЗНОЙ ПЕРЕНОС 2027 → 2028 (СТР. 8 И ТЕСТ 10 ТЗ v1.0) */}
+      {selectedYear === 2028 && schedule.yearBoundaryCarryover && (
+        <div
+          data-testid="fin-carryover-2027-2028-bar"
+          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#191816] px-4 py-3 sm:px-5 shadow-[0_1px_2px_rgba(20,20,19,0.03)] space-y-2.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#141413] dark:bg-[#F5F4F0] px-2 py-0.5 font-mono text-[10.5px] font-semibold text-white dark:text-[#141413]">
+                <Layers className="h-3 w-3" />
+                <span>Переход 31.12.2027 → 01.01.2028</span>
+              </span>
+              <span className="text-xs font-medium text-[#141413] dark:text-[#F5F4F0]">
+                Переходящие остатки, выплаты WB и обязательства из 2027 года
+              </span>
+            </div>
+            <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+              {schedule.yearBoundaryCarryover.carriedOverCashAppliedToStart
+                ? 'Стартовый кэш 2028 автоматически перенесён с 31.12.2027'
+                : 'Задан ручной стартовый кэш 2028'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 text-xs">
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                Склад и возвраты в пути на 31.12.2027
+              </div>
+              <div className="mt-0.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                {schedule.yearBoundaryCarryover.carriedOverStockUnitsFrom2027.toLocaleString('ru-RU')} ед.
+                {schedule.yearBoundaryCarryover.carriedOverReturnsInTransitUnitsFrom2027 > 0 && (
+                  <span className="ml-1.5 text-[11px] font-normal text-[#5C5953]">
+                    (+{schedule.yearBoundaryCarryover.carriedOverReturnsInTransitUnitsFrom2027.toLocaleString('ru-RU')} в возврате)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                Переходящий остаток денег
+              </div>
+              <div className="mt-0.5 font-mono font-semibold text-[#15803D] dark:text-emerald-400">
+                {fmtMln(schedule.yearBoundaryCarryover.carriedOverCashFrom2027Rub)}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                Декабрьские выплаты WB (в янв. 2028)
+              </div>
+              <div className="mt-0.5 font-mono font-semibold text-[#15803D] dark:text-emerald-400">
+                +{fmtMln(schedule.yearBoundaryCarryover.carriedOverWbPayoutsFromDec2027Rub)}
+                <span className="ml-1.5 text-[10.5px] font-normal text-[#5C5953]">
+                  ({schedule.yearBoundaryCarryover.carriedOverWbPayoutsEventsCount} выпл.)
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] px-3 py-2">
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                Переходящие доплаты фабрикам
+              </div>
+              <div className="mt-0.5 font-mono font-semibold text-[#B91C1C] dark:text-rose-400">
+                {schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub > 0
+                  ? `−${fmtMln(schedule.yearBoundaryCarryover.carriedOverPayablesFrom2027Rub)}`
+                  : '0,00 млн ₽'}
+                {schedule.yearBoundaryCarryover.carriedOverPayablesEventsCount > 0 && (
+                  <span className="ml-1.5 text-[10.5px] font-normal text-[#5C5953]">
+                    ({schedule.yearBoundaryCarryover.carriedOverPayablesEventsCount} плат.)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* РАЗДЕЛ 3 ТЗ: ГЛАВНЫЙ ЭКРАН — ЧЕТЫРЕ ОСНОВНЫХ ПОКАЗАТЕЛЯ */}
       <div
         data-testid="fin-four-main-kpis"
         className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5"
@@ -913,8 +1378,37 @@ export function InvestmentSchedulePanel({
               {fmtMln(schedule.totalGrossSalesRevenueRub)}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-            Прогнозируемая выручка · {selectedYear} г.
+          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1.5">
+            {schedule.compatibleUnitsBreakdown.length === 1 ? (
+              (() => {
+                const uRow = schedule.compatibleUnitsBreakdown[0]!;
+                const { shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                return (
+                  <div className="font-mono text-[11.5px] text-[#141413] dark:text-[#F5F4F0]">
+                    {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit} / план · {selectedYear} г.
+                  </div>
+                );
+              })()
+            ) : schedule.compatibleUnitsBreakdown.length > 1 ? (
+              <div
+                data-testid="fin-kpi-sales-compatible-units"
+                className="flex flex-wrap items-center gap-1"
+              >
+                {schedule.compatibleUnitsBreakdown.map((uRow) => {
+                  const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                  return (
+                    <span
+                      key={uRow.unitCategory}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] text-[#141413] dark:text-[#F5F4F0]"
+                    >
+                      {categoryName}: {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div>Прогнозируемая выручка · {selectedYear} г.</div>
+            )}
           </div>
         </div>
 
@@ -931,8 +1425,40 @@ export function InvestmentSchedulePanel({
               {fmtMln(schedule.totalProcurementCostRub)}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-            {schedule.batchesTotalCount} закупочных партий за период
+          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
+            {schedule.compatibleUnitsBreakdown.length === 1 ? (
+              (() => {
+                const uRow = schedule.compatibleUnitsBreakdown[0]!;
+                const { shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                return (
+                  <div className="font-mono text-[11.5px] text-[#141413] dark:text-[#F5F4F0]">
+                    {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit} ·{' '}
+                    {pluralizeBatchesRu(schedule.batchesTotalCount)}
+                  </div>
+                );
+              })()
+            ) : schedule.compatibleUnitsBreakdown.length > 1 ? (
+              <>
+                <div className="flex flex-wrap items-center gap-1">
+                  {schedule.compatibleUnitsBreakdown.map((uRow) => {
+                    const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                    return (
+                      <span
+                        key={uRow.unitCategory}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[10.5px] text-[#141413] dark:text-[#F5F4F0]"
+                      >
+                        {categoryName}: {uRow.procurementQty.toLocaleString('ru-RU')} {shortUnit}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                  Всего {pluralizeBatchesRu(schedule.batchesTotalCount)} за период
+                </div>
+              </>
+            ) : (
+              <div>{pluralizeBatchesRu(schedule.batchesTotalCount)} за период</div>
+            )}
           </div>
         </div>
 
@@ -946,9 +1472,10 @@ export function InvestmentSchedulePanel({
               {schedule.isPreliminaryCalculation && (
                 <span
                   data-testid="fin-preliminary-badge"
-                  className="shrink-0 rounded px-1.5 py-0.5 bg-amber-500/12 border border-amber-500/30 font-mono text-[10px] font-medium text-amber-800 dark:text-amber-300"
+                  title={schedule.incompleteDataReasons.map((r) => r.label).join('; ')}
+                  className="shrink-0 rounded px-1.5 py-0.5 bg-amber-500/12 border border-amber-500/35 font-mono text-[10px] font-medium text-amber-800 dark:text-amber-300"
                 >
-                  Предварительно
+                  Предварительный расчёт
                 </span>
               )}
             </div>
@@ -963,19 +1490,31 @@ export function InvestmentSchedulePanel({
                 : '0,00 млн ₽'}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-0.5">
-            <div>
-              {schedule.wbPayoutScheduleSpecified
-                ? `Пик потребности: ${schedule.peakShortageMonthFullRu}`
-                : 'Требуется срок поступления выручки от WB'}
-            </div>
-            {schedule.totalOwnMoneyConfiguredRub > 0 &&
-              schedule.remainingOwnMoneyNeededRub !== null && (
-                <div className="font-mono text-[11px] text-[#15803D] dark:text-emerald-400">
-                  Внесено: {fmtMln(schedule.totalOwnMoneyConfiguredRub)} · Осталось:{' '}
-                  {fmtMln(schedule.remainingOwnMoneyNeededRub)}
-                </div>
+          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <span>
+                {schedule.wbPayoutScheduleSpecified
+                  ? `Пик: ${schedule.peakShortageMonthFullRu}`
+                  : 'Требуется срок поступления выручки от WB'}
+              </span>
+              {schedule.isPreliminaryCalculation && (
+                <button
+                  type="button"
+                  data-testid="fin-what-to-fill-btn"
+                  onClick={handleOpenWhatToFill}
+                  className="text-[11px] font-medium text-amber-800 dark:text-amber-300 underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                >
+                  Что заполнить →
+                </button>
               )}
+            </div>
+            {schedule.isGroupAllBrands && (
+              <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
+                {groupCapitalMode === 'per_brand'
+                  ? 'Режим: каждый бренд сам (сумма пиков)'
+                  : 'Режим: общий денежный котёл группы'}
+              </div>
+            )}
           </div>
         </div>
 
@@ -995,30 +1534,65 @@ export function InvestmentSchedulePanel({
                 : fmtMln(schedule.reinvestedFromSalesRub)}
             </div>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-            {schedule.wbPayoutScheduleSpecified
-              ? `Покрыто поступлениями от продаж (${schedule.reinvestedSharePct}% закупок)`
-              : 'Рассчитывается по операциям поступлений от продаж'}
+          <div className="mt-3 pt-2.5 border-t border-[#E4E1DA] dark:border-[#282724] text-[11.5px] text-[#5C5953] dark:text-[#9A968E] space-y-1">
+            <div>
+              {schedule.wbPayoutScheduleSpecified
+                ? `Платежи из оборота (${schedule.reinvestedSharePct}% закупок)`
+                : 'Рассчитывается по операциям поступлений от продаж'}
+            </div>
+            {(schedule.missingCostModelsCount > 0 ||
+              schedule.excludedZeroCostWbPayoutRub > 0) && (
+              <div
+                data-testid="fin-reinvest-zero-cost-note"
+                className="text-[10.5px] text-amber-800 dark:text-amber-300"
+              >
+                SKU без себестоимости ({schedule.missingCostModelsCount}) исключены из пула реинвестирования
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* СВОДНАЯ ПОЛОСА РАСХОДОВ, УДЕРЖАНИЙ WB, СЕБЕСТОИМОСТИ И ОПЕРАЦИОННОЙ ПРИБЫЛИ */}
+      {/* СВОДНАЯ ПОЛОСА РАСХОДОВ, УДЕРЖАНИЙ WB, НАЛОГОВ/OPEX, СЕБЕСТОИМОСТИ И ОПЕРАЦИОННОЙ ПРИБЫЛИ */}
       <div
         data-testid="fin-expenses-profit-strip"
         className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div>
-            <h3 className="text-[13.5px] sm:text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-              Расходы, удержания WB и прибыльность · {selectedYear}
-            </h3>
+          <div className="space-y-0.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[13.5px] sm:text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                Расходы, удержания WB и ожидаемая операционная прибыль · {selectedYear}
+              </h3>
+              {!schedule.isProfitComplete && (
+                <span
+                  data-testid="fin-profit-incomplete-badge"
+                  className="inline-flex items-center gap-1 rounded px-2 py-0.5 bg-amber-500/12 border border-amber-500/35 font-mono text-[10.5px] font-medium text-amber-800 dark:text-amber-300"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Предварительный расчёт · Расчёт неполный</span>
+                </span>
+              )}
+            </div>
             <p className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-              Удержания маркетплейса, чистые поступления на счёт, себестоимость выкупов и операционная прибыль
+              {!schedule.isProfitComplete && schedule.profitIncompleteReason
+                ? schedule.profitIncompleteReason
+                : 'Удержания маркетплейса, налоги и OPEX, чистые поступления на счёт, себестоимость выкупов и операционная прибыль'}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {!schedule.isProfitComplete && (
+              <button
+                type="button"
+                data-testid="fin-profit-what-to-fill-btn"
+                onClick={handleOpenWhatToFill}
+                className="h-8 px-3 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-xs font-medium text-amber-900 dark:text-amber-300 inline-flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
+              >
+                <span>Что заполнить →</span>
+              </button>
+            )}
+
             {canEdit && (
               <button
                 type="button"
@@ -1040,7 +1614,7 @@ export function InvestmentSchedulePanel({
                 }}
                 className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] dark:hover:border-[#F5F4F0] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
               >
-                <span>+ Добавить расход (ФОТ / ДРР / прочее)</span>
+                <span>+ Добавить расход</span>
               </button>
             )}
 
@@ -1055,7 +1629,7 @@ export function InvestmentSchedulePanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
           {/* 1) Удержания и расходы WB */}
           <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
             <div>
@@ -1063,7 +1637,7 @@ export function InvestmentSchedulePanel({
                 Удержания и расходы WB
               </div>
               <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                комиссия, логистика, ДРР
+                комиссия, логистика, ДРР, хранение
               </div>
               <div
                 data-testid="fin-strip-wb-deductions"
@@ -1072,22 +1646,52 @@ export function InvestmentSchedulePanel({
                 {fmtMln(resolvedWbDeductionsRub)}
               </div>
             </div>
-            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-              <span>40% от выручки</span>
-              {schedule.totalOtherExpensesRub > 0 && (
-                <span className="font-mono text-amber-800 dark:text-amber-300">
-                  {' '}
-                  · + прочие расходы {fmtMln(schedule.totalOtherExpensesRub)}
-                </span>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] space-y-0.5">
+              <div>{resolvedWbDeductionsPct.toFixed(1).replace('.', ',')}% от выручки</div>
+              {resolvedReverseLogisticsRub > 0 && (
+                <div
+                  data-testid="fin-strip-reverse-logistics"
+                  className="font-mono text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                >
+                  в т.ч. обратная логистика: {fmtMln(resolvedReverseLogisticsRub)}
+                </div>
               )}
             </div>
           </div>
 
-          {/* 2) Чистые поступления от WB */}
+          {/* 2) Налоги и OPEX */}
           <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
             <div>
               <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                Чистые поступления от WB
+                Налоги и OPEX
+              </div>
+              <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                налог, операционные и прочие расходы
+              </div>
+              <div
+                data-testid="fin-strip-tax-opex"
+                className="mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+              >
+                {fmtMln(resolvedTaxAndOpexTotalRub)}
+              </div>
+            </div>
+            <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E] space-y-0.5">
+              <div className="font-mono text-[10.5px]">
+                Налоги: {fmtMln(resolvedTaxRub)} · OPEX: {fmtMln(resolvedOpexRub)}
+              </div>
+              {schedule.totalOtherExpensesRub > 0 && (
+                <div className="font-mono text-[10.5px] text-amber-800 dark:text-amber-300">
+                  + доп. расходы: {fmtMln(schedule.totalOtherExpensesRub)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 3) Чистые поступления от WB */}
+          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+            <div>
+              <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                Чистые поступления WB
               </div>
               <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
                 к перечислению на счёт
@@ -1100,11 +1704,11 @@ export function InvestmentSchedulePanel({
               </div>
             </div>
             <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-              60% выручки после удержаний МП
+              {resolvedNetWbProceedsPct.toFixed(1).replace('.', ',')}% выручки после удержаний МП
             </div>
           </div>
 
-          {/* 3) Себестоимость продаж (COGS) */}
+          {/* 4) Себестоимость продаж (COGS) */}
           <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
             <div>
               <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
@@ -1121,129 +1725,286 @@ export function InvestmentSchedulePanel({
               </div>
             </div>
             <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-              отличается от закупок на величину складского запаса
+              {schedule.missingCostModelsCount > 0 ? (
+                <span className="text-amber-800 dark:text-amber-300">
+                  Не заполнена у {schedule.missingCostModelsCount} SKU
+                </span>
+              ) : (
+                'отличается от закупок на складской запас'
+              )}
             </div>
           </div>
 
-          {/* 4) Операционная прибыль */}
-          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2">
+          {/* 5) Ожидаемая операционная прибыль и рентабельность */}
+          <div
+            className={`sm:col-span-2 xl:col-span-1 rounded-lg border p-3.5 flex flex-col justify-between gap-2 ${
+              !schedule.isProfitComplete
+                ? 'border-amber-500/40 bg-amber-500/[0.06] dark:bg-amber-500/10'
+                : 'border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A]'
+            }`}
+          >
             <div>
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-[12px] font-medium text-[#141413] dark:text-[#F5F4F0]">
-                    Операционная прибыль
+                    Ожидаемая опер. прибыль
                   </div>
                   <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                    после себестоимости и всех расходов
+                    {!schedule.isProfitComplete
+                      ? 'предварительно (неполные данные)'
+                      : 'после себестоимости, налогов и OPEX'}
                   </div>
                 </div>
                 <span
                   className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-medium border ${
-                    resolvedOperatingProfitRub >= 0
+                    !schedule.isProfitComplete
+                      ? 'bg-amber-500/15 border-amber-500/35 text-amber-900 dark:text-amber-300'
+                      : resolvedOperatingProfitRub >= 0
                       ? 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-400'
                       : 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-400'
                   }`}
                 >
-                  {resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}% от выручки
+                  {!schedule.isProfitComplete ? '~' : ''}
+                  {resolvedOperatingMarginPct.toFixed(1).replace('.', ',')}%
                 </span>
               </div>
               <div
                 data-testid="fin-strip-operating-profit"
                 className={`mt-2 font-mono text-lg sm:text-xl font-semibold tracking-[-0.02em] tabular-nums ${
-                  resolvedOperatingProfitRub >= 0
+                  !schedule.isProfitComplete
+                    ? 'text-amber-900 dark:text-amber-300'
+                    : resolvedOperatingProfitRub >= 0
                     ? 'text-[#15803D] dark:text-emerald-400'
                     : 'text-[#B91C1C] dark:text-rose-400'
                 }`}
               >
+                {!schedule.isProfitComplete ? '~' : ''}
                 {fmtMln(resolvedOperatingProfitRub)}
               </div>
             </div>
             <div className="pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-              {schedule.totalOtherExpensesRub > 0
-                ? `С учётом доп. расходов ${fmtMln(schedule.totalOtherExpensesRub)}`
-                : 'Рентабельность продаж по плану периода'}
+              {!schedule.isProfitComplete ? (
+                <span className="text-amber-800 dark:text-amber-300">
+                  Предварительно — заполните недостающие данные
+                </span>
+              ) : schedule.totalOtherExpensesRub > 0 ? (
+                `С учётом доп. расходов ${fmtMln(schedule.totalOtherExpensesRub)}`
+              ) : (
+                'Рентабельность продаж по плану периода'
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* РАЗДЕЛ 7 ТЗ: КОМПАКТНЫЙ БЛОК «ЧТО НУЖНО СДЕЛАТЬ» (МАКСИМУМ 3 РЕКОМЕНДАЦИИ) */}
-      {schedule.recommendations.length > 0 && (
+      {/* РАЗДЕЛ 7 И СТР. 3/13 ТЗ: СЛЕДУЮЩЕЕ ДЕЙСТВИЕ И «ЧТО НУЖНО СДЕЛАТЬ» */}
+      {(schedule.recommendations.length > 0 ||
+        nextRequiredCashRow !== null ||
+        schedule.nextUpcomingPayment !== null) && (
         <div
           data-testid="fin-recommendations-block"
-          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3"
+          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-              Что нужно сделать
-            </span>
-            <span className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-              По приоритету расчёта
-            </span>
+          {/* Главная полоса «Следующее действие» + кнопка «Посмотреть платежи» */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E4E1DA] dark:border-[#282724]">
+            <div className="space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[14px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                  Что нужно сделать · Следующее действие
+                </span>
+                <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                  По приоритету расчёта
+                </span>
+              </div>
+              {nextRequiredCashRow ? (
+                <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
+                  Ближайшая дата финансирования:{' '}
+                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                    {nextRequiredCashRow.dateDotRu}
+                  </strong>{' '}
+                  ·{' '}
+                  <strong className="font-mono text-[#B91C1C] dark:text-rose-400">
+                    {fmtMln(
+                      nextRequiredCashRow.remainingNeedRub > 0
+                        ? nextRequiredCashRow.remainingNeedRub
+                        : nextRequiredCashRow.calculatedNeedRub
+                    )}
+                  </strong>{' '}
+                  ({nextRequiredCashRow.purposeLabel.toLowerCase()}
+                  {nextRequiredCashRow.batchesCount > 0
+                    ? `, ${pluralizeBatchesRu(nextRequiredCashRow.batchesCount)}`
+                    : ''}
+                  )
+                </p>
+              ) : schedule.nextUpcomingPayment ? (
+                <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
+                  Ближайший плановый платёж:{' '}
+                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                    {schedule.nextUpcomingPayment.dateDotRu}
+                  </strong>{' '}
+                  ·{' '}
+                  <strong className="font-mono text-[#141413] dark:text-[#F5F4F0]">
+                    {fmtMln(schedule.nextUpcomingPayment.amountRub)}
+                  </strong>{' '}
+                  ({schedule.nextUpcomingPayment.factoryName})
+                </p>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              data-testid="fin-next-action-view-payments-btn"
+              onClick={() =>
+                handleFocusWhenDate(
+                  nextRequiredCashRow?.dateIso || schedule.nextUpcomingPayment?.dateIso
+                )
+              }
+              className="h-9 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] hover:opacity-90 text-xs font-medium inline-flex items-center gap-2 shrink-0 cursor-pointer transition-opacity"
+            >
+              <Calendar className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <span>Посмотреть платежи</span>
+              {nextRequiredCashRow && (
+                <span className="font-mono text-[11px] opacity-80">
+                  · {nextRequiredCashRow.dateDotRu}
+                </span>
+              )}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {schedule.recommendations.slice(0, 3).map((rec) => {
-              const badgeCls =
-                rec.severity === 'danger'
-                  ? 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-300'
-                  : rec.severity === 'warning'
-                  ? 'bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-300'
-                  : 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-300';
-              return (
-                <div
-                  key={rec.id}
-                  data-testid={`fin-rec-card-${rec.id}`}
-                  className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2.5"
-                >
-                  <div className="space-y-1.5">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${badgeCls}`}
-                    >
-                      {rec.categoryLabel}
-                    </span>
-                    <p className="text-xs text-[#141413] dark:text-[#F5F4F0] leading-relaxed">
-                      {rec.message}
-                    </p>
+          {schedule.recommendations.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {schedule.recommendations.slice(0, 3).map((rec) => {
+                const badgeCls =
+                  rec.severity === 'danger'
+                    ? 'bg-rose-500/10 border-rose-500/25 text-[#B91C1C] dark:text-rose-300'
+                    : rec.severity === 'warning'
+                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-300'
+                    : 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-300';
+                return (
+                  <div
+                    key={rec.id}
+                    data-testid={`fin-rec-card-${rec.id}`}
+                    className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-3.5 flex flex-col justify-between gap-2.5"
+                  >
+                    <div className="space-y-1.5">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${badgeCls}`}
+                      >
+                        {rec.categoryLabel}
+                      </span>
+                      <p className="text-xs text-[#141413] dark:text-[#F5F4F0] leading-relaxed">
+                        {rec.message}
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => handleRecommendationAction(rec)}
+                        className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <span>{rec.ctaLabel}</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => handleRecommendationAction(rec)}
-                      className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <span>{rec.ctaLabel}</span>
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* РАЗДЕЛ 10 ТЗ: ОБЩАЯ СВОДКА ГРУППЫ (при выборе «Все бренды») */}
+      {/* РАЗДЕЛ 10 И СТР. 4 / ТЕСТ 09 ТЗ: ОБЩАЯ СВОДКА ГРУППЫ (при выборе «Все бренды») */}
       {normBrand === 'ALL' && holdingOverview && (
         <div
           data-testid="fin-holding-overview-section"
-          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3"
+          className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1 max-w-2xl">
               <h3 className="text-[14.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                 Общая сводка группы · {selectedYear}
               </h3>
-              <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-                Нажмите на бренд, чтобы открыть его финансовый план. Потребность группы рассчитана по единому денежному календарю без суммирования отдельных пиков.
+              <p
+                data-testid="fin-group-capital-mode-caption"
+                className="text-xs text-[#5C5953] dark:text-[#9A968E] leading-relaxed"
+              >
+                {groupCapitalMode === 'common_pool'
+                  ? `ИТОГО ГРУППА: денежный календарь объединён, пик НЕ складывается по брендам (экономия общего котла: −${fmtMln(
+                      schedule.commonPoolSavingsRub
+                    )}; начальный остаток и резерв учтены 1 раз).`
+                  : `Режим: каждый бренд финансируется автономно (сумма отдельных пиков по брендам; общий котёл сэкономил бы ${fmtMln(
+                      schedule.commonPoolSavingsRub
+                    )}; начальный остаток и резерв учтены 1 раз).`}
               </p>
             </div>
-            {holdingOverview.unifiedGroupSynergySavingsRub > 0 && (
-              <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11px] font-medium text-[#15803D] dark:text-emerald-400">
-                Экономия общего календаря: −{fmtMln(holdingOverview.unifiedGroupSynergySavingsRub)}
-              </span>
-            )}
+
+            {/* Переключатель 2 режимов капитала группы (Тест 09 ТЗ v1.0) */}
+            <div
+              role="group"
+              aria-label="Режим расчёта капитала группы"
+              data-testid="group-capital-mode-toggle"
+              className="inline-flex flex-wrap items-center gap-0.5 rounded-lg bg-[#FAF9F6] dark:bg-[#1D1C1A] p-1 border border-[#E4E1DA] dark:border-[#282724] shrink-0"
+            >
+              {(
+                [
+                  { mode: 'common_pool' as GroupCapitalMode, label: 'Общий денежный котёл группы' },
+                  { mode: 'per_brand' as GroupCapitalMode, label: 'Каждый бренд сам' },
+                ] as const
+              ).map((opt) => {
+                const isSelected = groupCapitalMode === opt.mode;
+                return (
+                  <button
+                    key={opt.mode}
+                    type="button"
+                    data-testid={`group-capital-mode-${opt.mode}`}
+                    onClick={() => setGroupCapitalMode(opt.mode, authorName)}
+                    className={`h-7.5 px-3 rounded-md text-[11.5px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413]'
+                        : 'text-[#5C5953] dark:text-[#9A968E] hover:text-[#141413] dark:hover:text-[#F5F4F0]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Раздельные совместимые физические единицы (без смешивания пар и комплектов!) */}
+          {schedule.compatibleUnitsBreakdown.length > 0 && (
+            <div
+              data-testid="fin-group-compatible-units"
+              className="flex flex-wrap items-center justify-between gap-2 pt-0.5"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                  Объём продаж по типам единиц:
+                </span>
+                {schedule.compatibleUnitsBreakdown.map((uRow) => {
+                  const { categoryName, shortUnit } = getCompatibleUnitShortDisplay(uRow);
+                  return (
+                    <span
+                      key={uRow.unitCategory}
+                      className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] font-mono text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0]"
+                    >
+                      {categoryName}: {uRow.buyoutsQty.toLocaleString('ru-RU')} {shortUnit}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {schedule.commonPoolSavingsRub > 0 && (
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11px] font-medium text-[#15803D] dark:text-emerald-400">
+                  {groupCapitalMode === 'common_pool'
+                    ? `Экономия общего котла: −${fmtMln(schedule.commonPoolSavingsRub)}`
+                    : `Потенциал общего котла: −${fmtMln(schedule.commonPoolSavingsRub)}`}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724]">
             <table
@@ -1252,7 +2013,7 @@ export function InvestmentSchedulePanel({
             >
               <thead>
                 <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-b border-[#E4E1DA] dark:border-[#282724] text-[11px] uppercase tracking-wider text-[#5C5953] dark:text-[#9A968E]">
-                  <th className="py-2.5 px-3.5 font-medium">Бренд</th>
+                  <th className="py-2.5 px-3.5 font-medium">Бренд и сценарий</th>
                   <th className="py-2.5 px-3 font-medium text-right">Выручка</th>
                   <th className="py-2.5 px-3 font-medium text-right">Закупки</th>
                   <th className="py-2.5 px-3 font-medium text-right">Свои деньги</th>
@@ -1260,60 +2021,89 @@ export function InvestmentSchedulePanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
-                {holdingOverview.rows.map((row) => (
-                  <tr
-                    key={row.brandCode}
-                    data-testid={`fin-holding-row-${row.brandCode}`}
-                    onClick={() => handleSelectBrandPill(row.brandCode)}
-                    className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
-                  >
-                    <td className="py-3 px-3.5">
-                      <div className="font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
-                        <span>{row.displayBrandName}</span>
-                        <ArrowUpRight className="h-3 w-3 text-[#5C5953]" />
-                      </div>
-                      <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
-                        {row.scenarioName}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                      {row.revenueRub > 0 ? fmtMln(row.revenueRub) : '0,00 млн ₽'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono text-[#141413] dark:text-[#F5F4F0]">
-                      {row.procurementRub > 0 ? fmtMln(row.procurementRub) : '0,00 млн ₽'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                      {row.ownMoneyNeedRub !== null ? fmtMln(row.ownMoneyNeedRub) : '—'}
-                      {row.remainingOwnMoneyRub !== null &&
-                        row.ownMoneyNeedRub !== null &&
-                        row.remainingOwnMoneyRub < row.ownMoneyNeedRub && (
-                          <div className="text-[10.5px] font-normal text-[#15803D] dark:text-emerald-400">
-                            осталось: {fmtMln(row.remainingOwnMoneyRub)}
-                          </div>
-                        )}
-                    </td>
-                    <td className="py-3 px-3.5 text-[#5C5953] dark:text-[#9A968E]">
-                      {row.nextPayment ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
-                            {row.nextPayment.dateDotRu}
-                          </span>
-                          <span>·</span>
-                          <span className="font-mono text-[#B91C1C] dark:text-rose-400">
-                            {fmtMln(row.nextPayment.amountRub)}
-                          </span>
+                {holdingOverview.rows.map((row) => {
+                  const isUnselected = row.scenarioId === null;
+                  return (
+                    <tr
+                      key={row.brandCode}
+                      data-testid={`fin-holding-row-${row.brandCode}`}
+                      onClick={() => handleSelectBrandPill(row.brandCode)}
+                      className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
+                    >
+                      <td className="py-3 px-3.5">
+                        <div className="font-semibold text-[#141413] dark:text-[#F5F4F0] inline-flex items-center gap-1.5">
+                          <span>{row.displayBrandName}</span>
+                          <ArrowUpRight className="h-3 w-3 text-[#5C5953]" />
+                          {row.isPreliminary && !isUnselected && (
+                            <span className="rounded px-1.5 py-0.5 bg-amber-500/12 border border-amber-500/30 font-mono text-[9.5px] font-medium text-amber-800 dark:text-amber-300">
+                              Предварительно
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        'Нет плановых платежей'
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                          {isUnselected ? (
+                            <span className="text-amber-800 dark:text-amber-300">
+                              Не выбран · {row.scenarioYear} г.
+                            </span>
+                          ) : (
+                            `${row.scenarioName} · ${row.scenarioYear} г.`
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                        {isUnselected
+                          ? '—'
+                          : row.revenueRub > 0
+                          ? fmtMln(row.revenueRub)
+                          : '0,00 млн ₽'}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-[#141413] dark:text-[#F5F4F0]">
+                        {isUnselected
+                          ? '—'
+                          : row.procurementRub > 0
+                          ? fmtMln(row.procurementRub)
+                          : '0,00 млн ₽'}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                        {isUnselected || row.ownMoneyNeedRub === null
+                          ? '—'
+                          : fmtMln(row.ownMoneyNeedRub)}
+                        {!isUnselected &&
+                          row.remainingOwnMoneyRub !== null &&
+                          row.ownMoneyNeedRub !== null &&
+                          row.remainingOwnMoneyRub < row.ownMoneyNeedRub && (
+                            <div className="text-[10.5px] font-normal text-[#15803D] dark:text-emerald-400">
+                              осталось: {fmtMln(row.remainingOwnMoneyRub)}
+                            </div>
+                          )}
+                      </td>
+                      <td className="py-3 px-3.5 text-[#5C5953] dark:text-[#9A968E]">
+                        {isUnselected ? (
+                          '—'
+                        ) : row.nextPayment ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                              {row.nextPayment.dateDotRu}
+                            </span>
+                            <span>·</span>
+                            <span className="font-mono text-[#B91C1C] dark:text-rose-400">
+                              {fmtMln(row.nextPayment.amountRub)}
+                            </span>
+                          </div>
+                        ) : (
+                          'Нет плановых платежей'
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-[#FAF9F6] dark:bg-[#1D1C1A] border-t border-[#E4E1DA] dark:border-[#282724] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                   <td className="py-3 px-3.5">
-                    BORNERS GROUP (единый календарь)
+                    {groupCapitalMode === 'per_brand'
+                      ? 'ИТОГО ГРУППА (каждый бренд сам)'
+                      : 'ИТОГО ГРУППА (общий денежный котёл)'}
                   </td>
                   <td className="py-3 px-3 text-right font-mono">
                     {fmtMln(schedule.totalGrossSalesRevenueRub)}
@@ -1321,9 +2111,12 @@ export function InvestmentSchedulePanel({
                   <td className="py-3 px-3 text-right font-mono">
                     {fmtMln(schedule.totalProcurementCostRub)}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    {holdingOverview.unifiedGroupCalculatedNeedRub !== null
-                      ? fmtMln(holdingOverview.unifiedGroupCalculatedNeedRub)
+                  <td
+                    data-testid="fin-holding-total-own-money"
+                    className="py-3 px-3 text-right font-mono"
+                  >
+                    {schedule.calculatedCapitalNeedRub !== null
+                      ? fmtMln(schedule.calculatedCapitalNeedRub)
                       : '—'}
                   </td>
                   <td className="py-3 px-3.5 font-normal text-[#5C5953] dark:text-[#9A968E]">
@@ -1338,14 +2131,14 @@ export function InvestmentSchedulePanel({
         </div>
       )}
 
-      {/* РАЗДЕЛ 5 И РАЗДЕЛ 9 ТЗ: ОТДЕЛЬНАЯ РАЗБИВКА КАПИТАЛА + КНОПКИ «ИЗМЕНИТЬ ПЛАН ИНВЕСТИЦИЙ» И «СРАВНИТЬ С ИСХОДНЫМ ПЛАНОМ» */}
+      {/* РАЗДЕЛ 5 И РАЗДЕЛ 9 ТЗ: ПЛАН VS ФАКТ КАПИТАЛА + ПРОГНОЗ ВОЗВРАТА ВЛОЖЕННОГО + КНОПКИ УПРАВЛЕНИЯ */}
       <div className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Три раздельных показателя финансирования (Раздел 5: вложения НЕ уменьшают искусственно расчётную потребность) */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* Три раздельных показателя финансирования: План vs Факт (Стр. 5 и Тест 06 ТЗ v1.0) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 flex-1 min-w-[280px]">
             <div>
               <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                Общая расчётная потребность
+                Своих требуется
               </div>
               <div
                 data-testid="fin-cap-calculated"
@@ -1355,28 +2148,38 @@ export function InvestmentSchedulePanel({
                   ? fmtMln(schedule.calculatedCapitalNeedRub)
                   : '—'}
               </div>
+              <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
+                Расчётный пик потребности периода
+              </div>
             </div>
 
             <div>
               <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                Уже внесённые и плановые свои деньги
+                Уже внесено (факт)
               </div>
               <div
                 data-testid="fin-cap-contributed"
                 className="mt-0.5 font-mono text-base sm:text-lg font-semibold text-[#15803D] dark:text-emerald-400"
               >
-                {fmtMln(schedule.totalOwnMoneyConfiguredRub)}
+                {fmtMln(schedule.factualOwnMoneyContributedRub)}
               </div>
-              {schedule.factualOwnMoneyContributedRub > 0 && (
+              {schedule.plannedOwnMoneyInjectionsRub > 0 ? (
+                <div
+                  data-testid="fin-cap-planned-subnote"
+                  className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                >
+                  Запланировано: <span className="font-mono">{fmtMln(schedule.plannedOwnMoneyInjectionsRub)}</span>
+                </div>
+              ) : (
                 <div className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
-                  фактически оплачено: {fmtMln(schedule.factualOwnMoneyContributedRub)}
+                  Стартовый остаток и оплаченные вложения
                 </div>
               )}
             </div>
 
             <div>
               <div className="text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
-                Оставшаяся сумма финансирования
+                Ещё покрыть
               </div>
               <div
                 data-testid="inv-still-needed-value"
@@ -1392,6 +2195,22 @@ export function InvestmentSchedulePanel({
                   ? fmtMln(schedule.remainingOwnMoneyNeededRub)
                   : '0,00 млн ₽ (закрыто)'}
               </div>
+              {schedule.remainingNeedAfterFactualOnlyRub !== null &&
+                schedule.remainingOwnMoneyNeededRub !== null &&
+                Math.abs(
+                  schedule.remainingNeedAfterFactualOnlyRub -
+                    schedule.remainingOwnMoneyNeededRub
+                ) >= 1000 && (
+                  <div
+                    data-testid="fin-cap-remaining-factual-only"
+                    className="text-[10.5px] text-[#5C5953] dark:text-[#9A968E]"
+                  >
+                    без учёта плановых:{' '}
+                    <span className="font-mono font-medium">
+                      {fmtMln(schedule.remainingNeedAfterFactualOnlyRub)}
+                    </span>
+                  </div>
+                )}
               {schedule.totalOwnMoneyConfiguredRub > 0 &&
                 (schedule.remainingOwnMoneyNeededRub ?? 0) >
                   Math.max(
@@ -1400,7 +2219,7 @@ export function InvestmentSchedulePanel({
                   ) +
                     1000 && (
                   <div className="text-[10.5px] text-amber-700 dark:text-amber-300">
-                    дата взноса позже платежа ({schedule.whenAndHowMuchRows[0]?.dateDotRu || ''})
+                    покрытие по датам: взнос позже платежа ({schedule.whenAndHowMuchRows[0]?.dateDotRu || ''})
                   </div>
                 )}
             </div>
@@ -1455,6 +2274,46 @@ export function InvestmentSchedulePanel({
               </button>
             )}
           </div>
+        </div>
+
+        {/* СТР. 9 ТЗ v1.0: ПРОГНОЗ ВОЗВРАТА СОБСТВЕННОГО КАПИТАЛА — «КОГДА МОЖНО ВЕРНУТЬ ВЛОЖЕННОЕ» */}
+        <div
+          data-testid="fin-capital-return-forecast"
+          title={schedule.capitalReturnForecast.disclaimerRu}
+          className="pt-3 border-t border-[#E4E1DA] dark:border-[#282724] flex flex-wrap items-center justify-between gap-2 text-xs"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[#5C5953] dark:text-[#9A968E] font-medium">
+              <Clock className="h-3.5 w-3.5 text-[#5C5953]" strokeWidth={1.75} />
+              <span>Когда можно вернуть вложенное:</span>
+            </span>
+            {!schedule.wbPayoutScheduleSpecified ? (
+              <span className="font-mono text-[#5C5953] dark:text-[#9A968E]">
+                Укажите срок выплат WB
+              </span>
+            ) : schedule.capitalReturnForecast.deployedOwnCapitalRub <= 0 ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11.5px] font-medium text-[#15803D] dark:text-emerald-400">
+                Собственные вложения не требуются
+              </span>
+            ) : schedule.capitalReturnForecast.canReturnWithinHorizon &&
+              schedule.capitalReturnForecast.eligibleDateHumanRu ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 font-mono text-[11.5px] font-semibold text-[#15803D] dark:text-emerald-400">
+                <span>с {schedule.capitalReturnForecast.eligibleDateHumanRu}</span>
+                {schedule.capitalReturnForecast.eligibleDateDotRu && (
+                  <span className="font-normal opacity-80">
+                    ({schedule.capitalReturnForecast.eligibleDateDotRu})
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[11.5px] font-medium text-[#5C5953] dark:text-[#9A968E]">
+                В пределах периода не окупается с сохранением резерва
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+            {schedule.capitalReturnForecast.disclaimerRu}
+          </span>
         </div>
 
         {/* РАСКРЫВАЮЩАЯСЯ ПАНЕЛЬ РАЗДЕЛА 5: «ИЗМЕНИТЬ ПЛАН ИНВЕСТИЦИЙ» */}
@@ -1869,7 +2728,12 @@ export function InvestmentSchedulePanel({
               </div>
               <button
                 type="button"
-                onClick={() => handleJumpToProcurementBatch(sw.modelId)}
+                onClick={() =>
+                  handleJumpToProcurementBatch(sw.modelId, undefined, {
+                    batchKey: sw.batchKey,
+                    modelCode: sw.modelCode,
+                  })
+                }
                 className="h-7.5 px-3 rounded-lg bg-white dark:bg-[#151514] border border-rose-500/35 text-[#B91C1C] dark:text-rose-300 text-[11.5px] font-medium cursor-pointer shrink-0"
               >
                 Открыть закупку →
@@ -1884,13 +2748,34 @@ export function InvestmentSchedulePanel({
         id="when-and-how-much-anchor"
         className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-4 sm:p-5 shadow-[0_1px_2px_rgba(20,20,19,0.04)] space-y-3.5"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-[15.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-              Когда и сколько вложить
-            </h3>
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[15.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                Когда и сколько вложить
+              </h3>
+              {schedule.wbPayoutScheduleSpecified &&
+                schedule.capitalReturnForecast.deployedOwnCapitalRub > 0 && (
+                  <span
+                    title={schedule.capitalReturnForecast.disclaimerRu}
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium border ${
+                      schedule.capitalReturnForecast.canReturnWithinHorizon
+                        ? 'bg-emerald-500/10 border-emerald-500/25 text-[#15803D] dark:text-emerald-400'
+                        : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]'
+                    }`}
+                  >
+                    <Clock className="h-3 w-3" />
+                    <span>
+                      {schedule.capitalReturnForecast.canReturnWithinHorizon &&
+                      schedule.capitalReturnForecast.eligibleDateHumanRu
+                        ? `Возврат вложенного: с ${schedule.capitalReturnForecast.eligibleDateHumanRu}`
+                        : 'Возврат вложенного: за пределами периода'}
+                    </span>
+                  </span>
+                )}
+            </div>
             <p className="text-xs text-[#5C5953] dark:text-[#9A968E]">
-              Даты финансирования закупочных партий. Раскройте строку («Подробнее»), чтобы посмотреть конкретные партии, перенести оплату или перейти в «Закупки».
+              Даты финансирования закупочных партий. Раскройте дату («Подробнее»), чтобы увидеть конкретные товары с фото, изменить условия платежа с предпросмотром последствий или открыть партию в «Закупках».
             </p>
           </div>
 
@@ -1899,7 +2784,7 @@ export function InvestmentSchedulePanel({
               type="button"
               data-testid="btn-toggle-all-factory-payments"
               onClick={() => setShowAllFactoryPayments((v) => !v)}
-              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
+              className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-xs font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors shrink-0"
             >
               {showAllFactoryPayments
                 ? 'Только даты вложений'
@@ -1933,15 +2818,30 @@ export function InvestmentSchedulePanel({
               ) : (
                 schedule.whenAndHowMuchRows.map((row) => {
                   const isExp = expandedWhenDates.has(row.dateIso);
+                  const isPreSalesYear = row.dateIso < `${selectedYear}-01-01`;
                   return (
                     <React.Fragment key={row.dateIso}>
                       <tr
                         data-testid={`when-row-${row.dateIso}`}
                         onClick={() => toggleWhenRow(row.dateIso)}
-                        className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors"
+                        className={`hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A] cursor-pointer transition-colors ${
+                          isPreSalesYear ? 'bg-amber-500/[0.03]' : ''
+                        }`}
                       >
-                        <td className="py-3 px-3.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                          {row.dateDotRu}
+                        <td className="py-3 px-3.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                              {row.dateDotRu}
+                            </span>
+                            {isPreSalesYear && (
+                              <span
+                                data-testid={`when-pre-year-badge-${row.dateIso}`}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/12 border border-amber-500/30 text-[10px] font-medium text-amber-800 dark:text-amber-300"
+                              >
+                                До начала {selectedYear}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-3.5">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1967,7 +2867,7 @@ export function InvestmentSchedulePanel({
                           <span>{row.purposeLabel}</span>
                           {row.batchesCount > 0 && (
                             <span className="ml-1.5 text-[#5C5953] dark:text-[#9A968E]">
-                              ({row.batchesCount} парт.)
+                              ({pluralizeBatchesRu(row.batchesCount)})
                             </span>
                           )}
                         </td>
@@ -1991,123 +2891,214 @@ export function InvestmentSchedulePanel({
                         </td>
                       </tr>
 
-                      {/* Раскрытая детализация платежей фабрикам — строго все 7 полей Раздела 4 ТЗ + действия Раздела 6 */}
+                      {/* СТР. 6 ТЗ v1.0: «ОДИН ПЛАТЁЖ — КОНКРЕТНЫЕ ТОВАРЫ» (ФОТО SKU, КАРТОЧКИ ПАРТИЙ, РЕДАКТИРОВАНИЕ И ПРЯМОЙ ПЕРЕХОД) */}
                       {isExp && (
                         <tr>
                           <td
                             colSpan={4}
-                            className="bg-[#FAF9F6]/80 dark:bg-[#191816] px-3.5 py-3.5"
+                            className="bg-[#FAF9F6] dark:bg-[#191816] px-3.5 py-3.5 space-y-2.5"
                           >
-                            <div className="overflow-x-auto rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514]">
-                              <table className="w-full min-w-[780px] border-collapse text-left text-[11.5px]">
-                                <thead>
-                                  <tr className="border-b border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] text-[10.5px] uppercase tracking-wider text-[#5C5953]">
-                                    <th className="py-2 px-3 font-medium">Название товара</th>
-                                    <th className="py-2 px-2.5 font-medium">Номер партии</th>
-                                    <th className="py-2 px-2.5 font-medium">Фабрика</th>
-                                    <th className="py-2 px-2.5 font-medium">Дата платежа</th>
-                                    <th className="py-2 px-2.5 font-medium text-right">Сумма</th>
-                                    <th className="py-2 px-2.5 font-medium">Этап оплаты</th>
-                                    <th className="py-2 px-2.5 font-medium">Поступление товара</th>
-                                    <th className="py-2 px-3 font-medium text-right">Управление</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#E4E1DA] dark:divide-[#282724]">
-                                  {row.factoryPayments.map((fp) => (
-                                    <tr
-                                      key={fp.opKey}
-                                      data-testid={`factory-payment-item-${fp.opKey}`}
-                                      className="hover:bg-[#FAF9F6] dark:hover:bg-[#1D1C1A]"
-                                    >
-                                      <td className="py-2.5 px-3">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleJumpToProcurementBatch(
-                                              fp.modelId,
-                                              fp.event.brandCode === 'ALL'
-                                                ? undefined
-                                                : fp.event.brandCode
-                                            )
-                                          }
-                                          className="text-left font-medium text-[#141413] dark:text-[#F5F4F0] hover:underline cursor-pointer"
-                                          title="Перейти к соответствующему заказу в разделе «Закупки»"
-                                        >
-                                          {fp.productTitle}
-                                        </button>
-                                      </td>
-                                      <td className="py-2.5 px-2.5">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleJumpToProcurementBatch(
-                                              fp.modelId,
-                                              fp.event.brandCode === 'ALL'
-                                                ? undefined
-                                                : fp.event.brandCode
-                                            )
-                                          }
-                                          className="font-mono text-[#141413] dark:text-[#F5F4F0] hover:underline cursor-pointer inline-flex items-center gap-1"
-                                        >
-                                          <span>{fp.batchNumber}</span>
-                                          <ArrowUpRight className="h-3 w-3 text-[#5C5953]" />
-                                        </button>
-                                        <div className="text-[10.5px] text-[#5C5953]">
-                                          {fp.packsQty.toLocaleString('ru-RU')} {fp.unitLabel}
-                                        </div>
-                                      </td>
-                                      <td className="py-2.5 px-2.5 text-[#5C5953] dark:text-[#9A968E]">
-                                        {fp.factoryName}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 font-mono">
-                                        {fp.paymentDateDotRu}
-                                        {fp.hasManualOverride && (
-                                          <span className="ml-1 px-1 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[9.5px]">
-                                            изм.
+                            <div className="space-y-2.5">
+                              {row.factoryPayments.map((fp) => {
+                                const isPrepayRole = fp.event.paymentRole === 'prepay';
+                                const isBalanceRole = fp.event.paymentRole === 'balance';
+                                const roleBadgeLabel = isPrepayRole
+                                  ? `Аванс ${fp.prepaymentPct}%`
+                                  : isBalanceRole
+                                  ? `Доплата ${Math.max(0, 100 - fp.prepaymentPct)}%`
+                                  : fp.paymentStageLabel;
+                                const isPaidFactual = fp.status === 'Оплачено';
+                                const statusBadgeCls = isPaidFactual
+                                  ? 'bg-emerald-500/12 border-emerald-500/30 text-[#15803D] dark:text-emerald-400'
+                                  : fp.status === 'Утверждено' || fp.isApprovedPo
+                                  ? 'bg-blue-500/10 border-blue-500/25 text-blue-800 dark:text-blue-300'
+                                  : 'bg-[#FAF9F6] dark:bg-[#1D1C1A] border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]';
+                                const targetBrandCode =
+                                  fp.brandCode ||
+                                  (fp.event.brandCode === 'ALL' ? undefined : fp.event.brandCode);
+
+                                return (
+                                  <div
+                                    key={fp.opKey}
+                                    data-testid={`factory-payment-item-${fp.opKey}`}
+                                    className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3 sm:p-3.5 shadow-[0_1px_2px_rgba(20,20,19,0.03)] flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                                  >
+                                    {/* Левая часть: Фото SKU + Название/код + Объём + Фабрика + Связанная доплата */}
+                                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                                      <SkuPaymentThumbnail
+                                        src={fp.thumbnailUrl}
+                                        alt={fp.productTitle}
+                                        code={fp.modelCode}
+                                      />
+
+                                      <div className="min-w-0 flex-1 space-y-1">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleJumpToProcurementBatch(
+                                                fp.modelId,
+                                                targetBrandCode,
+                                                {
+                                                  batchKey: fp.batchKey,
+                                                  modelCode: fp.modelCode,
+                                                  dateIso: row.dateIso,
+                                                }
+                                              )
+                                            }
+                                            className="text-left text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0] hover:underline cursor-pointer truncate max-w-full"
+                                          >
+                                            {fp.productTitle}
+                                          </button>
+                                          {fp.modelCode &&
+                                            !fp.productTitle.includes(fp.modelCode) && (
+                                              <span className="font-mono text-[10.5px] px-1.5 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953]">
+                                                {fp.modelCode}
+                                              </span>
+                                            )}
+                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#141413]/5 dark:bg-white/10 font-mono text-[10.5px] font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                            {roleBadgeLabel}
                                           </span>
+                                          <span
+                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${statusBadgeCls}`}
+                                          >
+                                            {(fp.isApprovedLocked || isPaidFactual) && (
+                                              <Lock className="h-2.5 w-2.5" />
+                                            )}
+                                            <span>{fp.status}</span>
+                                          </span>
+                                          {fp.hasManualOverride && (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-medium">
+                                              изм.
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+                                          <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                            {fp.packsQty.toLocaleString('ru-RU')} {fp.unitLabel}
+                                          </span>
+                                          <span>·</span>
+                                          <span>{fp.factoryName}</span>
+                                          <span>·</span>
+                                          <span className="font-mono">{fp.batchNumber}</span>
+                                          <span>·</span>
+                                          <span>
+                                            Поставка:{' '}
+                                            <strong className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                              {fp.arrivalDateDotRu}
+                                            </strong>
+                                          </span>
+                                        </div>
+
+                                        {isPrepayRole && fp.balanceAmountRub > 0 && (
+                                          <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                                            Доплата:{' '}
+                                            <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                              {fmtMln(fp.balanceAmountRub)}
+                                            </span>{' '}
+                                            к{' '}
+                                            <span className="font-mono">
+                                              {fp.balanceDateDotRu}
+                                            </span>
+                                          </div>
                                         )}
-                                      </td>
-                                      <td className="py-2.5 px-2.5 text-right font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                                        {fmtMln(fp.amountRub)}
-                                      </td>
-                                      <td className="py-2.5 px-2.5">
-                                        <div>{fp.paymentStageLabel}</div>
-                                        <span className="text-[10px] text-[#5C5953]">
-                                          {fp.status}
-                                        </span>
-                                      </td>
-                                      <td className="py-2.5 px-2.5 font-mono text-[#5C5953] dark:text-[#9A968E]">
-                                        {fp.arrivalDateDotRu}
-                                      </td>
-                                      <td className="py-2.5 px-3 text-right">
-                                        <div className="inline-flex flex-wrap items-center justify-end gap-1">
-                                          {canEdit && !fp.isApprovedLocked && (
+                                        {isBalanceRole && (
+                                          <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                                            Окончательный расчёт по партии (аванс: {fp.prepaymentPct}%)
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Правая часть: Сумма в ₽ + Дата + Кнопки Редактировать / Открыть партию */}
+                                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#E4E1DA] dark:border-[#282724] shrink-0">
+                                      <div className="text-left lg:text-right">
+                                        <div
+                                          title={fmtRub(fp.amountRub)}
+                                          className="font-mono text-[14px] font-semibold tabular-nums text-[#141413] dark:text-[#F5F4F0]"
+                                        >
+                                          {fmtMln(fp.amountRub)}
+                                        </div>
+                                        <div className="font-mono text-[10.5px] text-[#5C5953] dark:text-[#9A968E]">
+                                          {fp.paymentDateDotRu}
+                                        </div>
+                                      </div>
+
+                                      <div className="inline-flex flex-wrap items-center gap-1.5">
+                                        {canEdit &&
+                                          !fp.isApprovedLocked &&
+                                          !isPaidFactual && (
                                             <button
                                               type="button"
                                               data-testid={`quick-shift-next-month-${fp.opKey}`}
                                               onClick={() =>
                                                 handleQuickShiftFactoryPaymentNextMonth(fp.event)
                                               }
-                                              className="h-7 px-2 rounded border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-[11px] font-medium cursor-pointer"
+                                              className="h-8 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] hover:border-[#141413] text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
                                               title="Перенести плановый платёж на следующий месяц"
                                             >
                                               На след. мес.
                                             </button>
                                           )}
+
+                                        <button
+                                          type="button"
+                                          data-testid={`open-payment-editor-${fp.opKey}`}
+                                          onClick={() => setSelectedOpId(fp.event.id)}
+                                          className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[11.5px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer transition-colors"
+                                        >
+                                          Редактировать
+                                        </button>
+
+                                        {fp.modelId && (
                                           <button
                                             type="button"
-                                            data-testid={`open-payment-editor-${fp.opKey}`}
-                                            onClick={() => setSelectedOpId(fp.event.id)}
-                                            className="h-7 px-2.5 rounded border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[11px] font-medium text-[#141413] dark:text-[#F5F4F0] cursor-pointer"
+                                            data-testid={`open-procurement-batch-${fp.opKey}`}
+                                            onClick={() =>
+                                              handleJumpToProcurementBatch(
+                                                fp.modelId,
+                                                targetBrandCode,
+                                                {
+                                                  batchKey: fp.batchKey,
+                                                  modelCode: fp.modelCode,
+                                                  dateIso: row.dateIso,
+                                                }
+                                              )
+                                            }
+                                            className="h-8 px-3 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] hover:opacity-90 text-[11.5px] font-medium inline-flex items-center gap-1 cursor-pointer transition-opacity"
                                           >
-                                            Изменить
+                                            <span>Открыть партию →</span>
                                           </button>
-                                        </div>
-                                      </td>
-                                    </tr>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+
+                              {row.otherExpenseEvents.length > 0 && (
+                                <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] divide-y divide-[#E4E1DA] dark:divide-[#282724]">
+                                  {row.otherExpenseEvents.map((oe) => (
+                                    <div
+                                      key={oe.id}
+                                      className="px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                                    >
+                                      <div>
+                                        <span className="font-medium text-[#141413] dark:text-[#F5F4F0]">
+                                          {oe.title}
+                                        </span>
+                                        <span className="ml-2 text-[11px] text-[#5C5953]">
+                                          {oe.status} · {formatIsoDateDotRu(oe.dateIso)}
+                                        </span>
+                                      </div>
+                                      <span className="font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                                        {fmtMln(oe.outflowRub)}
+                                      </span>
+                                    </div>
                                   ))}
-                                </tbody>
-                              </table>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2171,7 +3162,7 @@ export function InvestmentSchedulePanel({
                           onClick={() => setSelectedOpId(ev.id)}
                           className="h-7 px-2.5 rounded border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] text-[11px] font-medium cursor-pointer"
                         >
-                          Изменить условия
+                          Редактировать
                         </button>
                       </td>
                     </tr>
@@ -2183,339 +3174,635 @@ export function InvestmentSchedulePanel({
         )}
       </div>
 
-      {/* РАЗДЕЛ 6 ТЗ: ИНСПЕКТОР УПРАВЛЕНИЯ ЗАКУПОЧНЫМ ПЛАТЕЖОМ И ПАРТИЕЙ */}
-      {selectedEvent && (
-        <div
-          data-testid="inv-operation-inspector"
-          className="rounded-xl border border-[#141413] dark:border-[#5C5953] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-4 sm:p-5 space-y-4 shadow-[0_2px_10px_rgba(20,20,19,0.06)]"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-[#141413] text-white font-mono text-[10.5px] font-semibold uppercase">
-                  Управление закупочным платежом
-                </span>
-                {selectedEvent.isApprovedLocked && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-[#15803D] font-mono text-[10.5px] font-semibold">
-                    <Lock className="h-3 w-3" />
-                    <span>Утверждённый заказ ({selectedEvent.status})</span>
-                  </span>
-                )}
-              </div>
-              <h4 className="mt-1.5 text-[15px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                {selectedEvent.title}
-              </h4>
-            </div>
+      {/* СТР. 6 И 10 ТЗ v1.0 (ТЕСТЫ 04 И 05): МОДАЛЬНОЕ ОКНО РЕДАКТИРОВАНИЯ ПЛАТЕЖА / АВАНСА / ОБЪЁМА С LIVE-ПРЕДПРОСМОТРОМ «БЫЛО → СТАЛО» */}
+      {selectedEvent &&
+        (() => {
+          const isFactualPaidLocked =
+            selectedEvent.status === 'Оплачено' || selectedEvent.isFactual;
+          const isApprovedPoGuard =
+            !isFactualPaidLocked &&
+            Boolean(selectedEvent.batchDetails?.isApprovedPo || selectedEvent.isApprovedLocked);
+          const beforeDeficitPacks = liveEditPreview
+            ? liveEditPreview.before.supplyDeficitWarnings.reduce(
+                (s, w) => s + w.deficitPacks,
+                0
+              )
+            : 0;
+          const afterDeficitPacks = liveEditPreview
+            ? liveEditPreview.after.supplyDeficitWarnings.reduce(
+                (s, w) => s + w.deficitPacks,
+                0
+              )
+            : 0;
+          const shiftedArrivalWarningIso =
+            liveEditPreview?.newSupplyDeficits[0]?.shiftedArrivalDateIso || null;
 
-            <div className="flex items-center gap-2">
-              {selectedEvent.batchDetails && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleJumpToProcurementBatch(
-                      selectedEvent.batchDetails!.modelId,
-                      selectedEvent.brandCode === 'ALL'
-                        ? undefined
-                        : selectedEvent.brandCode
-                    )
-                  }
-                  className="h-8 px-3 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span>Перейти к закупочной партии</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setSelectedOpId(null)}
-                className="h-8 w-8 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514] text-[#5C5953] inline-flex items-center justify-center cursor-pointer"
+          return (
+            <div
+              onClick={() => setSelectedOpId(null)}
+              className="fixed inset-0 z-[115] bg-black/50 backdrop-blur-[2px] overflow-y-auto p-3 sm:p-6 flex items-start sm:items-center justify-center"
+            >
+              <div
+                data-testid="inv-operation-inspector"
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-3xl my-4 rounded-2xl border border-[#141413] dark:border-[#5C5953] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-4 sm:p-6 space-y-4 shadow-2xl"
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Защита утверждённых заказов фабрикам без отдельного подтверждения (Раздел 6 и 11) */}
-          {canEdit && selectedEvent.isApprovedLocked && !lockedEditConfirmed && (
-            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950 dark:text-amber-200">
-              <span>
-                Утверждённый заказ фабрике защищён от случайного изменения. Подтвердите ручную корректировку с записью в историю изменений.
-              </span>
-              <button
-                type="button"
-                data-testid="inv-unlock-approved-btn"
-                onClick={() => setLockedEditConfirmed(true)}
-                className="h-7.5 px-3 rounded-lg bg-[#141413] text-white font-medium inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Unlock className="h-3 w-3" />
-                <span>Подтвердить корректировку</span>
-              </button>
-            </div>
-          )}
-
-          {canEdit && (!selectedEvent.isApprovedLocked || lockedEditConfirmed) && (
-            <div className="space-y-3.5 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <label className="space-y-1">
-                  <span className="text-[#5C5953]">Дата оплаты</span>
-                  <input
-                    type="date"
-                    data-testid="inv-edit-payment-date"
-                    value={editDateIso}
-                    onChange={(e) => setEditDateIso(e.target.value)}
-                    className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5C5953]">Сумма платежа, ₽</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10000}
-                    data-testid="inv-edit-payment-amount"
-                    value={editAmountRub}
-                    onChange={(e) => setEditAmountRub(e.target.value)}
-                    className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5C5953]">Фабрика / поставщик</span>
-                  <input
-                    type="text"
-                    value={editSupplier}
-                    onChange={(e) => setEditSupplier(e.target.value)}
-                    className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514]"
-                  />
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[#5C5953]">Статус операции</span>
-                  <select
-                    data-testid="inv-edit-payment-status"
-                    value={editStatus}
-                    onChange={(e) =>
-                      setEditStatus(e.target.value as OperationPaymentStatus)
-                    }
-                    className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514]"
-                  >
-                    <option value="Запланировано">Запланировано</option>
-                    <option value="Утверждено">Утверждено</option>
-                    <option value="Оплачено">Оплачено</option>
-                  </select>
-                </label>
-              </div>
-
-              {selectedEvent.batchDetails && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                  <label className="space-y-1">
-                    <span className="text-[#5C5953]">Предоплата фабрике, %</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={5}
-                      data-testid="inv-edit-prepay-pct"
-                      value={editPrepayPct}
-                      onChange={(e) => setEditPrepayPct(e.target.value)}
-                      className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
-                    />
-                  </label>
-
-                  {pairedBalanceEvent && (
-                    <label className="space-y-1">
-                      <span className="text-[#5C5953]">Дата окончательного платежа</span>
-                      <input
-                        type="date"
-                        data-testid="inv-edit-balance-date"
-                        value={editBalanceDateIso}
-                        onChange={(e) => setEditBalanceDateIso(e.target.value)}
-                        className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
+                {/* Заголовок модалки с фото SKU */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {selectedEvent.batchDetails && (
+                      <SkuPaymentThumbnail
+                        src={selectedEvent.batchDetails.thumbnailUrl}
+                        alt={selectedEvent.batchDetails.modelTitle}
+                        code={selectedEvent.batchDetails.modelCode}
                       />
-                    </label>
-                  )}
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded bg-[#141413] text-white font-mono text-[10px] font-semibold uppercase">
+                          Редактирование закупочного платежа
+                        </span>
+                        {isFactualPaidLocked ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[#15803D] font-mono text-[10px] font-semibold">
+                            <Lock className="h-3 w-3" />
+                            <span>Фактический платёж (Оплачено)</span>
+                          </span>
+                        ) : isApprovedPoGuard ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-amber-900 dark:text-amber-300 font-mono text-[10px] font-semibold">
+                            <Lock className="h-3 w-3" />
+                            <span>Согласованный заказ ({selectedEvent.status})</span>
+                          </span>
+                        ) : null}
+                      </div>
+                      <h4 className="mt-1.5 text-[15px] font-semibold text-[#141413] dark:text-[#F5F4F0] leading-snug">
+                        {selectedEvent.title}
+                      </h4>
+                      {selectedEvent.batchDetails && (
+                        <div className="mt-0.5 text-[11.5px] text-[#5C5953] dark:text-[#9A968E]">
+                          {selectedEvent.batchDetails.factoryName} ·{' '}
+                          {selectedEvent.batchDetails.packsQty.toLocaleString('ru-RU')}{' '}
+                          {selectedEvent.batchDetails.primaryUnitLabel} · полная цена партии{' '}
+                          <span className="font-mono font-medium text-[#141413] dark:text-[#F5F4F0]">
+                            {fmtMln(selectedEvent.batchDetails.totalBatchCostRub)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                  <label className="space-y-1">
-                    <span className="text-[#5C5953]">
-                      Объём плановой партии ({selectedEvent.batchDetails.primaryUnitLabel})
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={50}
-                      data-testid="inv-edit-packs-qty"
-                      value={editPacksQty}
-                      onChange={(e) => setEditPacksQty(e.target.value)}
-                      className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-[#5C5953]">Дата поступления на склад</span>
-                    <input
-                      type="date"
-                      data-testid="inv-edit-arrival-date"
-                      value={editArrivalDateIso}
-                      onChange={(e) => setEditArrivalDateIso(e.target.value)}
-                      className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono"
-                    />
-                  </label>
-                </div>
-              )}
-
-              {/* Быстрые действия: Перенести на следующий месяц + Разделить платёж на несколько частей */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    data-testid="inv-move-next-month-btn"
-                    onClick={() =>
-                      setEditDateIso(
-                        shiftIsoDateToNextMonth(
-                          editDateIso || selectedEvent.dateIso,
-                          schedule.scenarioYear
-                        )
-                      )
-                    }
-                    className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] font-medium cursor-pointer"
-                  >
-                    Перенести на следующий месяц
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSplitModeOpen((v) => !v)}
-                    className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Split className="h-3.5 w-3.5" />
-                    <span>
-                      {splitModeOpen ? 'Скрыть разделение' : 'Разделить платёж на части'}
-                    </span>
-                  </button>
-
-                  {selectedEvent.hasManualOverride && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {selectedEvent.batchDetails && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleJumpToProcurementBatch(
+                            selectedEvent.batchDetails!.modelId,
+                            selectedEvent.batchDetails!.brandCode ||
+                              (selectedEvent.brandCode === 'ALL'
+                                ? undefined
+                                : selectedEvent.brandCode),
+                            {
+                              batchKey: selectedEvent.batchKey,
+                              modelCode: selectedEvent.batchDetails!.modelCode,
+                              dateIso: selectedEvent.dateIso,
+                            }
+                          )
+                        }
+                        className="h-8 px-3 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Открыть партию →</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      data-testid="inv-undo-single-btn"
-                      onClick={() => {
-                        undoOperationOverride({
-                          opKey: selectedEvent.opKey,
-                          batchKey: selectedEvent.batchKey,
-                          scenarioScopeKey: selectedEvent.scenarioScopeKey,
-                          operationTitle: selectedEvent.title,
-                          author: authorName,
-                        });
-                        setSelectedOpId(null);
-                      }}
-                      className="h-8 px-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-300 font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                      aria-label="Закрыть окно редактирования платежа"
+                      onClick={() => setSelectedOpId(null)}
+                      className="h-8 w-8 rounded-lg border border-[#E4E1DA] bg-white dark:bg-[#151514] text-[#5C5953] hover:text-[#141413] inline-flex items-center justify-center cursor-pointer"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      <span>Отменить ручную корректировку</span>
-                    </button>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  data-testid="inv-save-op-btn"
-                  onClick={handleSaveSelectedPaymentInspector}
-                  className="h-8.5 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] font-medium cursor-pointer"
-                >
-                  Сохранить изменения
-                </button>
-              </div>
-
-              {/* Режим разбиения платежа на несколько частей */}
-              {splitModeOpen && (
-                <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">Разделение платежа на части</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSplitDrafts((prev) => [
-                          ...prev,
-                          {
-                            id: `tr-${prev.length + 1}`,
-                            dateIso: addDaysToIsoDate(
-                              prev[prev.length - 1]?.dateIso || selectedEvent.dateIso,
-                              14
-                            ),
-                            amountRub: 0,
-                            label: `Часть ${prev.length + 1}`,
-                            status: editStatus,
-                          },
-                        ])
-                      }
-                      className="text-xs font-medium text-[#15803D] hover:underline cursor-pointer"
-                    >
-                      + Добавить часть
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    {splitDrafts.map((tr, idx) => (
-                      <div key={tr.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                        <input
-                          type="text"
-                          value={tr.label}
-                          onChange={(e) =>
-                            setSplitDrafts((prev) =>
-                              prev.map((x, i) =>
-                                i === idx ? { ...x, label: e.target.value } : x
-                              )
-                            )
-                          }
-                          className="sm:col-span-4 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A]"
-                        />
+                </div>
+
+                {/* Защита фактических оплаченных операций (Стр. 6 и 10 ТЗ v1.0) */}
+                {isFactualPaidLocked && (
+                  <div
+                    data-testid="inv-factual-payment-locked-banner"
+                    className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 flex items-start gap-2.5 text-xs text-[#15803D] dark:text-emerald-300"
+                  >
+                    <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="font-semibold">
+                        Фактический платёж защищён от перезаписи
+                      </div>
+                      <p className="text-[11.5px] opacity-90">
+                        Операция имеет статус «Оплачено». Фактические платежи не перезаписываются плановыми корректировками и защищены при возврате к автоматическому плану.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Просмотр для роли без права редактирования */}
+                {!canEdit && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-xs">
+                    <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                      <div className="text-[#5C5953]">Дата оплаты</div>
+                      <div className="mt-0.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                        {formatIsoDateDotRu(selectedEvent.dateIso)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                      <div className="text-[#5C5953]">Сумма</div>
+                      <div className="mt-0.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                        {fmtMln(selectedEvent.amountRub)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                      <div className="text-[#5C5953]">Статус</div>
+                      <div className="mt-0.5 font-medium text-[#141413] dark:text-[#F5F4F0]">
+                        {selectedEvent.status}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-2.5">
+                      <div className="text-[#5C5953]">Поставка</div>
+                      <div className="mt-0.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                        {selectedEvent.batchDetails
+                          ? formatIsoDateDotRu(selectedEvent.batchDetails.arrivalDateIso)
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Форма редактирования параметров платежа и партии */}
+                {canEdit && (
+                  <div className="space-y-4 pt-2 border-t border-[#E4E1DA] dark:border-[#282724] text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <label className="space-y-1">
+                        <span className="text-[#5C5953]">Дата оплаты</span>
                         <input
                           type="date"
-                          value={tr.dateIso}
-                          onChange={(e) =>
-                            setSplitDrafts((prev) =>
-                              prev.map((x, i) =>
-                                i === idx ? { ...x, dateIso: e.target.value } : x
-                              )
-                            )
-                          }
-                          className="sm:col-span-4 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A] font-mono"
+                          data-testid="inv-edit-payment-date"
+                          disabled={isFactualPaidLocked}
+                          value={editDateIso}
+                          onChange={(e) => setEditDateIso(e.target.value)}
+                          className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                         />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-[#5C5953]">Сумма платежа, ₽</span>
                         <input
                           type="number"
                           min={0}
                           step={10000}
-                          value={tr.amountRub}
+                          data-testid="inv-edit-payment-amount"
+                          disabled={isFactualPaidLocked}
+                          value={editAmountRub}
+                          onChange={(e) => {
+                            setEditAmountRub(e.target.value);
+                            setAmountManuallyEdited(true);
+                          }}
+                          className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-[#5C5953]">Фабрика / поставщик</span>
+                        <input
+                          type="text"
+                          disabled={isFactualPaidLocked}
+                          value={editSupplier}
+                          onChange={(e) => setEditSupplier(e.target.value)}
+                          className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-[#5C5953]">Статус операции</span>
+                        <select
+                          data-testid="inv-edit-payment-status"
+                          disabled={isFactualPaidLocked}
+                          value={editStatus}
                           onChange={(e) =>
-                            setSplitDrafts((prev) =>
-                              prev.map((x, i) =>
-                                i === idx
-                                  ? { ...x, amountRub: Math.max(0, Number(e.target.value) || 0) }
-                                  : x
+                            setEditStatus(e.target.value as OperationPaymentStatus)
+                          }
+                          className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <option value="Запланировано">Запланировано</option>
+                          <option value="Утверждено">Утверждено</option>
+                          <option value="Оплачено">Оплачено</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {selectedEvent.batchDetails && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <label className="space-y-1">
+                          <span className="text-[#5C5953]">Аванс фабрике, %</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={5}
+                            data-testid="inv-edit-prepay-pct"
+                            disabled={isFactualPaidLocked}
+                            value={editPrepayPct}
+                            onChange={(e) => handleEditPrepayPctChange(e.target.value)}
+                            className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                        </label>
+
+                        {pairedBalanceEvent && (
+                          <label className="space-y-1">
+                            <span className="text-[#5C5953]">Дата окончательного платежа</span>
+                            <input
+                              type="date"
+                              data-testid="inv-edit-balance-date"
+                              disabled={isFactualPaidLocked}
+                              value={editBalanceDateIso}
+                              onChange={(e) => setEditBalanceDateIso(e.target.value)}
+                              className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                            />
+                          </label>
+                        )}
+
+                        <label className="space-y-1">
+                          <span className="text-[#5C5953]">
+                            Объём партии ({selectedEvent.batchDetails.primaryUnitLabel})
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={50}
+                            data-testid="inv-edit-packs-qty"
+                            disabled={isFactualPaidLocked}
+                            value={editPacksQty}
+                            onChange={(e) => handleEditPacksQtyChange(e.target.value)}
+                            className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-[#5C5953]">Дата поступления на склад</span>
+                          <input
+                            type="date"
+                            data-testid="inv-edit-arrival-date"
+                            disabled={isFactualPaidLocked}
+                            value={editArrivalDateIso}
+                            onChange={(e) => setEditArrivalDateIso(e.target.value)}
+                            className="w-full h-8.5 px-2.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    {/* LIVE-КАРТОЧКА «ПОСЛЕДСТВИЯ КОРРЕКТИРОВКИ (ДО СОХРАНЕНИЯ)» — «БЫЛО → СТАЛО» */}
+                    {liveEditPreview && !isFactualPaidLocked && (
+                      <div
+                        data-testid="edit-consequences-preview"
+                        className="rounded-xl border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3.5 sm:p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-[12.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                            Последствия корректировки (до сохранения)
+                          </div>
+                          <span className="font-mono text-[10.5px] px-2 py-0.5 rounded bg-[#FAF9F6] dark:bg-[#1D1C1A] border border-[#E4E1DA] dark:border-[#282724] text-[#5C5953] dark:text-[#9A968E]">
+                            Было → Стало
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                          {/* 1. Потребность в своих */}
+                          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-2.5 space-y-1">
+                            <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                              Потребность в своих:
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                              <span>
+                                {liveEditPreview.before.calculatedCapitalNeedRub !== null
+                                  ? fmtMln(liveEditPreview.before.calculatedCapitalNeedRub)
+                                  : '—'}
+                              </span>
+                              <span className="text-[#5C5953]">→</span>
+                              <span>
+                                {liveEditPreview.after.calculatedCapitalNeedRub !== null
+                                  ? fmtMln(liveEditPreview.after.calculatedCapitalNeedRub)
+                                  : '—'}
+                              </span>
+                              {liveEditPreview.deltaPeakCapitalRub !== null &&
+                                Math.abs(liveEditPreview.deltaPeakCapitalRub) >= 1000 && (
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10.5px] ${
+                                      liveEditPreview.deltaPeakCapitalRub < 0
+                                        ? 'bg-emerald-500/12 text-[#15803D] dark:text-emerald-400'
+                                        : 'bg-rose-500/12 text-[#B91C1C] dark:text-rose-400'
+                                    }`}
+                                  >
+                                    {fmtSignedDeltaMln(liveEditPreview.deltaPeakCapitalRub)}
+                                  </span>
+                                )}
+                            </div>
+                          </div>
+
+                          {/* 2. Аванс / Доплата (полная цена PO сохраняется) */}
+                          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-2.5 space-y-1">
+                            <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                              Аванс / Доплата (полная цена PO сохраняется):
+                            </div>
+                            <div className="space-y-0.5 font-mono text-[11.5px]">
+                              <div className="flex flex-wrap items-center gap-1.5 text-[#141413] dark:text-[#F5F4F0]">
+                                <span className="text-[#5C5953] font-sans">Аванс:</span>
+                                <span>{fmtMln(liveEditPreview.oldPrepaymentRub)}</span>
+                                <span className="text-[#5C5953]">→</span>
+                                <span className="font-semibold">
+                                  {fmtMln(liveEditPreview.newPrepaymentRub)}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[#141413] dark:text-[#F5F4F0]">
+                                <span className="text-[#5C5953] font-sans">Доплата:</span>
+                                <span>{fmtMln(liveEditPreview.oldBalancePaymentRub)}</span>
+                                <span className="text-[#5C5953]">→</span>
+                                <span
+                                  className={`font-semibold ${
+                                    liveEditPreview.newBalancePaymentRub !==
+                                    liveEditPreview.oldBalancePaymentRub
+                                      ? 'text-amber-800 dark:text-amber-300'
+                                      : ''
+                                  }`}
+                                >
+                                  {fmtMln(liveEditPreview.newBalancePaymentRub)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 3. Дефицит SKU */}
+                          <div
+                            className={`rounded-lg border p-2.5 space-y-1 ${
+                              afterDeficitPacks > 0 || liveEditPreview.supplyDeficitDeltaPacks > 0
+                                ? 'border-rose-500/35 bg-rose-500/[0.06]'
+                                : 'border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A]'
+                            }`}
+                          >
+                            <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                              Дефицит SKU:
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 font-mono font-semibold">
+                              <span className="text-[#141413] dark:text-[#F5F4F0]">
+                                {beforeDeficitPacks > 0
+                                  ? `риск дефицита ${beforeDeficitPacks.toLocaleString('ru-RU')} шт.`
+                                  : 'нет'}
+                              </span>
+                              <span className="text-[#5C5953]">→</span>
+                              <span
+                                className={
+                                  afterDeficitPacks > 0
+                                    ? 'text-[#B91C1C] dark:text-rose-400'
+                                    : 'text-[#15803D] dark:text-emerald-400'
+                                }
+                              >
+                                {afterDeficitPacks > 0
+                                  ? `риск дефицита ${afterDeficitPacks.toLocaleString('ru-RU')} шт.`
+                                  : 'без дефицита'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 4. Дата поставки */}
+                          <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-2.5 space-y-1">
+                            <div className="text-[11px] text-[#5C5953] dark:text-[#9A968E]">
+                              Дата поставки:
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 font-mono font-semibold text-[#141413] dark:text-[#F5F4F0]">
+                              <span>
+                                {liveEditPreview.oldArrivalDateIso
+                                  ? formatIsoDateDotRu(liveEditPreview.oldArrivalDateIso)
+                                  : '—'}
+                              </span>
+                              <span className="text-[#5C5953]">→</span>
+                              <span>
+                                {liveEditPreview.newArrivalDateIso
+                                  ? formatIsoDateDotRu(liveEditPreview.newArrivalDateIso)
+                                  : '—'}
+                              </span>
+                            </div>
+                            {shiftedArrivalWarningIso &&
+                              shiftedArrivalWarningIso !== liveEditPreview.newArrivalDateIso && (
+                                <div className="text-[10.5px] text-[#B91C1C] dark:text-rose-400">
+                                  сдвиг оплаты смещает приход до{' '}
+                                  <span className="font-mono font-semibold">
+                                    {formatIsoDateDotRu(shiftedArrivalWarningIso)}
+                                  </span>
+                                </div>
+                              )}
+                          </div>
+                        </div>
+
+                        {liveEditPreview.newSupplyDeficits.length > 0 && (
+                          <div className="rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 py-2 flex items-start gap-2 text-[11.5px] text-[#B91C1C] dark:text-rose-300">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span>{liveEditPreview.newSupplyDeficits[0]!.message}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Быстрые действия: Перенести на следующий месяц + Разделить на части + Отменить ручную корректировку */}
+                    {!isFactualPaidLocked && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid="inv-move-next-month-btn"
+                          onClick={() =>
+                            setEditDateIso(
+                              shiftIsoDateToNextMonth(
+                                editDateIso || selectedEvent.dateIso,
+                                schedule.scenarioYear
                               )
                             )
                           }
-                          className="sm:col-span-3 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A] font-mono text-right"
-                        />
-                        {splitDrafts.length > 2 && (
+                          className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] font-medium cursor-pointer"
+                        >
+                          Перенести на следующий месяц
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSplitModeOpen((v) => !v)}
+                          className="h-8 px-3 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] hover:border-[#141413] font-medium inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Split className="h-3.5 w-3.5" />
+                          <span>
+                            {splitModeOpen ? 'Скрыть разделение' : 'Разделить платёж на части'}
+                          </span>
+                        </button>
+
+                        {selectedEvent.hasManualOverride && (
                           <button
                             type="button"
-                            onClick={() =>
-                              setSplitDrafts((prev) => prev.filter((_, i) => i !== idx))
-                            }
-                            className="sm:col-span-1 text-[#B91C1C] inline-flex justify-center cursor-pointer"
+                            data-testid="inv-undo-single-btn"
+                            onClick={() => {
+                              undoOperationOverride({
+                                opKey: selectedEvent.opKey,
+                                batchKey: selectedEvent.batchKey,
+                                scenarioScopeKey: selectedEvent.scenarioScopeKey,
+                                operationTitle: selectedEvent.title,
+                                author: authorName,
+                              });
+                              setSelectedOpId(null);
+                            }}
+                            className="h-8 px-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-300 font-medium inline-flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>Отменить ручную корректировку</span>
                           </button>
                         )}
                       </div>
-                    ))}
+                    )}
+
+                    {/* Режим разбиения платежа на несколько частей */}
+                    {splitModeOpen && !isFactualPaidLocked && (
+                      <div className="rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">Разделение платежа на части</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSplitDrafts((prev) => [
+                                ...prev,
+                                {
+                                  id: `tr-${prev.length + 1}`,
+                                  dateIso: addDaysToIsoDate(
+                                    prev[prev.length - 1]?.dateIso || selectedEvent.dateIso,
+                                    14
+                                  ),
+                                  amountRub: 0,
+                                  label: `Часть ${prev.length + 1}`,
+                                  status: editStatus,
+                                },
+                              ])
+                            }
+                            className="text-xs font-medium text-[#15803D] hover:underline cursor-pointer"
+                          >
+                            + Добавить часть
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {splitDrafts.map((tr, idx) => (
+                            <div key={tr.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                              <input
+                                type="text"
+                                value={tr.label}
+                                onChange={(e) =>
+                                  setSplitDrafts((prev) =>
+                                    prev.map((x, i) =>
+                                      i === idx ? { ...x, label: e.target.value } : x
+                                    )
+                                  )
+                                }
+                                className="sm:col-span-4 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A]"
+                              />
+                              <input
+                                type="date"
+                                value={tr.dateIso}
+                                onChange={(e) =>
+                                  setSplitDrafts((prev) =>
+                                    prev.map((x, i) =>
+                                      i === idx ? { ...x, dateIso: e.target.value } : x
+                                    )
+                                  )
+                                }
+                                className="sm:col-span-4 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A] font-mono"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                step={10000}
+                                value={tr.amountRub}
+                                onChange={(e) =>
+                                  setSplitDrafts((prev) =>
+                                    prev.map((x, i) =>
+                                      i === idx
+                                        ? { ...x, amountRub: Math.max(0, Number(e.target.value) || 0) }
+                                        : x
+                                    )
+                                  )
+                                }
+                                className="sm:col-span-3 h-8 px-2.5 rounded border border-[#E4E1DA] bg-[#FAF9F6] dark:bg-[#1D1C1A] font-mono text-right"
+                              />
+                              {splitDrafts.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSplitDrafts((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                  className="sm:col-span-1 text-[#B91C1C] inline-flex justify-center cursor-pointer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Обязательное подтверждение переноса/правки согласованного заказа (Стр. 6 и 10 ТЗ v1.0) */}
+                    {isApprovedPoGuard && (
+                      <label
+                        data-testid="inv-approved-po-guard"
+                        className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2.5 cursor-pointer text-xs text-amber-950 dark:text-amber-200"
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid="inv-confirm-approved-po-checkbox"
+                          checked={lockedEditConfirmed}
+                          onChange={(e) => setLockedEditConfirmed(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-amber-600 accent-[#141413] cursor-pointer shrink-0"
+                        />
+                        <div className="space-y-0.5">
+                          <div className="font-semibold inline-flex items-center gap-1.5">
+                            <ShieldAlert className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+                            <span>
+                              Подтверждаю перенос согласованного заказа (будет записано в историю)
+                            </span>
+                          </div>
+                          <div className="text-[11px] opacity-85">
+                            Заказ подтверждён на фабрике — ручное изменение сохранится с отметкой автора и времени в журнале аудита.
+                          </div>
+                        </div>
+                      </label>
+                    )}
+
+                    {/* Нижняя панель кнопок */}
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-[#E4E1DA] dark:border-[#282724]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOpId(null)}
+                        className="h-9 px-3.5 rounded-lg border border-[#E4E1DA] dark:border-[#282724] bg-white dark:bg-[#151514] text-[#141413] dark:text-[#F5F4F0] text-xs font-medium cursor-pointer"
+                      >
+                        Отмена
+                      </button>
+
+                      {!isFactualPaidLocked && (
+                        <button
+                          type="button"
+                          data-testid="inv-save-op-btn"
+                          disabled={isApprovedPoGuard && !lockedEditConfirmed}
+                          onClick={handleSaveSelectedPaymentInspector}
+                          className="h-9 px-4 rounded-lg bg-[#141413] dark:bg-[#F5F4F0] text-white dark:text-[#141413] text-xs font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                        >
+                          Применить корректировку
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          );
+        })()}
 
       {/* РАЗДЕЛ 8 ТЗ: ОДИН ОСНОВНОЙ ГРАФИК — «СВОБОДНЫЕ ДЕНЬГИ БИЗНЕСА» */}
       <div

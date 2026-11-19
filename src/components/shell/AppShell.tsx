@@ -9,17 +9,20 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Moon,
   RotateCcw,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   Trash2,
   X,
 } from 'lucide-react';
+import { ChangePasswordModal, useAuthContext } from '@/components/auth/AuthGate';
 import { usePlatform } from '@/context/PlatformContext';
 import { BrandFilter, NavSectionId, PeriodFilter } from '@/types/platform';
 import {
@@ -92,6 +95,7 @@ import {
   savePortfolioSnapshotToIdb,
 } from '@/lib/safeStorage';
 import {
+  type CloudSaveStatus,
   pullPreviousCloudHistorySnapshot,
   pushPortfolioCoreToSupabase,
 } from '@/lib/supabaseCloudSync';
@@ -260,10 +264,15 @@ export function AppShell() {
     dismissToast,
   } = usePlatform();
 
+  const auth = useAuthContext();
+
   const [atlasOpen, setAtlasOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [conflictMergedToast, setConflictMergedToast] = useState<string | null>(null);
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<CloudSaveStatus>('saved_cloud');
   const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
   const [trashModalOpen, setTrashModalOpen] = useState(false);
   const [tourModalOpen, setTourModalOpen] = useState(false);
@@ -285,6 +294,106 @@ export function AppShell() {
     window.addEventListener('borners-set-home-subview', onSubView);
     return () => window.removeEventListener('borners-set-home-subview', onSubView);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const onConflictMerged = () => {
+      setCloudSaveStatus('conflict_merged');
+      setConflictMergedToast(
+        'Синхронизированы параллельные правки с другого устройства — данные объединены без потерь'
+      );
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        setConflictMergedToast(null);
+        hideTimer = null;
+      }, 5000);
+    };
+    const onSaveStatus = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ status?: CloudSaveStatus } | undefined>)?.detail;
+      if (detail?.status) {
+        setCloudSaveStatus(detail.status);
+      }
+    };
+    window.addEventListener('borners-cloud-conflict-merged', onConflictMerged);
+    window.addEventListener('borners-cloud-save-status', onSaveStatus);
+    return () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      window.removeEventListener('borners-cloud-conflict-merged', onConflictMerged);
+      window.removeEventListener('borners-cloud-save-status', onSaveStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOpenProcurementBatch = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          modelId?: string;
+          brandCode?: string;
+          batchKey?: string;
+          modelCode?: string;
+          dateIso?: string;
+        }>
+      )?.detail;
+      if (!detail) return;
+
+      let nextBrandFilter: BrandFilter | undefined;
+      if (detail.brandCode) {
+        const upper = detail.brandCode.trim().toUpperCase();
+        if (
+          upper === 'BORNERS' ||
+          upper === 'FUKAI' ||
+          upper === 'BORNERS_FUKAI' ||
+          upper === 'BORNERS / FUKAI' ||
+          upper === 'BORNERS/FUKAI'
+        ) {
+          nextBrandFilter = 'BORNERS_FUKAI';
+        } else if (upper === 'AKUSHA' || upper === 'NA_TELE') {
+          nextBrandFilter = upper;
+        } else if (upper === 'LISKANI' || upper === 'LISCANI') {
+          nextBrandFilter = 'LISKANI';
+        } else if (upper !== 'ALL') {
+          const norm = normalizePortfolioBrandCode(upper);
+          nextBrandFilter =
+            norm === 'BORNERS' || norm === 'FUKAI'
+              ? 'BORNERS_FUKAI'
+              : norm === 'ALL'
+              ? undefined
+              : norm;
+        }
+      }
+
+      try {
+        window.sessionStorage.setItem(
+          'borners_focus_procurement_batch',
+          JSON.stringify({
+            modelId: detail.modelId || '',
+            brandCode: detail.brandCode || '',
+            batchKey: detail.batchKey || '',
+            modelCode: detail.modelCode || '',
+            dateIso: detail.dateIso || '',
+          })
+        );
+        if (detail.modelId) {
+          window.localStorage.setItem('borners_procurement_selected_sku_v1', detail.modelId);
+          window.localStorage.setItem('borners_procurement_subtab_v1', 'batches');
+        }
+      } catch {
+        // ignore
+      }
+
+      if (nextBrandFilter) {
+        setBrandFilter(nextBrandFilter);
+      }
+      setPlatformMode('management');
+      setAtlasOpen(false);
+      navigateTo('roadmap-tasks', nextBrandFilter ? { brandId: nextBrandFilter } : undefined);
+    };
+    window.addEventListener('borners-open-procurement-batch', onOpenProcurementBatch);
+    return () =>
+      window.removeEventListener('borners-open-procurement-batch', onOpenProcurementBatch);
+  }, [navigateTo, setBrandFilter, setPlatformMode]);
 
   const {
     draftModules,
@@ -1722,12 +1831,34 @@ export function AppShell() {
                     />
                     <div className="absolute right-0 mt-1.5 w-80 max-w-[calc(100vw-20px)] bg-white rounded-[12px] border border-[#D2CEC4] shadow-[0_18px_48px_rgba(20,20,19,0.14)] p-4 z-50 text-[13px] space-y-3">
                       <div className="border-b border-[#E4E1DA] pb-3">
-                        <div className="font-semibold text-[15px] text-[#141413]">
-                          {currentUser.fullName}
-                        </div>
-                        <div className="text-[12px] text-[#5C5953] mt-0.5">
-                          {currentUser.jobTitle} · {ROLE_LABELS_RU[currentUser.role]}
-                        </div>
+                        {auth.authRequired && auth.profile ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-semibold text-[15px] text-[#141413] truncate">
+                                {auth.profile.displayName}
+                              </div>
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 shrink-0">
+                                <ShieldCheck className="h-3 w-3" />
+                                <span>RLS</span>
+                              </span>
+                            </div>
+                            <div className="text-[12px] font-mono text-[#5C5953] truncate">
+                              {auth.profile.email}
+                            </div>
+                            <div className="text-[11.5px] text-[#7A7770]">
+                              {currentUser.jobTitle} · {ROLE_LABELS_RU[currentUser.role]}
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="font-semibold text-[15px] text-[#141413]">
+                              {currentUser.fullName}
+                            </div>
+                            <div className="text-[12px] text-[#5C5953] mt-0.5">
+                              {currentUser.jobTitle} · {ROLE_LABELS_RU[currentUser.role]}
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Мгновенное переключение дизайна / откат к v9 в 1 клик */}
@@ -1863,10 +1994,22 @@ export function AppShell() {
                           <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-[#141413]">
                             <span
                               className={`h-1.5 w-1.5 rounded-full ${
-                                getActiveSupabaseClient() ? 'bg-[#1D7F5F]' : 'bg-[#8D8A84]'
+                                !getActiveSupabaseClient()
+                                  ? 'bg-[#8D8A84]'
+                                  : cloudSaveStatus === 'conflict_merged'
+                                  ? 'bg-amber-500'
+                                  : cloudSaveStatus === 'saving'
+                                  ? 'bg-sky-500 animate-pulse'
+                                  : 'bg-[#1D7F5F]'
                               }`}
                             />
-                            {getActiveSupabaseClient() ? 'Облако активно' : 'Локально в браузере'}
+                            {!getActiveSupabaseClient()
+                              ? 'Локально в браузере'
+                              : cloudSaveStatus === 'conflict_merged'
+                              ? 'Объединено с облаком'
+                              : cloudSaveStatus === 'saving'
+                              ? 'Сохранение в облако...'
+                              : 'Облако активно'}
                           </span>
                         </div>
                         {Boolean(getActiveSupabaseClient()) && (
@@ -2180,18 +2323,45 @@ export function AppShell() {
                         ))}
                       </div>
 
-                      <div className="pt-2.5 border-t border-[#ECEBE6]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileMenuOpen(false);
-                            logout();
-                          }}
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#E5E4DF] hover:bg-[#FEF2F2] hover:border-[#FCA5A5] hover:text-[#B91C1C] text-[#141413] py-2 font-semibold transition cursor-pointer text-[12.5px]"
-                        >
-                          <LogOut className="h-3.5 w-3.5" />
-                          <span>Выйти из профиля</span>
-                        </button>
+                      <div className="pt-2.5 border-t border-[#ECEBE6] space-y-2">
+                        {auth.authRequired && auth.profile ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileMenuOpen(false);
+                                setChangePasswordOpen(true);
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#E5E4DF] bg-[#FAF9F6] hover:bg-[#F1F0EB] text-[#141413] py-2 font-semibold transition cursor-pointer text-[12.5px]"
+                            >
+                              <KeyRound className="h-3.5 w-3.5 text-[#5C5953]" />
+                              <span>Сменить пароль</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileMenuOpen(false);
+                                void auth.signOut();
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#E5E4DF] hover:bg-[#FEF2F2] hover:border-[#FCA5A5] hover:text-[#B91C1C] text-[#141413] py-2 font-semibold transition cursor-pointer text-[12.5px]"
+                            >
+                              <LogOut className="h-3.5 w-3.5" />
+                              <span>Выйти из аккаунта</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileMenuOpen(false);
+                              logout();
+                            }}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-[9px] border border-[#E5E4DF] hover:bg-[#FEF2F2] hover:border-[#FCA5A5] hover:text-[#B91C1C] text-[#141413] py-2 font-semibold transition cursor-pointer text-[12.5px]"
+                          >
+                            <LogOut className="h-3.5 w-3.5" />
+                            <span>Выйти из профиля</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </>
@@ -2991,11 +3161,45 @@ export function AppShell() {
             </div>
           </div>
         )}
+        <ChangePasswordModal
+          open={changePasswordOpen}
+          onClose={() => setChangePasswordOpen(false)}
+          onSuccess={() =>
+            notify('success', 'Пароль успешно обновлён', 'Текущая сессия остаётся активной')
+          }
+        />
         <div
-          className={`fixed right-4 z-50 flex flex-col items-end gap-2 max-w-[340px] w-auto pointer-events-none ${
+          className={`fixed right-4 z-50 flex flex-col items-end gap-2 max-w-[360px] w-auto pointer-events-none ${
             updateBannerOpen ? 'bottom-44' : 'bottom-4'
           }`}
         >
+          {conflictMergedToast && (
+            <div
+              role="status"
+              data-testid="cloud-conflict-merged-toast"
+              className="pointer-events-auto bg-white/95 backdrop-blur-md text-[#141413] rounded-[12px] border border-emerald-300 shadow-[0_8px_24px_-4px_rgba(20,20,19,0.1)] px-3.5 py-2.5 flex items-start gap-2.5 transition-all"
+            >
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <Check className="h-3 w-3 stroke-[2.5]" />
+              </span>
+              <div className="min-w-0 flex-1 pr-1">
+                <div className="font-bold text-[12px] text-[#141413] leading-snug">
+                  Облачная синхронизация
+                </div>
+                <div className="text-[#5C5953] text-[11.5px] leading-snug mt-0.5">
+                  {conflictMergedToast}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Закрыть уведомление о синхронизации"
+                onClick={() => setConflictMergedToast(null)}
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#8E8D85] hover:bg-[#F4F3EE] hover:text-[#141413] transition cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {toasts.map((t) => {
             const isWarn = t.type === 'warning';
             const isErr = t.type === 'error';

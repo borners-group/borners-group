@@ -480,7 +480,7 @@ export function ScenarioModelCardScreen({
     );
   };
 
-  // Смена бренда модели (BORNERS / FUKAI / AKUSHA / LISCANI / НА ТЕЛЕ / свой бренд, Раздел 4.2 ТЗ)
+  // Смена бренда модели (BORNERS / FUKAI / AKUSHA / LISKANI / НА ТЕЛЕ / свой бренд, Раздел 4.2 ТЗ)
   const handleBrandSelectChange = (nextBrandLabel: string) => {
     if (!canEdit) return;
     if (nextBrandLabel === '__CREATE_NEW__') {

@@ -26,6 +26,10 @@ export interface BrandProductionProfile {
   defaultWaistbandOrTrimZh: string;
   defaultDetailCaptionRu: string;
   defaultDetailCaptionZh: string;
+  /** Средний цикл возврата невыкупленного товара на склад WB (дней, по умолчанию 14 для обуви) */
+  defaultReturnCycleDays: number;
+  /** Невозвратные потери/брак при возвратах (% от отказных заказов, по умолчанию 2% для обуви, 0% при 100% выкупе) */
+  defaultReturnLossPct: number;
 }
 
 export function isPlaceholderTechString(val?: string | null): boolean {
@@ -82,6 +86,8 @@ export function getBrandProductionProfile(
       defaultWaistbandOrTrimZh: '无感点胶贴合边缘 · 零压迫柔滑包边',
       defaultDetailCaptionRu: 'Крупный план: лазерный край и ластовица',
       defaultDetailCaptionZh: '激光无痕边缘与纯棉底裆细节',
+      defaultReturnCycleDays: 14,
+      defaultReturnLossPct: 1,
     };
   }
 
@@ -131,6 +137,8 @@ export function getBrandProductionProfile(
         defaultWaistbandOrTrimZh: '打蜡鞋带/金属配件 · 独立防潮品牌鞋盒',
         defaultDetailCaptionRu: 'Крупный план: кожа верха, строчка и протектор подошвы',
         defaultDetailCaptionZh: '鞋面皮料纹理、车缝线与防滑大底细节',
+        defaultReturnCycleDays: 14,
+        defaultReturnLossPct: 2,
       };
     }
 
@@ -172,6 +180,8 @@ export function getBrandProductionProfile(
       defaultWaistbandOrTrimZh: '耐用魔术贴/弹力鞋带配件 · 独立防潮品牌鞋盒',
       defaultDetailCaptionRu: 'Крупный план: кожа верха, строчка и протектор подошвы',
       defaultDetailCaptionZh: '鞋面皮料纹理、车缝线与防滑大底细节',
+      defaultReturnCycleDays: 14,
+      defaultReturnLossPct: 2,
     };
   }
 
@@ -211,6 +221,8 @@ export function getBrandProductionProfile(
       defaultWaistbandOrTrimZh: '6cm加密窗帘挂带 + 配套挂钩与防尘拉链袋包装',
       defaultDetailCaptionRu: 'Крупный план: фактура ткани, шторная лента и подгиб',
       defaultDetailCaptionZh: '面料纹理、挂带车工与底摆包边细节',
+      defaultReturnCycleDays: 14,
+      defaultReturnLossPct: 1,
     };
   }
 
@@ -240,5 +252,7 @@ export function getBrandProductionProfile(
     defaultWaistbandOrTrimZh: '38mm高弹不起卷提花腰头橡筋 · 热转印无感洗水标',
     defaultDetailCaptionRu: 'Крупный план: поясная резинка и плоские швы flatlock',
     defaultDetailCaptionZh: '腰头提花橡筋与四针六线平缝细节',
+    defaultReturnCycleDays: 14,
+    defaultReturnLossPct: 0,
   };
 }
