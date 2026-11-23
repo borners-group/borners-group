@@ -456,6 +456,7 @@ export function GrowthScenariosShowcase({
   }, [pushScenarioStep, selectedModelId]);
 
   // Поля формы создания новой модели (Тест 11 и Раздел 4.4 ТЗ: короткая форма, работает со всеми брендами холдинга)
+  const SHOWCASE_NEW_MODEL_DRAFT_KEY = 'borners_draft_showcase_new_model_v1';
   const [draftBrand, setDraftBrand] = useState<string>('BORNERS');
   const [draftCode, setDraftCode] = useState<string>('BRN-024');
   const [draftTitle, setDraftTitle] = useState('');
@@ -464,6 +465,79 @@ export function GrowthScenariosShowcase({
   const [draftRetailPrice, setDraftRetailPrice] = useState(1990);
   const [draftUnitCost, setDraftUnitCost] = useState(650);
   const [draftImageUrl, setDraftImageUrl] = useState<string>('');
+  const showcaseDraftHydratedRef = useRef(false);
+
+  // Восстановление незавершённого черновика создания карточки при возврате во вкладку/перезагрузке
+  useEffect(() => {
+    if (showcaseDraftHydratedRef.current || typeof window === 'undefined') return;
+    showcaseDraftHydratedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(SHOWCASE_NEW_MODEL_DRAFT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        open?: boolean;
+        draftBrand?: string;
+        draftCode?: string;
+        draftTitle?: string;
+        draftType?: string;
+        draftUnitsInPack?: number;
+        draftRetailPrice?: number;
+        draftUnitCost?: number;
+      };
+      if (saved && saved.open) {
+        if (typeof saved.draftBrand === 'string' && saved.draftBrand) setDraftBrand(saved.draftBrand);
+        if (typeof saved.draftCode === 'string') setDraftCode(saved.draftCode);
+        if (typeof saved.draftTitle === 'string') setDraftTitle(saved.draftTitle);
+        if (typeof saved.draftType === 'string' && saved.draftType) setDraftType(saved.draftType);
+        if (typeof saved.draftUnitsInPack === 'number' && Number.isFinite(saved.draftUnitsInPack)) {
+          setDraftUnitsInPack(saved.draftUnitsInPack);
+        }
+        if (typeof saved.draftRetailPrice === 'number' && Number.isFinite(saved.draftRetailPrice)) {
+          setDraftRetailPrice(saved.draftRetailPrice);
+        }
+        if (typeof saved.draftUnitCost === 'number' && Number.isFinite(saved.draftUnitCost)) {
+          setDraftUnitCost(saved.draftUnitCost);
+        }
+        setNewModelModalOpen(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showcaseDraftHydratedRef.current || typeof window === 'undefined') return;
+    try {
+      if (!newModelModalOpen) {
+        window.sessionStorage.removeItem(SHOWCASE_NEW_MODEL_DRAFT_KEY);
+        return;
+      }
+      window.sessionStorage.setItem(
+        SHOWCASE_NEW_MODEL_DRAFT_KEY,
+        JSON.stringify({
+          open: true,
+          draftBrand,
+          draftCode,
+          draftTitle,
+          draftType,
+          draftUnitsInPack,
+          draftRetailPrice,
+          draftUnitCost,
+        })
+      );
+    } catch {
+      // ignore quota errors
+    }
+  }, [
+    newModelModalOpen,
+    draftBrand,
+    draftCode,
+    draftTitle,
+    draftType,
+    draftUnitsInPack,
+    draftRetailPrice,
+    draftUnitCost,
+  ]);
 
   // Поля формы создания нового сценария (Раздел 3.1–3.4 ТЗ: бренд, год 2027/2028, цель, копирование)
   const [draftScenTitle, setDraftScenTitle] = useState('');
@@ -660,12 +734,15 @@ export function GrowthScenariosShowcase({
     []
   );
 
+  const modelsLatestRef = useRef(models);
+  modelsLatestRef.current = models;
+
   const computeNextDraftCodeForBrand = useCallback(
     (bInput: string) => {
       const norm = normalizePortfolioBrandCode(bInput);
       const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
       const preset = SHOWCASE_BRAND_PRESETS[bCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
-      const brandModels = models.filter((m) => matchesBrandFilter(m, bCode));
+      const brandModels = modelsLatestRef.current.filter((m) => matchesBrandFilter(m, bCode));
       const usedNums = new Set<number>();
       brandModels.forEach((m) => {
         const match = m.code.match(/(\d+)$/);
@@ -678,11 +755,27 @@ export function GrowthScenariosShowcase({
       while (usedNums.has(candidate)) candidate += 1;
       return `${preset.prefix}-${String(candidate).padStart(3, '0')}`;
     },
-    [models, SHOWCASE_BRAND_PRESETS]
+    [SHOWCASE_BRAND_PRESETS]
   );
 
-  // Автоматическая подстановка активного бренда при открытии форм «+ Добавить модель» и «+ Новый сценарий» (Раздел 3.1 и 4.4 ТЗ)
+  const handleDraftBrandChange = useCallback(
+    (nextBrandRaw: string) => {
+      setDraftBrand(nextBrandRaw);
+      const norm = normalizePortfolioBrandCode(nextBrandRaw);
+      const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
+      const preset = SHOWCASE_BRAND_PRESETS[bCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
+      setDraftType(preset.categories[0]);
+      setDraftUnitsInPack(preset.defaultUnits);
+      setDraftRetailPrice(preset.defaultPrice);
+      setDraftUnitCost(preset.defaultCost);
+      setDraftCode(computeNextDraftCodeForBrand(bCode));
+    },
+    [SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]
+  );
+
+  // Автоматическая подстановка активного бренда ТОЛЬКО когда форма закрыта — никогда не сбрасываем открытую форму при облачном синке / переключении вкладок!
   useEffect(() => {
+    if (newModelModalOpen) return;
     if (brandFilter && brandFilter !== 'ALL') {
       const norm = normalizePortfolioBrandCode(brandFilter);
       if (norm !== 'ALL' && canUserEditBrand(currentUser, norm)) {
@@ -696,34 +789,21 @@ export function GrowthScenariosShowcase({
         setDraftCode(computeNextDraftCodeForBrand(norm));
       }
     }
-  }, [brandFilter, currentUser, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
+  }, [brandFilter, currentUser, newModelModalOpen, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
 
   useEffect(() => {
     if (editableBrands.length === 0) return;
     const normDraft = normalizePortfolioBrandCode(draftBrand || 'BORNERS');
     const safeDraft = normDraft === 'ALL' ? 'BORNERS' : normDraft;
     if (!canUserEditBrand(currentUser, safeDraft)) {
-      setDraftBrand(editableBrands[0]);
+      handleDraftBrandChange(editableBrands[0]);
     }
     const normScenDraft = normalizePortfolioBrandCode(draftScenBrand || 'BORNERS');
     const safeScenDraft = normScenDraft === 'ALL' ? 'BORNERS' : normScenDraft;
     if (!canUserEditBrand(currentUser, safeScenDraft)) {
       setDraftScenBrand(editableBrands[0]);
     }
-  }, [currentUser, editableBrands, draftBrand, draftScenBrand]);
-
-  useEffect(() => {
-    if (draftBrand) {
-      const norm = normalizePortfolioBrandCode(draftBrand);
-      const bCode: CanonicalBrandCode = norm === 'ALL' ? 'BORNERS' : norm;
-      const preset = SHOWCASE_BRAND_PRESETS[bCode] || SHOWCASE_BRAND_PRESETS.BORNERS;
-      setDraftType(preset.categories[0]);
-      setDraftUnitsInPack(preset.defaultUnits);
-      setDraftRetailPrice(preset.defaultPrice);
-      setDraftUnitCost(preset.defaultCost);
-      setDraftCode(computeNextDraftCodeForBrand(bCode));
-    }
-  }, [draftBrand, SHOWCASE_BRAND_PRESETS, computeNextDraftCodeForBrand]);
+  }, [currentUser, editableBrands, draftBrand, draftScenBrand, handleDraftBrandChange]);
 
   const hydratedRef = useRef(false);
 
@@ -5302,11 +5382,10 @@ export function GrowthScenariosShowcase({
         ).filter((opt) => canUserEditBrand(currentUser, opt.code));
         return (
           <div
-            onClick={() => setNewModelModalOpen(false)}
+            data-testid="new-model-modal-backdrop"
             className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
           >
             <form
-              onClick={(e) => e.stopPropagation()}
               onSubmit={handleCreateNewModel}
               className="w-full max-w-lg rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
             >
@@ -5334,7 +5413,7 @@ export function GrowthScenariosShowcase({
                     </label>
                     <select
                       value={modalBrandCode}
-                      onChange={(e) => setDraftBrand(e.target.value)}
+                      onChange={(e) => handleDraftBrandChange(e.target.value)}
                       className="w-full h-9 px-3 mt-1 rounded-[10px] border border-[#DED8CC] text-[13px] font-semibold"
                     >
                       {brandSelectOptions.map((opt) => (
@@ -5538,11 +5617,9 @@ export function GrowthScenariosShowcase({
         ).filter((opt) => canUserEditBrand(currentUser, opt.code));
         return (
           <div
-            onClick={() => setNewScenarioModalOpen(false)}
             className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
           >
             <form
-              onClick={(e) => e.stopPropagation()}
               onSubmit={handleCreateNewScenario}
               className="w-full max-w-md rounded-[22px] bg-white border border-[#E6E0D4] p-6 space-y-4 shadow-2xl"
             >

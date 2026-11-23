@@ -927,11 +927,9 @@ export function BrandStrategyView() {
       {/* МОДАЛЬНОЕ ОКНО РЕДАКТИРОВАНИЯ БЛОКА */}
       {editingBlock && (
         <div
-          onClick={() => setEditingBlock(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-2xl bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-[#E4E1DA] pb-4">

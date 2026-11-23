@@ -5,7 +5,7 @@ import path from "path";
 const isExport = process.env.STATIC_EXPORT === "1";
 const exportBasePath = process.env.EXPORT_BASE_PATH ?? "/borners-platform";
 const buildId =
-  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-auth-local-fix";
+  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-auth-drafts-fix";
 
 const defaultSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ocdmyldosplufhhwrrwq.supabase.co";
@@ -14,7 +14,7 @@ const defaultSupabasePublishableKey =
   "sb_publishable_O2S9Pi4aswxjD5ShAhHQ_w_CnUvmZlR";
 
 const releaseNotesSummary =
-  "Исправление стабильности сессий: выход на одном устройстве (scope: local) больше не выбивает другие устройства одного аккаунта, а кратковременный обрыв сети/VPN или обновление токена на iPad больше не разлогинивает пользователя.";
+  "Бронебойная защита ввода карточек и сессий: формы создания/редактирования больше не закрываются при движении мыши за край окна, не сбрасываются при переключении вкладок браузера и автосохраняют черновик; выход на одном устройстве больше не выбивает другие устройства.";
 
 const versionPayload = {
   buildId,

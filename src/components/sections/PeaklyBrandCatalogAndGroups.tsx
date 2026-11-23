@@ -5004,11 +5004,9 @@ export function PeaklyCatalogGroupsAndBrandsView({
          ===================================================================== */}
       {groupModalOpen && (
         <div
-          onClick={() => setGroupModalOpen(false)}
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
         >
           <form
-            onClick={(e) => e.stopPropagation()}
             onSubmit={handleSaveGroup}
             className="w-full max-w-xl rounded-[20px] bg-white border border-[#D8D7CE] p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col"
           >
@@ -5390,11 +5388,9 @@ function QuickModelBatchesAndDatesModal({
 
   return (
     <div
-      onClick={onClose}
       className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-4xl rounded-[20px] bg-white border border-[#D8D7CE] p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
       >
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EAE9E2]">

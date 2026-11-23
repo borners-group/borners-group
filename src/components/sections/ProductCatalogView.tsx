@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -407,6 +407,11 @@ export function ProductCatalogView() {
         : (normalizePortfolioBrandCode(brandFilter) as CanonicalBrandCode)
       : 'BORNERS';
 
+  const CATALOG_NEW_SKU_DRAFT_KEY = 'borners_draft_catalog_new_sku_v1';
+  const scenarioModelsRef = useRef(scenarioModels);
+  scenarioModelsRef.current = scenarioModels;
+  const catalogDraftHydratedRef = useRef(false);
+
   const [newSkuForm, setNewSkuForm] = useState(() => {
     const preset = BRAND_CREATE_PRESETS[initialModalBrand];
     return {
@@ -425,6 +430,44 @@ export function ProductCatalogView() {
     };
   });
 
+  // Восстановление черновика модалки «Новая модель в каталоге» при возврате во вкладку/перезагрузке
+  useEffect(() => {
+    if (catalogDraftHydratedRef.current || typeof window === 'undefined') return;
+    catalogDraftHydratedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(CATALOG_NEW_SKU_DRAFT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { open?: boolean; form?: typeof newSkuForm };
+      if (saved && saved.open && saved.form && typeof saved.form === 'object') {
+        setNewSkuForm((prev) => ({ ...prev, ...saved.form }));
+        setCreateModalOpen(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!catalogDraftHydratedRef.current || typeof window === 'undefined') return;
+    try {
+      if (!createModalOpen) {
+        window.sessionStorage.removeItem(CATALOG_NEW_SKU_DRAFT_KEY);
+        return;
+      }
+      const safeImageUrl =
+        newSkuForm.imageUrl && newSkuForm.imageUrl.length <= 250_000 ? newSkuForm.imageUrl : '';
+      window.sessionStorage.setItem(
+        CATALOG_NEW_SKU_DRAFT_KEY,
+        JSON.stringify({
+          open: true,
+          form: { ...newSkuForm, imageUrl: safeImageUrl },
+        })
+      );
+    } catch {
+      // ignore quota errors
+    }
+  }, [createModalOpen, newSkuForm]);
+
   useEffect(() => {
     if (createModalOpen) return;
     const norm = normalizePortfolioBrandCode(
@@ -438,7 +481,7 @@ export function ProductCatalogView() {
         : {
             ...prev,
             brandCode: bCode,
-            sku: computeNextBrandSkuCode(scenarioModels, bCode),
+            sku: computeNextBrandSkuCode(scenarioModelsRef.current, bCode),
             category: preset.categories[0],
             customCategory: '',
             collection: preset.defaultCollection,
@@ -449,7 +492,7 @@ export function ProductCatalogView() {
             buyoutRatePct: String(getDefaultBuyoutRatePctForBrand(bCode)),
           }
     );
-  }, [brandFilter, createModalOpen, scenarioModels, hasCost]);
+  }, [brandFilter, createModalOpen, hasCost]);
 
   const editableBrandCodes = useMemo(
     () =>
@@ -1967,11 +2010,10 @@ export function ProductCatalogView() {
       {/* УМНОЕ МОДАЛЬНОЕ ОКНО СОЗДАНИЯ МОДЕЛИ (С КАТЕГОРИЯМИ И ПАРАМЕТРАМИ ПОД БРЕНД LISKANI / AKUSHA / НА ТЕЛЕ / FUKAI / BORNERS) */}
       {createModalOpen && (
         <div
-          onClick={() => setCreateModalOpen(false)}
+          data-testid="catalog-create-modal-backdrop"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-xl bg-white rounded-2xl border border-[#CBD5E1] p-6 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3.5">

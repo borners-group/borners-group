@@ -12642,6 +12642,47 @@ test('Auth Session Stability: локальный signOut (scope: local) не в�
   assert.ok(authGateSrc.includes("profileResult.status === 'network_error'"));
 });
 
+test('Modal Draft & Tab-Switch Protection: формы создания карточек не закрываются по случайному клику на фон и не сбрасываются при переключении вкладок', () => {
+  const catalogSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf8'
+  );
+  const showcaseSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf8'
+  );
+  const labSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductLabView.tsx'),
+    'utf8'
+  );
+
+  // 1. Ни одна форма создания карточки не должна закрываться по клику на оверлей (backdrop)
+  assert.equal(
+    /catalog-create-modal-backdrop[\s\S]{0,120}onClick=\{\(\) => setCreateModalOpen\(false\)\}/.test(catalogSrc),
+    false,
+    'ProductCatalogView create modal не должен закрываться по клику на фон'
+  );
+  assert.equal(
+    /onClick=\{\(\) => setNewModelModalOpen\(false\)\}\s*\n\s*className="fixed inset-0/.test(showcaseSrc),
+    false,
+    'GrowthScenariosShowcase newModel modal не должен закрываться по клику на фон'
+  );
+  assert.equal(
+    /onClick=\{\(\) => setQuickIdeaOpen\(false\)\}\s*\n\s*className="fixed inset-0/.test(labSrc),
+    false,
+    'ProductLabView quickIdea modal не должен закрываться по клику на фон'
+  );
+
+  // 2. В GrowthScenariosShowcase computeNextDraftCodeForBrand не должен зависеть от models и сбрасывать открытую форму при синке
+  assert.ok(showcaseSrc.includes('modelsLatestRef'));
+  assert.ok(showcaseSrc.includes('if (newModelModalOpen) return;'));
+  assert.ok(showcaseSrc.includes('borners_draft_showcase_new_model_v1'));
+
+  // 3. Автосохранение черновиков в sessionStorage при переключении вкладок
+  assert.ok(catalogSrc.includes('borners_draft_catalog_new_sku_v1'));
+  assert.ok(labSrc.includes('borners_draft_lab_quick_idea_v1'));
+});
+
 
 
 

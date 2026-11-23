@@ -1148,11 +1148,9 @@ export function LaunchCalendarView() {
       {/* Модальное окно создания запуска */}
       {createModalOpen && (
         <div
-          onClick={() => setCreateModalOpen(false)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/40 backdrop-blur-[2px] p-4"
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg bg-white rounded-2xl border border-[#E4E1DA] p-7 space-y-5 shadow-xl"
           >
             <h3 className="text-[20px] font-semibold tracking-tight text-[#141413] border-b border-[#E4E1DA] pb-4">

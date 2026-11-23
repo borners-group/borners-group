@@ -3755,12 +3755,10 @@ export function InvestmentSchedulePanel({
 
           return (
             <div
-              onClick={() => setSelectedOpId(null)}
               className="fixed inset-0 z-[115] bg-black/50 backdrop-blur-[2px] overflow-y-auto p-3 sm:p-6 flex items-start sm:items-center justify-center"
             >
               <div
                 data-testid="inv-operation-inspector"
-                onClick={(e) => e.stopPropagation()}
                 className="w-full max-w-3xl my-4 rounded-2xl border border-[#141413] dark:border-[#5C5953] bg-[#FAF9F6] dark:bg-[#1D1C1A] p-4 sm:p-6 space-y-4 shadow-2xl"
               >
                 {/* Заголовок модалки с фото SKU */}

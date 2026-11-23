@@ -335,14 +335,63 @@ export function ProductLabView() {
     images: [],
   });
 
+  const LAB_QUICK_IDEA_DRAFT_KEY = 'borners_draft_lab_quick_idea_v1';
+  const labDraftHydratedRef = useRef(false);
+
   useEffect(() => {
+    if (labDraftHydratedRef.current || typeof window === 'undefined') return;
+    labDraftHydratedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(LAB_QUICK_IDEA_DRAFT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        open?: boolean;
+        form?: Partial<typeof quickIdeaForm>;
+      };
+      if (saved && saved.open && saved.form) {
+        setQuickIdeaForm((prev) => ({
+          ...prev,
+          ...saved.form,
+          images: Array.isArray(saved.form?.images) ? saved.form.images : prev.images,
+        }));
+        setQuickIdeaOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!labDraftHydratedRef.current || typeof window === 'undefined') return;
+    try {
+      if (!quickIdeaOpen) {
+        window.sessionStorage.removeItem(LAB_QUICK_IDEA_DRAFT_KEY);
+        return;
+      }
+      window.sessionStorage.setItem(
+        LAB_QUICK_IDEA_DRAFT_KEY,
+        JSON.stringify({
+          open: true,
+          form: {
+            ...quickIdeaForm,
+            images: [],
+          },
+        })
+      );
+    } catch {
+      // ignore quota errors
+    }
+  }, [quickIdeaOpen, quickIdeaForm]);
+
+  useEffect(() => {
+    if (quickIdeaOpen) return;
     if (brandFilter && brandFilter !== 'ALL') {
       const nextBrand = normalizeLabBrandCode(brandFilter);
       setQuickIdeaForm((prev) =>
         prev.brandId === nextBrand ? prev : { ...prev, brandId: nextBrand }
       );
     }
-  }, [brandFilter]);
+  }, [brandFilter, quickIdeaOpen]);
 
   // Короткая проверка перед сменой этапа (Стр. 3 и Сценарий №3 PDF)
   const [stageGateModal, setStageGateModal] = useState<{
@@ -363,13 +412,12 @@ export function ProductLabView() {
         else if (pdfConstructorOpen) setPdfConstructorOpen(false);
         else if (stageGateModal) setStageGateModal(null);
         else if (addFromCatalogOpen) setAddFromCatalogOpen(false);
-        else if (quickIdeaOpen) setQuickIdeaOpen(false);
-        else if (selectedConceptId) setSelectedConceptId(null);
+        // Не закрываем форму создания новой идеи и карточку редактирования по случайному Esc, чтобы не терять ввод
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [zoomPhotoUrl, pdfConstructorOpen, stageGateModal, addFromCatalogOpen, quickIdeaOpen, selectedConceptId, setSelectedConceptId]);
+  }, [zoomPhotoUrl, pdfConstructorOpen, stageGateModal, addFromCatalogOpen]);
 
   const [gateFillForm, setGateFillForm] = useState({
     ownerId: currentUser.id,
@@ -1708,7 +1756,6 @@ export function ProductLabView() {
       ===================================================================== */}
       {activeConcept && (
         <div
-          onClick={() => setSelectedConceptId(null)}
           onPaste={(e) => {
             if (!canEditActiveConcept) return;
             const items = Array.from(e.clipboardData?.items || []);
@@ -1725,7 +1772,6 @@ export function ProductLabView() {
           className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-[2px]"
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-5xl bg-[#F6F5F2] h-full overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl"
           >
             {/* ВЕРХНЯЯ СТРОКА: RD-024 / НА ТЕЛЕ / ИДЕЯ + АВТОСОХРАНЕНИЕ + КОНСТРУКТОР PDF + УДАЛИТЬ + ЗАКРЫТЬ */}
@@ -2381,11 +2427,10 @@ export function ProductLabView() {
       ===================================================================== */}
       {quickIdeaOpen && (
         <div
-          onClick={() => setQuickIdeaOpen(false)}
+          data-testid="lab-quick-idea-backdrop"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             onPaste={(e) => {
               const items = Array.from(e.clipboardData?.items || []);
               items.forEach((item) => {
