@@ -1282,6 +1282,10 @@ export async function pushPortfolioCoreToSupabase(
     const nowIso = new Date().toISOString();
     let currentPayload: CloudPortfolioCorePayload = {
       ...input,
+      deletedScenarioIds:
+        input.deletedScenarioIds !== undefined
+          ? input.deletedScenarioIds
+          : (readWindowStorageJsonSafe('borners_deleted_scenario_ids_v1') as number[] | undefined),
       financeContourParams:
         input.financeContourParams !== undefined
           ? input.financeContourParams

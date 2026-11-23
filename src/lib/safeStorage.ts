@@ -139,6 +139,18 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
         // пробуем следующий порог вплоть до 0 (все карточки и планы сохраняются на 100%, а фото живут в IndexedDB)
       }
     }
+    // Если при сохранении основного реестра моделей localStorage упёрся в 5 МБ лимит (Safari/iPad) —
+    // освобождаем дублирующий локальный backup (полная копия уже хранится в IndexedDB и Supabase) и повторяем запись
+    if (key === 'borners_tz_models_v1') {
+      try {
+        window.localStorage.removeItem('borners_user_saved_plans_v1');
+        const slim = JSON.stringify(stripOversizedDataUrls(compacted, 0));
+        window.localStorage.setItem(key, slim);
+        return true;
+      } catch {
+        // fallback к восстановлению прежнего значения ниже
+      }
+    }
     restorePrevIfMissing();
     return false;
   }

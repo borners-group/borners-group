@@ -13076,6 +13076,14 @@ test('Bulk Excel/CSV 5: UI-контракт — BulkSalesPlanExcelModal подк
     path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
     'utf-8'
   );
+  const contourCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/UnifiedContourViews.tsx'),
+    'utf-8'
+  );
+  const safeStorageCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/safeStorage.ts'),
+    'utf-8'
+  );
 
   assert.ok(modalCode.includes('data-testid="bulk-excel-modal-backdrop"'));
   assert.ok(
@@ -13084,6 +13092,79 @@ test('Bulk Excel/CSV 5: UI-контракт — BulkSalesPlanExcelModal подк
   );
   assert.ok(catalogCode.includes('BulkSalesPlanExcelModal'));
   assert.ok(salesCode.includes('BulkSalesPlanExcelModal'));
+  assert.ok(contourCode.includes('BulkSalesPlanExcelModal'));
+  assert.ok(safeStorageCode.includes("removeItem('borners_user_saved_plans_v1')"));
+});
+
+test('Bulk Excel/CSV 6: Стресс-тест стабильности — legacy .xls / битый .xlsx / обнуление 12 мес. без NaN / защита от самоэха и потери deletedScenarioIds', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_DEF, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { computeFinancialPnL, computeProcurementPlan } = await import(
+    '../src/lib/unifiedBusinessEngine.ts'
+  );
+  const { parseSpreadsheetBuffer, parseCsvText, previewBulkSpreadsheetImport } = await import(
+    '../src/lib/bulkSalesPlanExcel.ts'
+  );
+
+  // 1. Старый бинарный .xls и повреждённый .xlsx отдают понятную русскую ошибку, а не падают с нечитаемым исключением
+  assert.throws(
+    () => parseSpreadsheetBuffer(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0x00, 0x00]), 'old.xls'),
+    /\.xls/
+  );
+  assert.throws(
+    () => parseSpreadsheetBuffer(new Uint8Array([0x01, 0x02, 0x03, 0x04]), 'corrupt.xlsx'),
+    /\.xlsx/
+  );
+
+  // 2. Обнуление всех 12 месяцев, цены и себестоимости целой карточки LISKANI не порождает NaN/Infinity в P&L и Закупках
+  const firstCard = LISKANI_2027_MODELS[0];
+  const zeroCsv = [
+    'Артикул продавца;Цена реализации;Себестоимость;Янв;Фев;Мар;Апр;Май;Июн;Июл;Авг;Сен;Окт;Ноя;Дек',
+    ...firstCard.liskaniSizeVariants!.map((sv) => `${sv.sellerSku};0;0;0;0;0;0;0;0;0;0;0;0;0;0`),
+  ].join('\n');
+  const zeroPrev = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(zeroCsv, 'zero.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  const zeroCard = zeroPrev.updatedModels.find((m) => m.code === firstCard.code)!;
+  const zeroProc = computeProcurementPlan(zeroCard, LISKANI_2027_SCENARIO_DEF);
+  const zeroPnl = computeFinancialPnL(zeroCard, LISKANI_2027_SCENARIO_DEF, zeroProc);
+  const assertAllFinite = (val: unknown, label: string): void => {
+    if (typeof val === 'number') {
+      assert.equal(Number.isFinite(val), true, `Обнаружено невалидное число (${val}) в ${label}`);
+    } else if (Array.isArray(val)) {
+      val.forEach((item, idx) => assertAllFinite(item, `${label}[${idx}]`));
+    } else if (val && typeof val === 'object') {
+      for (const [k, v] of Object.entries(val)) {
+        assertAllFinite(v, `${label}.${k}`);
+      }
+    }
+  };
+  assertAllFinite(zeroPnl, 'zeroPnl');
+  assertAllFinite(zeroProc, 'zeroProc');
+
+  // 3. Проверка синхронизации: deletedScenarioIds автоподтягивается в supabaseCloudSync, а GrowthScenariosShowcase не делает лишнее самоэхо
+  const syncCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/supabaseCloudSync.ts'),
+    'utf-8'
+  );
+  const salesCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf-8'
+  );
+  assert.ok(syncCode.includes("readWindowStorageJsonSafe('borners_deleted_scenario_ids_v1')"));
+  assert.ok(salesCode.includes('ignoreSelfModelsEventRef'));
 });
 
 

@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   Calendar,
+  FileSpreadsheet,
   FlaskConical,
   Layers,
   SlidersHorizontal,
@@ -61,6 +62,7 @@ import {
   canUserViewFinance,
 } from '@/lib/finance';
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
+import { BulkSalesPlanExcelModal } from '@/components/sections/BulkSalesPlanExcelModal';
 import { SkuProcurementMvpWorkbench } from '@/components/sections/SkuProcurementMvpWorkbench';
 import { PeakOwnMoneyChartPanel } from '@/components/sections/PeakOwnMoneyChartPanel';
 import { RoadmapTasksView } from '@/components/sections/ManagementAndSystemViews';
@@ -613,10 +615,13 @@ export function SalesMatrixContourView() {
     eligibleModels,
     totals,
     updateModelSpec,
+    updateModelsBatch,
     launchStarterCabinet,
   } = useLiveScenarioPortfolio();
 
   const hasFinance = canUserViewFinance(currentUser);
+  const hasCost = canUserViewCostPrice(currentUser);
+  const [bulkExcelModalOpen, setBulkExcelModalOpen] = useState(false);
   const [holdingScopeMode, setHoldingScopeMode] = useState<boolean>(true);
   const [unitMode, setUnitMode] = useState<'rub' | 'packs'>(() =>
     canUserViewFinance(currentUser) ? 'rub' : 'packs'
@@ -1020,6 +1025,16 @@ export function SalesMatrixContourView() {
                 })()}
               </button>
             </div>
+            {models.some((m) => canUserEditBrand(currentUser, detectModelBrandPortfolioLabel(m))) && (
+              <button
+                type="button"
+                onClick={() => setBulkExcelModalOpen(true)}
+                className="h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Excel: цены и план</span>
+              </button>
+            )}
             {hasFinance && (
               <button
                 type="button"
@@ -1461,6 +1476,42 @@ export function SalesMatrixContourView() {
           </table>
         </div>
       </section>
+
+      {bulkExcelModalOpen && (
+        <BulkSalesPlanExcelModal
+          open={bulkExcelModalOpen}
+          onClose={() => setBulkExcelModalOpen(false)}
+          models={models}
+          scenarioId={(() => {
+            const norm = normalizePortfolioBrandCode(brandFilter);
+            return norm !== 'ALL' && selectedScenarioByBrand[norm]
+              ? selectedScenarioByBrand[norm]!
+              : currentScenario.id;
+          })()}
+          scenarioTitle={currentScenario.title}
+          brandScope={brandFilter}
+          brandDisplayLabel={formatContourBrandFilterLabel(brandFilter)}
+          initialMode={
+            normalizePortfolioBrandCode(brandFilter) === 'LISKANI'
+              ? 'liskani_269'
+              : 'brand_models'
+          }
+          hasCost={hasCost}
+          hasFinance={hasFinance}
+          canEditModel={(m) =>
+            canUserEditBrand(currentUser, detectModelBrandPortfolioLabel(m))
+          }
+          onApplyModels={(updatedModels, previewRes) => {
+            updateModelsBatch(() => updatedModels);
+            notify(
+              'success',
+              `Массовое обновление применено (${previewRes.changedSkusCount} SKU)`,
+              `Цены: ${previewRes.priceChangedCount} · Себестоимость: ${previewRes.costChangedCount} · Помесячный план: ${previewRes.monthsChangedCount}`
+            );
+          }}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }

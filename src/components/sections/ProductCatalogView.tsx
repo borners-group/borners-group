@@ -848,6 +848,32 @@ export function ProductCatalogView() {
     [scenarioModels, activePassportModelId]
   );
 
+  const liskaniLiveSummary = useMemo(() => {
+    let buyoutsRub = 0;
+    let ordersRub = 0;
+    let ordersUnits = 0;
+    let skuCount = 0;
+    let colorCards = 0;
+    const byFabric = new Map<string, { buyoutsRub: number; skuCount: number }>();
+
+    for (const m of scenarioModels) {
+      if (!Array.isArray(m.liskaniSizeVariants) || m.liskaniSizeVariants.length === 0) continue;
+      colorCards += 1;
+      for (const sv of m.liskaniSizeVariants) {
+        skuCount += 1;
+        buyoutsRub += sv.annualBuyoutsRub || 0;
+        ordersRub += sv.annualOrdersRub || 0;
+        ordersUnits += sv.annualOrdersUnits || 0;
+        const fKey = sv.fabric || 'Прочее';
+        const prev = byFabric.get(fKey) || { buyoutsRub: 0, skuCount: 0 };
+        prev.buyoutsRub += sv.annualBuyoutsRub || 0;
+        prev.skuCount += 1;
+        byFabric.set(fKey, prev);
+      }
+    }
+    return { buyoutsRub, ordersRub, ordersUnits, skuCount, colorCards, byFabric };
+  }, [scenarioModels]);
+
   // ЕСЛИ ОТКРЫТ ПАСПОРТ МОДЕЛИ — ПОКАЗЫВАЕМ ЕГО ПРЯМО ВНУТРИ 01 · ПРОДУКТ (СО ВСЕМИ ПОЛЯМИ РЕДАКТИРОВАНИЯ)
   if (activePassportModel) {
     const {
@@ -1008,32 +1034,6 @@ export function ProductCatalogView() {
     liskaniBuyoutRates.length === 1 ? `ВЫКУП ${liskaniBuyoutRates[0]}%` : 'ВЫКУП %';
   const liskaniTableBuyoutHeader =
     liskaniBuyoutRates.length === 1 ? `Выкупы ${liskaniBuyoutRates[0]}%` : 'Выкупы %';
-
-  const liskaniLiveSummary = (() => {
-    let buyoutsRub = 0;
-    let ordersRub = 0;
-    let ordersUnits = 0;
-    let skuCount = 0;
-    let colorCards = 0;
-    const byFabric = new Map<string, { buyoutsRub: number; skuCount: number }>();
-
-    for (const m of scenarioModels) {
-      if (!Array.isArray(m.liskaniSizeVariants) || m.liskaniSizeVariants.length === 0) continue;
-      colorCards += 1;
-      for (const sv of m.liskaniSizeVariants) {
-        skuCount += 1;
-        buyoutsRub += sv.annualBuyoutsRub || 0;
-        ordersRub += sv.annualOrdersRub || 0;
-        ordersUnits += sv.annualOrdersUnits || 0;
-        const fKey = sv.fabric || 'Прочее';
-        const prev = byFabric.get(fKey) || { buyoutsRub: 0, skuCount: 0 };
-        prev.buyoutsRub += sv.annualBuyoutsRub || 0;
-        prev.skuCount += 1;
-        byFabric.set(fKey, prev);
-      }
-    }
-    return { buyoutsRub, ordersRub, ordersUnits, skuCount, colorCards, byFabric };
-  })();
 
   const canBulkEditActiveScope =
     canCreateInActiveScope || filteredModels.some((m) => canEditModel(m));
@@ -2077,6 +2077,8 @@ export function ProductCatalogView() {
                                   <img
                                     src={photoUrl}
                                     alt={mod.title}
+                                    loading="lazy"
+                                    decoding="async"
                                     className="h-9 w-7 rounded object-cover border border-[#CBD5E1] shrink-0"
                                   />
                                 )}

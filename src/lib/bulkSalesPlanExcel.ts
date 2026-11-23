@@ -641,6 +641,26 @@ export function parseSpreadsheetBuffer(
   bytes: Uint8Array,
   fileName: string
 ): ParsedSpreadsheet {
+  if (bytes.length === 0) {
+    throw new Error('Файл пустой.');
+  }
+  if (bytes.length > 25 * 1024 * 1024) {
+    throw new Error('Файл слишком большой (лимит 25 МБ). Удалите лишние листы или сохраните в CSV.');
+  }
+
+  // Старый бинарный формат Microsoft Excel 97–2003 (.xls / OLE2 Compound File)
+  const isLegacyOle2Xls =
+    bytes.length >= 4 &&
+    bytes[0] === 0xd0 &&
+    bytes[1] === 0xcf &&
+    bytes[2] === 0x11 &&
+    bytes[3] === 0xe0;
+  if (isLegacyOle2Xls) {
+    throw new Error(
+      'Старый формат .xls (Excel 97–2003) не поддерживается. Откройте файл в Excel и выберите «Сохранить как» → .xlsx (Книга Excel) или .csv.'
+    );
+  }
+
   const isZipMagic =
     bytes.length >= 4 &&
     bytes[0] === 0x50 &&
@@ -648,6 +668,11 @@ export function parseSpreadsheetBuffer(
     (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
 
   if (isZipMagic || fileName.toLowerCase().endsWith('.xlsx')) {
+    if (!isZipMagic) {
+      throw new Error(
+        'Файл с расширением .xlsx повреждён или не является книгой Excel. Пересохраните его в Excel как .xlsx или .csv.'
+      );
+    }
     return parseXlsxBytes(bytes, fileName);
   }
 

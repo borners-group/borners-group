@@ -16,6 +16,7 @@ import {
   buildBulkTemplateSheets,
   buildXlsxBytes,
   detectRecommendedImportMode,
+  detectSpreadsheetColumns,
   parseSpreadsheetBuffer,
   previewBulkSpreadsheetImport,
   type BulkImportPreviewResult,
@@ -24,6 +25,7 @@ import {
   type ParsedSpreadsheet,
 } from '@/lib/bulkSalesPlanExcel';
 import { LISKANI_2027_SCENARIO_ID } from '@/lib/liskaniAssortment2027';
+import { matchesBrandFilter } from '@/lib/unifiedBusinessEngine';
 
 interface BulkSalesPlanExcelModalProps {
   open: boolean;
@@ -101,6 +103,7 @@ export function BulkSalesPlanExcelModal({
   const [volumeMetric, setVolumeMetric] = useState<BulkVolumeMetric>('buyouts');
   const [parsedFile, setParsedFile] = useState<ParsedSpreadsheet | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   const [applyPrice, setApplyPrice] = useState(true);
@@ -113,19 +116,18 @@ export function BulkSalesPlanExcelModal({
   const effectiveScenarioId =
     mode === 'liskani_269' ? LISKANI_2027_SCENARIO_ID : scenarioId;
 
-  const templateMeta = useMemo(
-    () =>
-      buildBulkTemplateSheets({
-        models,
-        scenarioId: effectiveScenarioId,
-        mode,
-        brandScope,
-        volumeMetric,
-        includeCost: hasCost,
-        scenarioTitle,
-      }),
-    [models, effectiveScenarioId, mode, brandScope, volumeMetric, hasCost, scenarioTitle]
-  );
+  // Лёгкий подсчёт строк шаблона без генерации 269×21 ячеек на каждый рендер
+  const templateRowsCount = useMemo(() => {
+    if (mode === 'liskani_269') {
+      return models.reduce(
+        (sum, m) => sum + (Array.isArray(m.liskaniSizeVariants) ? m.liskaniSizeVariants.length : 0),
+        0
+      );
+    }
+    return models.filter(
+      (m) => brandScope === 'ALL' || matchesBrandFilter(m, brandScope)
+    ).length;
+  }, [models, mode, brandScope]);
 
   const preview = useMemo<BulkImportPreviewResult | null>(() => {
     if (!parsedFile) return null;
@@ -171,34 +173,56 @@ export function BulkSalesPlanExcelModal({
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
-  const handleDownloadXlsx = () => {
-    const bytes = buildXlsxBytes(templateMeta.sheets);
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    const blob = new Blob([copy.buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  const buildCurrentTemplate = () =>
+    buildBulkTemplateSheets({
+      models,
+      scenarioId: effectiveScenarioId,
+      mode,
+      brandScope,
+      volumeMetric,
+      includeCost: hasCost,
+      scenarioTitle,
     });
-    triggerDownload(blob, `${templateMeta.fileBaseName}.xlsx`);
-    notify?.(
-      'success',
-      `Шаблон Excel скачан (${templateMeta.rowsCount} SKU)`,
-      mode === 'liskani_269'
-        ? 'Содержит все 269 размерных SKU LISKANI: цены, себестоимость и 12 месяцев.'
-        : `Содержит ${templateMeta.rowsCount} карточек (${brandDisplayLabel}): цены, себестоимость и 12 месяцев.`
-    );
+
+  const handleDownloadXlsx = () => {
+    try {
+      const templateMeta = buildCurrentTemplate();
+      const bytes = buildXlsxBytes(templateMeta.sheets);
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      const blob = new Blob([copy.buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      triggerDownload(blob, `${templateMeta.fileBaseName}.xlsx`);
+      notify?.(
+        'success',
+        `Шаблон Excel скачан (${templateMeta.rowsCount} SKU)`,
+        mode === 'liskani_269'
+          ? 'Содержит все 269 размерных SKU LISKANI: цены, себестоимость и 12 месяцев.'
+          : `Содержит ${templateMeta.rowsCount} карточек (${brandDisplayLabel}): цены, себестоимость и 12 месяцев.`
+      );
+    } catch {
+      notify?.('error', 'Не удалось сформировать шаблон Excel (.xlsx)');
+    }
   };
 
   const handleDownloadCsv = () => {
-    const blob = new Blob([templateMeta.csvText], {
-      type: 'text/csv;charset=utf-8',
-    });
-    triggerDownload(blob, `${templateMeta.fileBaseName}.csv`);
-    notify?.('success', `Шаблон CSV скачан (${templateMeta.rowsCount} SKU)`);
+    try {
+      const templateMeta = buildCurrentTemplate();
+      const blob = new Blob([templateMeta.csvText], {
+        type: 'text/csv;charset=utf-8',
+      });
+      triggerDownload(blob, `${templateMeta.fileBaseName}.csv`);
+      notify?.('success', `Шаблон CSV скачан (${templateMeta.rowsCount} SKU)`);
+    } catch {
+      notify?.('error', 'Не удалось сформировать шаблон CSV');
+    }
   };
 
   const handleReadFile = async (file: File) => {
     setParseError(null);
     setShowUnmatchedDetails(false);
+    setIsParsing(true);
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const parsed = parseSpreadsheetBuffer(buf, file.name);
@@ -209,37 +233,25 @@ export function BulkSalesPlanExcelModal({
       }
       setParsedFile(parsed);
 
-      // Авто-переключение режима и метрики, если файл явно соответствует LISKANI 269 или нашему шаблону
+      // Быстрое автоопределение режима и метрики без двойного полного расчёта превью
       const recMode = detectRecommendedImportMode(models, parsed, mode);
       if (recMode !== mode && (recMode === 'brand_models' || hasLiskani269)) {
         setMode(recMode);
       }
 
-      const tempPreview = previewBulkSpreadsheetImport({
-        models,
-        scenarioId: recMode === 'liskani_269' ? LISKANI_2027_SCENARIO_ID : scenarioId,
-        mode: recMode,
-        brandScope,
-        parsed,
-        options: {
-          volumeMetric,
-          applyPrice: true,
-          applyCost: hasCost,
-          applyMonths: true,
-          canEditCost: hasCost,
-          canEditModel,
-        },
-      });
-      if (tempPreview.detectedColumns.detectedMetricHint) {
-        setVolumeMetric(tempPreview.detectedColumns.detectedMetricHint);
+      const detectedCols = detectSpreadsheetColumns(parsed.rows, parsed.metadata);
+      if (detectedCols.detectedMetricHint) {
+        setVolumeMetric(detectedCols.detectedMetricHint);
       }
     } catch (err) {
       setParsedFile(null);
       setParseError(
         err instanceof Error
-          ? `Не удалось прочитать файл: ${err.message}`
+          ? err.message
           : 'Не удалось прочитать файл. Поддерживаются форматы .xlsx и .csv.'
       );
+    } finally {
+      setIsParsing(false);
     }
   };
 
@@ -372,7 +384,7 @@ export function BulkSalesPlanExcelModal({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
-                  Шаг 1 · Скачать актуальный шаблон ({templateMeta.rowsCount} SKU)
+                  Шаг 1 · Скачать актуальный шаблон ({templateRowsCount} SKU)
                 </div>
                 <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                   Текущие цены, {hasCost ? 'себестоимость и ' : ''}план Янв–Дек уже подставлены. Баркоды и WB-артикулы защищены как текст.
@@ -427,7 +439,9 @@ export function BulkSalesPlanExcelModal({
               />
               <Upload className="h-5 w-5 mx-auto text-[#5C5953] dark:text-[#9E9A92]" strokeWidth={1.75} />
               <div className="text-[13.5px] font-medium text-[#141413] dark:text-[#F5F4F0] mt-2">
-                {parsedFile
+                {isParsing
+                  ? 'Читаю таблицу и сверяю артикулы…'
+                  : parsedFile
                   ? `Загружен файл: ${parsedFile.fileName} (нажмите, чтобы выбрать другой)`
                   : 'Перетащите файл сюда или нажмите для выбора (.xlsx / .csv)'}
               </div>

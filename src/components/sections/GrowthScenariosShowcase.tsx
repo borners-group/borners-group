@@ -811,6 +811,7 @@ export function GrowthScenariosShowcase({
   }, [currentUser, editableBrands, draftBrand, draftScenBrand, handleDraftBrandChange]);
 
   const hydratedRef = useRef(false);
+  const ignoreSelfModelsEventRef = useRef(0);
 
   const buildCloudByBrandRecord = useCallback(
     (mapInput?: Partial<Record<CanonicalBrandCode, number | null>>) => {
@@ -851,7 +852,7 @@ export function GrowthScenariosShowcase({
         }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
-        void savePortfolioSnapshotToIdb(next);
+        void savePortfolioSnapshotToIdb(next, iso);
         void pushPortfolioCoreToSupabase({
           models: next,
           scenarios,
@@ -861,7 +862,15 @@ export function GrowthScenariosShowcase({
         });
         if (typeof window !== 'undefined') {
           window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+            ignoreSelfModelsEventRef.current += 1;
+            try {
+              window.dispatchEvent(new CustomEvent('borners-scenario-models-changed'));
+            } finally {
+              ignoreSelfModelsEventRef.current = Math.max(
+                0,
+                ignoreSelfModelsEventRef.current - 1
+              );
+            }
           }, 0);
         }
         return next;
@@ -1069,6 +1078,7 @@ export function GrowthScenariosShowcase({
   useEffect(() => {
     let cancelled = false;
     const syncFromStorage = () => {
+      if (ignoreSelfModelsEventRef.current > 0) return;
       // 1. Сначала запускаем единую гидратацию моделей (включая миграцию LISKANI 269 SKU / 33 модели)
       const hydratedModels = hydratePortfolioModelsFromStorage();
       const existingStoredModels = safeGetStorageJson<ScenarioModelSpec[]>(STORAGE_KEY_MODELS);
