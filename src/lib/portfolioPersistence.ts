@@ -11,6 +11,7 @@ import {
   getActingSkuByWbOrVendor,
 } from './actingAssortment2027.ts';
 import {
+  AKUSHA_2027_COLLECTION_ADDON_MODELS,
   AKUSHA_2027_MODELS,
   AKUSHA_2027_SCENARIO_DEF,
   AKUSHA_2027_SCENARIO_ID,
@@ -1295,6 +1296,7 @@ export function applyPortfolioBackupSnapshotToStorage(
     ...S1_100M_SCENARIO_MODELS,
     ...LISKANI_2027_MODELS,
     ...AKUSHA_2027_MODELS,
+    ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
   ]) {
     const idU = seed.id.trim().toUpperCase();
     const codeU = seed.code.trim().toUpperCase();
@@ -1382,6 +1384,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       ...CLIENT_SAVED_S1_MODELS,
       ...LISKANI_2027_MODELS,
       ...AKUSHA_2027_MODELS,
+      ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
     ]) {
       if (isModelMarkedDeleted(itemMod, deletedReg)) {
         continue;
@@ -1443,6 +1446,7 @@ export function hydratePortfolioModelsFromStorage(): ScenarioModelSpec[] {
       ...S1_100M_SCENARIO_MODELS,
       ...LISKANI_2027_MODELS,
       ...AKUSHA_2027_MODELS,
+      ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
     ])
   ).filter((m) => !isModelMarkedDeleted(m, deletedReg));
 
@@ -1914,6 +1918,7 @@ export function mergeCloudPortfolioSnapshot(params: {
     ...CLIENT_SAVED_S1_MODELS,
     ...LISKANI_2027_MODELS,
     ...AKUSHA_2027_MODELS,
+    ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
   ]) {
     if (isModelMarkedDeleted(baselineMod, deletedReg)) continue;
     const idx = merged.findIndex(

@@ -17,6 +17,7 @@ import {
   getActingSkuByWbOrVendor,
 } from '@/lib/actingAssortment2027';
 import {
+  AKUSHA_2027_COLLECTION_ADDON_MODELS,
   AKUSHA_2027_MODELS,
   AKUSHA_2027_SCENARIO_DEF,
   AKUSHA_2027_SCENARIO_ID,
@@ -161,6 +162,7 @@ const DEFAULT_MODELS_LIST: ScenarioModelSpec[] = applyClientSavedS1SalesPlan([
   ...S1_100M_SCENARIO_MODELS,
   ...LISKANI_2027_MODELS,
   ...AKUSHA_2027_MODELS,
+  ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
 ]);
 
 const DEFAULT_SCENARIOS_LIST: GrowthScenarioDef[] = [

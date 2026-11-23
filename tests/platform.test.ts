@@ -2577,9 +2577,9 @@ test('41. Реальная проверка сохранения, редакти
       saveProductGroups,
     } = await import('../src/lib/productGroups.ts');
 
-    // 1. Первичная загрузка (чистый старт): 23 базовых модели BORNERS/FUKAI + 33 модели LISKANI + 24 модели AKUSHA = 80 моделей
+    // 1. Первичная загрузка (чистый старт): 23 базовых модели BORNERS/FUKAI + 33 модели LISKANI + 40 моделей AKUSHA (24 + 16 новой коллекции) = 96 моделей
     const initialHydrated = hydratePortfolioModelsFromStorage();
-    assert.equal(initialHydrated.length, 80);
+    assert.equal(initialHydrated.length, 96);
 
     // 2. Создание новой карточки штор LISKANI с загруженным фото (data:image/jpeg) и сохранение в localStorage
     const customDataPhoto = 'data:image/jpeg;base64,' + 'A'.repeat(95_000); // > 70 КБ для проверки отсутствия подмены на SVG
@@ -2603,7 +2603,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем перезагрузку страницы (F5)
     const afterCreateReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterCreateReload.length, 81);
+    assert.equal(afterCreateReload.length, 97);
     const reloadedCurtain = afterCreateReload.find((m) => m.code === 'LSC-777')!;
     assert.ok(reloadedCurtain, 'Созданная карточка LSC-777 должна сохраняться после F5');
     assert.equal(reloadedCurtain.title, 'ШТОРЫ ДИМАУТ ПЕСОЧНЫЕ 400×270');
@@ -2674,7 +2674,7 @@ test('41. Реальная проверка сохранения, редакти
 
     // Симулируем F5 — ни LSC-777, ни удалённая базовая карточка BRN-001-SC НЕ должны появиться снова!
     const afterDeleteReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterDeleteReload.length, 79);
+    assert.equal(afterDeleteReload.length, 95);
     assert.equal(
       afterDeleteReload.some((m) => m.code === 'LSC-777'),
       false,
@@ -2686,11 +2686,11 @@ test('41. Реальная проверка сохранения, редакти
       'Удалённая базовая модель не должна самопроизвольно возвращаться после F5'
     );
 
-    // 5. Явный сброс к эталону восстанавливает все 80 базовых карточек
+    // 5. Явный сброс к эталону восстанавливает все 96 базовых карточек
     clearDeletedModelsRegistry();
     persistPortfolioModels([...ACTING_2027_SCENARIO_MODELS, ...S1_100M_SCENARIO_MODELS]);
     const afterResetReload = hydratePortfolioModelsFromStorage();
-    assert.equal(afterResetReload.length, 80);
+    assert.equal(afterResetReload.length, 96);
     assert.equal(
       afterResetReload.some((m) => m.code === 'BRN-001-SC'),
       true
@@ -4313,8 +4313,8 @@ test('54. Официальный план продаж AKUSHA 2027 из PDF (31 
     );
     assert.equal(
       akushaInHydrated.length,
-      24,
-      'После миграции в каталоге AKUSHA должно быть ровно 24 официальные карточки без единого дубля'
+      40,
+      'После миграции в каталоге AKUSHA должно быть ровно 40 официальных карточек (24 базовых + 16 добавочной коллекции 2027) без дублей'
     );
     const aku001 = akushaInHydrated.find((m) => m.code === 'AKU-001')!;
     assert.equal(
@@ -6758,7 +6758,7 @@ test('88. Одновременная сверка всех 4 эталонных 
     assert.equal(lskBuyouts, 500_000_000);
     assert.equal(lskOrders, 877_192_982);
 
-    // 3. AKUSHA 202706: 24 карточки, 20 377 пар, 105 793 210 ₽ выручка, 37 448 200 ₽ себестоимость проданных
+    // 3. AKUSHA 202706: 40 карточек (24 базовых + 16 новой коллекции), 25 757 пар, 143 879 410 ₽ выручка, 51 104 200 ₽ себестоимость проданных
     const akushaModels = filterModelsForScenario(
       models,
       AKUSHA_2027_SCENARIO_DEF,
@@ -6770,10 +6770,10 @@ test('88. Одновременная сверка всех 4 эталонных 
       (s, m) => s + computeModelScenarioMetrics(m, AKUSHA_2027_SCENARIO_DEF).annualPacks,
       0
     );
-    assert.equal(akushaModels.length, 24);
-    assert.equal(akuPairs, 20_377);
-    assert.equal(akuInv.annualRevenueRub, 105_793_210);
-    assert.equal(akuInv.annualSoldGoodsCostRub, 37_448_200);
+    assert.equal(akushaModels.length, 40);
+    assert.equal(akuPairs, 25_757);
+    assert.equal(akuInv.annualRevenueRub, 143_879_410);
+    assert.equal(akuInv.annualSoldGoodsCostRub, 51_104_200);
 
     // 4. FUKAI 100: 2 WB SKU, 90 553 401 ₽ годовая выручка
     const fukaiModels = filterModelsForScenario(
@@ -9455,8 +9455,8 @@ test('157. v11 Полная ревизия холдинга BORNERS GROUP по �
     assert.equal(byBrand.LISKANI.modelsCount, 33);
     assert.equal(byBrand.LISKANI.annualRevenueRub, 500_000_000);
 
-    assert.equal(byBrand.AKUSHA.modelsCount, 24);
-    assert.equal(byBrand.AKUSHA.annualRevenueRub, 105_793_210);
+    assert.equal(byBrand.AKUSHA.modelsCount, 40);
+    assert.equal(byBrand.AKUSHA.annualRevenueRub, 143_879_410);
     assert.ok(byBrand.AKUSHA.totalProcurementQuantity > 0);
 
     // Строгая изоляция: в Сценарии 1 BORNERS (при выключенном групповом флаге) нет ни одной чужой карточки
@@ -12681,6 +12681,86 @@ test('Modal Draft & Tab-Switch Protection: формы создания карт�
   // 3. Автосохранение черновиков в sessionStorage при переключении вкладок
   assert.ok(catalogSrc.includes('borners_draft_catalog_new_sku_v1'));
   assert.ok(labSrc.includes('borners_draft_lab_quick_idea_v1'));
+});
+
+test('AKUSHA Коллекция 2027 (добавка 16 моделей: №01–14 + PRIORA и 212): точная сверка всех цифр, месяцев и фотофайлов', async () => {
+  const {
+    AKUSHA_2027_COLLECTION_ADDON_MODELS,
+    AKUSHA_2027_COLLECTION_ADDON_PDF_ATTACHMENT,
+    AKUSHA_2027_SCENARIO_ID,
+  } = await import('../src/lib/akushaAssortment2027.ts');
+
+  assert.equal(AKUSHA_2027_COLLECTION_ADDON_MODELS.length, 16, 'Должно быть ровно 16 новых карточек AKUSHA (AKU-032..AKU-047)');
+
+  const expectedCodes = Array.from({ length: 16 }, (_, i) => `AKU-${String(32 + i).padStart(3, '0')}`);
+  assert.deepEqual(
+    AKUSHA_2027_COLLECTION_ADDON_MODELS.map((m) => m.code),
+    expectedCodes
+  );
+
+  let totalBuyouts = 0;
+  let totalOrders = 0;
+  let totalRevenue = 0;
+  let totalCogs = 0;
+
+  let main14Buyouts = 0;
+  let main14Orders = 0;
+  let main14Revenue = 0;
+  let main14Cogs = 0;
+
+  for (const m of AKUSHA_2027_COLLECTION_ADDON_MODELS) {
+    assert.equal(m.customBrandLabel, 'AKUSHA');
+    assert.equal(m.buyoutRatePct, 30, `${m.code}: % выкупа должен быть 30%`);
+    assert.equal(m.procureByOrdersVolume, true, `${m.code}: учёт возвратов в закупках должен быть включён`);
+    const plan = m.plansByScenario[AKUSHA_2027_SCENARIO_ID];
+    assert.ok(plan, `${m.code}: должен присутствовать план сценария AKUSHA 2027 (${AKUSHA_2027_SCENARIO_ID})`);
+    assert.equal(plan.monthlyPacks.length, 12);
+    assert.equal(plan.monthlyOrdersPacks?.length, 12);
+
+    const bSum = plan.monthlyPacks.reduce((a, b) => a + b, 0);
+    const oSum = (plan.monthlyOrdersPacks || []).reduce((a, b) => a + b, 0);
+    const rev = bSum * m.retailPriceRub;
+    const cogs = bSum * m.unitCostRub;
+
+    totalBuyouts += bSum;
+    totalOrders += oSum;
+    totalRevenue += rev;
+    totalCogs += cogs;
+
+    if (m.code !== 'AKU-046' && m.code !== 'AKU-047') {
+      main14Buyouts += bSum;
+      main14Orders += oSum;
+      main14Revenue += rev;
+      main14Cogs += cogs;
+    }
+
+    // Проверка наличия реального файла фото на диске
+    assert.ok(m.gallery.length >= 1, `${m.code}: должна быть хотя бы 1 фотография`);
+    const photoRel = (m.gallery[0]?.url || '').replace(/^\//, '');
+    assert.ok(photoRel.length > 0, `${m.code}: url фото не должен быть пустым`);
+    const photoAbs = path.join(process.cwd(), 'public', photoRel);
+    assert.ok(fs.existsSync(photoAbs), `${m.code}: файл фото ${photoAbs} должен существовать`);
+  }
+
+  // Сверка 14 моделей основного реестра PDF (стр. 02 и 10)
+  assert.equal(main14Buyouts, 4_580);
+  assert.equal(main14Orders, 15_320);
+  assert.equal(main14Revenue, 32_494_200);
+  assert.equal(main14Cogs, 11_736_000);
+
+  // Сверка всех 16 моделей (14 + PRIORA + 212)
+  assert.equal(totalBuyouts, 5_380);
+  assert.equal(totalOrders, 18_000);
+  assert.equal(totalRevenue, 38_086_200);
+  assert.equal(totalCogs, 13_656_000);
+
+  // Проверка наличия прикреплённого PDF
+  const pdfAbs = path.join(
+    process.cwd(),
+    'public',
+    (AKUSHA_2027_COLLECTION_ADDON_PDF_ATTACHMENT.staticUrl || '').replace(/^\//, '')
+  );
+  assert.ok(fs.existsSync(pdfAbs), `PDF ${pdfAbs} должен существовать`);
 });
 
 

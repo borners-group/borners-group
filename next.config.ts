@@ -5,7 +5,7 @@ import path from "path";
 const isExport = process.env.STATIC_EXPORT === "1";
 const exportBasePath = process.env.EXPORT_BASE_PATH ?? "/borners-platform";
 const buildId =
-  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-auth-drafts-fix";
+  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-akusha-16-models";
 
 const defaultSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ocdmyldosplufhhwrrwq.supabase.co";
@@ -14,7 +14,7 @@ const defaultSupabasePublishableKey =
   "sb_publishable_O2S9Pi4aswxjD5ShAhHQ_w_CnUvmZlR";
 
 const releaseNotesSummary =
-  "Бронебойная защита ввода карточек и сессий: формы создания/редактирования больше не закрываются при движении мыши за край окна, не сбрасываются при переключении вкладок браузера и автосохраняют черновик; выход на одном устройстве больше не выбивает другие устройства.";
+  "Добавлены 16 новых моделей обуви в кабинет AKUSHA (AKU-032..AKU-047: Кроссовки, Лоферы-ботинки из замши, Кожаные ботинки и Челси, Берцы демисезонные/зимние, 4 Мюли, 3 модели из войлока + PRIORA и 212) с оригинальными фото, ценами, себестоимостью, выкупом 30% и помесячными планами на 2027 год (5 380 пар / 38,09 млн ₽).";
 
 const versionPayload = {
   buildId,

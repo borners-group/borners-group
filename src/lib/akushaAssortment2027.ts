@@ -38,6 +38,14 @@ export const AKUSHA_2027_PDF_ATTACHMENT: AttachedModelPdf = {
   staticUrl: '/docs/akusha_plan_2027_31_models.pdf',
 };
 
+export const AKUSHA_2027_COLLECTION_ADDON_PDF_ATTACHMENT: AttachedModelPdf = {
+  id: 'pdf-akusha-2027-collection-16-models',
+  name: 'AKUSHA_Коллекция_обуви_План_продаж_2027_16_моделей_PRIORA_212.pdf',
+  sizeBytes: 4973564,
+  uploadedAt: '23.11.2026',
+  staticUrl: '/docs/akusha_plan_2027_collection_16_models.pdf',
+};
+
 export interface AkushaProductGroupSummary {
   groupId: string;
   groupTitle: string;
@@ -923,133 +931,571 @@ function buildAkushaCommercialPlan(
   };
 }
 
-export const AKUSHA_2027_MODELS: ScenarioModelSpec[] = RAW_AKUSHA_2027_SEEDS.map(
-  (seed) => {
-    const gallery: GalleryMediaItem[] = seed.imageUrls.map((img, idx) => ({
-      id: `${seed.id}-photo-${idx + 1}`,
-      category: img.category,
-      label: img.label,
-      url: img.url,
-      originalUrl: img.url,
-      isMain: idx === 0,
-    }));
+function mapAkushaSeedToModel(
+  seed: RawAkushaCardSeed,
+  pdfAttachment: AttachedModelPdf
+): ScenarioModelSpec {
+  const gallery: GalleryMediaItem[] = seed.imageUrls.map((img, idx) => ({
+    id: `${seed.id}-photo-${idx + 1}`,
+    category: img.category,
+    label: img.label,
+    url: img.url,
+    originalUrl: img.url,
+    isMain: idx === 0,
+  }));
 
-    const paletteColors: PackColor[] = seed.paletteColors || [
+  const paletteColors: PackColor[] = seed.paletteColors || [
+    {
+      nameRu: seed.colorNameRu,
+      pantone: `AKUSHA ${seed.pdfModelNumLabel}`,
+      hex: seed.swatchHex,
+      bandHex: seed.bandHex,
+      textHex: '#FFFFFF',
+    },
+  ];
+
+  const plan202706 = buildAkushaCommercialPlan(AKUSHA_2027_SCENARIO_ID, seed);
+  const plan1 = buildAkushaCommercialPlan(1, seed);
+  const plan2 = buildAkushaCommercialPlan(2, seed);
+  const plan3 = buildAkushaCommercialPlan(3, seed);
+
+  return {
+    id: seed.id,
+    code: seed.code,
+    title: seed.title,
+    subtitle: seed.subtitle,
+    brandId: 'BORNERS',
+    customBrandLabel: 'AKUSHA',
+    categoryLabel: `Обувь · ${seed.groupTitle}`,
+    primaryUnitLabel: 'пар',
+    secondaryUnitLabel: 'пар',
+    wbArticle: `AKUSHA ${seed.pdfModelNumLabel}`,
+    modelStageStatus:
+      seed.retailPriceRub > 0 && seed.unitCostRub > 0 ? 'Масштабирование' : 'В разработке',
+    description: seed.description,
+    launchStatus:
+      seed.retailPriceRub > 0 && seed.unitCostRub > 0 ? 'Утверждено' : 'В плане',
+    unitsInPack: seed.unitsInPack,
+    retailPriceRub: seed.retailPriceRub,
+    unitCostRub: seed.unitCostRub,
+    marketplaceFeePct: 24,
+    logisticsRub: 180,
+    adsPct: 10,
+    buyoutRatePct: seed.buyoutRatePct,
+    procureByOrdersVolume: true,
+    responsiblePerson: `Бренд-команда AKUSHA · Группа «${seed.groupTitle}»`,
+    priority: seed.priority,
+    hasActualSalesOrPurchases: false,
+    palettes: [
       {
-        nameRu: seed.colorNameRu,
-        pantone: `AKUSHA ${seed.pdfModelNumLabel}`,
-        hex: seed.swatchHex,
-        bandHex: seed.bandHex,
-        textHex: '#FFFFFF',
+        id: `pal-${seed.id}`,
+        title:
+          seed.code === 'AKU-009'
+            ? 'ПАЛИТРА 8 ЦВЕТОВ (№09–16 · ОБЩАЯ КАРТОЧКА)'
+            : `ЦВЕТОВАЯ КАРТА · ${seed.pdfModelNumLabel}`,
+        subtitle:
+          seed.code === 'AKU-009'
+            ? '8 цветов в общей карточке · 1 пара в коробке'
+            : '1 пара в коробке · размерный ряд 39–45',
+        statusLabel: 'Утверждено в PDF 2027',
+        imageUrl: seed.imageUrls[0]?.url,
+        colors: paletteColors,
       },
-    ];
+    ],
+    gallery,
+    attachedPdfs: [{ ...pdfAttachment }],
+    construction: {
+      type: seed.groupTitle,
+      fit: 'Анатомическая колодка (размеры 39–45)',
+      sideSeam: seed.soleType,
+      frontPanel: seed.upperMaterial,
+      gusset: seed.seasonLabel,
+      seams: 'Усиленная прошивка и клеевой контур по ТЗ фабрики',
+    },
+    fabric: {
+      composition: seed.upperMaterial,
+      density: seed.soleType,
+      knitType: seed.groupTitle,
+      touchFeel: seed.seasonLabel,
+      swatchHex: seed.swatchHex,
+    },
+    waistband: {
+      width: 'Размерный ряд 39–45',
+      type: seed.soleType,
+      colorRule: seed.colorNameRu,
+      logoRepeat: 'Тиснение AKUSHA на стельке и язычке',
+      elasticity:
+        seed.buyoutRatePct > 0
+          ? `Плановый выкуп ${seed.buyoutRatePct}%`
+          : 'Процент выкупа уточнить',
+      bandBgHex: seed.bandHex,
+      bandTextHex: '#FFFFFF',
+    },
+    productionSteps: [
+      {
+        id: `${seed.id}-step-1`,
+        stepNum: 1,
+        title: 'Спецификация, колодка и фото образца в плане 2027',
+        datesLabel: 'Утверждено (PDF 2027)',
+        monthIndex: 0,
+        status: 'done',
+        confirmation: 'factory_confirmed',
+      },
+      {
+        id: `${seed.id}-step-2`,
+        stepNum: 2,
+        title: 'Запуск партий под помесячный график заказов и выкупов',
+        datesLabel: seed.seasonLabel,
+        monthIndex: plan202706.salesStartMonthIdx,
+        status: 'planned',
+        confirmation:
+          seed.retailPriceRub > 0 && seed.unitCostRub > 0
+            ? 'factory_confirmed'
+            : 'needs_confirmation',
+      },
+    ],
+    plansByScenario: {
+      1: plan1,
+      2: plan2,
+      3: plan3,
+      [AKUSHA_2027_SCENARIO_ID]: plan202706,
+    },
+  };
+}
 
-    const plan202706 = buildAkushaCommercialPlan(AKUSHA_2027_SCENARIO_ID, seed);
-    const plan1 = buildAkushaCommercialPlan(1, seed);
-    const plan2 = buildAkushaCommercialPlan(2, seed);
-    const plan3 = buildAkushaCommercialPlan(3, seed);
-
-    return {
-      id: seed.id,
-      code: seed.code,
-      title: seed.title,
-      subtitle: seed.subtitle,
-      brandId: 'BORNERS',
-      customBrandLabel: 'AKUSHA',
-      categoryLabel: `Обувь · ${seed.groupTitle}`,
-      primaryUnitLabel: 'пар',
-      secondaryUnitLabel: 'пар',
-      wbArticle: `AKUSHA ${seed.pdfModelNumLabel}`,
-      modelStageStatus:
-        seed.retailPriceRub > 0 && seed.unitCostRub > 0 ? 'Масштабирование' : 'В разработке',
-      description: seed.description,
-      launchStatus:
-        seed.retailPriceRub > 0 && seed.unitCostRub > 0 ? 'Утверждено' : 'В плане',
-      unitsInPack: seed.unitsInPack,
-      retailPriceRub: seed.retailPriceRub,
-      unitCostRub: seed.unitCostRub,
-      marketplaceFeePct: 24,
-      logisticsRub: 180,
-      adsPct: 10,
-      buyoutRatePct: seed.buyoutRatePct,
-      procureByOrdersVolume: true,
-      responsiblePerson: `Бренд-команда AKUSHA · Группа «${seed.groupTitle}»`,
-      priority: seed.priority,
-      hasActualSalesOrPurchases: false,
-      palettes: [
-        {
-          id: `pal-${seed.id}`,
-          title:
-            seed.code === 'AKU-009'
-              ? 'ПАЛИТРА 8 ЦВЕТОВ (№09–16 · ОБЩАЯ КАРТОЧКА)'
-              : `ЦВЕТОВАЯ КАРТА · ${seed.pdfModelNumLabel}`,
-          subtitle:
-            seed.code === 'AKU-009'
-              ? '8 цветов в общей карточке · 1 пара в коробке'
-              : '1 пара в коробке · размерный ряд 39–45',
-          statusLabel: 'Утверждено в PDF 2027',
-          imageUrl: seed.imageUrls[0]?.url,
-          colors: paletteColors,
-        },
-      ],
-      gallery,
-      attachedPdfs: [{ ...AKUSHA_2027_PDF_ATTACHMENT }],
-      construction: {
-        type: seed.groupTitle,
-        fit: 'Анатомическая колодка (размеры 39–45)',
-        sideSeam: seed.soleType,
-        frontPanel: seed.upperMaterial,
-        gusset: seed.seasonLabel,
-        seams: 'Усиленная прошивка и клеевой контур по ТЗ фабрики',
-      },
-      fabric: {
-        composition: seed.upperMaterial,
-        density: seed.soleType,
-        knitType: seed.groupTitle,
-        touchFeel: seed.seasonLabel,
-        swatchHex: seed.swatchHex,
-      },
-      waistband: {
-        width: 'Размерный ряд 39–45',
-        type: seed.soleType,
-        colorRule: seed.colorNameRu,
-        logoRepeat: 'Тиснение AKUSHA на стельке и язычке',
-        elasticity:
-          seed.buyoutRatePct > 0
-            ? `Плановый выкуп ${seed.buyoutRatePct}%`
-            : 'Процент выкупа уточнить',
-        bandBgHex: seed.bandHex,
-        bandTextHex: '#FFFFFF',
-      },
-      productionSteps: [
-        {
-          id: `${seed.id}-step-1`,
-          stepNum: 1,
-          title: 'Спецификация, колодка и фото образца в плане 2027',
-          datesLabel: 'Утверждено (PDF 2027)',
-          monthIndex: 0,
-          status: 'done',
-          confirmation: 'factory_confirmed',
-        },
-        {
-          id: `${seed.id}-step-2`,
-          stepNum: 2,
-          title: 'Запуск партий под помесячный график заказов и выкупов',
-          datesLabel: seed.seasonLabel,
-          monthIndex: plan202706.salesStartMonthIdx,
-          status: 'planned',
-          confirmation:
-            seed.retailPriceRub > 0 && seed.unitCostRub > 0
-              ? 'factory_confirmed'
-              : 'needs_confirmation',
-        },
-      ],
-      plansByScenario: {
-        1: plan1,
-        2: plan2,
-        3: plan3,
-        [AKUSHA_2027_SCENARIO_ID]: plan202706,
-      },
-    };
-  }
+export const AKUSHA_2027_MODELS: ScenarioModelSpec[] = RAW_AKUSHA_2027_SEEDS.map((seed) =>
+  mapAkushaSeedToModel(seed, AKUSHA_2027_PDF_ATTACHMENT)
 );
+
+/**
+ * Дополнительная коллекция AKUSHA 2027 (PDF от 23.11.2026: 14 моделей №01–14 + 2 модели PRIORA и 212 = 16 карточек)
+ * Итого: 5 380 выкупленных пар · 18 000 заказов (выкуп 30%) · выручка 38 086 200 ₽ · COGS 13 656 000 ₽
+ */
+const RAW_AKUSHA_2027_COLLECTION_ADDON_SEEDS: RawAkushaCardSeed[] = [
+  {
+    id: 'scen-akusha-032',
+    code: 'AKU-032',
+    pdfModelNumLabel: 'Коллекция №01',
+    title: 'Кроссовки · Замша + кожа с белой подошвой (Коллекция №01)',
+    subtitle: 'Кроссовки · План 2027: 360 выкупов / 1 205 заказов (выкуп 30%)',
+    groupTitle: 'Кроссовки',
+    colorNameRu: 'Коричневая замша + кожа, белая подошва',
+    swatchHex: '#6F5849',
+    bandHex: '#4A392F',
+    retailPriceRub: 7990,
+    unitCostRub: 2700,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [0, 0, 22, 32, 40, 43, 43, 43, 47, 43, 32, 15],
+    monthlyOrdersPacks: [0, 0, 74, 107, 134, 144, 144, 144, 157, 144, 107, 50],
+    imageUrls: [
+      { url: '/models/akusha/AKU-032_main.jpg', label: 'Коллекция №01 · Замшевые кроссовки с белой подошвой', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная замша + гладкая кожа',
+    soleType: 'Контрастная белая подошва с терракотовым протектором',
+    seasonLabel: 'Март–Декабрь (пик Сентябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 04, 10): Замшевые кроссовки с белой подошвой. Реализация 7 990 ₽, себестоимость 2 700 ₽, выкуп 30%. План 2027: 360 выкупов (1 205 заказов), выручка 2 876 400 ₽, COGS 972 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-033',
+    code: 'AKU-033',
+    pdfModelNumLabel: 'Коллекция №02',
+    title: 'Лоферы-ботинки из замши · Шоколадная замша (Коллекция №02)',
+    subtitle: 'Лоферы-ботинки из замши · План 2027: 480 выкупов / 1 604 заказа (выкуп 30%)',
+    groupTitle: 'Лоферы-ботинки из замши',
+    colorNameRu: 'Шоколадная замша',
+    swatchHex: '#3B2D28',
+    bandHex: '#251C19',
+    retailPriceRub: 8490,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [19, 24, 34, 38, 29, 24, 24, 38, 63, 77, 67, 43],
+    monthlyOrdersPacks: [64, 80, 114, 127, 97, 80, 80, 127, 210, 257, 224, 144],
+    imageUrls: [
+      { url: '/models/akusha/AKU-033_main.jpg', label: 'Коллекция №02 · Лоферы-ботинки шоколадная замша', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная шоколадная замша в эстетике Open Walk / чукка',
+    soleType: 'Кремовая лёгкая подошва',
+    seasonLabel: 'Круглый год (пик Сентябрь–Ноябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 05, 10): Лоферы-ботинки из шоколадной замши. Реализация 8 490 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 480 выкупов (1 604 заказа), выручка 4 075 200 ₽, COGS 1 152 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-034',
+    code: 'AKU-034',
+    pdfModelNumLabel: 'Коллекция №03',
+    title: 'Лоферы-ботинки из замши · Оливковая замша (Коллекция №03)',
+    subtitle: 'Лоферы-ботинки из замши · План 2027: 420 выкупов / 1 404 заказа (выкуп 30%)',
+    groupTitle: 'Лоферы-ботинки из замши',
+    colorNameRu: 'Оливковая замша (тренд SS 2027)',
+    swatchHex: '#62633D',
+    bandHex: '#424328',
+    retailPriceRub: 8490,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [17, 21, 29, 34, 25, 21, 21, 34, 54, 67, 59, 38],
+    monthlyOrdersPacks: [57, 70, 97, 114, 84, 70, 70, 114, 180, 224, 197, 127],
+    imageUrls: [
+      { url: '/models/akusha/AKU-034_main.jpg', label: 'Коллекция №03 · Лоферы-ботинки оливковая замша', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная оливковая замша (тренд показов весна–лето 2027)',
+    soleType: 'Кремовая лёгкая подошва',
+    seasonLabel: 'Круглый год (пик Сентябрь–Ноябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 05, 10): Лоферы-ботинки из оливковой замши. Реализация 8 490 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 420 выкупов (1 404 заказа), выручка 3 565 800 ₽, COGS 1 008 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-035',
+    code: 'AKU-035',
+    pdfModelNumLabel: 'Коллекция №04',
+    title: 'Кожаные ботинки · Тёмно-коричневая кожа (Коллекция №04)',
+    subtitle: 'Ботинки: кожа и челси · План 2027: 420 выкупов / 1 405 заказов (выкуп 30%)',
+    groupTitle: 'Ботинки: кожа и челси',
+    colorNameRu: 'Тёмно-коричневая зернистая кожа',
+    swatchHex: '#3D271E',
+    bandHex: '#251711',
+    retailPriceRub: 8990,
+    unitCostRub: 2700,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [34, 25, 17, 13, 8, 8, 13, 34, 63, 84, 75, 46],
+    monthlyOrdersPacks: [114, 84, 57, 44, 27, 27, 44, 114, 210, 280, 250, 154],
+    imageUrls: [
+      { url: '/models/akusha/AKU-035_main.jpg', label: 'Коллекция №04 · Кожаные ботинки', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная гладкая и зернистая кожа премиум-выделки',
+    soleType: 'Тёмно-коричневая формованная подошва',
+    seasonLabel: 'Осень–Зима–Весна (пик Сентябрь–Ноябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 06, 10): Кожаные ботинки. Реализация 8 990 ₽, себестоимость 2 700 ₽, выкуп 30%. План 2027: 420 выкупов (1 405 заказов), выручка 3 775 800 ₽, COGS 1 134 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-036',
+    code: 'AKU-036',
+    pdfModelNumLabel: 'Коллекция №05',
+    title: 'Замшевые челси · Шоколадная замша (Коллекция №05)',
+    subtitle: 'Ботинки: кожа и челси · План 2027: 420 выкупов / 1 404 заказа (выкуп 30%)',
+    groupTitle: 'Ботинки: кожа и челси',
+    colorNameRu: 'Шоколадная замша с чёрной подошвой',
+    swatchHex: '#3F2B23',
+    bandHex: '#261A15',
+    retailPriceRub: 8490,
+    unitCostRub: 2700,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [29, 21, 21, 21, 13, 8, 13, 29, 63, 80, 76, 46],
+    monthlyOrdersPacks: [97, 70, 70, 70, 44, 27, 44, 97, 210, 267, 254, 154],
+    imageUrls: [
+      { url: '/models/akusha/AKU-036_main.jpg', label: 'Коллекция №05 · Замшевые челси', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная шоколадная замша, эластичные боковые вставки',
+    soleType: 'Чёрная износостойкая подошва с оранжевым акцентом протектора',
+    seasonLabel: 'Осень–Зима–Весна (пик Сентябрь–Ноябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 06, 10): Замшевые челси. Реализация 8 490 ₽, себестоимость 2 700 ₽, выкуп 30%. План 2027: 420 выкупов (1 404 заказа), выручка 3 565 800 ₽, COGS 1 134 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-037',
+    code: 'AKU-037',
+    pdfModelNumLabel: 'Коллекция №06',
+    title: 'Берцы демисезонные · Чёрная натуральная кожа (Коллекция №06)',
+    subtitle: 'Берцы · План 2027: 480 выкупов / 1 605 заказов (выкуп 30%)',
+    groupTitle: 'Берцы',
+    colorNameRu: 'Чёрный классический (демисезон)',
+    swatchHex: '#1C1D20',
+    bandHex: '#111214',
+    retailPriceRub: 4490,
+    unitCostRub: 2700,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [15, 14, 48, 67, 48, 19, 10, 19, 67, 86, 58, 29],
+    monthlyOrdersPacks: [50, 47, 160, 224, 160, 64, 34, 64, 224, 287, 194, 97],
+    imageUrls: [
+      { url: '/models/akusha/AKU-038_main.jpg', label: 'Коллекция №06 · Референс силуэта берцев (в PDF фото у зимней версии)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная чёрная кожа (демисезонная подкладка)',
+    soleType: 'Высокая тракторная подошва с глубоким протектором',
+    seasonLabel: 'Весна + Осень (пики Апрель и Сентябрь–Ноябрь)',
+    description:
+      'Коллекция обуви 2027 (стр. 07, 10): Берцы демисезонные чёрные. Реализация 4 490 ₽, себестоимость 2 700 ₽, выкуп 30% (по аналитике берцев за 30 дней: 34,78%, с учётом возврата 30,80%). План 2027: 480 выкупов (1 605 заказов), выручка 2 155 200 ₽, COGS 1 296 000 ₽. Отдельное фото демисезонной пары уточняется (показан референс зимних берцев).',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-038',
+    code: 'AKU-038',
+    pdfModelNumLabel: 'Коллекция №07',
+    title: 'Берцы зимние · Чёрная натуральная кожа + мех (Коллекция №07)',
+    subtitle: 'Берцы · План 2027: 600 выкупов / 2 000 заказов (выкуп 30%)',
+    groupTitle: 'Берцы',
+    colorNameRu: 'Чёрный классический (зима до −25°)',
+    swatchHex: '#18191C',
+    bandHex: '#0F1012',
+    retailPriceRub: 5490,
+    unitCostRub: 2800,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [84, 72, 24, 0, 0, 0, 0, 12, 48, 108, 132, 120],
+    monthlyOrdersPacks: [280, 240, 80, 0, 0, 0, 0, 40, 160, 360, 440, 400],
+    imageUrls: [
+      { url: '/models/akusha/AKU-038_main.jpg', label: 'Коллекция №07 · Зимние берцы из натуральной кожи с мехом (размеры 35–47)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная чёрная кожа + натуральный мех (до −25°, размеры 35–47)',
+    soleType: 'Морозостойкая тракторная подошва с антискользящим протектором',
+    seasonLabel: 'Август–Март (пик Октябрь–Январь)',
+    description:
+      'Коллекция обуви 2027 (стр. 07, 10): Берцы зимние чёрные (натуральная кожа, натуральный мех, до −25°, размерный ряд 35–47). Реализация 5 490 ₽, себестоимость 2 800 ₽, выкуп 30%. План 2027: 600 выкупов (2 000 заказов), выручка 3 294 000 ₽, COGS 1 680 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-039',
+    code: 'AKU-039',
+    pdfModelNumLabel: 'Коллекция №08',
+    title: 'Мюли из замши · Шоколадные (Коллекция №08)',
+    subtitle: 'Мюли · План 2027: 180 выкупов / 603 заказа (выкуп 30%)',
+    groupTitle: 'Мюли (коллекция 2027)',
+    colorNameRu: 'Шоколадная замша',
+    swatchHex: '#4D3628',
+    bandHex: '#332319',
+    retailPriceRub: 5990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [0, 0, 9, 22, 32, 40, 32, 22, 14, 9, 0, 0],
+    monthlyOrdersPacks: [0, 0, 30, 74, 107, 134, 107, 74, 47, 30, 0, 0],
+    imageUrls: [
+      { url: '/models/akusha/AKU-039_main.jpg', label: 'Коллекция №08 · Мюли из замши (шоколадный цвет, общая съёмка палитры)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная замша, мягкая анатомическая стелька',
+    soleType: 'Лёгкая плоская подошва с противоскользящим рисунком',
+    seasonLabel: 'Март–Октябрь (пик Май–Июль)',
+    description:
+      'Коллекция обуви 2027 (стр. 08, 10): Замшевые мюли шоколадные. Реализация 5 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 180 выкупов (603 заказа), выручка 1 078 200 ₽, COGS 432 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-040',
+    code: 'AKU-040',
+    pdfModelNumLabel: 'Коллекция №09',
+    title: 'Мюли из замши · Бежевые (Коллекция №09)',
+    subtitle: 'Мюли · План 2027: 160 выкупов / 537 заказов (выкуп 30%)',
+    groupTitle: 'Мюли (коллекция 2027)',
+    colorNameRu: 'Светло-бежевая замша',
+    swatchHex: '#B8A590',
+    bandHex: '#7D6E5D',
+    retailPriceRub: 5990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [0, 0, 8, 19, 29, 35, 29, 19, 13, 8, 0, 0],
+    monthlyOrdersPacks: [0, 0, 27, 64, 97, 117, 97, 64, 44, 27, 0, 0],
+    imageUrls: [
+      { url: '/models/akusha/AKU-039_main.jpg', label: 'Коллекция №09 · Мюли из замши (бежевый цвет, общая съёмка палитры)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная замша, мягкая анатомическая стелька',
+    soleType: 'Лёгкая плоская подошва с противоскользящим рисунком',
+    seasonLabel: 'Март–Октябрь (пик Май–Июль)',
+    description:
+      'Коллекция обуви 2027 (стр. 08, 10): Замшевые мюли бежевые. Реализация 5 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 160 выкупов (537 заказов), выручка 958 400 ₽, COGS 384 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-041',
+    code: 'AKU-041',
+    pdfModelNumLabel: 'Коллекция №10',
+    title: 'Мюли из замши · Чёрные (Коллекция №10)',
+    subtitle: 'Мюли · План 2027: 160 выкупов / 537 заказов (выкуп 30%)',
+    groupTitle: 'Мюли (коллекция 2027)',
+    colorNameRu: 'Чёрная замша',
+    swatchHex: '#18181A',
+    bandHex: '#0E0E10',
+    retailPriceRub: 5990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [0, 0, 8, 19, 29, 35, 29, 19, 13, 8, 0, 0],
+    monthlyOrdersPacks: [0, 0, 27, 64, 97, 117, 97, 64, 44, 27, 0, 0],
+    imageUrls: [
+      { url: '/models/akusha/AKU-039_main.jpg', label: 'Коллекция №10 · Мюли из замши (чёрный цвет, общая съёмка палитры)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная чёрная замша, мягкая анатомическая стелька',
+    soleType: 'Лёгкая плоская подошва с противоскользящим рисунком',
+    seasonLabel: 'Март–Октябрь (пик Май–Июль)',
+    description:
+      'Коллекция обуви 2027 (стр. 08, 10): Замшевые мюли чёрные. Реализация 5 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 160 выкупов (537 заказов), выручка 958 400 ₽, COGS 384 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-042',
+    code: 'AKU-042',
+    pdfModelNumLabel: 'Коллекция №11',
+    title: 'Мюли из замши · Тёмно-синие (Коллекция №11)',
+    subtitle: 'Мюли · План 2027: 100 выкупов / 335 заказов (выкуп 30%)',
+    groupTitle: 'Мюли (коллекция 2027)',
+    colorNameRu: 'Тёмно-синяя замша',
+    swatchHex: '#222F47',
+    bandHex: '#161F30',
+    retailPriceRub: 5990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [0, 0, 5, 12, 18, 22, 18, 12, 8, 5, 0, 0],
+    monthlyOrdersPacks: [0, 0, 17, 40, 60, 74, 60, 40, 27, 17, 0, 0],
+    imageUrls: [
+      { url: '/models/akusha/AKU-039_main.jpg', label: 'Коллекция №11 · Референс линейки мюли (отдельное фото тёмно-синего цвета добавится)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная тёмно-синяя замша, мягкая анатомическая стелька',
+    soleType: 'Лёгкая плоская подошва с противоскользящим рисунком',
+    seasonLabel: 'Март–Октябрь (пик Май–Июль)',
+    description:
+      'Коллекция обуви 2027 (стр. 08, 10): Замшевые мюли тёмно-синие (в PDF указано, что отдельного фото тёмно-синих пока нет — прикреплён референс линейки). Реализация 5 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 100 выкупов (335 заказов), выручка 599 000 ₽, COGS 240 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-043',
+    code: 'AKU-043',
+    pdfModelNumLabel: 'Коллекция №12',
+    title: 'Кеды из войлока · Бежевые на белой подошве (Коллекция №12)',
+    subtitle: 'Модели из войлока · План 2027: 280 выкупов / 938 заказов (выкуп 30%)',
+    groupTitle: 'Модели из войлока',
+    colorNameRu: 'Бежевый войлок, белая подошва',
+    swatchHex: '#C5BFAF',
+    bandHex: '#847E70',
+    retailPriceRub: 6990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [22, 28, 20, 11, 6, 3, 3, 11, 28, 56, 64, 28],
+    monthlyOrdersPacks: [74, 94, 67, 37, 20, 10, 10, 37, 94, 187, 214, 94],
+    imageUrls: [
+      { url: '/models/akusha/AKU-043_main.jpg', label: 'Коллекция №12 · Кеды из войлока бежевые на белой подошве', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральный плотный шерстяной войлок, тёплая подкладка',
+    soleType: 'Белая формованная кедовая подошва',
+    seasonLabel: 'Осень–Зима–Весна (пик Октябрь–Ноябрь и Февраль)',
+    description:
+      'Коллекция обуви 2027 (стр. 09, 10): Модели из войлока · Бежевые (форму силуэта можно адаптировать помимо кед). Реализация 6 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 280 выкупов (938 заказов), выручка 1 957 200 ₽, COGS 672 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-044',
+    code: 'AKU-044',
+    pdfModelNumLabel: 'Коллекция №13',
+    title: 'Кеды из войлока · Тёмно-серые на чёрной подошве (Коллекция №13)',
+    subtitle: 'Модели из войлока · План 2027: 320 выкупов / 1 071 заказ (выкуп 30%)',
+    groupTitle: 'Модели из войлока',
+    colorNameRu: 'Тёмно-серый графитовый войлок, чёрная подошва',
+    swatchHex: '#4E5156',
+    bandHex: '#2E3034',
+    retailPriceRub: 6990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [26, 32, 22, 13, 6, 3, 3, 13, 32, 64, 74, 32],
+    monthlyOrdersPacks: [87, 107, 74, 44, 20, 10, 10, 44, 107, 214, 247, 107],
+    imageUrls: [
+      { url: '/models/akusha/AKU-044_main.jpg', label: 'Коллекция №13 · Кеды из войлока тёмно-серые на чёрной подошве', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральный плотный шерстяной войлок (графит)',
+    soleType: 'Чёрная формованная кедовая подошва',
+    seasonLabel: 'Осень–Зима–Весна (пик Октябрь–Ноябрь и Февраль)',
+    description:
+      'Коллекция обуви 2027 (стр. 09, 10): Модели из войлока · Тёмно-серые (лидер линейки войлока). Реализация 6 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 320 выкупов (1 071 заказ), выручка 2 236 800 ₽, COGS 768 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-045',
+    code: 'AKU-045',
+    pdfModelNumLabel: 'Коллекция №14',
+    title: 'Кеды из войлока · Тёмно-синие (Коллекция №14)',
+    subtitle: 'Модели из войлока · План 2027: 200 выкупов / 672 заказа (выкуп 30%)',
+    groupTitle: 'Модели из войлока',
+    colorNameRu: 'Тёмно-синий войлок',
+    swatchHex: '#25334C',
+    bandHex: '#182133',
+    retailPriceRub: 6990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [16, 20, 14, 8, 4, 2, 2, 8, 20, 40, 46, 20],
+    monthlyOrdersPacks: [54, 67, 47, 27, 14, 7, 7, 27, 67, 134, 154, 67],
+    imageUrls: [
+      { url: '/models/akusha/AKU-044_main.jpg', label: 'Коллекция №14 · Референс силуэта войлочных кед (отдельное фото тёмно-синих добавится)', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральный плотный шерстяной войлок (тёмно-синий)',
+    soleType: 'Формованная кедовая подошва',
+    seasonLabel: 'Осень–Зима–Весна (пик Октябрь–Ноябрь и Февраль)',
+    description:
+      'Коллекция обуви 2027 (стр. 09, 10): Модели из войлока · Тёмно-синие (в PDF фото есть у бежевого и тёмно-серого). Реализация 6 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 200 выкупов (672 заказа), выручка 1 398 000 ₽, COGS 480 000 ₽.',
+    priority: 'Средний',
+  },
+  {
+    id: 'scen-akusha-046',
+    code: 'AKU-046',
+    pdfModelNumLabel: 'PRIORA',
+    title: 'Ботинки PRIORA на байке · Чёрная натуральная кожа',
+    subtitle: 'PRIORA + 212 · План 2027: 400 выкупов / 1 340 заказов (выкуп 30%)',
+    groupTitle: 'Ботинки PRIORA + 212',
+    colorNameRu: 'Чёрная кожа, коричневый язычок Akusha',
+    swatchHex: '#201F1D',
+    bandHex: '#131211',
+    retailPriceRub: 6990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [32, 40, 28, 16, 8, 4, 4, 16, 40, 80, 92, 40],
+    monthlyOrdersPacks: [107, 134, 94, 54, 27, 14, 14, 54, 134, 267, 307, 134],
+    imageUrls: [
+      { url: '/models/akusha/AKU-046_main.jpg', label: 'PRIORA · Ботинки на байке с тиснением Akusha', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная чёрная кожа, подкладка байка, боковая молния + шнуровка',
+    soleType: 'Прошитая износостойкая подошва с коричневым рантом',
+    seasonLabel: 'Осень–Зима–Весна (пик Октябрь–Ноябрь и Февраль)',
+    description:
+      'План продаж 2027 (стр. 08 PDF «PRIORA + 212»): Ботинки PRIORA на байке. Реализация 6 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 400 выкупов (1 340 заказов), выручка 2 796 000 ₽, COGS 960 000 ₽, валовая прибыль до комиссий 1 836 000 ₽.',
+    priority: 'Высокий',
+  },
+  {
+    id: 'scen-akusha-047',
+    code: 'AKU-047',
+    pdfModelNumLabel: 'Модель 212',
+    title: 'Высокие ботинки 212 на меху с молнией · Чёрная натуральная кожа',
+    subtitle: 'PRIORA + 212 · План 2027: 400 выкупов / 1 340 заказов (выкуп 30%)',
+    groupTitle: 'Ботинки PRIORA + 212',
+    colorNameRu: 'Чёрная кожа, натуральный мех',
+    swatchHex: '#1A1B1D',
+    bandHex: '#101112',
+    retailPriceRub: 6990,
+    unitCostRub: 2400,
+    buyoutRatePct: 30,
+    unitsInPack: 1,
+    monthlyPacks: [32, 40, 28, 16, 8, 4, 4, 16, 40, 80, 92, 40],
+    monthlyOrdersPacks: [107, 134, 94, 54, 27, 14, 14, 54, 134, 267, 307, 134],
+    imageUrls: [
+      { url: '/models/akusha/AKU-047_main.jpg', label: 'Модель 212 · Высокие зимние ботинки на меху с молнией', category: 'pack' },
+    ],
+    upperMaterial: 'Натуральная чёрная кожа, мягкий валик, натуральный мех, боковая молния + шнуровка',
+    soleType: 'Высокая зимняя тракторная подошва с глубоким протектором',
+    seasonLabel: 'Осень–Зима–Весна (пик Октябрь–Ноябрь и Февраль)',
+    description:
+      'План продаж 2027 (стр. 08 PDF «PRIORA + 212»): Высокие ботинки 212 на меху с молнией. Реализация 6 990 ₽, себестоимость 2 400 ₽, выкуп 30%. План 2027: 400 выкупов (1 340 заказов), выручка 2 796 000 ₽, COGS 960 000 ₽, валовая прибыль до комиссий 1 836 000 ₽.',
+    priority: 'Высокий',
+  },
+];
+
+export const AKUSHA_2027_COLLECTION_ADDON_MODELS: ScenarioModelSpec[] =
+  RAW_AKUSHA_2027_COLLECTION_ADDON_SEEDS.map((seed) =>
+    mapAkushaSeedToModel(seed, AKUSHA_2027_COLLECTION_ADDON_PDF_ATTACHMENT)
+  );
+
+export const AKUSHA_2027_ALL_MODELS: ScenarioModelSpec[] = [
+  ...AKUSHA_2027_MODELS,
+  ...AKUSHA_2027_COLLECTION_ADDON_MODELS,
+];
