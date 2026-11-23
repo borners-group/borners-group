@@ -12763,6 +12763,329 @@ test('AKUSHA Коллекция 2027 (добавка 16 моделей: №01–
   assert.ok(fs.existsSync(pdfAbs), `PDF ${pdfAbs} должен существовать`);
 });
 
+test('Bulk Excel/CSV 1: LISKANI 269 SKU — генерация шаблона .xlsx/.csv, round-trip без ложных правок и 0 пустых sellerSku «None»', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID, LISKANI_269_SKUS } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const {
+    buildBulkTemplateSheets,
+    buildXlsxBytes,
+    parseSpreadsheetBuffer,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  // Ни у одного из 269 SKU не должно быть сломанного sellerSku === 'None'
+  assert.equal(
+    LISKANI_269_SKUS.filter((s) => !s.sellerSku || s.sellerSku === 'None').length,
+    0,
+    'Все 269 размерных SKU LISKANI должны иметь заполненный sellerSku (без None)'
+  );
+
+  // Генерация .xlsx шаблона в режиме выкупов
+  const tpl = buildBulkTemplateSheets({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    volumeMetric: 'buyouts',
+    includeCost: true,
+    scenarioTitle: 'LISKANI 2027',
+  });
+  assert.equal(tpl.rowsCount, 269);
+
+  const xlsxBytes = buildXlsxBytes(tpl.sheets);
+  assert.equal(xlsxBytes[0], 0x50);
+  assert.equal(xlsxBytes[1], 0x4b);
+
+  const parsedXlsx = parseSpreadsheetBuffer(xlsxBytes, `${tpl.fileBaseName}.xlsx`);
+  assert.equal(parsedXlsx.format, 'xlsx');
+  assert.equal(parsedXlsx.rows.length, 270);
+  assert.equal(parsedXlsx.metadata.borners_mode, 'liskani_269');
+  assert.equal(parsedXlsx.metadata.borners_metric, 'buyouts');
+  // Баркод и артикул WB сохранены как точные цифры, не в научной нотации
+  assert.equal(parsedXlsx.rows[1][2], '278887893');
+  assert.equal(parsedXlsx.rows[1][3], '2041688666155');
+
+  const noOp = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parsedXlsx,
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  assert.equal(noOp.matchedRowsCount, 269);
+  assert.equal(noOp.unmatchedRows.length, 0);
+  assert.equal(noOp.changedSkusCount, 0);
+});
+
+test('Bulk Excel/CSV 2: LISKANI — частичный импорт только цен и себестоимости (формат Excel с ₽, научной нотацией и fallback для None-SKU) не затирает месяцы', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const {
+    buildXlsxBytes,
+    parseSpreadsheetBuffer,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  // Эмулируем старую базу с sellerSku = 'None' у М4240 Розово-коричневый (#141)
+  const legacyModels = LISKANI_2027_MODELS.map((m) => ({
+    ...m,
+    liskaniSizeVariants: m.liskaniSizeVariants?.map((sv) =>
+      sv.skuIndex === 141 ? { ...sv, sellerSku: 'None', wbNmId: '', barcode: '' } : sv
+    ),
+  }));
+
+  const xlsxBytes = buildXlsxBytes([
+    {
+      name: 'Лист1',
+      rows: [
+        [
+          { value: 'Артикул продавца (действующий)' },
+          { value: 'Артикул WB' },
+          { value: 'Баркод' },
+          { value: 'Цена реализации, ₽' },
+          { value: 'Себестоимость' },
+        ],
+        [
+          { value: 'Б3240 Молочный' },
+          { value: '2.78887893E8' },
+          { value: '2.041688666155E12' },
+          { value: '2 950,00 ₽' },
+          { value: '1093,50' },
+        ],
+        [
+          { value: 'М4240 Розово-коричневый' },
+          { value: '' },
+          { value: '' },
+          { value: '3 200,00 ₽' },
+          { value: '970.33' },
+        ],
+      ],
+    },
+  ]);
+
+  const parsed = parseSpreadsheetBuffer(xlsxBytes, 'Для_плана_продаж_2027_шторы.xlsx');
+  const prev = previewBulkSpreadsheetImport({
+    models: legacyModels,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed,
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+
+  assert.equal(prev.recommendedMode, 'liskani_269');
+  assert.equal(prev.matchedRowsCount, 2);
+  assert.equal(prev.unmatchedRows.length, 0);
+  assert.equal(prev.changedSkusCount, 2);
+  assert.equal(prev.priceChangedCount, 1);
+  assert.equal(prev.costChangedCount, 2);
+  assert.equal(prev.monthsChangedCount, 0);
+  assert.equal(prev.metaFixedCount, 1);
+  // Объёмы в комплектах не затёрты!
+  assert.equal(prev.totalsAfter.annualBuyoutsUnits, prev.totalsBefore.annualBuyoutsUnits);
+  assert.equal(prev.totalsAfter.annualOrdersUnits, prev.totalsBefore.annualOrdersUnits);
+
+  const lsc001 = prev.updatedModels.find((m) => m.code === 'LSC-001')!;
+  const sv1 = lsc001.liskaniSizeVariants!.find((v) => v.skuIndex === 1)!;
+  assert.equal(sv1.retailPriceRub, 2950);
+  assert.equal(sv1.unitCostRub, 1093.5);
+  assert.equal(sv1.annualBuyoutsUnits, 1847);
+
+  const sv141 = prev.updatedModels
+    .flatMap((m) => m.liskaniSizeVariants || [])
+    .find((v) => v.skuIndex === 141)!;
+  assert.equal(sv141.sellerSku, 'М4240 Розово-коричневый');
+  assert.equal(sv141.unitCostRub, 970.33);
+});
+
+test('Bulk Excel/CSV 3: LISKANI — обновление помесячного плана продаж (Янв–Дек) в режимах Выкупы и Заказы + явный ноль и пустые ячейки', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { parseCsvText, previewBulkSpreadsheetImport } = await import(
+    '../src/lib/bulkSalesPlanExcel.ts'
+  );
+
+  // Режим Выкупы: меняем Янв=300, Фев=0, Авг=400, остальные пустые (должны сохраниться!)
+  const csvBuyouts = [
+    'Артикул продавца;Янв (выкупы);Фев (выкупы);Авг (выкупы)',
+    'Б3240 Молочный;300;0;400',
+  ].join('\n');
+  const parsedBuyouts = parseCsvText(csvBuyouts, 'liskani_months.csv');
+  const resBuyouts = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parsedBuyouts,
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+
+  assert.equal(resBuyouts.detectedColumns.detectedMetricHint, 'buyouts');
+  assert.equal(resBuyouts.changedSkusCount, 1);
+  assert.equal(resBuyouts.monthsChangedCount, 1);
+
+  const sv1After = resBuyouts.updatedModels
+    .find((m) => m.code === 'LSC-001')!
+    .liskaniSizeVariants!.find((v) => v.skuIndex === 1)!;
+  assert.equal(sv1After.monthlyBuyoutsUnits[0], 300);
+  assert.equal(sv1After.monthlyOrdersUnits[0], Math.round(300 / 0.57));
+  assert.equal(sv1After.monthlyBuyoutsUnits[1], 0);
+  assert.equal(sv1After.monthlyOrdersUnits[1], 0);
+  assert.equal(sv1After.monthlyBuyoutsUnits[2], 166, 'Март не был в файле и обязан остаться 166');
+  assert.equal(sv1After.monthlyBuyoutsUnits[7], 400);
+
+  // Родительская карточка LSC-001 синхронно пересчитана
+  const lsc001After = resBuyouts.updatedModels.find((m) => m.code === 'LSC-001')!;
+  const sumJanBuyouts = lsc001After.liskaniSizeVariants!.reduce(
+    (s, v) => s + v.monthlyBuyoutsUnits[0],
+    0
+  );
+  assert.equal(lsc001After.plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyPacks[0], sumJanBuyouts);
+
+  // Режим Заказы: задаём Янв=500 заказов -> выкупы = round(500 * 0.57) = 285
+  const csvOrders = [
+    'Артикул продавца;Янв (заказы)',
+    'Б3240 Молочный;500',
+  ].join('\n');
+  const parsedOrders = parseCsvText(csvOrders, 'liskani_orders.csv');
+  const resOrders = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parsedOrders,
+    options: {
+      volumeMetric: 'orders',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  assert.equal(resOrders.detectedColumns.detectedMetricHint, 'orders');
+  const sv1Orders = resOrders.updatedModels
+    .find((m) => m.code === 'LSC-001')!
+    .liskaniSizeVariants!.find((v) => v.skuIndex === 1)!;
+  assert.equal(sv1Orders.monthlyOrdersUnits[0], 500);
+  assert.equal(sv1Orders.monthlyBuyoutsUnits[0], Math.round(500 * 0.57));
+});
+
+test('Bulk Excel/CSV 4: Карточки брендов (AKUSHA) — массовое обновление цен, себестоимости, 12 мес. и RBAC-защита себестоимости', async () => {
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const {
+    buildBulkTemplateSheets,
+    buildXlsxBytes,
+    parseCsvText,
+    parseSpreadsheetBuffer,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  const tpl = buildBulkTemplateSheets({
+    models: AKUSHA_2027_MODELS,
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'AKUSHA',
+    volumeMetric: 'buyouts',
+    includeCost: true,
+  });
+  assert.equal(tpl.rowsCount, AKUSHA_2027_MODELS.length);
+  const parsedTpl = parseSpreadsheetBuffer(buildXlsxBytes(tpl.sheets), 'akusha.xlsx');
+  assert.equal(parsedTpl.rows.length, AKUSHA_2027_MODELS.length + 1);
+
+  const firstModel = AKUSHA_2027_MODELS[0];
+  const origCost = firstModel.unitCostRub;
+  const csv = [
+    'Код модели,РРЦ,Себестоимость,Янв,Фев',
+    `${firstModel.code},7500,2900,120,140`,
+  ].join('\n');
+
+  // Без права просмотра/редактирования себестоимости (canEditCost: false) — себестоимость НЕ меняется!
+  const restricted = previewBulkSpreadsheetImport({
+    models: AKUSHA_2027_MODELS,
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'AKUSHA',
+    parsed: parseCsvText(csv, 'akusha.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: false,
+    },
+  });
+  const mRestricted = restricted.updatedModels.find((m) => m.code === firstModel.code)!;
+  assert.equal(mRestricted.retailPriceRub, 7500);
+  assert.equal(mRestricted.unitCostRub, origCost, 'При canEditCost=false себестоимость не должна меняться');
+  assert.equal(mRestricted.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[0], 120);
+  assert.equal(mRestricted.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[1], 140);
+
+  // С правом canEditCost: true — обновляются и цена, и себестоимость, и месяцы
+  const full = previewBulkSpreadsheetImport({
+    models: AKUSHA_2027_MODELS,
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'AKUSHA',
+    parsed: parseCsvText(csv, 'akusha.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  const mFull = full.updatedModels.find((m) => m.code === firstModel.code)!;
+  assert.equal(mFull.unitCostRub, 2900);
+});
+
+test('Bulk Excel/CSV 5: UI-контракт — BulkSalesPlanExcelModal подключён в ProductCatalogView и GrowthScenariosShowcase и защищён от закрытия по фону', () => {
+  const modalCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/BulkSalesPlanExcelModal.tsx'),
+    'utf-8'
+  );
+  const catalogCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/ProductCatalogView.tsx'),
+    'utf-8'
+  );
+  const salesCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf-8'
+  );
+
+  assert.ok(modalCode.includes('data-testid="bulk-excel-modal-backdrop"'));
+  assert.ok(
+    !modalCode.includes('data-testid="bulk-excel-modal-backdrop"\n      onClick'),
+    'BulkSalesPlanExcelModal не должен закрываться по случайному клику на фон'
+  );
+  assert.ok(catalogCode.includes('BulkSalesPlanExcelModal'));
+  assert.ok(salesCode.includes('BulkSalesPlanExcelModal'));
+});
+
 
 
 

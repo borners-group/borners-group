@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  FileSpreadsheet,
   FlaskConical,
   Folder,
   ImagePlus,
@@ -54,6 +55,8 @@ import { BoxerPackStackSvg } from '@/components/sections/ScenarioVisualParts';
 import { PeaklyCatalogGroupsAndBrandsView } from '@/components/sections/PeaklyBrandCatalogAndGroups';
 import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCardScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
+import { BulkSalesPlanExcelModal } from '@/components/sections/BulkSalesPlanExcelModal';
+import type { BulkTemplateMode } from '@/lib/bulkSalesPlanExcel';
 import {
   markModelAsDeletedInStorage,
   unmarkModelAsDeletedInStorage,
@@ -248,6 +251,10 @@ export function ProductCatalogView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [stageFilter, setStageFilter] = useState<string>('ALL');
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [bulkExcelModal, setBulkExcelModal] = useState<{
+    open: boolean;
+    initialMode?: BulkTemplateMode;
+  }>({ open: false });
   const [activePassportModelId, setActivePassportModelId] = useState<string | null>(null);
   const [pdfModalModel, setPdfModalModel] = useState<ScenarioModelSpec | null>(null);
 
@@ -1002,6 +1009,51 @@ export function ProductCatalogView() {
   const liskaniTableBuyoutHeader =
     liskaniBuyoutRates.length === 1 ? `Выкупы ${liskaniBuyoutRates[0]}%` : 'Выкупы %';
 
+  const liskaniLiveSummary = (() => {
+    let buyoutsRub = 0;
+    let ordersRub = 0;
+    let ordersUnits = 0;
+    let skuCount = 0;
+    let colorCards = 0;
+    const byFabric = new Map<string, { buyoutsRub: number; skuCount: number }>();
+
+    for (const m of scenarioModels) {
+      if (!Array.isArray(m.liskaniSizeVariants) || m.liskaniSizeVariants.length === 0) continue;
+      colorCards += 1;
+      for (const sv of m.liskaniSizeVariants) {
+        skuCount += 1;
+        buyoutsRub += sv.annualBuyoutsRub || 0;
+        ordersRub += sv.annualOrdersRub || 0;
+        ordersUnits += sv.annualOrdersUnits || 0;
+        const fKey = sv.fabric || 'Прочее';
+        const prev = byFabric.get(fKey) || { buyoutsRub: 0, skuCount: 0 };
+        prev.buyoutsRub += sv.annualBuyoutsRub || 0;
+        prev.skuCount += 1;
+        byFabric.set(fKey, prev);
+      }
+    }
+    return { buyoutsRub, ordersRub, ordersUnits, skuCount, colorCards, byFabric };
+  })();
+
+  const canBulkEditActiveScope =
+    canCreateInActiveScope || filteredModels.some((m) => canEditModel(m));
+  const activeBrandDisplayLabel =
+    brandFilter === 'ALL'
+      ? 'Все бренды'
+      : brandFilter === 'BORNERS_FUKAI' || brandFilter === 'BORNERS' || brandFilter === 'FUKAI'
+      ? 'BORNERS / FUKAI'
+      : formatLabBrandLabel(brandFilter);
+  const activeBrandEffectiveScenarioId = (() => {
+    const norm = normalizePortfolioBrandCode(brandFilter);
+    if (norm !== 'ALL' && selectedScenarioByBrand[norm]) {
+      return selectedScenarioByBrand[norm]!;
+    }
+    return currentScenario.id;
+  })();
+  const activeBrandEffectiveScenarioTitle =
+    scenarios.find((s) => s.id === activeBrandEffectiveScenarioId)?.title ||
+    currentScenario.title;
+
   return (
     <div className="space-y-5 pb-20">
       {/* 1. ШАПКА ЕДИНОГО КАТАЛОГА 01 · ПРОДУКТ */}
@@ -1088,6 +1140,26 @@ export function ProductCatalogView() {
                 </span>
               )}
             </button>
+
+            {canBulkEditActiveScope && (
+              <button
+                type="button"
+                onClick={() =>
+                  setBulkExcelModal({
+                    open: true,
+                    initialMode:
+                      normalizePortfolioBrandCode(brandFilter) === 'LISKANI' ||
+                      viewMode === 'liskani_269'
+                        ? 'liskani_269'
+                        : 'brand_models',
+                  })
+                }
+                className="h-9.5 px-3.5 rounded-lg bg-white hover:bg-[#FAF9F6] text-[#141413] border border-[#E4E1DA] dark:bg-[#1D1C1A] dark:hover:bg-[#282724] dark:text-[#F5F4F0] dark:border-[#282724] text-[12.5px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-[#15803D]" strokeWidth={1.6} />
+                <span>Excel: цены и план</span>
+              </button>
+            )}
 
             {canCreateInActiveScope && (
               <button
@@ -1332,24 +1404,63 @@ export function ProductCatalogView() {
                   <span className="font-display-num text-[13px] font-semibold text-[#141413] dark:text-[#F5F4F0]">
                     {hasFinance ? (
                       <>
-                        <span className="whitespace-nowrap">500,00 млн ₽ выкупов</span> ·{' '}
-                        <span className="whitespace-nowrap">877,19 млн ₽ заказов</span> ·{' '}
+                        <span className="whitespace-nowrap">
+                          {(liskaniLiveSummary.buyoutsRub / 1_000_000)
+                            .toFixed(2)
+                            .replace('.', ',')}{' '}
+                          млн ₽ выкупов
+                        </span>{' '}
+                        ·{' '}
+                        <span className="whitespace-nowrap">
+                          {(liskaniLiveSummary.ordersRub / 1_000_000)
+                            .toFixed(2)
+                            .replace('.', ',')}{' '}
+                          млн ₽ заказов
+                        </span>{' '}
+                        ·{' '}
                       </>
                     ) : (
                       ''
                     )}
-                    <span className="whitespace-nowrap">289 889 {liskaniPrimaryUnit}</span>
+                    <span className="whitespace-nowrap">
+                      {liskaniLiveSummary.ordersUnits.toLocaleString('ru-RU')} {liskaniPrimaryUnit}
+                    </span>
                   </span>
                 </div>
                 <p className="text-[12px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
-                  33 цветовые карточки Wildberries с реальными студийными фото · 269 размерных SKU{' '}
-                  {hasFinance
-                    ? '(Блэкаут: 350 млн ₽ / 104 SKU · Мрамор: 75 млн ₽ / 80 SKU · Рогожка: 60 млн ₽ / 40 SKU · Тюль Вуаль: 15 млн ₽ / 45 SKU)'
-                    : '(Блэкаут: 104 SKU · Мрамор: 80 SKU · Рогожка: 40 SKU · Тюль Вуаль: 45 SKU)'}
+                  {liskaniLiveSummary.colorCards} цветовые карточки Wildberries с реальными студийными фото ·{' '}
+                  {liskaniLiveSummary.skuCount} размерных SKU{' '}
+                  {liskaniLiveSummary.byFabric.size > 0 && (
+                    <>
+                      (
+                      {Array.from(liskaniLiveSummary.byFabric.entries())
+                        .map(([fName, fStat]) =>
+                          hasFinance
+                            ? `${fName}: ${(fStat.buyoutsRub / 1_000_000)
+                                .toFixed(fStat.buyoutsRub % 1_000_000 === 0 ? 0 : 1)
+                                .replace('.', ',')} млн ₽ / ${fStat.skuCount} SKU`
+                            : `${fName}: ${fStat.skuCount} SKU`
+                        )
+                        .join(' · ')}
+                      )
+                    </>
+                  )}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {canBulkEditActiveScope && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBulkExcelModal({ open: true, initialMode: 'liskani_269' })
+                    }
+                    className="h-8 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    <span>Шаблон / Загрузить Excel (269 SKU)</span>
+                  </button>
+                )}
                 <a
                   href={resolveCatalogAssetUrl('/docs/liskani_assortment_2027_269_sku.xlsx')}
                   download="Ассортимент_LISKANI_2027_269_SKU.xlsx"
@@ -1852,7 +1963,19 @@ export function ProductCatalogView() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {canBulkEditActiveScope && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBulkExcelModal({ open: true, initialMode: 'liskani_269' })
+                  }
+                  className="h-8.5 px-3 rounded-[8px] bg-emerald-700 hover:bg-emerald-800 text-white text-[12px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  <span>Массово обновить Excel (269 SKU)</span>
+                </button>
+              )}
               <span className="text-[12px] font-semibold text-[#475569]">
                 Период:
               </span>
@@ -2341,6 +2464,31 @@ export function ProductCatalogView() {
             </div>
           </div>
         </div>
+      )}
+
+      {bulkExcelModal.open && (
+        <BulkSalesPlanExcelModal
+          open={bulkExcelModal.open}
+          onClose={() => setBulkExcelModal({ open: false })}
+          models={scenarioModels}
+          scenarioId={activeBrandEffectiveScenarioId}
+          scenarioTitle={activeBrandEffectiveScenarioTitle}
+          brandScope={brandFilter}
+          brandDisplayLabel={activeBrandDisplayLabel}
+          initialMode={bulkExcelModal.initialMode}
+          hasCost={hasCost}
+          hasFinance={hasFinance}
+          canEditModel={canEditModel}
+          onApplyModels={(updatedModels, previewRes) => {
+            updateModelsBatch(() => updatedModels);
+            notify(
+              'success',
+              `Массовое обновление применено (${previewRes.changedSkusCount} SKU)`,
+              `Цены: ${previewRes.priceChangedCount} · Себестоимость: ${previewRes.costChangedCount} · Помесячный план: ${previewRes.monthsChangedCount}`
+            );
+          }}
+          notify={notify}
+        />
       )}
     </div>
   );

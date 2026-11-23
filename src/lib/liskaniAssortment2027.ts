@@ -10131,7 +10131,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "300×240",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×240",
-    "sellerSku": "None",
+    "sellerSku": "М3240 Розово-коричневый",
     "wbNmId": "1223288428",
     "barcode": "2052957088585",
     "unitCostRub": 740.33,
@@ -10205,7 +10205,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "300×250",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×250",
-    "sellerSku": "None",
+    "sellerSku": "М3250 Розово-коричневый",
     "wbNmId": "1223291996",
     "barcode": "2052957133810",
     "unitCostRub": 740.33,
@@ -10279,7 +10279,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "300×260",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×260",
-    "sellerSku": "None",
+    "sellerSku": "М3260 Розово-коричневый",
     "wbNmId": "1223296389",
     "barcode": "2052957269274",
     "unitCostRub": 740.33,
@@ -10353,7 +10353,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "300×270",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×270",
-    "sellerSku": "None",
+    "sellerSku": "М3270 Розово-коричневый",
     "wbNmId": "1223298174",
     "barcode": "2052957390435",
     "unitCostRub": 740.33,
@@ -10427,7 +10427,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "400×240",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×240",
-    "sellerSku": "None",
+    "sellerSku": "М4240 Розово-коричневый",
     "wbNmId": "",
     "barcode": "",
     "unitCostRub": 920.33,
@@ -10501,7 +10501,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "400×250",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×250",
-    "sellerSku": "None",
+    "sellerSku": "М4250 Розово-коричневый",
     "wbNmId": "1223278175",
     "barcode": "2052956923719",
     "unitCostRub": 920.33,
@@ -10575,7 +10575,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "400×260",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×260",
-    "sellerSku": "None",
+    "sellerSku": "М4260 Розово-коричневый",
     "wbNmId": "1223281067",
     "barcode": "2052956986738",
     "unitCostRub": 920.33,
@@ -10649,7 +10649,7 @@ export const LISKANI_269_SKUS: LiskaniSizeSkuSpec[] = [
     "color": "розово-коричневый (пудровый)",
     "sizeCm": "400×270",
     "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×270",
-    "sellerSku": "None",
+    "sellerSku": "М4270 Розово-коричневый",
     "wbNmId": "1223283424",
     "barcode": "2052957017882",
     "unitCostRub": 920.33,
@@ -31928,7 +31928,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "300×240",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×240",
-        "sellerSku": "None",
+        "sellerSku": "М3240 Розово-коричневый",
         "wbNmId": "1223288428",
         "barcode": "2052957088585",
         "unitCostRub": 740.33,
@@ -32002,7 +32002,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "300×250",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×250",
-        "sellerSku": "None",
+        "sellerSku": "М3250 Розово-коричневый",
         "wbNmId": "1223291996",
         "barcode": "2052957133810",
         "unitCostRub": 740.33,
@@ -32076,7 +32076,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "300×260",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×260",
-        "sellerSku": "None",
+        "sellerSku": "М3260 Розово-коричневый",
         "wbNmId": "1223296389",
         "barcode": "2052957269274",
         "unitCostRub": 740.33,
@@ -32150,7 +32150,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "300×270",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 300×270",
-        "sellerSku": "None",
+        "sellerSku": "М3270 Розово-коричневый",
         "wbNmId": "1223298174",
         "barcode": "2052957390435",
         "unitCostRub": 740.33,
@@ -32224,7 +32224,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "400×240",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×240",
-        "sellerSku": "None",
+        "sellerSku": "М4240 Розово-коричневый",
         "wbNmId": "",
         "barcode": "",
         "unitCostRub": 920.33,
@@ -32298,7 +32298,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "400×250",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×250",
-        "sellerSku": "None",
+        "sellerSku": "М4250 Розово-коричневый",
         "wbNmId": "1223278175",
         "barcode": "2052956923719",
         "unitCostRub": 920.33,
@@ -32372,7 +32372,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "400×260",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×260",
-        "sellerSku": "None",
+        "sellerSku": "М4260 Розово-коричневый",
         "wbNmId": "1223281067",
         "barcode": "2052956986738",
         "unitCostRub": 920.33,
@@ -32446,7 +32446,7 @@ const RAW_LISKANI_COLORWAY_CARDS = [
         "color": "розово-коричневый (пудровый)",
         "sizeCm": "400×270",
         "skuDesc": "Мрамор / розово-коричневый (пудровый) / 400×270",
-        "sellerSku": "None",
+        "sellerSku": "М4270 Розово-коричневый",
         "wbNmId": "1223283424",
         "barcode": "2052957017882",
         "unitCostRub": 920.33,
@@ -43684,6 +43684,240 @@ export function updateLiskaniModelSizeVariant(
       ? Math.round(totalCogs / totalPacks)
       : Math.round(
           nextVariants.reduce((s, v) => s + v.unitCostRub, 0) /
+            Math.max(1, nextVariants.length)
+        );
+
+  const aggMonthlyPrices = Array.from({ length: 12 }, (_, m) =>
+    aggMonthlyPacks[m] > 0
+      ? Math.round(aggMonthlyBuyoutsRub[m] / aggMonthlyPacks[m])
+      : weightedPrice
+  );
+
+  const scenarioIdsToSync =
+    activeScenarioId === LISKANI_2027_SCENARIO_ID
+      ? Array.from(new Set([LISKANI_2027_SCENARIO_ID, 1, 2, 3]))
+      : [activeScenarioId];
+  const nextPlansByScenario = { ...model.plansByScenario };
+
+  for (const scId of scenarioIdsToSync) {
+    const prevScPlan = nextPlansByScenario[scId] || basePlan;
+    if (!prevScPlan) continue;
+    nextPlansByScenario[scId] = {
+      ...prevScPlan,
+      scenarioId: scId,
+      monthlyPacks: [...aggMonthlyPacks],
+      monthlyReceiptsPacks: [...aggMonthlyPacks],
+      monthlyPricesRub: [...aggMonthlyPrices],
+      monthlyRevenuesRubOverride: [...aggMonthlyBuyoutsRub],
+      monthlyOrdersPacks: [...aggMonthlyOrdersPacks],
+      monthlyOrdersRub: [...aggMonthlyOrdersRub],
+    };
+  }
+
+  return {
+    ...model,
+    retailPriceRub: weightedPrice,
+    unitCostRub: weightedCost,
+    liskaniSizeVariants: nextVariants,
+    plansByScenario: nextPlansByScenario,
+  };
+}
+
+export interface LiskaniSizeVariantBulkPatch {
+  wbNmId?: string;
+  barcode?: string;
+  sellerSku?: string;
+  unitCostRub?: number;
+  retailPriceRub?: number;
+  /** Разрежённый массив на 12 месяцев (индексы 0..11): null/undefined не меняет месяц */
+  monthlyOrdersUnits?: Array<number | null | undefined>;
+  /** Разрежённый массив на 12 месяцев (индексы 0..11): при задании пересчитывает заказы из % выкупа */
+  monthlyBuyoutsUnits?: Array<number | null | undefined>;
+}
+
+/**
+ * Пакетно обновляет сразу несколько размерных SKU (из 269) внутри цветовой карточки LISKANI
+ * за один проход и синхронно пересчитывает агрегированную выручку, заказы, выкупы и средневзвешенные
+ * цену/себестоимость во всех связанных сценариях.
+ */
+export function applyLiskaniSizeVariantsBulkPatch(
+  model: ScenarioModelSpec,
+  patchesBySkuIndex: Map<number, LiskaniSizeVariantBulkPatch>,
+  activeScenarioId: number = LISKANI_2027_SCENARIO_ID
+): ScenarioModelSpec {
+  if (
+    !model.liskaniSizeVariants ||
+    model.liskaniSizeVariants.length === 0 ||
+    patchesBySkuIndex.size === 0
+  ) {
+    return model;
+  }
+
+  const basePlan =
+    model.plansByScenario[activeScenarioId] ||
+    model.plansByScenario[LISKANI_2027_SCENARIO_ID] ||
+    model.plansByScenario[1];
+  const effectiveBuyoutPct = model.buyoutRatePct ?? basePlan?.buyoutRatePct ?? 57;
+  const buyoutRatio = Math.max(0, effectiveBuyoutPct) / 100;
+
+  let anyVariantTouched = false;
+  let anyPriceOrVolumeChanged = false;
+  let anyCostChanged = false;
+
+  const nextVariants = model.liskaniSizeVariants.map((sv) => {
+    const patch = patchesBySkuIndex.get(sv.skuIndex);
+    if (!patch) return sv;
+
+    const nextSellerSku =
+      patch.sellerSku !== undefined && patch.sellerSku.trim().length > 0
+        ? patch.sellerSku.trim()
+        : sv.sellerSku;
+    const nextWbNmId =
+      patch.wbNmId !== undefined ? patch.wbNmId.trim() : sv.wbNmId;
+    const nextBarcode =
+      patch.barcode !== undefined ? patch.barcode.trim() : sv.barcode;
+    const nextCost =
+      patch.unitCostRub !== undefined && Number.isFinite(patch.unitCostRub)
+        ? Math.round(Math.max(0, patch.unitCostRub) * 100) / 100
+        : sv.unitCostRub;
+    const nextPrice =
+      patch.retailPriceRub !== undefined && Number.isFinite(patch.retailPriceRub)
+        ? Math.round(Math.max(0, patch.retailPriceRub) * 100) / 100
+        : sv.retailPriceRub;
+
+    const priceChanged = Math.abs(nextPrice - sv.retailPriceRub) > 0.005;
+    const costChanged = Math.abs(nextCost - sv.unitCostRub) > 0.005;
+    const metaChanged =
+      nextSellerSku !== sv.sellerSku ||
+      nextWbNmId !== sv.wbNmId ||
+      nextBarcode !== sv.barcode;
+
+    const nextMonthlyOrdersUnits = [...sv.monthlyOrdersUnits];
+    const nextMonthlyBuyoutsUnits = [...sv.monthlyBuyoutsUnits];
+    const nextMonthlyOrdersRub = [...sv.monthlyOrdersRub];
+    const nextMonthlyBuyoutsRub = [...sv.monthlyBuyoutsRub];
+
+    let volumeChanged = false;
+    const touchedMonths = new Set<number>();
+
+    if (Array.isArray(patch.monthlyBuyoutsUnits)) {
+      for (let m = 0; m < 12; m++) {
+        const raw = patch.monthlyBuyoutsUnits[m];
+        if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
+        const nextBuyouts = Math.max(0, Math.round(raw));
+        const nextOrders =
+          buyoutRatio > 0 ? Math.round(nextBuyouts / buyoutRatio) : nextBuyouts;
+        if (
+          nextBuyouts !== nextMonthlyBuyoutsUnits[m] ||
+          nextOrders !== nextMonthlyOrdersUnits[m]
+        ) {
+          volumeChanged = true;
+        }
+        nextMonthlyBuyoutsUnits[m] = nextBuyouts;
+        nextMonthlyOrdersUnits[m] = nextOrders;
+        nextMonthlyBuyoutsRub[m] = Math.round(nextBuyouts * nextPrice);
+        nextMonthlyOrdersRub[m] = Math.round(nextOrders * nextPrice);
+        touchedMonths.add(m);
+      }
+    } else if (Array.isArray(patch.monthlyOrdersUnits)) {
+      for (let m = 0; m < 12; m++) {
+        const raw = patch.monthlyOrdersUnits[m];
+        if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
+        const nextOrders = Math.max(0, Math.round(raw));
+        const nextBuyouts = Math.round(nextOrders * buyoutRatio);
+        if (
+          nextOrders !== nextMonthlyOrdersUnits[m] ||
+          nextBuyouts !== nextMonthlyBuyoutsUnits[m]
+        ) {
+          volumeChanged = true;
+        }
+        nextMonthlyOrdersUnits[m] = nextOrders;
+        nextMonthlyBuyoutsUnits[m] = nextBuyouts;
+        nextMonthlyOrdersRub[m] = Math.round(nextOrders * nextPrice);
+        nextMonthlyBuyoutsRub[m] = Math.round(nextMonthlyOrdersRub[m] * buyoutRatio);
+        touchedMonths.add(m);
+      }
+    }
+
+    if (priceChanged) {
+      for (let m = 0; m < 12; m++) {
+        if (touchedMonths.has(m)) continue;
+        nextMonthlyOrdersRub[m] = Math.round((nextMonthlyOrdersUnits[m] || 0) * nextPrice);
+        nextMonthlyBuyoutsRub[m] = Math.round((nextMonthlyBuyoutsUnits[m] || 0) * nextPrice);
+      }
+    }
+
+    if (!priceChanged && !costChanged && !metaChanged && !volumeChanged) {
+      return sv;
+    }
+
+    anyVariantTouched = true;
+    if (priceChanged || volumeChanged) anyPriceOrVolumeChanged = true;
+    if (costChanged) anyCostChanged = true;
+
+    return {
+      ...sv,
+      sellerSku: nextSellerSku,
+      wbNmId: nextWbNmId,
+      barcode: nextBarcode,
+      unitCostRub: nextCost,
+      retailPriceRub: nextPrice,
+      monthlyOrdersUnits: nextMonthlyOrdersUnits,
+      monthlyBuyoutsUnits: nextMonthlyBuyoutsUnits,
+      monthlyOrdersRub: nextMonthlyOrdersRub,
+      monthlyBuyoutsRub: nextMonthlyBuyoutsRub,
+      annualOrdersUnits: nextMonthlyOrdersUnits.reduce((a, b) => a + b, 0),
+      annualOrdersRub: nextMonthlyOrdersRub.reduce((a, b) => a + b, 0),
+      annualBuyoutsUnits: nextMonthlyBuyoutsUnits.reduce((a, b) => a + b, 0),
+      annualBuyoutsRub: nextMonthlyBuyoutsRub.reduce((a, b) => a + b, 0),
+    };
+  });
+
+  if (!anyVariantTouched) return model;
+
+  const totalBuyoutUnitsAll = nextVariants.reduce(
+    (s, v) => s + (v.annualBuyoutsUnits || 0),
+    0
+  );
+  const totalCogsAll = nextVariants.reduce(
+    (s, v) => s + (v.annualBuyoutsUnits || 0) * v.unitCostRub,
+    0
+  );
+  const weightedCost =
+    totalBuyoutUnitsAll > 0
+      ? Math.round(totalCogsAll / totalBuyoutUnitsAll)
+      : Math.round(
+          nextVariants.reduce((s, v) => s + v.unitCostRub, 0) /
+            Math.max(1, nextVariants.length)
+        );
+
+  if (!anyPriceOrVolumeChanged) {
+    return {
+      ...model,
+      unitCostRub: anyCostChanged ? weightedCost : model.unitCostRub,
+      liskaniSizeVariants: nextVariants,
+    };
+  }
+
+  const aggMonthlyPacks = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsUnits[m] || 0), 0)
+  );
+  const aggMonthlyOrdersPacks = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyOrdersUnits[m] || 0), 0)
+  );
+  const aggMonthlyOrdersRub = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyOrdersRub[m] || 0), 0)
+  );
+  const aggMonthlyBuyoutsRub = Array.from({ length: 12 }, (_, m) =>
+    nextVariants.reduce((s, v) => s + (v.monthlyBuyoutsRub[m] || 0), 0)
+  );
+  const totalPacks = aggMonthlyPacks.reduce((a, b) => a + b, 0);
+  const totalRev = aggMonthlyBuyoutsRub.reduce((a, b) => a + b, 0);
+  const weightedPrice =
+    totalPacks > 0
+      ? Math.round(totalRev / totalPacks)
+      : Math.round(
+          nextVariants.reduce((s, v) => s + v.retailPriceRub, 0) /
             Math.max(1, nextVariants.length)
         );
 

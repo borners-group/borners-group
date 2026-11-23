@@ -5,7 +5,7 @@ import path from "path";
 const isExport = process.env.STATIC_EXPORT === "1";
 const exportBasePath = process.env.EXPORT_BASE_PATH ?? "/borners-platform";
 const buildId =
-  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-akusha-16-models";
+  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-bulk-excel-plan";
 
 const defaultSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ocdmyldosplufhhwrrwq.supabase.co";
@@ -14,7 +14,7 @@ const defaultSupabasePublishableKey =
   "sb_publishable_O2S9Pi4aswxjD5ShAhHQ_w_CnUvmZlR";
 
 const releaseNotesSummary =
-  "Добавлены 16 новых моделей обуви в кабинет AKUSHA (AKU-032..AKU-047: Кроссовки, Лоферы-ботинки из замши, Кожаные ботинки и Челси, Берцы демисезонные/зимние, 4 Мюли, 3 модели из войлока + PRIORA и 212) с оригинальными фото, ценами, себестоимостью, выкупом 30% и помесячными планами на 2027 год (5 380 пар / 38,09 млн ₽).";
+  "Добавлено массовое обновление через Excel (.xlsx) и CSV для всех брендов и всех 269 размерных SKU LISKANI: скачивание шаблона с ценами, себестоимостью и помесячным планом продаж (Янв–Дек, выкупы или заказы), предпросмотр «Было → Стало» до сохранения и автопересчёт карточек, закупок и P&L. Обновлены цены и себестоимость всех 269 SKU LISKANI по файлу 2027.";
 
 const versionPayload = {
   buildId,

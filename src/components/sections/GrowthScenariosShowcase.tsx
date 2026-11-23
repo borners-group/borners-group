@@ -11,6 +11,7 @@ import {
   X,
   Download,
   Upload,
+  FileSpreadsheet,
   AlertTriangle,
   Package,
   ChevronDown,
@@ -61,6 +62,7 @@ import {
   LISKANI_2027_SCENARIO_DEF,
   LISKANI_2027_SCENARIO_ID,
 } from '@/lib/liskaniAssortment2027';
+import { BulkSalesPlanExcelModal } from '@/components/sections/BulkSalesPlanExcelModal';
 import {
   S1_100M_CONTROL_TOTALS,
   S1_100M_NEW_VARIANTS,
@@ -423,6 +425,7 @@ export function GrowthScenariosShowcase({
   const [mathBreakdownOpen, setMathBreakdownOpen] = useState<boolean>(false);
   const [catalogViewMode, setCatalogViewMode] = useState<'grid' | 'table'>('grid');
   const [exportMenuOpen, setExportMenuOpen] = useState<boolean>(false);
+  const [bulkExcelModalOpen, setBulkExcelModalOpen] = useState<boolean>(false);
   const scenarioPlanImportRef = useRef<HTMLInputElement | null>(null);
 
   // Модальные окна создания модели (п. 7.1), создания сценария (п. 7.3) и PDF (Тест 10)
@@ -2968,6 +2971,17 @@ export function GrowthScenariosShowcase({
                   </div>
                 )}
 
+                {canEditScenario(currentScenario) && (
+                  <button
+                    type="button"
+                    onClick={() => setBulkExcelModalOpen(true)}
+                    className="h-8 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    <span>Excel: цены и план</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setMathBreakdownOpen((v) => !v)}
@@ -3082,6 +3096,19 @@ export function GrowthScenariosShowcase({
                               <span>Экспорт плана</span>
                               <span className="font-mono text-[10.5px] text-[#64748B]">JSON</span>
                             </button>
+                            {canEditScenario(currentScenario) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExportMenuOpen(false);
+                                  setBulkExcelModalOpen(true);
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-[8px] hover:bg-emerald-50 text-left font-semibold text-emerald-800 flex items-center justify-between cursor-pointer"
+                              >
+                                <span>Массовый Excel (цены, себест., 12 мес.)</span>
+                                <span className="font-mono text-[10.5px] text-emerald-700">XLSX</span>
+                              </button>
+                            )}
                             {canEditScenario(currentScenario) && (
                               <button
                                 type="button"
@@ -5805,6 +5832,49 @@ export function GrowthScenariosShowcase({
               `PDF ТЗ для ${activeModel.code} ${activeModel.title} сформирован и сохранён в карточку`
             );
           }}
+        />
+      )}
+
+      {bulkExcelModalOpen && (
+        <BulkSalesPlanExcelModal
+          open={bulkExcelModalOpen}
+          onClose={() => setBulkExcelModalOpen(false)}
+          models={models}
+          scenarioId={currentScenario.id}
+          scenarioTitle={currentScenario.title}
+          brandScope={
+            currentScenario.id === LISKANI_2027_SCENARIO_ID ||
+            normalizePortfolioBrandCode(currentScenario.ownerBrandCode) === 'LISKANI'
+              ? 'LISKANI'
+              : brandFilterLocal
+          }
+          brandDisplayLabel={
+            currentScenario.id === LISKANI_2027_SCENARIO_ID ||
+            normalizePortfolioBrandCode(currentScenario.ownerBrandCode) === 'LISKANI'
+              ? 'LISKANI'
+              : brandFilterLocal === 'ALL'
+              ? 'Все бренды'
+              : brandFilterLocal
+          }
+          initialMode={
+            currentScenario.id === LISKANI_2027_SCENARIO_ID ||
+            normalizePortfolioBrandCode(currentScenario.ownerBrandCode) === 'LISKANI' ||
+            normalizePortfolioBrandCode(brandFilterLocal) === 'LISKANI'
+              ? 'liskani_269'
+              : 'brand_models'
+          }
+          hasCost={hasCost}
+          hasFinance={hasFinance}
+          canEditModel={canEditModel}
+          onApplyModels={(updatedModels, previewRes) => {
+            commitModels(updatedModels);
+            notify(
+              'success',
+              `Массовое обновление применено (${previewRes.changedSkusCount} SKU)`,
+              `Цены: ${previewRes.priceChangedCount} · Себестоимость: ${previewRes.costChangedCount} · Помесячный план: ${previewRes.monthsChangedCount}`
+            );
+          }}
+          notify={notify}
         />
       )}
     </div>
