@@ -32,6 +32,7 @@ interface BulkSalesPlanExcelModalProps {
   onClose: () => void;
   models: ScenarioModelSpec[];
   scenarioId: number;
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>;
   scenarioTitle: string;
   brandScope: string;
   brandDisplayLabel: string;
@@ -75,6 +76,7 @@ export function BulkSalesPlanExcelModal({
   onClose,
   models,
   scenarioId,
+  selectedScenarioByBrand,
   scenarioTitle,
   brandScope,
   brandDisplayLabel,
@@ -134,6 +136,7 @@ export function BulkSalesPlanExcelModal({
     return previewBulkSpreadsheetImport({
       models,
       scenarioId: effectiveScenarioId,
+      selectedScenarioByBrand,
       mode,
       brandScope,
       parsed: parsedFile,
@@ -150,6 +153,7 @@ export function BulkSalesPlanExcelModal({
     parsedFile,
     models,
     effectiveScenarioId,
+    selectedScenarioByBrand,
     mode,
     brandScope,
     volumeMetric,
@@ -177,6 +181,7 @@ export function BulkSalesPlanExcelModal({
     buildBulkTemplateSheets({
       models,
       scenarioId: effectiveScenarioId,
+      selectedScenarioByBrand,
       mode,
       brandScope,
       volumeMetric,
@@ -657,7 +662,9 @@ export function BulkSalesPlanExcelModal({
                         {preview.previewDiffRows.slice(0, 80).map((row) => {
                           const priceChanged = Math.abs(row.priceAfter - row.priceBefore) > 0.005;
                           const costChanged = Math.abs(row.costAfter - row.costBefore) > 0.005;
-                          const unitsChanged = row.annualUnitsAfter !== row.annualUnitsBefore;
+                          const unitsChanged =
+                            row.annualUnitsAfter !== row.annualUnitsBefore ||
+                            row.changedMonthsCount > 0;
                           return (
                             <tr
                               key={row.key}

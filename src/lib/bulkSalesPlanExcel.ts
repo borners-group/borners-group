@@ -405,11 +405,12 @@ export function buildXlsxBytes(sheets: XlsxSheetSpec[]): Uint8Array {
 
 function parseSharedStringsXml(xml: string): string[] {
   const out: string[] = [];
-  const siRe = /<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g;
+  const siRe = /<(?:[a-zA-Z0-9_]+:)?si(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?si>/g;
   let m: RegExpExecArray | null;
   while ((m = siRe.exec(xml)) !== null) {
-    const inner = m[1];
-    const tRe = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+    // Удаляем фонетические подсказки <rPh>...</rPh> (встречаются в Excel с азиатской локалью)
+    const inner = m[1].replace(/<(?:[a-zA-Z0-9_]+:)?rPh\b[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?rPh>/g, '');
+    const tRe = /<(?:[a-zA-Z0-9_]+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
     let tm: RegExpExecArray | null;
     let combined = '';
     while ((tm = tRe.exec(inner)) !== null) {
@@ -422,15 +423,15 @@ function parseSharedStringsXml(xml: string): string[] {
 
 function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
   const rows: string[][] = [];
-  const rowRe = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+  const rowRe = /<(?:[a-zA-Z0-9_]+:)?row\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?row>/g;
   let rm: RegExpExecArray | null;
   while ((rm = rowRe.exec(xml)) !== null) {
     const rowInner = rm[1];
     const cells: string[] = [];
     let autoColIdx = 0;
 
-    // Поддерживаем как <c .../>, так и <c ...>...</c>
-    const cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    // Поддерживаем как <c .../>, так и <c ...>...</c>, включая namespace-префиксы (x:c)
+    const cellRe = /<(?:[a-zA-Z0-9_]+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?c>)/g;
     let cm: RegExpExecArray | null;
     while ((cm = cellRe.exec(rowInner)) !== null) {
       const attrs = cm[1] || '';
@@ -444,19 +445,19 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
 
       let value = '';
       if (cellType === 's') {
-        const vMatch = body.match(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/);
+        const vMatch = body.match(/<(?:[a-zA-Z0-9_]+:)?v(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/);
         if (vMatch) {
           const idx = Number(vMatch[1].trim());
           value = Number.isInteger(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx] : '';
         }
       } else if (cellType === 'inlineStr') {
-        const tRe = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+        const tRe = /<(?:[a-zA-Z0-9_]+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
         let tm: RegExpExecArray | null;
         while ((tm = tRe.exec(body)) !== null) {
           value += unescapeXml(tm[1]);
         }
       } else {
-        const vMatch = body.match(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/);
+        const vMatch = body.match(/<(?:[a-zA-Z0-9_]+:)?v(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/);
         if (vMatch) {
           value = unescapeXml(vMatch[1]);
         }
@@ -494,7 +495,7 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
       const idM = tag.match(/\bId="([^"]+)"/);
       const targetM = tag.match(/\bTarget="([^"]+)"/);
       if (idM && targetM) {
-        const target = targetM[1].replace(/^\/+/, '');
+        const target = targetM[1].replace(/^(?:\.\.\/|\.\/|\/)+/, '');
         relMap.set(idM[1], target.startsWith('xl/') ? target : `xl/${target}`);
       }
     }
@@ -503,7 +504,7 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
   const sheetsOrder: Array<{ name: string; path: string }> = [];
   const wbXml = readEntry('xl/workbook.xml');
   if (wbXml) {
-    const sheetRe = /<sheet\b[^>]*>/g;
+    const sheetRe = /<(?:[a-zA-Z0-9_]+:)?sheet\b[^>]*>/g;
     let m: RegExpExecArray | null;
     let fallbackIdx = 1;
     while ((m = sheetRe.exec(wbXml)) !== null) {
@@ -892,8 +893,43 @@ export function detectSpreadsheetColumns(
 // 3. ГЕНЕРАЦИЯ ШАБЛОНОВ EXCEL (.XLSX) И CSV (.CSV)
 // =============================================================================
 
-function resolveModelPlanForScenario(model: ScenarioModelSpec, scenarioId: number) {
+function resolveTargetScenarioIdForModel(
+  model: ScenarioModelSpec,
+  fallbackScenarioId: number,
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>
+): number {
+  const brandCode = normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(model));
+  const mapped =
+    brandCode !== 'ALL' && selectedScenarioByBrand
+      ? selectedScenarioByBrand[brandCode]
+      : undefined;
+  if (typeof mapped === 'number' && model.plansByScenario[mapped]) {
+    return mapped;
+  }
+  if (brandCode === 'LISKANI' && model.plansByScenario[LISKANI_2027_SCENARIO_ID]) {
+    return LISKANI_2027_SCENARIO_ID;
+  }
+  if (brandCode === 'AKUSHA' && model.plansByScenario[202706]) {
+    return 202706;
+  }
+  if (model.plansByScenario[fallbackScenarioId]) {
+    return fallbackScenarioId;
+  }
+  if (model.plansByScenario[LISKANI_2027_SCENARIO_ID]) return LISKANI_2027_SCENARIO_ID;
+  if (model.plansByScenario[202706]) return 202706;
+  if (model.plansByScenario[1]) return 1;
+  const firstKey = Object.keys(model.plansByScenario)[0];
+  return firstKey ? Number(firstKey) : fallbackScenarioId;
+}
+
+function resolveModelPlanForScenario(
+  model: ScenarioModelSpec,
+  scenarioId: number,
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>
+) {
+  const targetId = resolveTargetScenarioIdForModel(model, scenarioId, selectedScenarioByBrand);
   return (
+    model.plansByScenario[targetId] ||
     model.plansByScenario[scenarioId] ||
     model.plansByScenario[LISKANI_2027_SCENARIO_ID] ||
     model.plansByScenario[202706] ||
@@ -904,6 +940,7 @@ function resolveModelPlanForScenario(model: ScenarioModelSpec, scenarioId: numbe
 export interface GenerateTemplateParams {
   models: ScenarioModelSpec[];
   scenarioId: number;
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>;
   mode: BulkTemplateMode;
   brandScope: string;
   volumeMetric: BulkVolumeMetric;
@@ -917,8 +954,16 @@ export function buildBulkTemplateSheets(params: GenerateTemplateParams): {
   fileBaseName: string;
   rowsCount: number;
 } {
-  const { models, scenarioId, mode, brandScope, volumeMetric, includeCost, scenarioTitle } =
-    params;
+  const {
+    models,
+    scenarioId,
+    selectedScenarioByBrand,
+    mode,
+    brandScope,
+    volumeMetric,
+    includeCost,
+    scenarioTitle,
+  } = params;
   const metricLabel = volumeMetric === 'orders' ? 'заказы' : 'выкупы';
   const metricTitle =
     volumeMetric === 'orders'
@@ -1016,8 +1061,13 @@ export function buildBulkTemplateSheets(params: GenerateTemplateParams): {
       .filter((m) => brandScope === 'ALL' || matchesBrandFilter(m, brandScope));
 
     for (const m of scopedModels) {
-      const plan = resolveModelPlanForScenario(m, scenarioId);
-      const effBuyoutPct = getEffectiveModelBuyoutRatePct(m, scenarioId);
+      const targetScenId = resolveTargetScenarioIdForModel(
+        m,
+        scenarioId,
+        selectedScenarioByBrand
+      );
+      const plan = resolveModelPlanForScenario(m, targetScenId, selectedScenarioByBrand);
+      const effBuyoutPct = getEffectiveModelBuyoutRatePct(m, targetScenId);
       const isAkusha =
         normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'AKUSHA';
       const brandLabel = detectModelBrandPortfolioLabel(m);
@@ -1183,8 +1233,8 @@ function matchLiskaniByCodePattern(
   index: LiskaniLookupIndex
 ): { modelId: string; sv: LiskaniSizeSkuSpec } | null {
   const norm = normalizeLookupText(sellerSkuRaw);
-  // Формат артикулов LISKANI: Б3240 Молочный, М4240 Розово-коричневый, Р3250 Серый, Т6270 Белый
-  const match = norm.match(/^([бмрт])\s*([346])\s*(240|250|260|270)\s+(.+)$/i);
+  // Формат артикулов LISKANI: Б3240 Молочный, М4240 Розово-коричневый, Р3250 Серый, Т5250/Т6270 Белый
+  const match = norm.match(/^([бмрт])\s*([3456])\s*(240|250|260|270)\s+(.+)$/i);
   if (!match) return null;
   const prefix = match[1].toLowerCase();
   const widthDigit = match[2];
@@ -1284,7 +1334,8 @@ function computeLiskaniTotals(models: ScenarioModelSpec[]): BulkImportTotals {
 function computeBrandModelsTotals(
   models: ScenarioModelSpec[],
   scenarioId: number,
-  brandScope: string
+  brandScope: string,
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>
 ): BulkImportTotals {
   let annualBuyoutsRub = 0;
   let annualOrdersRub = 0;
@@ -1295,9 +1346,10 @@ function computeBrandModelsTotals(
   for (const raw of models) {
     const m = ensureModelUnifiedV11(raw);
     if (brandScope !== 'ALL' && !matchesBrandFilter(m, brandScope)) continue;
-    const plan = resolveModelPlanForScenario(m, scenarioId);
+    const targetScenId = resolveTargetScenarioIdForModel(m, scenarioId, selectedScenarioByBrand);
+    const plan = resolveModelPlanForScenario(m, targetScenId, selectedScenarioByBrand);
     if (!plan) continue;
-    const effBuyoutPct = getEffectiveModelBuyoutRatePct(m, scenarioId);
+    const effBuyoutPct = getEffectiveModelBuyoutRatePct(m, targetScenId);
     const isAkusha =
       normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(m)) === 'AKUSHA';
 
@@ -1381,12 +1433,21 @@ export function detectRecommendedImportMode(
 export function previewBulkSpreadsheetImport(params: {
   models: ScenarioModelSpec[];
   scenarioId: number;
+  selectedScenarioByBrand?: Partial<Record<string, number | null>>;
   mode: BulkTemplateMode;
   brandScope: string;
   parsed: ParsedSpreadsheet;
   options: BulkImportOptions;
 }): BulkImportPreviewResult {
-  const { models: rawModels, scenarioId, mode, brandScope, parsed, options } = params;
+  const {
+    models: rawModels,
+    scenarioId,
+    selectedScenarioByBrand,
+    mode,
+    brandScope,
+    parsed,
+    options,
+  } = params;
   const models = rawModels.map((m) => ensureModelUnifiedV11(m));
   const cols = detectSpreadsheetColumns(parsed.rows, parsed.metadata);
   const recommendedMode = detectRecommendedImportMode(models, parsed, mode);
@@ -1395,7 +1456,7 @@ export function previewBulkSpreadsheetImport(params: {
   const emptyTotals: BulkImportTotals =
     mode === 'liskani_269'
       ? computeLiskaniTotals(models)
-      : computeBrandModelsTotals(models, scenarioId, brandScope);
+      : computeBrandModelsTotals(models, scenarioId, brandScope, selectedScenarioByBrand);
 
   if (cols.headerRowIdx < 0) {
     return {
@@ -1493,7 +1554,7 @@ export function previewBulkSpreadsheetImport(params: {
         patch.barcode = bcRaw;
       }
 
-      let priceBefore = sv.retailPriceRub;
+      const priceBefore = sv.retailPriceRub;
       let priceAfter = sv.retailPriceRub;
       let priceDidChange = false;
       if (options.applyPrice && cols.priceCol >= 0) {
@@ -1508,7 +1569,7 @@ export function previewBulkSpreadsheetImport(params: {
         }
       }
 
-      let costBefore = sv.unitCostRub;
+      const costBefore = sv.unitCostRub;
       let costAfter = sv.unitCostRub;
       let costDidChange = false;
       if (options.applyCost && options.canEditCost && cols.costCol >= 0) {
@@ -1684,10 +1745,19 @@ export function previewBulkSpreadsheetImport(params: {
 
     matchedRowsCount += 1;
     const baseModel = updatedById.get(target.id) || target;
-    const basePlan = resolveModelPlanForScenario(baseModel, scenarioId);
+    const targetScenId = resolveTargetScenarioIdForModel(
+      baseModel,
+      scenarioId,
+      selectedScenarioByBrand
+    );
+    const basePlan = resolveModelPlanForScenario(
+      baseModel,
+      targetScenId,
+      selectedScenarioByBrand
+    );
     if (!basePlan) continue;
 
-    const effBuyoutPct = getEffectiveModelBuyoutRatePct(baseModel, scenarioId);
+    const effBuyoutPct = getEffectiveModelBuyoutRatePct(baseModel, targetScenId);
     const isAkusha =
       normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(baseModel)) === 'AKUSHA';
 
@@ -1722,7 +1792,7 @@ export function previewBulkSpreadsheetImport(params: {
       ? [...basePlan.monthlyReceiptsPacks]
       : [...basePlan.monthlyPacks];
     const nextPrices = priceDidChange
-      ? Array(12).fill(Math.round(nextPrice))
+      ? Array(12).fill(Math.round(nextPrice * 100) / 100)
       : [...basePlan.monthlyPricesRub];
     const hasRevOverride =
       Array.isArray(basePlan.monthlyRevenuesRubOverride) &&
@@ -1733,8 +1803,16 @@ export function previewBulkSpreadsheetImport(params: {
     const hasOrdersPacks =
       Array.isArray(basePlan.monthlyOrdersPacks) &&
       basePlan.monthlyOrdersPacks.length === 12;
-    const nextOrdersPacks = hasOrdersPacks
+    const nextOrdersPacks: number[] | undefined = hasOrdersPacks
       ? [...basePlan.monthlyOrdersPacks!]
+      : options.applyMonths && options.volumeMetric === 'orders' && cols.monthCols.size > 0
+      ? basePlan.monthlyPacks.map((bRaw) => {
+          const b = Math.round(bRaw || 0);
+          if (effBuyoutPct <= 0 || effBuyoutPct >= 100) return b;
+          return isAkusha
+            ? Math.ceil((b * 100) / effBuyoutPct)
+            : Math.round((b * 100) / effBuyoutPct);
+        })
       : undefined;
     const nextOrdersRub =
       Array.isArray(basePlan.monthlyOrdersRub) && basePlan.monthlyOrdersRub.length === 12
@@ -1839,9 +1917,9 @@ export function previewBulkSpreadsheetImport(params: {
       unitCostRub: Math.round(nextCost * 100) / 100,
       plansByScenario: {
         ...baseModel.plansByScenario,
-        [scenarioId]: {
+        [targetScenId]: {
           ...basePlan,
-          scenarioId,
+          scenarioId: targetScenId,
           monthlyPacks: nextPacks,
           monthlyReceiptsPacks: nextReceipts,
           monthlyPricesRub: nextPrices,
@@ -1869,8 +1947,18 @@ export function previewBulkSpreadsheetImport(params: {
   }
 
   const updatedModels = models.map((m) => updatedById.get(m.id) || m);
-  const totalsBefore = computeBrandModelsTotals(models, scenarioId, brandScope);
-  const totalsAfter = computeBrandModelsTotals(updatedModels, scenarioId, brandScope);
+  const totalsBefore = computeBrandModelsTotals(
+    models,
+    scenarioId,
+    brandScope,
+    selectedScenarioByBrand
+  );
+  const totalsAfter = computeBrandModelsTotals(
+    updatedModels,
+    scenarioId,
+    brandScope,
+    selectedScenarioByBrand
+  );
   const previewDiffRows = Array.from(diffByKey.values());
 
   return {

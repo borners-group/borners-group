@@ -5851,6 +5851,7 @@ export function GrowthScenariosShowcase({
           onClose={() => setBulkExcelModalOpen(false)}
           models={models}
           scenarioId={currentScenario.id}
+          selectedScenarioByBrand={selectedScenarioByBrand}
           scenarioTitle={currentScenario.title}
           brandScope={
             currentScenario.id === LISKANI_2027_SCENARIO_ID ||

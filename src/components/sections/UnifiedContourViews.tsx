@@ -1488,6 +1488,7 @@ export function SalesMatrixContourView() {
               ? selectedScenarioByBrand[norm]!
               : currentScenario.id;
           })()}
+          selectedScenarioByBrand={selectedScenarioByBrand}
           scenarioTitle={currentScenario.title}
           brandScope={brandFilter}
           brandDisplayLabel={formatContourBrandFilterLabel(brandFilter)}

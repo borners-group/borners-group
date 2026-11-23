@@ -2474,6 +2474,7 @@ export function ProductCatalogView() {
           onClose={() => setBulkExcelModal({ open: false })}
           models={scenarioModels}
           scenarioId={activeBrandEffectiveScenarioId}
+          selectedScenarioByBrand={selectedScenarioByBrand}
           scenarioTitle={activeBrandEffectiveScenarioTitle}
           brandScope={brandFilter}
           brandDisplayLabel={activeBrandDisplayLabel}

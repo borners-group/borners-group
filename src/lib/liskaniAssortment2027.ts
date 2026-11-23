@@ -43834,7 +43834,7 @@ export function applyLiskaniSizeVariantsBulkPatch(
         nextMonthlyOrdersUnits[m] = nextOrders;
         nextMonthlyBuyoutsUnits[m] = nextBuyouts;
         nextMonthlyOrdersRub[m] = Math.round(nextOrders * nextPrice);
-        nextMonthlyBuyoutsRub[m] = Math.round(nextMonthlyOrdersRub[m] * buyoutRatio);
+        nextMonthlyBuyoutsRub[m] = Math.round(nextBuyouts * nextPrice);
         touchedMonths.add(m);
       }
     }

@@ -13167,6 +13167,123 @@ test('Bulk Excel/CSV 6: Стресс-тест стабильности — legac
   assert.ok(salesCode.includes('ignoreSelfModelsEventRef'));
 });
 
+test('Bulk Excel/CSV 7: Глубокий код-ревью — ширина 500× (Т5250), мультиязычный/namespace OOXML, бренд-роутинг сценариев в режиме ALL и перераспределение месяцев', async () => {
+  const { zipSync, strToU8 } = await import('fflate');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { INITIAL_SCENARIO_MODELS } = await import('../src/lib/scenarioData.ts');
+  const {
+    parseXlsxBytes,
+    parseCsvText,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  // 1. Т5250 Белый (ширина 500×250) корректно матчится по паттерну даже если sellerSku = 'None'
+  const tulleLegacy = LISKANI_2027_MODELS.map((m) => ({
+    ...m,
+    liskaniSizeVariants: m.liskaniSizeVariants?.map((sv) =>
+      sv.sellerSku === 'Т5250 Белый' ? { ...sv, sellerSku: 'None', wbNmId: '', barcode: '' } : sv
+    ),
+  }));
+  const tulleRes = previewBulkSpreadsheetImport({
+    models: tulleLegacy,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText('Артикул продавца;Цена реализации\nТ5250 Белый;1950', 'tulle.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: false,
+      applyMonths: false,
+      canEditCost: true,
+    },
+  });
+  assert.equal(tulleRes.matchedRowsCount, 1);
+  assert.equal(tulleRes.priceChangedCount, 1);
+  assert.equal(tulleRes.metaFixedCount, 1);
+
+  // 2. Перераспределение месяцев без смены годовой суммы (+50 в Янв, -50 в Фев) фиксируется в diff и пересчитывает месяцы
+  const sv1 = LISKANI_2027_MODELS[0].liskaniSizeVariants![0];
+  const redistCsv = [
+    'Артикул продавца;Янв (выкупы);Фев (выкупы)',
+    `${sv1.sellerSku};${sv1.monthlyBuyoutsUnits[0] + 50};${sv1.monthlyBuyoutsUnits[1] - 50}`,
+  ].join('\n');
+  const redistRes = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(redistCsv, 'redist.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: false,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  assert.equal(redistRes.changedSkusCount, 1);
+  assert.equal(redistRes.previewDiffRows[0].changedMonthsCount, 2);
+  assert.equal(
+    redistRes.previewDiffRows[0].annualUnitsBefore,
+    redistRes.previewDiffRows[0].annualUnitsAfter
+  );
+
+  // 3. Мультибрендовый импорт в режиме ALL пишет AKUSHA строго в 202706, а BORNERS строго в 1
+  const combined = [...INITIAL_SCENARIO_MODELS.slice(0, 2), ...AKUSHA_2027_MODELS.slice(0, 2)];
+  const bCode = INITIAL_SCENARIO_MODELS[0].code;
+  const aCode = AKUSHA_2027_MODELS[0].code;
+  const multiCsv = [
+    'Код модели;Янв (выкупы)',
+    `${bCode};777`,
+    `${aCode};88`,
+  ].join('\n');
+  const multiRes = previewBulkSpreadsheetImport({
+    models: combined,
+    scenarioId: 1,
+    selectedScenarioByBrand: { BORNERS: 1, AKUSHA: AKUSHA_2027_SCENARIO_ID },
+    mode: 'brand_models',
+    brandScope: 'ALL',
+    parsed: parseCsvText(multiCsv, 'all.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: false,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  const bAfter = multiRes.updatedModels.find((m) => m.code === bCode)!;
+  const aAfter = multiRes.updatedModels.find((m) => m.code === aCode)!;
+  assert.equal(bAfter.plansByScenario[1].monthlyPacks[0], 777);
+  assert.equal(aAfter.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[0], 88);
+
+  // 4. Namespaced OOXML (<x:row>/<x:c>) и фонетический <rPh> в sharedStrings читаются чисто
+  const nsXlsx = zipSync({
+    'xl/workbook.xml': strToU8(
+      '<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:sheets><x:sheet name="Лист1" sheetId="1" r:id="rId1"/></x:sheets></x:workbook>'
+    ),
+    'xl/_rels/workbook.xml.rels': strToU8(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="../xl/worksheets/sheet1.xml"/></Relationships>'
+    ),
+    'xl/sharedStrings.xml': strToU8(
+      '<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:si><x:t>Артикул продавца</x:t><x:rPh sb="0" eb="1"><x:t>RUBY</x:t></x:rPh></x:si><x:si><x:t>Цена</x:t></x:si><x:si><x:t>Б3240 Молочный</x:t></x:si></x:sst>'
+    ),
+    'xl/worksheets/sheet1.xml': strToU8(
+      '<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1" t="s"><x:v>1</x:v></x:c></x:row><x:row r="2"><x:c r="A2" t="s"><x:v>2</x:v></x:c><x:c r="B2"><x:v>2999</x:v></x:c></x:row></x:sheetData></x:worksheet>'
+    ),
+  });
+  const parsedNs = parseXlsxBytes(nsXlsx, 'namespaced.xlsx');
+  assert.equal(parsedNs.rows[0][0], 'Артикул продавца');
+  assert.equal(parsedNs.rows[1][0], 'Б3240 Молочный');
+  assert.equal(parsedNs.rows[1][1], '2999');
+});
+
 
 
 
