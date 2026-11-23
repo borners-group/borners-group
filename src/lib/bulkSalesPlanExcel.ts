@@ -123,6 +123,7 @@ export interface BulkImportPreviewResult {
   costChangedCount: number;
   monthsChangedCount: number;
   metaFixedCount: number;
+  duplicateRowsSkipped: number;
   skippedNoPermissionCount: number;
   unmatchedRows: BulkImportUnmatchedRow[];
   totalsBefore: BulkImportTotals;
@@ -182,7 +183,7 @@ export function parseRuNumber(raw: string | number | null | undefined): number |
     return Number.isFinite(raw) ? raw : null;
   }
   const cleaned = String(raw)
-    .replace(/₽|руб\.?|р\.|шт\.?|компл\.?|пар/gi, '')
+    .replace(/(?:₽|руб\.?|р\.?(?=\s|$)|шт\.?|компл\.?|пар(?=\s|$)|ед\.?|уп\.?)/gi, '')
     .replace(/[\u00A0\u202F\s]/g, '')
     .trim();
   if (!cleaned || cleaned === '—' || cleaned === '-' || cleaned === '–') return null;
@@ -199,10 +200,10 @@ export function parseRuNumber(raw: string | number | null | undefined): number |
       normalized = normalized.replace(/,/g, '');
     }
   } else if (hasComma) {
-    // Русская запятая как десятичный разделитель (например «2800,00» или «1093,1»)
-    // Если после последней запятой ровно 3 цифры и до неё 1..3 цифры и несколько запятых — это разделитель тысяч
+    // Поддерживаем как русскую десятичную запятую («2800,00», «1093,1», «837,44»),
+    // так и англоязычный разделитель тысяч («2,800», «1,250,000»)
     const commaCount = (normalized.match(/,/g) || []).length;
-    if (commaCount > 1) {
+    if (commaCount > 1 || /^[+-]?\d{1,3},\d{3}$/.test(normalized)) {
       normalized = normalized.replace(/,/g, '');
     } else {
       normalized = normalized.replace(',', '.');
@@ -405,12 +406,15 @@ export function buildXlsxBytes(sheets: XlsxSheetSpec[]): Uint8Array {
 
 function parseSharedStringsXml(xml: string): string[] {
   const out: string[] = [];
-  const siRe = /<(?:[a-zA-Z0-9_]+:)?si(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?si>/g;
+  // Исключаем самозакрывающиеся <si/> и <t/>, чтобы они никогда не поглощали соседние теги
+  const siRe =
+    /<(?:[a-zA-Z0-9_]+:)?si(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?si>/g;
   let m: RegExpExecArray | null;
   while ((m = siRe.exec(xml)) !== null) {
     // Удаляем фонетические подсказки <rPh>...</rPh> (встречаются в Excel с азиатской локалью)
     const inner = m[1].replace(/<(?:[a-zA-Z0-9_]+:)?rPh\b[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?rPh>/g, '');
-    const tRe = /<(?:[a-zA-Z0-9_]+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
+    const tRe =
+      /<(?:[a-zA-Z0-9_]+:)?t(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
     let tm: RegExpExecArray | null;
     let combined = '';
     while ((tm = tRe.exec(inner)) !== null) {
@@ -423,7 +427,9 @@ function parseSharedStringsXml(xml: string): string[] {
 
 function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
   const rows: string[][] = [];
-  const rowRe = /<(?:[a-zA-Z0-9_]+:)?row\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?row>/g;
+  // Исключаем самозакрывающиеся пустые строки <row r="5"/>, чтобы не склеивать их со следующей строкой
+  const rowRe =
+    /<(?:[a-zA-Z0-9_]+:)?row\b(?:[^/>]|\/(?!>))*>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?row>/g;
   let rm: RegExpExecArray | null;
   while ((rm = rowRe.exec(xml)) !== null) {
     const rowInner = rm[1];
@@ -431,7 +437,8 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
     let autoColIdx = 0;
 
     // Поддерживаем как <c .../>, так и <c ...>...</c>, включая namespace-префиксы (x:c)
-    const cellRe = /<(?:[a-zA-Z0-9_]+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?c>)/g;
+    const cellRe =
+      /<(?:[a-zA-Z0-9_]+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?c>)/g;
     let cm: RegExpExecArray | null;
     while ((cm = cellRe.exec(rowInner)) !== null) {
       const attrs = cm[1] || '';
@@ -445,19 +452,28 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
 
       let value = '';
       if (cellType === 's') {
-        const vMatch = body.match(/<(?:[a-zA-Z0-9_]+:)?v(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/);
+        const vMatch = body.match(
+          /<(?:[a-zA-Z0-9_]+:)?v(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/
+        );
         if (vMatch) {
           const idx = Number(vMatch[1].trim());
           value = Number.isInteger(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx] : '';
         }
       } else if (cellType === 'inlineStr') {
-        const tRe = /<(?:[a-zA-Z0-9_]+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
+        const cleanBody = body.replace(
+          /<(?:[a-zA-Z0-9_]+:)?rPh\b[\s\S]*?<\/(?:[a-zA-Z0-9_]+:)?rPh>/g,
+          ''
+        );
+        const tRe =
+          /<(?:[a-zA-Z0-9_]+:)?t(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?t>/g;
         let tm: RegExpExecArray | null;
-        while ((tm = tRe.exec(body)) !== null) {
+        while ((tm = tRe.exec(cleanBody)) !== null) {
           value += unescapeXml(tm[1]);
         }
       } else {
-        const vMatch = body.match(/<(?:[a-zA-Z0-9_]+:)?v(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/);
+        const vMatch = body.match(
+          /<(?:[a-zA-Z0-9_]+:)?v(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/
+        );
         if (vMatch) {
           value = unescapeXml(vMatch[1]);
         }
@@ -476,9 +492,13 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
 
 export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): ParsedSpreadsheet {
   const entries = unzipSync(bytes);
+  const entriesLower = new Map<string, Uint8Array>();
+  for (const [k, v] of Object.entries(entries)) {
+    entriesLower.set(k.replace(/^\/+/, '').toLowerCase(), v);
+  }
   const readEntry = (path: string): string | null => {
     const clean = path.replace(/^\/+/, '');
-    const buf = entries[clean];
+    const buf = entries[clean] || entriesLower.get(clean.toLowerCase());
     return buf ? strFromU8(buf) : null;
   };
 
@@ -1430,6 +1450,126 @@ export function detectRecommendedImportMode(
   return fallbackMode;
 }
 
+function distributeIntByWeights(total: number, weights: number[]): number[] {
+  const n = weights.length;
+  if (n === 0) return [];
+  const safeTotal = Math.max(0, Math.round(total));
+  if (safeTotal === 0) return Array(n).fill(0);
+  const cleanWeights = weights.map((w) => (Number.isFinite(w) && w > 0 ? w : 0));
+  const sumW = cleanWeights.reduce((a, b) => a + b, 0);
+  const effWeights = sumW > 0 ? cleanWeights : Array(n).fill(1);
+  const effSum = sumW > 0 ? sumW : n;
+
+  const exact = effWeights.map((w) => (safeTotal * w) / effSum);
+  const floored = exact.map((x) => Math.floor(x));
+  const remainder = safeTotal - floored.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, idx) => ({ idx, frac: x - floored[idx] }))
+    .sort((a, b) => b.frac - a.frac || a.idx - b.idx);
+  for (let i = 0; i < remainder && i < order.length; i++) {
+    floored[order[i].idx] += 1;
+  }
+  return floored;
+}
+
+function scaleLiskaniVariantsFromParentUpdate(params: {
+  baseModel: ScenarioModelSpec;
+  nextPrice: number;
+  priceDidChange: boolean;
+  nextCost: number;
+  costDidChange: boolean;
+  nextPacks: number[];
+  nextOrdersPacks: number[] | undefined;
+  changedMonthIndices: Set<number>;
+  effBuyoutPct: number;
+}): LiskaniSizeSkuSpec[] | undefined {
+  const {
+    baseModel,
+    nextPrice,
+    priceDidChange,
+    nextCost,
+    costDidChange,
+    nextPacks,
+    nextOrdersPacks,
+    changedMonthIndices,
+    effBuyoutPct,
+  } = params;
+  const variants = baseModel.liskaniSizeVariants;
+  if (!Array.isArray(variants) || variants.length === 0) return variants;
+
+  const prevPrice = Math.max(0, baseModel.retailPriceRub || 0);
+  const prevCost = Math.max(0, baseModel.unitCostRub || 0);
+  const buyoutRatio = Math.max(0, effBuyoutPct) / 100;
+
+  const working: LiskaniSizeSkuSpec[] = variants.map((sv) => {
+    const scaledPrice = !priceDidChange
+      ? sv.retailPriceRub
+      : nextPrice === 0
+      ? 0
+      : prevPrice > 0 && sv.retailPriceRub > 0
+      ? Math.round(((sv.retailPriceRub * nextPrice) / prevPrice) * 100) / 100
+      : Math.round(nextPrice * 100) / 100;
+    const scaledCost = !costDidChange
+      ? sv.unitCostRub
+      : nextCost === 0
+      ? 0
+      : prevCost > 0 && sv.unitCostRub > 0
+      ? Math.round(((sv.unitCostRub * nextCost) / prevCost) * 100) / 100
+      : Math.round(nextCost * 100) / 100;
+    return {
+      ...sv,
+      retailPriceRub: scaledPrice,
+      unitCostRub: scaledCost,
+      monthlyBuyoutsUnits: [...sv.monthlyBuyoutsUnits],
+      monthlyOrdersUnits: [...sv.monthlyOrdersUnits],
+      monthlyBuyoutsRub: [...sv.monthlyBuyoutsRub],
+      monthlyOrdersRub: [...sv.monthlyOrdersRub],
+    };
+  });
+
+  // Распределяем изменённые месяцы пропорционально текущим весам размеров (метод наибольших остатков)
+  for (const mIdx of changedMonthIndices) {
+    const monthWeights = working.map(
+      (sv) => sv.monthlyBuyoutsUnits[mIdx] || sv.annualBuyoutsUnits || 1
+    );
+    const buyTarget = Math.max(0, Math.round(nextPacks[mIdx] || 0));
+    const ordTarget =
+      nextOrdersPacks && nextOrdersPacks[mIdx] !== undefined
+        ? Math.max(0, Math.round(nextOrdersPacks[mIdx] || 0))
+        : buyoutRatio > 0
+        ? Math.round(buyTarget / buyoutRatio)
+        : buyTarget;
+    const buyShares = distributeIntByWeights(buyTarget, monthWeights);
+    const ordShares = distributeIntByWeights(ordTarget, monthWeights);
+    for (let vIdx = 0; vIdx < working.length; vIdx++) {
+      working[vIdx].monthlyBuyoutsUnits[mIdx] = buyShares[vIdx];
+      working[vIdx].monthlyOrdersUnits[mIdx] = ordShares[vIdx];
+    }
+  }
+
+  return working.map((sv) => {
+    const nextBuyRub = sv.monthlyBuyoutsUnits.map((q, mIdx) =>
+      priceDidChange || changedMonthIndices.has(mIdx)
+        ? Math.round(q * sv.retailPriceRub)
+        : sv.monthlyBuyoutsRub[mIdx]
+    );
+    const nextOrdRub = sv.monthlyOrdersUnits.map((q, mIdx) =>
+      priceDidChange || changedMonthIndices.has(mIdx)
+        ? Math.round(q * sv.retailPriceRub)
+        : sv.monthlyOrdersRub[mIdx]
+    );
+    return {
+      ...sv,
+      monthlyBuyoutsRub: nextBuyRub,
+      monthlyOrdersRub: nextOrdRub,
+      annualBuyoutsUnits: sv.monthlyBuyoutsUnits.reduce((a, b) => a + b, 0),
+      annualOrdersUnits: sv.monthlyOrdersUnits.reduce((a, b) => a + b, 0),
+      annualBuyoutsRub: nextBuyRub.reduce((a, b) => a + b, 0),
+      annualOrdersRub: nextOrdRub.reduce((a, b) => a + b, 0),
+    };
+  });
+}
+
 export function previewBulkSpreadsheetImport(params: {
   models: ScenarioModelSpec[];
   scenarioId: number;
@@ -1470,6 +1610,7 @@ export function previewBulkSpreadsheetImport(params: {
       costChangedCount: 0,
       monthsChangedCount: 0,
       metaFixedCount: 0,
+      duplicateRowsSkipped: 0,
       skippedNoPermissionCount: 0,
       unmatchedRows: [
         {
@@ -1496,12 +1637,25 @@ export function previewBulkSpreadsheetImport(params: {
 
   let totalDataRows = 0;
   let matchedRowsCount = 0;
+  let duplicateRowsSkipped = 0;
   let skippedNoPermissionCount = 0;
 
   if (mode === 'liskani_269') {
     const index = buildLiskaniLookupIndex(models);
     const modelById = new Map(models.map((m) => [m.id, m]));
     const patchesByModelId = new Map<string, Map<number, LiskaniSizeVariantBulkPatch>>();
+
+    // Сначала дедуплицируем строки по уникальному SKU (при дубле в одном файле побеждает последняя строка)
+    const latestRowBySkuKey = new Map<
+      string,
+      {
+        row: string[];
+        hit: { modelId: string; sv: LiskaniSizeSkuSpec };
+        sellerSkuRaw: string;
+        wbRaw: string;
+        bcRaw: string;
+      }
+    >();
 
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
@@ -1534,6 +1688,15 @@ export function previewBulkSpreadsheetImport(params: {
         continue;
       }
 
+      const skuKey = `${hit.modelId}-${hit.sv.skuIndex}`;
+      if (latestRowBySkuKey.has(skuKey)) {
+        duplicateRowsSkipped += 1;
+      }
+      latestRowBySkuKey.set(skuKey, { row, hit, sellerSkuRaw, wbRaw, bcRaw });
+    }
+
+    for (const [diffKey, entry] of latestRowBySkuKey.entries()) {
+      const { row, hit, sellerSkuRaw, wbRaw, bcRaw } = entry;
       matchedRowsCount += 1;
       const sv = hit.sv;
       const patch: LiskaniSizeVariantBulkPatch = {};
@@ -1634,7 +1797,6 @@ export function previewBulkSpreadsheetImport(params: {
         }
         patchesByModelId.get(hit.modelId)!.set(sv.skuIndex, patch);
 
-        const diffKey = `${hit.modelId}-${sv.skuIndex}`;
         if (priceDidChange) changedPriceKeys.add(diffKey);
         if (costDidChange) changedCostKeys.add(diffKey);
         if (rowChangedMonths > 0) changedMonthsKeys.add(diffKey);
@@ -1678,6 +1840,7 @@ export function previewBulkSpreadsheetImport(params: {
       costChangedCount: changedCostKeys.size,
       monthsChangedCount: changedMonthsKeys.size,
       metaFixedCount: fixedMetaKeys.size,
+      duplicateRowsSkipped,
       skippedNoPermissionCount,
       unmatchedRows,
       totalsBefore,
@@ -1704,7 +1867,11 @@ export function previewBulkSpreadsheetImport(params: {
     byTitle.set(normalizeLookupText(m.title), m);
   }
 
-  const updatedById = new Map<string, ScenarioModelSpec>();
+  // Дедуплицируем строки по уникальной модели (при дубле побеждает последняя строка)
+  const latestRowByModelId = new Map<
+    string,
+    { row: string[]; target: ScenarioModelSpec }
+  >();
 
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i];
@@ -1743,8 +1910,17 @@ export function previewBulkSpreadsheetImport(params: {
       continue;
     }
 
+    if (latestRowByModelId.has(target.id)) {
+      duplicateRowsSkipped += 1;
+    }
+    latestRowByModelId.set(target.id, { row, target });
+  }
+
+  const updatedById = new Map<string, ScenarioModelSpec>();
+
+  for (const { row, target } of latestRowByModelId.values()) {
     matchedRowsCount += 1;
-    const baseModel = updatedById.get(target.id) || target;
+    const baseModel = target;
     const targetScenId = resolveTargetScenarioIdForModel(
       baseModel,
       scenarioId,
@@ -1837,6 +2013,7 @@ export function previewBulkSpreadsheetImport(params: {
     }).reduce((a, b) => a + b, 0);
 
     let rowChangedMonths = 0;
+    const changedMonthIndices = new Set<number>();
     let nextAnnualUnits = 0;
 
     if (options.applyMonths && cols.monthCols.size > 0) {
@@ -1856,7 +2033,10 @@ export function previewBulkSpreadsheetImport(params: {
           if (parsedQty !== null && parsedQty >= 0) {
             const val = Math.max(0, Math.round(parsedQty));
             if (options.volumeMetric === 'buyouts') {
-              if (val !== prevBuyouts) rowChangedMonths += 1;
+              if (val !== prevBuyouts) {
+                rowChangedMonths += 1;
+                changedMonthIndices.add(mIdx);
+              }
               nextPacks[mIdx] = val;
               nextReceipts[mIdx] = val;
               const ord =
@@ -1871,7 +2051,10 @@ export function previewBulkSpreadsheetImport(params: {
               nextAnnualUnits += val;
               continue;
             } else {
-              if (val !== prevOrders) rowChangedMonths += 1;
+              if (val !== prevOrders) {
+                rowChangedMonths += 1;
+                changedMonthIndices.add(mIdx);
+              }
               const buy =
                 effBuyoutPct <= 0 || effBuyoutPct >= 100
                   ? val
@@ -1911,10 +2094,66 @@ export function previewBulkSpreadsheetImport(params: {
     if (costDidChange) changedCostKeys.add(target.id);
     if (rowChangedMonths > 0) changedMonthsKeys.add(target.id);
 
+    const roundedNextPrice = Math.round(nextPrice * 100) / 100;
+    const roundedNextCost = Math.round(nextCost * 100) / 100;
+    const shared = baseModel.sharedSupplyAndFact;
+    const hasExplicitWbRates =
+      (baseModel.marketplaceFeePct || 0) > 0 ||
+      (baseModel.logisticsRub || 0) > 0 ||
+      (baseModel.adsPct || 0) > 0;
+    const nextShared =
+      shared && costDidChange
+        ? {
+            ...shared,
+            costStatus:
+              roundedNextCost > 0
+                ? shared.costStatus === 'not_filled'
+                  ? ('plan' as const)
+                  : shared.costStatus
+                : ('not_filled' as const),
+            expensesFilled:
+              roundedNextCost > 0 && hasExplicitWbRates ? true : shared.expensesFilled,
+          }
+        : shared;
+
+    // Если в режиме карточек редактируется родительская карточка LISKANI — синхронно масштабируем её liskaniSizeVariants
+    // и выравниваем рубли родительского плана строго до суммы размерных вариантов (0 ₽ расхождения)
+    const nextLiskaniVariants = scaleLiskaniVariantsFromParentUpdate({
+      baseModel,
+      nextPrice: roundedNextPrice,
+      priceDidChange,
+      nextCost: roundedNextCost,
+      costDidChange,
+      nextPacks,
+      nextOrdersPacks,
+      changedMonthIndices,
+      effBuyoutPct,
+    });
+    if (Array.isArray(nextLiskaniVariants) && nextLiskaniVariants.length > 0) {
+      for (let mIdx = 0; mIdx < 12; mIdx++) {
+        if (nextRevOverride) {
+          nextRevOverride[mIdx] = nextLiskaniVariants.reduce(
+            (s, sv) => s + (sv.monthlyBuyoutsRub[mIdx] || 0),
+            0
+          );
+        }
+        if (nextOrdersRub) {
+          nextOrdersRub[mIdx] = nextLiskaniVariants.reduce(
+            (s, sv) => s + (sv.monthlyOrdersRub[mIdx] || 0),
+            0
+          );
+        }
+      }
+    }
+
     const updatedModel: ScenarioModelSpec = {
       ...baseModel,
-      retailPriceRub: Math.round(nextPrice * 100) / 100,
-      unitCostRub: Math.round(nextCost * 100) / 100,
+      retailPriceRub: roundedNextPrice,
+      unitCostRub: roundedNextCost,
+      ...(nextShared ? { sharedSupplyAndFact: nextShared } : {}),
+      ...(nextLiskaniVariants !== undefined
+        ? { liskaniSizeVariants: nextLiskaniVariants }
+        : {}),
       plansByScenario: {
         ...baseModel.plansByScenario,
         [targetScenId]: {
@@ -1937,9 +2176,9 @@ export function previewBulkSpreadsheetImport(params: {
       parentCode: detectModelBrandPortfolioLabel(target),
       subLabel: target.title,
       priceBefore: target.retailPriceRub,
-      priceAfter: Math.round(nextPrice * 100) / 100,
+      priceAfter: roundedNextPrice,
       costBefore: target.unitCostRub,
-      costAfter: Math.round(nextCost * 100) / 100,
+      costAfter: roundedNextCost,
       annualUnitsBefore: currentAnnualUnits,
       annualUnitsAfter: nextAnnualUnits,
       changedMonthsCount: rowChangedMonths,
@@ -1972,6 +2211,7 @@ export function previewBulkSpreadsheetImport(params: {
     costChangedCount: changedCostKeys.size,
     monthsChangedCount: changedMonthsKeys.size,
     metaFixedCount: fixedMetaKeys.size,
+    duplicateRowsSkipped,
     skippedNoPermissionCount,
     unmatchedRows,
     totalsBefore,

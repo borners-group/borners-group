@@ -13284,6 +13284,129 @@ test('Bulk Excel/CSV 7: Глубокий код-ревью — ширина 500�
   assert.equal(parsedNs.rows[1][1], '2999');
 });
 
+test('Bulk Excel/CSV 8: Третий раунд аудита — самозакрывающиеся XML-теги, регистр путей ZIP, "2,800"/"2 800 р", дедупликация дублей, costStatus и синхронизация LISKANI из brand_models', async () => {
+  const { zipSync, strToU8 } = await import('fflate');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const { ensureModelUnifiedV11 } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const {
+    parseRuNumber,
+    parseXlsxBytes,
+    parseCsvText,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  // 1. parseRuNumber: английские тысячи ("2,800"), "р" без точки ("2 800 р"), русские копейки
+  assert.equal(parseRuNumber('2,800'), 2800);
+  assert.equal(parseRuNumber('1,250,000'), 1250000);
+  assert.equal(parseRuNumber('2 800 р'), 2800);
+  assert.equal(parseRuNumber('1093,1'), 1093.1);
+  assert.equal(parseRuNumber('2 800,00 ₽'), 2800);
+
+  // 2. Самозакрывающиеся <row r="2"/> и <t/> + заглавные имена файлов в ZIP (1С / Numbers)
+  const weirdXlsx = zipSync({
+    'XL/Workbook.xml': strToU8(
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Лист1" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    ),
+    'XL/_rels/Workbook.xml.rels': strToU8(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="Worksheets/Sheet1.xml"/></Relationships>'
+    ),
+    'XL/SharedStrings.xml': strToU8(
+      '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><r><t/></r><r><t>Артикул продавца</t></r></si><si><t>Цена</t></si><si><t>Б3240 Молочный</t></si></sst>'
+    ),
+    'XL/Worksheets/Sheet1.xml': strToU8(
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"/><row r="3"><c r="A3" t="s"><v>2</v></c><c r="B3"><v>2900</v></c></row></sheetData></worksheet>'
+    ),
+  });
+  const parsedWeird = parseXlsxBytes(weirdXlsx, 'weird_1c.xlsx');
+  assert.equal(parsedWeird.rows.length, 2);
+  assert.equal(parsedWeird.rows[0][0], 'Артикул продавца');
+  assert.equal(parsedWeird.rows[1][0], 'Б3240 Молочный');
+  assert.equal(parsedWeird.rows[1][1], '2900');
+
+  // 3. Дедупликация дублей в одном файле: строка 2 меняет цену, строка 3 возвращает исходную -> 0 ложных изменений
+  const dupCsv = [
+    'Артикул продавца;Цена реализации',
+    'Б3240 Молочный;2950',
+    'Б3240 Молочный;2800',
+  ].join('\n');
+  const dupRes = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(dupCsv, 'dup.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: false,
+      applyMonths: false,
+      canEditCost: true,
+    },
+  });
+  assert.equal(dupRes.duplicateRowsSkipped, 1);
+  assert.equal(dupRes.matchedRowsCount, 1);
+  assert.equal(dupRes.changedSkusCount, 0);
+  assert.equal(dupRes.priceChangedCount, 0);
+
+  // 4. Заполнение нулевой себестоимости в brand_models переводит costStatus из not_filled в plan
+  const zeroCostAku = ensureModelUnifiedV11({
+    ...AKUSHA_2027_MODELS[0],
+    unitCostRub: 0,
+    sharedSupplyAndFact: {
+      ...ensureModelUnifiedV11(AKUSHA_2027_MODELS[0]).sharedSupplyAndFact!,
+      costStatus: 'not_filled',
+      expensesFilled: false,
+    },
+  });
+  const costFillRes = previewBulkSpreadsheetImport({
+    models: [zeroCostAku],
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'AKUSHA',
+    parsed: parseCsvText(`Код модели;Себестоимость\n${zeroCostAku.code};2450`, 'cost.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: true,
+      applyMonths: false,
+      canEditCost: true,
+    },
+  });
+  const filledAku = costFillRes.updatedModels[0];
+  assert.equal(filledAku.unitCostRub, 2450);
+  assert.equal(filledAku.sharedSupplyAndFact?.costStatus, 'plan');
+  assert.equal(filledAku.sharedSupplyAndFact?.expensesFilled, true);
+
+  // 5. Правка родительской карточки LISKANI в режиме brand_models синхронно масштабирует liskaniSizeVariants (без расхождения!)
+  const lsc001 = LISKANI_2027_MODELS[0];
+  const parentEditRes = previewBulkSpreadsheetImport({
+    models: [lsc001],
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(`Код модели;Янв (выкупы)\n${lsc001.code};1000`, 'lsc_parent.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: false,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  const lscAfter = parentEditRes.updatedModels[0];
+  const sumVariantsJan = lscAfter.liskaniSizeVariants!.reduce(
+    (s, sv) => s + sv.monthlyBuyoutsUnits[0],
+    0
+  );
+  assert.equal(lscAfter.plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyPacks[0], 1000);
+  assert.equal(sumVariantsJan, 1000, 'Сумма выкупов 8 размеров LISKANI обязана точно совпадать с родительской карточкой');
+});
+
 
 
 

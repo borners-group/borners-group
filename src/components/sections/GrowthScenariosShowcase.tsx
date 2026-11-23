@@ -5865,6 +5865,12 @@ export function GrowthScenariosShowcase({
               ? 'LISKANI'
               : brandFilterLocal === 'ALL'
               ? 'Все бренды'
+              : brandFilterLocal === 'BORNERS_FUKAI' ||
+                brandFilterLocal === 'BORNERS' ||
+                brandFilterLocal === 'FUKAI'
+              ? 'BORNERS / FUKAI'
+              : brandFilterLocal === 'NA_TELE'
+              ? 'НА ТЕЛЕ'
               : brandFilterLocal
           }
           initialMode={

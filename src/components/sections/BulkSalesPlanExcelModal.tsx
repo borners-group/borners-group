@@ -605,8 +605,10 @@ export function BulkSalesPlanExcelModal({
                 </div>
               </div>
 
-              {/* Предупреждения о несопоставленных строках или правах */}
-              {(preview.unmatchedRows.length > 0 || preview.skippedNoPermissionCount > 0) && (
+              {/* Предупреждения о несопоставленных строках, дублях или правах */}
+              {(preview.unmatchedRows.length > 0 ||
+                preview.skippedNoPermissionCount > 0 ||
+                preview.duplicateRowsSkipped > 0) && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-3 text-[12px] text-amber-900 dark:text-amber-200 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="inline-flex items-center gap-2 font-medium">
@@ -614,6 +616,8 @@ export function BulkSalesPlanExcelModal({
                       <span>
                         {preview.unmatchedRows.length > 0 &&
                           `Не сопоставлено строк: ${preview.unmatchedRows.length}. `}
+                        {preview.duplicateRowsSkipped > 0 &&
+                          `Объединено дублей SKU (взята последняя строка): ${preview.duplicateRowsSkipped}. `}
                         {preview.skippedNoPermissionCount > 0 &&
                           `Пропущено из-за прав доступа к бренду: ${preview.skippedNoPermissionCount}.`}
                       </span>
