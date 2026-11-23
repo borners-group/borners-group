@@ -12607,6 +12607,41 @@ test('208. Приёмочный тест 12 (ТЗ v1.0): Защита комме
   assert.equal(/USING\s*\(\s*true\s*\)/i.test(rlsSql), false, 'Не должно быть открытых USING (true) политик');
 });
 
+test('Auth Session Stability: локальный signOut (scope: local) не выбивает другие устройства, а сетевые ошибки не разлогинивают', async () => {
+  const { isTransientAuthNetworkError } = await import('../src/lib/supabase.ts');
+
+  assert.equal(isTransientAuthNetworkError(new Error('Failed to fetch')), true);
+  assert.equal(isTransientAuthNetworkError(new Error('Load failed')), true);
+  assert.equal(isTransientAuthNetworkError({ status: 503, message: 'Service Unavailable' }), true);
+  assert.equal(isTransientAuthNetworkError({ status: 429, message: 'Too Many Requests' }), true);
+  assert.equal(isTransientAuthNetworkError({ status: 403, message: 'Session not found' }), false);
+  assert.equal(isTransientAuthNetworkError({ status: 401, message: 'Invalid JWT' }), false);
+
+  const supabaseSrc = fs.readFileSync(path.join(process.cwd(), 'src/lib/supabase.ts'), 'utf8');
+  assert.ok(
+    supabaseSrc.includes("scope: 'local' | 'global' = 'local'"),
+    'signOutFromCloud должен использовать scope: local по умолчанию, чтобы не разлогинивать другие устройства'
+  );
+  assert.ok(
+    supabaseSrc.includes("await client.auth.signOut({ scope: 'local' })"),
+    'Внутренний signOut при ошибке членства должен быть строго локальным'
+  );
+  assert.equal(
+    /client\.auth\.signOut\(\s*\)/.test(supabaseSrc),
+    false,
+    'В src/lib/supabase.ts не должно остаться голого client.auth.signOut() с дефолтным scope: global'
+  );
+
+  const authGateSrc = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/auth/AuthGate.tsx'),
+    'utf8'
+  );
+  assert.ok(authGateSrc.includes('fetchCurrentAuthProfileDetailed'));
+  assert.ok(authGateSrc.includes("reason === 'token_refreshed'"));
+  assert.ok(authGateSrc.includes("signOutFromCloud('local')"));
+  assert.ok(authGateSrc.includes("profileResult.status === 'network_error'"));
+});
+
 
 
 

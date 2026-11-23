@@ -22,9 +22,10 @@ import {
 import {
   type BornersAuthActionResult,
   type BornersAuthProfile,
-  fetchCurrentAuthProfile,
+  fetchCurrentAuthProfileDetailed,
   getActiveSupabaseClient,
   isCloudAuthRequired,
+  isTransientAuthNetworkError,
   signInWithEmailPassword,
   signOutFromCloud,
   updateCurrentUserPassword,
@@ -91,28 +92,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkSeqRef = useRef<number>(0);
   const lastDispatchedUserIdRef = useRef<string | null>(null);
+  const profileRef = useRef<BornersAuthProfile | null>(null);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const clearAuthError = useCallback(() => {
     setAuthError(null);
   }, []);
 
-  const verifyCurrentSession = useCallback(async (forceDispatchSignedIn = false) => {
-    const seq = ++checkSeqRef.current;
-    const client = getActiveSupabaseClient();
-    if (!client) {
-      if (seq !== checkSeqRef.current) return;
-      setProfile(null);
-      setIsAuthenticated(false);
-      setIsLoading(false);
-      lastDispatchedUserIdRef.current = null;
-      return;
-    }
-
-    try {
-      const { data: sessionData, error: sessionErr } = await client.auth.getSession();
-      if (seq !== checkSeqRef.current) return;
-
-      if (sessionErr || !sessionData?.session) {
+  const verifyCurrentSession = useCallback(
+    async (
+      forceDispatchSignedIn = false,
+      reason: 'init' | 'signed_in' | 'token_refreshed' | 'user_updated' = 'init'
+    ) => {
+      const seq = ++checkSeqRef.current;
+      const client = getActiveSupabaseClient();
+      if (!client) {
+        if (seq !== checkSeqRef.current) return;
+        profileRef.current = null;
         setProfile(null);
         setIsAuthenticated(false);
         setIsLoading(false);
@@ -120,45 +119,130 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const memberProfile = await fetchCurrentAuthProfile();
-      if (seq !== checkSeqRef.current) return;
+      try {
+        const { data: sessionData, error: sessionErr } = await client.auth.getSession();
+        if (seq !== checkSeqRef.current) return;
 
-      if (!memberProfile) {
+        if (sessionErr) {
+          // При кратковременном обрыве сети/VPN на уже открытой сессии не выкидываем пользователя
+          if (isTransientAuthNetworkError(sessionErr) && profileRef.current) {
+            setIsAuthenticated(true);
+            setIsLoading(false);
+            return;
+          }
+          profileRef.current = null;
+          setProfile(null);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          lastDispatchedUserIdRef.current = null;
+          return;
+        }
+
+        if (!sessionData?.session) {
+          profileRef.current = null;
+          setProfile(null);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          lastDispatchedUserIdRef.current = null;
+          return;
+        }
+
+        // При плановом автообновлении JWT (каждый час / пробуждение iPad) не дёргаем повторно сеть,
+        // если профиль этого же пользователя уже подтверждён — исключаем случайный вылет при моргании VPN
+        if (
+          reason === 'token_refreshed' &&
+          profileRef.current &&
+          profileRef.current.userId === sessionData.session.user?.id
+        ) {
+          setAuthError(null);
+          setIsAuthenticated(true);
+          setIsLoading(false);
+          return;
+        }
+
+        let profileResult = await fetchCurrentAuthProfileDetailed();
+        if (seq !== checkSeqRef.current) return;
+
+        // Один автоматический повтор при кратковременном сетевом сбое на старте
+        if (profileResult.status === 'network_error') {
+          if (profileRef.current && profileRef.current.userId === sessionData.session.user?.id) {
+            setIsAuthenticated(true);
+            setIsLoading(false);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          if (seq !== checkSeqRef.current) return;
+          profileResult = await fetchCurrentAuthProfileDetailed();
+          if (seq !== checkSeqRef.current) return;
+        }
+
+        if (profileResult.status === 'network_error') {
+          if (profileRef.current) {
+            setIsAuthenticated(true);
+            setIsLoading(false);
+            return;
+          }
+          // Не вызываем signOut при сетевой ошибке — сохраняем локальную сессию до восстановления связи
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          setAuthError(
+            profileResult.error ||
+              'Нет связи с сервером авторизации. Проверьте интернет или VPN и обновите страницу.'
+          );
+          return;
+        }
+
+        if (profileResult.status !== 'ok') {
+          profileRef.current = null;
+          setProfile(null);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          lastDispatchedUserIdRef.current = null;
+          setAuthError(
+            profileResult.reason === 'not_member'
+              ? 'Доступ запрещён: аккаунт не числится среди авторизованных участников BORNERS GROUP (RLS). Обратитесь к администратору.'
+              : 'Сессия истекла. Войдите в систему повторно.'
+          );
+          // Строго локальный выход: не затрагиваем другие устройства (Mac/iPad) этого аккаунта
+          void signOutFromCloud('local');
+          return;
+        }
+
+        const memberProfile = profileResult.profile;
+        const isNewSignIn = lastDispatchedUserIdRef.current !== memberProfile.userId;
+        profileRef.current = memberProfile;
+        setAuthError(null);
+        setProfile(memberProfile);
+        setIsAuthenticated(true);
+        setIsLoading(false);
+
+        if (forceDispatchSignedIn || isNewSignIn) {
+          lastDispatchedUserIdRef.current = memberProfile.userId;
+          dispatchAuthSignedInEvent(memberProfile);
+        }
+      } catch (err) {
+        if (seq !== checkSeqRef.current) return;
+        if (isTransientAuthNetworkError(err) && profileRef.current) {
+          setIsAuthenticated(true);
+          setIsLoading(false);
+          return;
+        }
+        profileRef.current = null;
         setProfile(null);
         setIsAuthenticated(false);
         setIsLoading(false);
         lastDispatchedUserIdRef.current = null;
-        setAuthError(
-          'Доступ запрещён: аккаунт не числится среди авторизованных участников BORNERS GROUP (RLS). Обратитесь к администратору.'
-        );
-        void signOutFromCloud();
-        return;
       }
-
-      const isNewSignIn = lastDispatchedUserIdRef.current !== memberProfile.userId;
-      setAuthError(null);
-      setProfile(memberProfile);
-      setIsAuthenticated(true);
-      setIsLoading(false);
-
-      if (forceDispatchSignedIn || isNewSignIn) {
-        lastDispatchedUserIdRef.current = memberProfile.userId;
-        dispatchAuthSignedInEvent(memberProfile);
-      }
-    } catch {
-      if (seq !== checkSeqRef.current) return;
-      setProfile(null);
-      setIsAuthenticated(false);
-      setIsLoading(false);
-      lastDispatchedUserIdRef.current = null;
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     const required = isCloudAuthRequired();
     setAuthRequired(required);
 
     if (!required) {
+      profileRef.current = null;
       setProfile(null);
       setAuthError(null);
       setIsAuthenticated(true);
@@ -168,6 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const client = getActiveSupabaseClient();
     if (!client) {
+      profileRef.current = null;
       setProfile(null);
       setIsAuthenticated(false);
       setIsLoading(false);
@@ -175,23 +260,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
-    void verifyCurrentSession(false);
+    void verifyCurrentSession(false, 'init');
 
     const { data: authSubscription } = client.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       if (event === 'SIGNED_OUT' || !session) {
         checkSeqRef.current += 1;
         lastDispatchedUserIdRef.current = null;
+        profileRef.current = null;
         setProfile(null);
         setIsAuthenticated(false);
         setIsLoading(false);
         return;
       }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const reason =
+          event === 'TOKEN_REFRESHED'
+            ? 'token_refreshed'
+            : event === 'USER_UPDATED'
+            ? 'user_updated'
+            : 'signed_in';
         // Откладываем асинхронный запрос за пределы колбэка onAuthStateChange, чтобы избежать блокировки клиента supabase-js v2
         setTimeout(() => {
           if (!cancelled) {
-            void verifyCurrentSession(event === 'SIGNED_IN');
+            void verifyCurrentSession(event === 'SIGNED_IN', reason);
           }
         }, 0);
       }
@@ -208,6 +300,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await signInWithEmailPassword(email, password);
     if (!res.ok || !res.profile) {
       setAuthError(res.error || 'Не удалось выполнить вход. Проверьте email и пароль.');
+      profileRef.current = null;
       setProfile(null);
       setIsAuthenticated(false);
       lastDispatchedUserIdRef.current = null;
@@ -215,6 +308,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     checkSeqRef.current += 1;
+    profileRef.current = res.profile;
     setAuthError(null);
     setProfile(res.profile);
     setIsAuthenticated(true);
@@ -227,12 +321,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     checkSeqRef.current += 1;
     lastDispatchedUserIdRef.current = null;
+    profileRef.current = null;
     setProfile(null);
     setAuthError(null);
     if (authRequired) {
       setIsAuthenticated(false);
     }
-    await signOutFromCloud();
+    await signOutFromCloud('local');
   }, [authRequired]);
 
   const changePassword = useCallback(async (newPassword: string) => {

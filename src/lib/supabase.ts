@@ -28,6 +28,42 @@ export interface BornersAuthActionResult {
   unauthorized?: boolean;
 }
 
+export type BornersAuthProfileResult =
+  | { status: 'ok'; profile: BornersAuthProfile }
+  | {
+      status: 'unauthorized';
+      reason: 'no_user' | 'not_member' | 'session_invalid';
+      error?: string;
+    }
+  | { status: 'network_error'; error?: string };
+
+export function isTransientAuthNetworkError(err: unknown): boolean {
+  if (!err) return false;
+  const anyErr = err as { status?: unknown; code?: unknown; message?: unknown; name?: unknown };
+  const status = typeof anyErr.status === 'number' ? anyErr.status : null;
+  if (status !== null && (status === 0 || status === 408 || status === 429 || status >= 500)) {
+    return true;
+  }
+  const msg = String(anyErr.message || err || '').toLowerCase();
+  const name = String(anyErr.name || '').toLowerCase();
+  return (
+    name.includes('abort') ||
+    name.includes('fetch') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('load failed') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed') ||
+    msg.includes('err_network') ||
+    msg.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('econnreset') ||
+    msg.includes('fetch failed') ||
+    msg.includes('gateway') ||
+    msg.includes('service unavailable') ||
+    msg.includes('temporarily unavailable')
+  );
+}
+
 const envSupabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const envSupabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
@@ -124,6 +160,7 @@ export function getActiveSupabaseClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: false,
     },
   });
   cachedConfigKey = key;
@@ -192,14 +229,30 @@ export function isCloudAuthRequired(): boolean {
   return getActiveSupabaseClient() !== null;
 }
 
-export async function fetchCurrentAuthProfile(): Promise<BornersAuthProfile | null> {
+export async function fetchCurrentAuthProfileDetailed(): Promise<BornersAuthProfileResult> {
   const client = getActiveSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    return { status: 'unauthorized', reason: 'no_user' };
+  }
 
   try {
     const { data: userData, error: userError } = await client.auth.getUser();
-    if (userError || !userData?.user?.id) {
-      return null;
+    if (userError) {
+      if (isTransientAuthNetworkError(userError)) {
+        return {
+          status: 'network_error',
+          error: translateSupabaseAuthError(userError.message),
+        };
+      }
+      return {
+        status: 'unauthorized',
+        reason: 'session_invalid',
+        error: translateSupabaseAuthError(userError.message),
+      };
+    }
+
+    if (!userData?.user?.id) {
+      return { status: 'unauthorized', reason: 'no_user' };
     }
 
     const user = userData.user;
@@ -209,13 +262,27 @@ export async function fetchCurrentAuthProfile(): Promise<BornersAuthProfile | nu
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (memberError || !memberRow) {
-      return null;
+    if (memberError) {
+      if (isTransientAuthNetworkError(memberError)) {
+        return {
+          status: 'network_error',
+          error: translateSupabaseAuthError(memberError.message),
+        };
+      }
+      return {
+        status: 'unauthorized',
+        reason: 'not_member',
+        error: memberError.message,
+      };
+    }
+
+    if (!memberRow) {
+      return { status: 'unauthorized', reason: 'not_member' };
     }
 
     const role = normalizeAuthRole((memberRow as { role?: unknown }).role);
     if (!role) {
-      return null;
+      return { status: 'unauthorized', reason: 'not_member' };
     }
 
     const email = String((memberRow as { email?: unknown }).email || user.email || '').trim();
@@ -227,15 +294,33 @@ export async function fetchCurrentAuthProfile(): Promise<BornersAuthProfile | nu
     ).trim();
 
     return {
-      userId: String((memberRow as { user_id?: unknown }).user_id || user.id),
-      email,
-      role,
-      displayName,
-      companyCode,
+      status: 'ok',
+      profile: {
+        userId: String((memberRow as { user_id?: unknown }).user_id || user.id),
+        email,
+        role,
+        displayName,
+        companyCode,
+      },
     };
-  } catch {
-    return null;
+  } catch (err) {
+    if (isTransientAuthNetworkError(err)) {
+      return {
+        status: 'network_error',
+        error: translateSupabaseAuthError(err instanceof Error ? err.message : undefined),
+      };
+    }
+    return {
+      status: 'unauthorized',
+      reason: 'session_invalid',
+      error: translateSupabaseAuthError(err instanceof Error ? err.message : undefined),
+    };
   }
+}
+
+export async function fetchCurrentAuthProfile(): Promise<BornersAuthProfile | null> {
+  const res = await fetchCurrentAuthProfileDetailed();
+  return res.status === 'ok' ? res.profile : null;
 }
 
 export async function signInWithEmailPassword(
@@ -273,10 +358,19 @@ export async function signInWithEmailPassword(
       };
     }
 
-    const profile = await fetchCurrentAuthProfile();
-    if (!profile) {
+    const profileRes = await fetchCurrentAuthProfileDetailed();
+    if (profileRes.status === 'network_error') {
+      return {
+        ok: false,
+        error:
+          profileRes.error ||
+          'Нет связи с сервером авторизации. Проверьте интернет или VPN и повторите попытку.',
+        profile: null,
+      };
+    }
+    if (profileRes.status !== 'ok') {
       try {
-        await client.auth.signOut();
+        await client.auth.signOut({ scope: 'local' });
       } catch {
         // ignore signOut failure
       }
@@ -291,7 +385,7 @@ export async function signInWithEmailPassword(
 
     return {
       ok: true,
-      profile,
+      profile: profileRes.profile,
     };
   } catch (err) {
     return {
@@ -302,13 +396,17 @@ export async function signInWithEmailPassword(
   }
 }
 
-export async function signOutFromCloud(): Promise<{ ok: boolean; error?: string }> {
+export async function signOutFromCloud(
+  scope: 'local' | 'global' = 'local'
+): Promise<{ ok: boolean; error?: string }> {
   const client = getActiveSupabaseClient();
   if (!client) {
     return { ok: true };
   }
   try {
-    const { error } = await client.auth.signOut();
+    // По умолчанию используем scope: 'local', чтобы выход на одном устройстве (Mac/iPad)
+    // никогда не выбивал активные сессии этого же аккаунта на других устройствах!
+    const { error } = await client.auth.signOut({ scope });
     if (error) {
       return { ok: false, error: translateSupabaseAuthError(error.message) };
     }
