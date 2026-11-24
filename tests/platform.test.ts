@@ -13407,6 +13407,82 @@ test('Bulk Excel/CSV 8: Третий раунд аудита — самозак�
   assert.equal(sumVariantsJan, 1000, 'Сумма выкупов 8 размеров LISKANI обязана точно совпадать с родительской карточкой');
 });
 
+test('Bulk Excel/CSV 9: Четвёртый раунд аудита — защита от путаницы «Выручка Янв, ₽» со штуками, UTF-16LE Excel Unicode Text, "0,500" и кросс-брендовая подсказка', async () => {
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS } = await import('../src/lib/akushaAssortment2027.ts');
+  const {
+    parseRuNumber,
+    parseSpreadsheetBuffer,
+    parseCsvText,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+
+  // 1. «Выручка Янв, ₽» и «Цена Янв» НЕ должны захватывать слот января вместо колонки штук «Янв (выкупы)»
+  const mixedMoneyAndQtyCsv = [
+    'Артикул продавца;Выручка Янв, ₽;Цена Янв;Янв (выкупы)',
+    'Б3240 Молочный;999999;2800;310',
+  ].join('\n');
+  const mixedRes = previewBulkSpreadsheetImport({
+    models: LISKANI_2027_MODELS,
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(mixedMoneyAndQtyCsv, 'mixed.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: false,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  const sv1 = mixedRes.updatedModels[0].liskaniSizeVariants![0];
+  assert.equal(
+    sv1.monthlyBuyoutsUnits[0],
+    310,
+    'В январь должны записаться 310 компл., а не 999999 ₽ из колонки «Выручка Янв, ₽»'
+  );
+
+  // 2. UTF-16 LE BOM («Юникод текст» из Excel) декодируется без нулевых байтов
+  const utf16Text = 'Артикул продавца\tЦена реализации\tЯнв\nБ3240 Молочный\t2950\t250\n';
+  const utf16Bytes = new Uint8Array(2 + utf16Text.length * 2);
+  utf16Bytes[0] = 0xff;
+  utf16Bytes[1] = 0xfe;
+  for (let i = 0; i < utf16Text.length; i++) {
+    const code = utf16Text.charCodeAt(i);
+    utf16Bytes[2 + i * 2] = code & 0xff;
+    utf16Bytes[2 + i * 2 + 1] = code >> 8;
+  }
+  const parsedUtf16 = parseSpreadsheetBuffer(utf16Bytes, 'excel_unicode.txt');
+  assert.equal(parsedUtf16.rows[0][0], 'Артикул продавца');
+  assert.equal(parsedUtf16.rows[1][0], 'Б3240 Молочный');
+  assert.equal(parsedUtf16.rows[1][2], '250');
+
+  // 3. Ведущий ноль "0,500" остаётся дробным 0.5, а "2,800" остаётся 2800
+  assert.equal(parseRuNumber('0,500'), 0.5);
+  assert.equal(parseRuNumber('2,800'), 2800);
+
+  // 4. Загрузка модели AKUSHA при открытом фильтре LISKANI даёт точную подсказку с именем бренда
+  const crossRes = previewBulkSpreadsheetImport({
+    models: [...LISKANI_2027_MODELS.slice(0, 2), ...AKUSHA_2027_MODELS.slice(0, 2)],
+    scenarioId: LISKANI_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText(`Код модели;РРЦ\n${AKUSHA_2027_MODELS[0].code};7500`, 'cross.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: false,
+      applyMonths: false,
+      canEditCost: true,
+    },
+  });
+  assert.equal(crossRes.unmatchedRows.length, 1);
+  assert.ok(crossRes.unmatchedRows[0].reason.includes('AKUSHA'));
+});
+
 
 
 

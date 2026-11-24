@@ -200,10 +200,10 @@ export function parseRuNumber(raw: string | number | null | undefined): number |
       normalized = normalized.replace(/,/g, '');
     }
   } else if (hasComma) {
-    // Поддерживаем как русскую десятичную запятую («2800,00», «1093,1», «837,44»),
+    // Поддерживаем как русскую десятичную запятую («2800,00», «1093,1», «0,500»),
     // так и англоязычный разделитель тысяч («2,800», «1,250,000»)
     const commaCount = (normalized.match(/,/g) || []).length;
-    if (commaCount > 1 || /^[+-]?\d{1,3},\d{3}$/.test(normalized)) {
+    if (commaCount > 1 || /^[+-]?[1-9]\d{0,2},\d{3}$/.test(normalized)) {
       normalized = normalized.replace(/,/g, '');
     } else {
       normalized = normalized.replace(',', '.');
@@ -697,16 +697,23 @@ export function parseSpreadsheetBuffer(
     return parseXlsxBytes(bytes, fileName);
   }
 
-  // Поддержка UTF-8 и Windows-1251 CSV (частая выгрузка из Excel / 1С)
-  let text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-  if (text.includes('\uFFFD')) {
-    try {
-      const win1251 = new TextDecoder('windows-1251', { fatal: false }).decode(bytes);
-      if (!win1251.includes('\uFFFD')) {
-        text = win1251;
+  // Поддержка UTF-16 LE / UTF-16 BE («Юникод текст» из Excel), UTF-8 и Windows-1251 CSV
+  let text = '';
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    text = new TextDecoder('utf-16le', { fatal: false }).decode(bytes.subarray(2));
+  } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    text = new TextDecoder('utf-16be', { fatal: false }).decode(bytes.subarray(2));
+  } else {
+    text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    if (text.includes('\uFFFD')) {
+      try {
+        const win1251 = new TextDecoder('windows-1251', { fatal: false }).decode(bytes);
+        if (!win1251.includes('\uFFFD')) {
+          text = win1251;
+        }
+      } catch {
+        // Оставляем UTF-8
       }
-    } catch {
-      // Оставляем UTF-8
     }
   }
   return parseCsvText(text, fileName);
@@ -717,25 +724,28 @@ export function parseSpreadsheetBuffer(
 // =============================================================================
 
 const MONTH_HEADER_PATTERNS: RegExp[] = [
-  /(?:^|[\s._(\-/])(янв|январь|января|jan|january|202\d-01|01\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(фев|февраль|февраля|feb|february|202\d-02|02\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(мар|март|марта|mar|march|202\d-03|03\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(апр|апрель|апреля|apr|april|202\d-04|04\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(май|мая|may|202\d-05|05\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(июн|июнь|июня|jun|june|202\d-06|06\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(июл|июль|июля|jul|july|202\d-07|07\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(авг|август|августа|aug|august|202\d-08|08\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(сен|сент|сентябрь|сентября|sep|sept|september|202\d-09|09\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(окт|октябрь|октября|oct|october|202\d-10|10\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(ноя|ноябрь|ноября|nov|november|202\d-11|11\.202\d)(?:$|[\s._)\-/,0-9])/i,
-  /(?:^|[\s._(\-/])(дек|декабрь|декабря|dec|december|202\d-12|12\.202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(янв|январь|января|jan|january|202\d-01|01[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(фев|февраль|февраля|feb|february|202\d-02|02[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(мар|март|марта|mar|march|202\d-03|03[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(апр|апрель|апреля|apr|april|202\d-04|04[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(май|мая|may|202\d-05|05[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(июн|июнь|июня|jun|june|202\d-06|06[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(июл|июль|июля|jul|july|202\d-07|07[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(авг|август|августа|aug|august|202\d-08|08[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(сен|сент|сентябрь|сентября|sep|sept|september|202\d-09|09[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(окт|октябрь|октября|oct|october|202\d-10|10[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(ноя|ноябрь|ноября|nov|november|202\d-11|11[./]202\d)(?:$|[\s._)\-/,0-9])/i,
+  /(?:^|[\s._(\-/])(дек|декабрь|декабря|dec|december|202\d-12|12[./]202\d)(?:$|[\s._)\-/,0-9])/i,
 ];
+
+const NON_QUANTITY_MONTH_COLUMN_RE =
+  /(выручк|сумм|руб|₽|цен|себест|марж|прибыл|налог|расход|остат|мрамор|маркетинг|revenue|price|cost|margin|stock|amount)/i;
 
 function detectMonthIndexFromHeader(header: string): number {
   const norm = normalizeLookupText(header);
   if (!norm) return -1;
-  // Исключаем не-месячные заголовки, где могут встречаться похожие подстроки
-  if (norm.includes('марж') || norm.includes('мрамор') || norm.includes('маркетинг')) {
+  // Никогда не путаем денежные/ценовые/остаточные колонки («Выручка Янв, ₽», «Цена Янв», «Остаток Янв») с планом штук
+  if (NON_QUANTITY_MONTH_COLUMN_RE.test(norm)) {
     return -1;
   }
   for (let m = 0; m < 12; m++) {
@@ -1859,6 +1869,14 @@ export function previewBulkSpreadsheetImport(params: {
   const byWb = new Map<string, ScenarioModelSpec>();
   const byTitle = new Map<string, ScenarioModelSpec>();
 
+  const allByCode = new Map<string, ScenarioModelSpec>();
+  const allByWb = new Map<string, ScenarioModelSpec>();
+  for (const m of models) {
+    allByCode.set(normalizeLookupText(m.code), m);
+    const wb = normalizeExcelIntegerId(m.wbArticle);
+    if (wb) allByWb.set(wb, m);
+  }
+
   for (const m of scopedModels) {
     byCode.set(normalizeLookupText(m.code), m);
     byId.set(normalizeLookupText(m.id), m);
@@ -1897,10 +1915,18 @@ export function previewBulkSpreadsheetImport(params: {
       (titleRaw ? byTitle.get(normalizeLookupText(titleRaw)) : undefined);
 
     if (!target) {
+      const otherBrandMatch =
+        (codeRaw ? allByCode.get(normalizeLookupText(codeRaw)) : undefined) ||
+        (wbRaw ? allByWb.get(wbRaw) : undefined);
+      const otherBrandLabel = otherBrandMatch
+        ? detectModelBrandPortfolioLabel(otherBrandMatch)
+        : null;
       unmatchedRows.push({
         rowNumber: excelRowNum,
         label: codeRaw || titleRaw || wbRaw || `Строка ${excelRowNum}`,
-        reason: 'Карточка модели не найдена в выбранном бренде',
+        reason: otherBrandLabel
+          ? `Модель относится к бренду ${otherBrandLabel} — переключите фильтр бренда на ${otherBrandLabel} или «Все бренды»`
+          : 'Карточка модели не найдена в выбранном бренде',
       });
       continue;
     }
