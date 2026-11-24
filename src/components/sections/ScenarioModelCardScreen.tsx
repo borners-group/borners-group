@@ -1927,7 +1927,13 @@ export function ScenarioModelCardScreen({
               )}
 
               <div className="text-[11.5px] text-[#5E5D58]">
-                {hasDistinctSecondary ? (
+                {model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0 ? (
+                  <>
+                    Ср. по {model.liskaniSizeVariants.length} разм. (
+                    {Math.min(...model.liskaniSizeVariants.map((v) => v.retailPriceRub)).toLocaleString('ru-RU')}–
+                    {Math.max(...model.liskaniSizeVariants.map((v) => v.retailPriceRub)).toLocaleString('ru-RU')} ₽) · по размерам ниже ↓
+                  </>
+                ) : hasDistinctSecondary ? (
                   <>
                     За 1 {primaryUnitShort} ({model.unitsInPack} {secondaryUnitShort}) ·{' '}
                     <strong className="text-[#141413]">
@@ -1977,6 +1983,8 @@ export function ScenarioModelCardScreen({
               <div className="text-[11.5px] text-[#5E5D58]">
                 {!hasCost
                   ? 'Недоступно для вашей роли'
+                  : model.liskaniSizeVariants && model.liskaniSizeVariants.length > 0
+                  ? `Ср. по ${model.liskaniSizeVariants.length} разм. (${Math.min(...model.liskaniSizeVariants.map((v) => v.unitCostRub)).toLocaleString('ru-RU')}–${Math.max(...model.liskaniSizeVariants.map((v) => v.unitCostRub)).toLocaleString('ru-RU')} ₽) · по размерам ниже ↓`
                   : pnl.unitCostPerSingleItemRub !== null
                   ? hasDistinctSecondary
                     ? `За 1 ${primaryUnitShort} · ${pnl.unitCostPerSingleItemRub.toLocaleString('ru-RU')} ₽ / ${secondaryUnitShort}`

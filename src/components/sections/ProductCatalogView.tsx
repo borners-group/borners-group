@@ -1609,6 +1609,31 @@ export function ProductCatalogView() {
                     : rawMainUrl;
                 const colors = mod.palettes[0]?.colors || [];
                 const categoryText = mod.categoryLabel || unitCfg.categoryDefault;
+                const sizeVariants = Array.isArray(mod.liskaniSizeVariants)
+                  ? mod.liskaniSizeVariants
+                  : [];
+                const hasMultiSize = sizeVariants.length > 0;
+                const trimmedQ = searchQuery.trim().toLowerCase();
+                const matchedSizeVariants =
+                  hasMultiSize && trimmedQ
+                    ? sizeVariants.filter(
+                        (sv) =>
+                          sv.sellerSku.toLowerCase().includes(trimmedQ) ||
+                          sv.wbNmId.toLowerCase().includes(trimmedQ) ||
+                          sv.barcode.toLowerCase().includes(trimmedQ) ||
+                          sv.sizeCm.toLowerCase().includes(trimmedQ)
+                      )
+                    : [];
+                const sizeRrcVals = hasMultiSize
+                  ? sizeVariants.map((sv) => sv.retailPriceRub).filter((v) => v > 0)
+                  : [];
+                const sizeCostVals = hasMultiSize
+                  ? sizeVariants.map((sv) => sv.unitCostRub).filter((v) => v > 0)
+                  : [];
+                const minSizeRrc = sizeRrcVals.length > 0 ? Math.min(...sizeRrcVals) : 0;
+                const maxSizeRrc = sizeRrcVals.length > 0 ? Math.max(...sizeRrcVals) : 0;
+                const minSizeCost = sizeCostVals.length > 0 ? Math.min(...sizeCostVals) : 0;
+                const maxSizeCost = sizeCostVals.length > 0 ? Math.max(...sizeCostVals) : 0;
                 const canEditThisModel = canEditModel(mod);
                 const stageLabel = mod.modelStageStatus || mod.launchStatus || 'В плане';
                 const isActiveStage =
@@ -1741,6 +1766,38 @@ export function ProductCatalogView() {
                             {mod.fabric?.density ? ` · ${mod.fabric.density}` : ''}
                           </p>
                         )}
+
+                        {matchedSizeVariants.length > 0 && (
+                          <div className="mt-2 rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-2.5 py-2 space-y-1">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                              Найденный размерный SKU ({matchedSizeVariants.length})
+                            </div>
+                            {matchedSizeVariants.slice(0, 3).map((sv) => (
+                              <div
+                                key={sv.skuIndex}
+                                className="flex items-center justify-between gap-2 text-[11px] font-mono text-[#141413] dark:text-[#F5F4F0]"
+                              >
+                                <span className="truncate font-semibold">
+                                  {sv.sellerSku} · {sv.sizeCm}
+                                </span>
+                                <span className="shrink-0 whitespace-nowrap">
+                                  РРЦ <strong>{sv.retailPriceRub.toLocaleString('ru-RU')} ₽</strong>
+                                  {hasCost && (
+                                    <>
+                                      {' · '}Себ.{' '}
+                                      <strong>{sv.unitCostRub.toLocaleString('ru-RU')} ₽</strong>
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                            {matchedSizeVariants.length > 3 && (
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                                + ещё {matchedSizeVariants.length - 3} разм. — откройте «Все 269 размеров SKU» или Паспорт
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1748,15 +1805,24 @@ export function ProductCatalogView() {
                     <div>
                       <div className="grid grid-cols-3 divide-x divide-[#E4E1DA] dark:divide-[#282724] border-t border-[#E4E1DA] dark:border-[#282724] bg-[#FAF9F6]/60 dark:bg-[#1D1C1A]/50">
                         <div className="px-3.5 py-2.5">
-                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">РРЦ</div>
+                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">
+                            {hasMultiSize ? `Ср. РРЦ (${sizeVariants.length} р.)` : 'РРЦ'}
+                          </div>
                           <div className="font-display-num whitespace-nowrap text-[13.5px] font-semibold text-[#141413] dark:text-[#F5F4F0] mt-0.5">
                             {met.avgRetailPriceRub > 0
                               ? formatCurrencyRub(met.avgRetailPriceRub)
                               : 'уточнить'}
                           </div>
+                          {hasMultiSize && minSizeRrc > 0 && maxSizeRrc > minSizeRrc && (
+                            <div className="font-mono text-[9.5px] text-[#78746C] dark:text-[#9E9A92] whitespace-nowrap">
+                              {minSizeRrc.toLocaleString('ru-RU')}–{maxSizeRrc.toLocaleString('ru-RU')} ₽
+                            </div>
+                          )}
                         </div>
                         <div className="px-3.5 py-2.5">
-                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">Себест.</div>
+                          <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">
+                            {hasMultiSize ? 'Ср. себест.' : 'Себест.'}
+                          </div>
                           <div className="font-display-num whitespace-nowrap text-[13.5px] font-medium text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
                             {!hasCost
                               ? 'Скрыто'
@@ -1764,6 +1830,11 @@ export function ProductCatalogView() {
                               ? formatCurrencyRub(mod.unitCostRub)
                               : 'уточнить'}
                           </div>
+                          {hasCost && hasMultiSize && minSizeCost > 0 && maxSizeCost > minSizeCost && (
+                            <div className="font-mono text-[9.5px] text-[#78746C] dark:text-[#9E9A92] whitespace-nowrap">
+                              {minSizeCost.toLocaleString('ru-RU')}–{maxSizeCost.toLocaleString('ru-RU')} ₽
+                            </div>
+                          )}
                         </div>
                         <div className="px-3.5 py-2.5 text-right">
                           <div className="text-[10.5px] text-[#78746C] dark:text-[#9E9A92]">
