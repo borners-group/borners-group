@@ -531,7 +531,13 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
       const idM = tag.match(/\bId=["']([^"']+)["']/);
       const targetM = tag.match(/\bTarget=["']([^"']+)["']/);
       if (idM && targetM) {
-        const target = targetM[1].replace(/^(?:\.\.\/|\.\/|\/)+/, '');
+        let decodedTarget = targetM[1].replace(/\\/g, '/');
+        try {
+          decodedTarget = decodeURIComponent(decodedTarget);
+        } catch {
+          // оставляем исходный путь при некорректной %XX-последовательности
+        }
+        const target = decodedTarget.replace(/^(?:\.\.\/|\.\/|\/)+/, '');
         relMap.set(idM[1], target.startsWith('xl/') ? target : `xl/${target}`);
       }
     }

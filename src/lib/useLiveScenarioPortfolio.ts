@@ -64,7 +64,7 @@ import {
   type CloudConflictEventDetail,
   type CloudPortfolioCorePayload,
   type CloudSaveStatus,
-  getLastLocalCorePushIso,
+  isLocalCloudPushEcho,
   pullPortfolioFromSupabase,
   pushModelGalleryToSupabase,
   pushPortfolioCoreToSupabase,
@@ -935,12 +935,12 @@ export function useLiveScenarioPortfolio() {
       }
     };
 
-    const unsubRealtime = subscribeToSupabaseKvChanges((key, updatedAt) => {
+    const unsubRealtime = subscribeToSupabaseKvChanges((key, updatedAt, revision) => {
       if (activeCloudCoordinatorId !== myHookId) return;
       if (key !== SUPABASE_CORE_KEY && !key.startsWith(SUPABASE_GALLERY_KEY_PREFIX)) {
         return;
       }
-      if (key === SUPABASE_CORE_KEY && updatedAt && updatedAt === getLastLocalCorePushIso()) {
+      if (key === SUPABASE_CORE_KEY && isLocalCloudPushEcho(key, updatedAt, revision)) {
         return;
       }
       if (realtimeDebounceTimer) {
@@ -1285,11 +1285,13 @@ export function useLiveScenarioPortfolio() {
   const updateModelSpec = useCallback(
     (updated: ScenarioModelSpec) => {
       localMutationSeqRef.current += 1;
-      if (Array.isArray(updated.gallery)) {
-        void saveModelGalleryToIdb(updated.id, updated.gallery);
-        void pushModelGalleryToSupabase(updated.id, updated.gallery);
-      }
       setModels((prev) => {
+        const oldM = prev.find((m) => m.id === updated.id);
+        const galChanged = !oldM || oldM.gallery !== updated.gallery;
+        if (galChanged && Array.isArray(updated.gallery)) {
+          void saveModelGalleryToIdb(updated.id, updated.gallery);
+          void pushModelGalleryToSupabase(updated.id, updated.gallery);
+        }
         const iso = touchPortfolioUpdatedAt();
         const stampedUpdated: ScenarioModelSpec = { ...updated, updatedAtIso: iso };
         const next = prev.map((m) => (m.id === stampedUpdated.id ? stampedUpdated : m));

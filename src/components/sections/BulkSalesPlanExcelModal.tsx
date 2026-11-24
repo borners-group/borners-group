@@ -648,7 +648,9 @@ export function BulkSalesPlanExcelModal({
                     </span>
                   </div>
                   <div className="text-[11px] text-[#5C5953] dark:text-[#9E9A92] mt-0.5">
-                    Заказов: {preview.totalsAfter.annualOrdersUnits.toLocaleString('ru-RU')} {unitWord}
+                    {volumeMetric === 'orders'
+                      ? `Выкупов: ${preview.totalsAfter.annualBuyoutsUnits.toLocaleString('ru-RU')} ${unitWord}`
+                      : `Заказов: ${preview.totalsAfter.annualOrdersUnits.toLocaleString('ru-RU')} ${unitWord}`}
                   </div>
                 </div>
               </div>

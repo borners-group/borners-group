@@ -289,8 +289,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    const handleBrowserOnline = () => {
+      if (!cancelled && !profileRef.current) {
+        void verifyCurrentSession(false, 'init');
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleBrowserOnline);
+    }
+
     return () => {
       cancelled = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleBrowserOnline);
+      }
       authSubscription.subscription.unsubscribe();
     };
   }, [verifyCurrentSession]);

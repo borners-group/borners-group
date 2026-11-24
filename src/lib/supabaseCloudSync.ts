@@ -152,6 +152,14 @@ function isMissingColumnError(
 const lastSyncedGalleryFingerprintByModelId = new Map<string, string>();
 let latestCorePushSeq = 0;
 let lastLocalCorePushIso = '';
+let lastLocalCorePushRevision: number | null = null;
+let corePushInFlight: Promise<boolean> | null = null;
+let corePushExpectedNextRev: number | null = null;
+let queuedCorePush: {
+  input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>;
+  options?: CloudPushOptions;
+  resolvers: Array<(ok: boolean) => void>;
+} | null = null;
 let inFlightPortfolioPull: Promise<CloudPortfolioCorePayload | null> | null = null;
 let lastKnownCoreRevision: number | null = null;
 let lastKnownWorkspaceRevision: number | null = null;
@@ -167,6 +175,10 @@ export function getLastKnownCoreRevision(): number | null {
 
 export function setLastKnownCoreRevision(rev: number | null): void {
   lastKnownCoreRevision = rev === null ? null : parseRevisionNumber(rev);
+  if (rev === null) {
+    lastLocalCorePushRevision = null;
+    lastLocalCorePushIso = '';
+  }
 }
 
 export function getLastKnownWorkspaceRevision(): number | null {
@@ -175,10 +187,82 @@ export function getLastKnownWorkspaceRevision(): number | null {
 
 export function setLastKnownWorkspaceRevision(rev: number | null): void {
   lastKnownWorkspaceRevision = rev === null ? null : parseRevisionNumber(rev);
+  if (rev === null) {
+    lastLocalWorkspacePushRevision = null;
+    lastLocalWorkspacePushIso = '';
+  }
 }
 
 export function getLastCloudConflictEvent(): CloudConflictEventDetail | null {
   return lastCloudConflictEvent;
+}
+
+/**
+ * Надёжно распознаёт эхо собственного сохранения в Supabase Realtime,
+ * даже если Postgres вернул timestamptz с микросекундами/+00:00 или событие пришло
+ * до завершения HTTP-ответа RPC `upsert_portfolio_kv_safe`.
+ */
+export function isLocalCloudPushEcho(
+  key: string,
+  updatedAt?: string | null,
+  revision?: number | string | null
+): boolean {
+  const revNum = parseRevisionNumber(revision);
+  const tsMs = parseIsoTs(updatedAt);
+
+  if (key === SUPABASE_CORE_KEY) {
+    if (
+      revNum !== null &&
+      lastLocalCorePushRevision !== null &&
+      revNum <= lastLocalCorePushRevision
+    ) {
+      return true;
+    }
+    if (
+      corePushInFlight !== null &&
+      revNum !== null &&
+      corePushExpectedNextRev !== null &&
+      revNum === corePushExpectedNextRev
+    ) {
+      return true;
+    }
+    if (updatedAt && lastLocalCorePushIso) {
+      if (updatedAt === lastLocalCorePushIso) return true;
+      const lastMs = parseIsoTs(lastLocalCorePushIso);
+      if (Number.isFinite(tsMs) && Number.isFinite(lastMs) && tsMs === lastMs) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (key === SUPABASE_WORKSPACE_KEY) {
+    if (
+      revNum !== null &&
+      lastLocalWorkspacePushRevision !== null &&
+      revNum <= lastLocalWorkspacePushRevision
+    ) {
+      return true;
+    }
+    if (
+      workspacePushInFlight !== null &&
+      revNum !== null &&
+      workspacePushExpectedNextRev !== null &&
+      revNum === workspacePushExpectedNextRev
+    ) {
+      return true;
+    }
+    if (updatedAt && lastLocalWorkspacePushIso) {
+      if (updatedAt === lastLocalWorkspacePushIso) return true;
+      const lastMs = parseIsoTs(lastLocalWorkspacePushIso);
+      if (Number.isFinite(tsMs) && Number.isFinite(lastMs) && tsMs === lastMs) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return false;
 }
 
 function readWindowStorageJsonSafe(key: string): unknown {
@@ -1098,6 +1182,12 @@ export async function pushModelGalleryToSupabase(
   const nextFp = computeGalleryFingerprint(gallery);
 
   if (gallery.length === 0) {
+    const prevFp = lastSyncedGalleryFingerprintByModelId.get(modelId);
+    // Если фотогалерея этой модели не была в облаке или уже пуста — не шлём лишний UPSERT в Supabase
+    if (!prevFp || prevFp === 'EMPTY') {
+      lastSyncedGalleryFingerprintByModelId.set(modelId, 'EMPTY');
+      return true;
+    }
     try {
       const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
         {
@@ -1215,7 +1305,7 @@ function emitCloudConflictMerged(detail: CloudConflictEventDetail): void {
   }
 }
 
-export async function pushPortfolioCoreToSupabase(
+async function executePortfolioCorePushOnce(
   input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>,
   options?: CloudPushOptions
 ): Promise<boolean> {
@@ -1271,8 +1361,8 @@ export async function pushPortfolioCoreToSupabase(
       });
     }
 
-    // Защита от гонки: если пока шли сетевые запросы пользователь ввёл более свежее значение — не затираем новым старое
-    if (mySeq < latestCorePushSeq) {
+    // Если пока грузились фото в очередь уже пришло более свежее сохранение — отдаём приоритет ему
+    if (mySeq < latestCorePushSeq || queuedCorePush !== null) {
       return true;
     }
 
@@ -1322,6 +1412,8 @@ export async function pushPortfolioCoreToSupabase(
       };
       delete payloadForRpc.serverRevision;
 
+      corePushExpectedNextRev = expectedRev !== null ? expectedRev + 1 : null;
+
       const { data: rpcRaw, error: rpcError } = await client.rpc('upsert_portfolio_kv_safe', {
         p_key: SUPABASE_CORE_KEY,
         p_payload: payloadForRpc,
@@ -1351,6 +1443,7 @@ export async function pushPortfolioCoreToSupabase(
         const nextRev = parseRevisionNumber(rpcRes.server_revision);
         if (nextRev !== null) {
           lastKnownCoreRevision = nextRev;
+          lastLocalCorePushRevision = nextRev;
         }
         const serverUpdatedAt =
           typeof rpcRes.server_updated_at === 'string' && rpcRes.server_updated_at
@@ -1423,7 +1516,60 @@ export async function pushPortfolioCoreToSupabase(
   } catch {
     emitCloudSaveStatus('saved_local');
     return false;
+  } finally {
+    corePushExpectedNextRev = null;
   }
+}
+
+function flushNextQueuedCorePush(): void {
+  const nextItem = queuedCorePush;
+  if (!nextItem) {
+    corePushInFlight = null;
+    return;
+  }
+  queuedCorePush = null;
+  const nextTask = executePortfolioCorePushOnce(nextItem.input, nextItem.options);
+  corePushInFlight = nextTask;
+  nextTask.then(
+    (ok) => {
+      for (const resolve of nextItem.resolvers) resolve(ok);
+      flushNextQueuedCorePush();
+    },
+    () => {
+      for (const resolve of nextItem.resolvers) resolve(false);
+      flushNextQueuedCorePush();
+    }
+  );
+}
+
+/**
+ * Сериализованная отправка `portfolio_core_v1` в Supabase (single-flight + схлопывание очереди):
+ * в любой момент активен максимум один RPC `upsert_portfolio_kv_safe`, что исключает конкуренцию
+ * на `SELECT ... FOR UPDATE` и ошибки Postgres `statement timeout (500)` при быстрых правках.
+ */
+export function pushPortfolioCoreToSupabase(
+  input: Omit<CloudPortfolioCorePayload, 'updatedAtIso'>,
+  options?: CloudPushOptions
+): Promise<boolean> {
+  if (corePushInFlight) {
+    return new Promise<boolean>((resolve) => {
+      if (queuedCorePush) {
+        queuedCorePush.input = input;
+        queuedCorePush.options = options;
+        queuedCorePush.resolvers.push(resolve);
+      } else {
+        queuedCorePush = { input, options, resolvers: [resolve] };
+      }
+    });
+  }
+
+  const task = executePortfolioCorePushOnce(input, options);
+  corePushInFlight = task;
+  return task.finally(() => {
+    if (corePushInFlight === task) {
+      flushNextQueuedCorePush();
+    }
+  });
 }
 
 export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePayload | null> {
@@ -1543,13 +1689,21 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
 const lastSyncedConceptMediaFingerprintById = new Map<string, string>();
 let latestWorkspacePushSeq = 0;
 let lastLocalWorkspacePushIso = '';
+let lastLocalWorkspacePushRevision: number | null = null;
+let workspacePushInFlight: Promise<boolean> | null = null;
+let workspacePushExpectedNextRev: number | null = null;
+let queuedWorkspacePush: {
+  input: Omit<CloudPlatformWorkspacePayload, 'updatedAtIso'>;
+  options?: CloudPushOptions;
+  resolvers: Array<(ok: boolean) => void>;
+} | null = null;
 let inFlightWorkspacePull: Promise<CloudPlatformWorkspacePayload | null> | null = null;
 
 export function getLastLocalWorkspacePushIso(): string {
   return lastLocalWorkspacePushIso;
 }
 
-export async function pushPlatformWorkspaceToSupabase(
+async function executePlatformWorkspacePushOnce(
   input: Omit<CloudPlatformWorkspacePayload, 'updatedAtIso'>,
   options?: CloudPushOptions
 ): Promise<boolean> {
@@ -1622,7 +1776,7 @@ export async function pushPlatformWorkspaceToSupabase(
       await Promise.allSettled(mediaTasks);
     }
 
-    if (mySeq < latestWorkspacePushSeq) return true;
+    if (mySeq < latestWorkspacePushSeq || queuedWorkspacePush !== null) return true;
 
     const compactMiro = Array.isArray(input.miroItems)
       ? input.miroItems.map((rawM) => {
@@ -1662,6 +1816,8 @@ export async function pushPlatformWorkspaceToSupabase(
       };
       delete payloadForRpc.serverRevision;
 
+      workspacePushExpectedNextRev = expectedRev !== null ? expectedRev + 1 : null;
+
       const { data: rpcRaw, error: rpcError } = await client.rpc('upsert_portfolio_kv_safe', {
         p_key: SUPABASE_WORKSPACE_KEY,
         p_payload: payloadForRpc,
@@ -1688,6 +1844,7 @@ export async function pushPlatformWorkspaceToSupabase(
         const nextRev = parseRevisionNumber(rpcRes.server_revision);
         if (nextRev !== null) {
           lastKnownWorkspaceRevision = nextRev;
+          lastLocalWorkspacePushRevision = nextRev;
         }
         const serverUpdatedAt =
           typeof rpcRes.server_updated_at === 'string' && rpcRes.server_updated_at
@@ -1750,7 +1907,55 @@ export async function pushPlatformWorkspaceToSupabase(
     return false;
   } catch {
     return false;
+  } finally {
+    workspacePushExpectedNextRev = null;
   }
+}
+
+function flushNextQueuedWorkspacePush(): void {
+  const nextItem = queuedWorkspacePush;
+  if (!nextItem) {
+    workspacePushInFlight = null;
+    return;
+  }
+  queuedWorkspacePush = null;
+  const nextTask = executePlatformWorkspacePushOnce(nextItem.input, nextItem.options);
+  workspacePushInFlight = nextTask;
+  nextTask.then(
+    (ok) => {
+      for (const resolve of nextItem.resolvers) resolve(ok);
+      flushNextQueuedWorkspacePush();
+    },
+    () => {
+      for (const resolve of nextItem.resolvers) resolve(false);
+      flushNextQueuedWorkspacePush();
+    }
+  );
+}
+
+export function pushPlatformWorkspaceToSupabase(
+  input: Omit<CloudPlatformWorkspacePayload, 'updatedAtIso'>,
+  options?: CloudPushOptions
+): Promise<boolean> {
+  if (workspacePushInFlight) {
+    return new Promise<boolean>((resolve) => {
+      if (queuedWorkspacePush) {
+        queuedWorkspacePush.input = input;
+        queuedWorkspacePush.options = options;
+        queuedWorkspacePush.resolvers.push(resolve);
+      } else {
+        queuedWorkspacePush = { input, options, resolvers: [resolve] };
+      }
+    });
+  }
+
+  const task = executePlatformWorkspacePushOnce(input, options);
+  workspacePushInFlight = task;
+  return task.finally(() => {
+    if (workspacePushInFlight === task) {
+      flushNextQueuedWorkspacePush();
+    }
+  });
 }
 
 export async function pullPlatformWorkspaceFromSupabase(): Promise<CloudPlatformWorkspacePayload | null> {
@@ -1861,12 +2066,14 @@ export async function pullPlatformWorkspaceFromSupabase(): Promise<CloudPlatform
 }
 
 let realtimeSubSeq = 0;
-const sharedKvListeners = new Set<(key: string, updatedAt: string) => void>();
+const sharedKvListeners = new Set<
+  (key: string, updatedAt: string, revision: number | null) => void
+>();
 let sharedRealtimeChannel: ReturnType<NonNullable<ReturnType<typeof getActiveSupabaseClient>>['channel']> | null = null;
 let sharedRealtimeClient: ReturnType<typeof getActiveSupabaseClient> = null;
 
 export function subscribeToSupabaseKvChanges(
-  onKeyChanged: (key: string, updatedAt: string) => void
+  onKeyChanged: (key: string, updatedAt: string, revision: number | null) => void
 ): () => void {
   const client = getActiveSupabaseClient();
   if (!client || typeof window === 'undefined') return () => {};
@@ -1893,13 +2100,18 @@ export function subscribeToSupabaseKvChanges(
           table: SUPABASE_PORTFOLIO_TABLE,
         },
         (payload) => {
-          const nextRow = (payload.new || {}) as { key?: string; updated_at?: string };
+          const nextRow = (payload.new || {}) as {
+            key?: string;
+            updated_at?: string;
+            revision?: number | string | null;
+          };
           if (typeof nextRow.key === 'string') {
             const keyStr = nextRow.key;
             const tsStr = typeof nextRow.updated_at === 'string' ? nextRow.updated_at : '';
+            const revNum = parseRevisionNumber(nextRow.revision);
             for (const listener of Array.from(sharedKvListeners)) {
               try {
-                listener(keyStr, tsStr);
+                listener(keyStr, tsStr, revNum);
               } catch {
                 // ignore listener error
               }

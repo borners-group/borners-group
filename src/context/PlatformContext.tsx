@@ -77,7 +77,7 @@ import { getBrandProductionProfile } from '@/lib/brandProductionConfig';
 import {
   SUPABASE_CONCEPT_MEDIA_PREFIX,
   SUPABASE_WORKSPACE_KEY,
-  getLastLocalWorkspacePushIso,
+  isLocalCloudPushEcho,
   pullPlatformWorkspaceFromSupabase,
   pushPlatformWorkspaceToSupabase,
   subscribeToSupabaseKvChanges,
@@ -948,11 +948,11 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
     void syncWorkspaceFromCloud(false);
 
-    const unsubRt = subscribeToSupabaseKvChanges((key, updatedAt) => {
+    const unsubRt = subscribeToSupabaseKvChanges((key, updatedAt, revision) => {
       if (key !== SUPABASE_WORKSPACE_KEY && !key.startsWith(SUPABASE_CONCEPT_MEDIA_PREFIX)) {
         return;
       }
-      if (key === SUPABASE_WORKSPACE_KEY && updatedAt && updatedAt === getLastLocalWorkspacePushIso()) {
+      if (key === SUPABASE_WORKSPACE_KEY && isLocalCloudPushEcho(key, updatedAt, revision)) {
         return;
       }
       if (rtTimer) clearTimeout(rtTimer);

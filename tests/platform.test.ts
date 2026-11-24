@@ -13647,6 +13647,125 @@ test('Bulk Excel/CSV 10: Пятый раунд аудита — сохранен
   assert.equal(parseRuNumber('120 пар.'), 120);
 });
 
+test('Cloud Sync & Stability Round 6: single-flight сериализация сохранений, анти-эхо Realtime по revision/+00:00, гард galChanged, паритет updateLiskaniModelSizeVariant и Windows-пути в XLSX rels', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { zipSync, strToU8 } = await import('fflate');
+  const {
+    LISKANI_2027_MODELS,
+    LISKANI_2027_SCENARIO_ID,
+    updateLiskaniModelSizeVariant,
+  } = await import('../src/lib/liskaniAssortment2027.ts');
+  const { ensureModelUnifiedV11 } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { parseXlsxBytes } = await import('../src/lib/bulkSalesPlanExcel.ts');
+  const {
+    SUPABASE_CORE_KEY,
+    isLocalCloudPushEcho,
+    setLastKnownCoreRevision,
+  } = await import('../src/lib/supabaseCloudSync.ts');
+
+  // 1. updateLiskaniModelSizeVariant: честный дефицит (не затирает monthlyReceiptsPacks), синхрон 202705↔1 и costStatus
+  const baseLsc = ensureModelUnifiedV11({
+    ...LISKANI_2027_MODELS[0],
+    unitCostRub: 0,
+    liskaniSizeVariants: LISKANI_2027_MODELS[0].liskaniSizeVariants!.map((sv) => ({
+      ...sv,
+      unitCostRub: 0,
+    })),
+    plansByScenario: {
+      ...LISKANI_2027_MODELS[0].plansByScenario,
+      [LISKANI_2027_SCENARIO_ID]: {
+        ...LISKANI_2027_MODELS[0].plansByScenario[LISKANI_2027_SCENARIO_ID],
+        monthlyReceiptsPacks: Array(12).fill(0),
+      },
+      1: {
+        ...LISKANI_2027_MODELS[0].plansByScenario[LISKANI_2027_SCENARIO_ID],
+        scenarioId: 1,
+        monthlyReceiptsPacks: Array(12).fill(0),
+      },
+    },
+  });
+  baseLsc.sharedSupplyAndFact = {
+    ...baseLsc.sharedSupplyAndFact!,
+    costStatus: 'not_filled',
+  };
+
+  const singleUpdated = updateLiskaniModelSizeVariant(
+    baseLsc,
+    baseLsc.liskaniSizeVariants![0].skuIndex,
+    {
+      unitCostRub: 990,
+      retailPriceRub: 3250,
+      monthOrderUnitsChange: { monthIdx: 0, nextOrdersUnits: 700 },
+    },
+    1
+  );
+  assert.equal(singleUpdated.sharedSupplyAndFact?.costStatus, 'plan');
+  assert.equal(
+    singleUpdated.plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyReceiptsPacks[0],
+    0,
+    'Точечная правка размера LISKANI не должна придумывать фантомные поступления на склад'
+  );
+  assert.equal(
+    singleUpdated.plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyPacks[0],
+    singleUpdated.plansByScenario[1].monthlyPacks[0],
+    'Сценарий 202705 обязан синхронизироваться даже при вызове updateLiskaniModelSizeVariant с activeScenarioId=1'
+  );
+
+  // 2. Windows-обратные слэши и URL-кодирование в xl/_rels/workbook.xml.rels
+  const winRelZip = zipSync({
+    'xl/workbook.xml': strToU8(
+      `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="План" sheetId="1" r:id="rId1"/></sheets></workbook>`
+    ),
+    'xl/_rels/workbook.xml.rels': strToU8(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets\\sheet%201.xml"/></Relationships>`
+    ),
+    'xl/worksheets/sheet 1.xml': strToU8(
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Артикул продавца</t></is></c><c r="B1" t="inlineStr"><is><t>Цена реализации</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Б3240 Молочный</t></is></c><c r="B2"><v>3100</v></c></row></sheetData></worksheet>`
+    ),
+  });
+  const parsedWinRel = parseXlsxBytes(winRelZip, 'win_rel.xlsx');
+  assert.equal(parsedWinRel.rows[1][0], 'Б3240 Молочный');
+  assert.equal(parsedWinRel.rows[1][1], '3100');
+
+  // 3. Анти-эхо Realtime не глушит чужую более свежую ревизию после сброса состояния
+  setLastKnownCoreRevision(null);
+  assert.equal(
+    isLocalCloudPushEcho(SUPABASE_CORE_KEY, '2026-11-24T10:15:00.000000+00:00', 272),
+    false,
+    'Чужое обновление с другого устройства (ревизия 272) не должно глушиться как собственное эхо'
+  );
+
+  // 4. Контракты стабильности облачной синхронизации и отсутствия шторма записей
+  const cloudSyncCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/supabaseCloudSync.ts'),
+    'utf8'
+  );
+  assert.ok(cloudSyncCode.includes('corePushInFlight') && cloudSyncCode.includes('queuedCorePush'));
+  assert.ok(cloudSyncCode.includes('workspacePushInFlight') && cloudSyncCode.includes('queuedWorkspacePush'));
+  assert.ok(cloudSyncCode.includes('export function isLocalCloudPushEcho'));
+
+  const hookCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/useLiveScenarioPortfolio.ts'),
+    'utf8'
+  );
+  assert.ok(hookCode.includes('isLocalCloudPushEcho(key, updatedAt, revision)'));
+  assert.ok(hookCode.includes('const galChanged = !oldM || oldM.gallery !== updated.gallery;'));
+
+  const showcaseCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/sections/GrowthScenariosShowcase.tsx'),
+    'utf8'
+  );
+  assert.ok(showcaseCode.includes('scheduleShowcaseCloudPush'));
+  assert.ok(showcaseCode.includes('if (!galChanged) continue;'));
+
+  const authGateCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/auth/AuthGate.tsx'),
+    'utf8'
+  );
+  assert.ok(authGateCode.includes("window.addEventListener('online', handleBrowserOnline)"));
+});
+
 
 
 

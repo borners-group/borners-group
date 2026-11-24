@@ -812,6 +812,48 @@ export function GrowthScenariosShowcase({
 
   const hydratedRef = useRef(false);
   const ignoreSelfModelsEventRef = useRef(0);
+  const cloudPushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCloudPushFnRef = useRef<(() => void) | null>(null);
+
+  const scheduleShowcaseCloudPush = useCallback(
+    (payload: Parameters<typeof pushPortfolioCoreToSupabase>[0], immediate = false) => {
+      const runPush = () => {
+        pendingCloudPushFnRef.current = null;
+        void pushPortfolioCoreToSupabase(payload);
+      };
+      if (cloudPushTimerRef.current) {
+        clearTimeout(cloudPushTimerRef.current);
+        cloudPushTimerRef.current = null;
+      }
+      if (immediate || typeof window === 'undefined') {
+        runPush();
+      } else {
+        pendingCloudPushFnRef.current = runPush;
+        cloudPushTimerRef.current = setTimeout(runPush, 350);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const flushOnHide = () => {
+      if (cloudPushTimerRef.current) {
+        clearTimeout(cloudPushTimerRef.current);
+        cloudPushTimerRef.current = null;
+      }
+      if (pendingCloudPushFnRef.current) {
+        const fn = pendingCloudPushFnRef.current;
+        pendingCloudPushFnRef.current = null;
+        fn();
+      }
+    };
+    window.addEventListener('pagehide', flushOnHide);
+    return () => {
+      window.removeEventListener('pagehide', flushOnHide);
+      flushOnHide();
+    };
+  }, []);
 
   const buildCloudByBrandRecord = useCallback(
     (mapInput?: Partial<Record<CanonicalBrandCode, number | null>>) => {
@@ -839,21 +881,20 @@ export function GrowthScenariosShowcase({
         for (const m of next) {
           const oldM = prevMap.get(m.id);
           const galChanged = !oldM || oldM.gallery !== m.gallery;
+          if (!galChanged) continue;
           if (
             Array.isArray(m.gallery) &&
             (m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/')) ||
-              (galChanged && m.gallery.length === 0))
+              m.gallery.length === 0)
           ) {
             void saveModelGalleryToIdb(m.id, m.gallery);
-            if (galChanged) {
-              void pushModelGalleryToSupabase(m.id, m.gallery);
-            }
+            void pushModelGalleryToSupabase(m.id, m.gallery);
           }
         }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
         saveUserPlansBackup(next);
         void savePortfolioSnapshotToIdb(next, iso);
-        void pushPortfolioCoreToSupabase({
+        scheduleShowcaseCloudPush({
           models: next,
           scenarios,
           selectedScenarioByBrand: buildCloudByBrandRecord(),
@@ -876,7 +917,7 @@ export function GrowthScenariosShowcase({
         return next;
       });
     },
-    [scenarios, buildCloudByBrandRecord, includeGroupPortfolioInS1]
+    [scenarios, buildCloudByBrandRecord, includeGroupPortfolioInS1, scheduleShowcaseCloudPush]
   );
 
   const commitScenarios = useCallback(
