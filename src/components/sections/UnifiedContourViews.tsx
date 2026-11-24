@@ -1503,7 +1503,11 @@ export function SalesMatrixContourView() {
             canUserEditBrand(currentUser, detectModelBrandPortfolioLabel(m))
           }
           onApplyModels={(updatedModels, previewRes) => {
-            updateModelsBatch(() => updatedModels);
+            const changedSet = new Set(previewRes.changedModelIds);
+            const changedById = new Map(
+              updatedModels.filter((m) => changedSet.has(m.id)).map((m) => [m.id, m])
+            );
+            updateModelsBatch((prev) => prev.map((m) => changedById.get(m.id) ?? m));
             notify(
               'success',
               `Массовое обновление применено (${previewRes.changedSkusCount} SKU)`,

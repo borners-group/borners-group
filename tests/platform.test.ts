@@ -13483,6 +13483,170 @@ test('Bulk Excel/CSV 9: Четвёртый раунд аудита — защи�
   assert.ok(crossRes.unmatchedRows[0].reason.includes('AKUSHA'));
 });
 
+test('Bulk Excel/CSV 10: Пятый раунд аудита — сохранение ссылок незатронутых моделей, честный дефицит (monthlyReceiptsPacks), синхронизация сценариев 202706↔1 / 202705↔1, скрытые листы, ошибки формул и приоритет колонок цен/себестоимости', async () => {
+  const { zipSync, strToU8 } = await import('fflate');
+  const { LISKANI_2027_MODELS, LISKANI_2027_SCENARIO_ID } = await import(
+    '../src/lib/liskaniAssortment2027.ts'
+  );
+  const { AKUSHA_2027_MODELS, AKUSHA_2027_SCENARIO_ID } = await import(
+    '../src/lib/akushaAssortment2027.ts'
+  );
+  const {
+    parseCsvText,
+    parseRuNumber,
+    parseXlsxBytes,
+    previewBulkSpreadsheetImport,
+  } = await import('../src/lib/bulkSalesPlanExcel.ts');
+  const { ensureModelUnifiedV11 } = await import('../src/lib/unifiedBusinessEngine.ts');
+
+  // 1. Точное сохранение ссылок rawModels для всех незатронутых моделей + changedModelIds
+  const rawModels = [
+    ...AKUSHA_2027_MODELS.slice(0, 2),
+    ...LISKANI_2027_MODELS.slice(0, 2),
+  ];
+  const aku0 = rawModels[0];
+  const aku1 = rawModels[1];
+  const lsc0 = rawModels[2];
+  const lsc1 = rawModels[3];
+
+  const akuCsv = [
+    'План продаж AKUSHA, редакция 2027',
+    'Код модели;Цена до скидки;Сумма себестоимости итого;Цена реализации, ₽;Себестоимость, ₽;Янв (выкупы)',
+    `${aku0.code};19900;8500000;7150 ₽/шт;2450;420`,
+  ].join('\n');
+  // Заголовочный баннер с запятой на строке 1 НЕ должен сбить определитель разделителя ';'
+  const parsedBannerCsv = parseCsvText(akuCsv, 'banner_semi.csv');
+  assert.equal(parsedBannerCsv.rows[1].length, 6);
+
+  const akuRes = previewBulkSpreadsheetImport({
+    models: rawModels,
+    scenarioId: AKUSHA_2027_SCENARIO_ID,
+    mode: 'brand_models',
+    brandScope: 'AKUSHA',
+    parsed: parsedBannerCsv,
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: true,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  assert.deepEqual(akuRes.changedModelIds, [aku0.id]);
+  assert.equal(akuRes.updatedModels[1], aku1, 'Незатронутая модель AKUSHA обязана сохранить точную ссылку rawModels');
+  assert.equal(akuRes.updatedModels[2], lsc0, 'Незатронутая модель LISKANI обязана сохранить точную ссылку rawModels');
+  assert.equal(akuRes.updatedModels[3], lsc1, 'Незатронутая модель LISKANI обязана сохранить точную ссылку rawModels');
+
+  const updatedAku0 = akuRes.updatedModels[0];
+  const origAku0ReceiptsJan =
+    aku0.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyReceiptsPacks[0];
+  // Приоритет колонок: выбраны «Цена реализации, ₽» (7150) и «Себестоимость, ₽» (2450), а не «Цена до скидки» (19900) и не «Сумма себестоимости итого» (8500000)
+  assert.equal(updatedAku0.retailPriceRub, 7150);
+  assert.equal(updatedAku0.unitCostRub, 2450);
+  assert.equal(updatedAku0.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyPacks[0], 420);
+  // Честный дефицит: monthlyReceiptsPacks НЕ подменяется новым планом продаж 420 (сохраняет исходные поступления)
+  assert.equal(
+    updatedAku0.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyReceiptsPacks[0],
+    origAku0ReceiptsJan,
+    'Импорт плана продаж не имеет права придумывать фиктивные поступления на склад (monthlyReceiptsPacks)'
+  );
+  assert.notEqual(
+    updatedAku0.plansByScenario[AKUSHA_2027_SCENARIO_ID].monthlyReceiptsPacks[0],
+    420
+  );
+  // Синхронизация основного сценария бренда 202706 ↔ Сценарий №1
+  assert.equal(updatedAku0.plansByScenario[1]?.monthlyPacks[0], 420);
+  assert.equal(updatedAku0.plansByScenario[1]?.monthlyPricesRub[0], 7150);
+
+  // 2. LISKANI 269 SKU: вызов с scenarioId=1 всё равно синхронизирует 202705, сохраняет ссылки незатронутых карточек и обновляет costStatus
+  const lscZeroCost = ensureModelUnifiedV11({
+    ...lsc0,
+    unitCostRub: 0,
+    liskaniSizeVariants: lsc0.liskaniSizeVariants!.map((sv) => ({ ...sv, unitCostRub: 0 })),
+  });
+  lscZeroCost.sharedSupplyAndFact = {
+    ...lscZeroCost.sharedSupplyAndFact!,
+    costStatus: 'not_filled',
+  };
+  const lscModelsInput = [aku0, lscZeroCost, lsc1];
+  const lscRes = previewBulkSpreadsheetImport({
+    models: lscModelsInput,
+    scenarioId: 1,
+    mode: 'liskani_269',
+    brandScope: 'LISKANI',
+    parsed: parseCsvText('Артикул продавца;Себестоимость, ₽;Янв (выкупы)\nБ3240 Молочный;920;333', 'lsc.csv'),
+    options: {
+      volumeMetric: 'buyouts',
+      applyPrice: false,
+      applyCost: true,
+      applyMonths: true,
+      canEditCost: true,
+    },
+  });
+  assert.deepEqual(lscRes.changedModelIds, [lscZeroCost.id]);
+  assert.equal(lscRes.updatedModels[0], aku0);
+  assert.equal(lscRes.updatedModels[2], lsc1);
+  assert.equal(lscRes.updatedModels[1].sharedSupplyAndFact?.costStatus, 'plan');
+  assert.equal(
+    lscRes.updatedModels[1].plansByScenario[LISKANI_2027_SCENARIO_ID].monthlyPacks[0],
+    lscRes.updatedModels[1].liskaniSizeVariants!.reduce((s, v) => s + v.monthlyBuyoutsUnits[0], 0),
+    'При вызове liskani_269 с scenarioId=1 сценарий 202705 обязан синхронизироваться с вариантами'
+  );
+
+  // 3. Скрытый лист (state="hidden") перед видимым, ошибки формул t="e" (#DIV/0!), булевы t="b" и битые XML-сущности &#x110000;
+  const hiddenSheetZip = zipSync({
+    'xl/workbook.xml': strToU8(
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets>
+          <sheet name="СкрытыйСправочник" sheetId="1" state="hidden" r:id="rId1"/>
+          <sheet name="План" sheetId="2" r:id="rId2"/>
+        </sheets>
+      </workbook>`
+    ),
+    'xl/_rels/workbook.xml.rels': strToU8(
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+        <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+      </Relationships>`
+    ),
+    'xl/worksheets/sheet1.xml': strToU8(
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+        <row r="1"><c r="A1" t="inlineStr"><is><t>Артикул продавца</t></is></c><c r="B1" t="inlineStr"><is><t>Цена реализации</t></is></c></row>
+        <row r="2"><c r="A2" t="inlineStr"><is><t>Б3240 Молочный</t></is></c><c r="B2"><v>99999</v></c></row>
+      </sheetData></worksheet>`
+    ),
+    'xl/worksheets/sheet2.xml': strToU8(
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+        <row r="1">
+          <c r="A1" t="inlineStr"><is><t>Артикул продавца</t></is></c>
+          <c r="B1" t="inlineStr"><is><t>Цена реализации</t></is></c>
+          <c r="C1" t="inlineStr"><is><t>Флаг</t></is></c>
+          <c r="D1" t="inlineStr"><is><t>Себестоимость</t></is></c>
+        </row>
+        <row r="2">
+          <c r="A2" t="inlineStr"><is><t>Б3240 Молочный&#x110000;</t></is></c>
+          <c r="B2"><v>3190</v></c>
+          <c r="C2" t="b"><v>1</v></c>
+          <c r="D2" t="e"><f>1/0</f><v>#DIV/0!</v></c>
+        </row>
+      </sheetData></worksheet>`
+    ),
+  });
+  const parsedHidden = parseXlsxBytes(hiddenSheetZip, 'hidden_and_errors.xlsx');
+  assert.equal(parsedHidden.sheetName, 'План', 'Видимый лист должен иметь приоритет над скрытым state="hidden"');
+  assert.equal(parsedHidden.rows[1][0], 'Б3240 Молочный');
+  assert.equal(parsedHidden.rows[1][1], '3190');
+  assert.equal(parsedHidden.rows[1][2], 'TRUE', 'Булева ячейка t="b" должна читаться как TRUE, а не 1');
+  assert.equal(parsedHidden.rows[1][3], '', 'Ошибка формулы t="e" (#DIV/0!) должна безопасно игнорироваться');
+
+  // 4. Форматы чисел с единицами измерения через слэш и точкой
+  assert.equal(parseRuNumber('2 800 ₽/шт'), 2800);
+  assert.equal(parseRuNumber('1 550,50 руб/компл.'), 1550.5);
+  assert.equal(parseRuNumber('120 пар.'), 120);
+});
+
 
 
 

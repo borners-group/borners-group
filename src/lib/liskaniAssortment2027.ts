@@ -43891,10 +43891,31 @@ export function applyLiskaniSizeVariantsBulkPatch(
             Math.max(1, nextVariants.length)
         );
 
+  const shared = model.sharedSupplyAndFact;
+  const hasExplicitWbRates =
+    (model.marketplaceFeePct || 0) > 0 ||
+    (model.logisticsRub || 0) > 0 ||
+    (model.adsPct || 0) > 0;
+  const nextShared =
+    shared && anyCostChanged
+      ? {
+          ...shared,
+          costStatus:
+            weightedCost > 0
+              ? shared.costStatus === 'not_filled'
+                ? ('plan' as const)
+                : shared.costStatus
+              : ('not_filled' as const),
+          expensesFilled:
+            weightedCost > 0 && hasExplicitWbRates ? true : shared.expensesFilled,
+        }
+      : shared;
+
   if (!anyPriceOrVolumeChanged) {
     return {
       ...model,
       unitCostRub: anyCostChanged ? weightedCost : model.unitCostRub,
+      ...(nextShared ? { sharedSupplyAndFact: nextShared } : {}),
       liskaniSizeVariants: nextVariants,
     };
   }
@@ -43928,7 +43949,7 @@ export function applyLiskaniSizeVariantsBulkPatch(
   );
 
   const scenarioIdsToSync =
-    activeScenarioId === LISKANI_2027_SCENARIO_ID
+    activeScenarioId === LISKANI_2027_SCENARIO_ID || activeScenarioId === 1
       ? Array.from(new Set([LISKANI_2027_SCENARIO_ID, 1, 2, 3]))
       : [activeScenarioId];
   const nextPlansByScenario = { ...model.plansByScenario };
@@ -43936,11 +43957,16 @@ export function applyLiskaniSizeVariantsBulkPatch(
   for (const scId of scenarioIdsToSync) {
     const prevScPlan = nextPlansByScenario[scId] || basePlan;
     if (!prevScPlan) continue;
+    const preservedReceipts =
+      Array.isArray(prevScPlan.monthlyReceiptsPacks) &&
+      prevScPlan.monthlyReceiptsPacks.length === 12
+        ? [...prevScPlan.monthlyReceiptsPacks]
+        : Array(12).fill(0);
     nextPlansByScenario[scId] = {
       ...prevScPlan,
       scenarioId: scId,
       monthlyPacks: [...aggMonthlyPacks],
-      monthlyReceiptsPacks: [...aggMonthlyPacks],
+      monthlyReceiptsPacks: preservedReceipts,
       monthlyPricesRub: [...aggMonthlyPrices],
       monthlyRevenuesRubOverride: [...aggMonthlyBuyoutsRub],
       monthlyOrdersPacks: [...aggMonthlyOrdersPacks],
@@ -43952,6 +43978,7 @@ export function applyLiskaniSizeVariantsBulkPatch(
     ...model,
     retailPriceRub: weightedPrice,
     unitCostRub: weightedCost,
+    ...(nextShared ? { sharedSupplyAndFact: nextShared } : {}),
     liskaniSizeVariants: nextVariants,
     plansByScenario: nextPlansByScenario,
   };

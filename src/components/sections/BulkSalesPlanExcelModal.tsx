@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -114,6 +114,39 @@ export function BulkSalesPlanExcelModal({
   const [showUnmatchedDetails, setShowUnmatchedDetails] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const readSeqRef = useRef(0);
+  const isApplyingRef = useRef(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setParsedFile(null);
+      setParseError(null);
+      setIsParsing(false);
+      setIsDragging(false);
+      setShowUnmatchedDetails(false);
+    } else {
+      setMode(defaultMode);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) {
+      readSeqRef.current += 1;
+      isApplyingRef.current = false;
+      return;
+    }
+    isApplyingRef.current = false;
+    if (typeof window === 'undefined') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
 
   const effectiveScenarioId =
     mode === 'liskani_269' ? LISKANI_2027_SCENARIO_ID : scenarioId;
@@ -203,8 +236,12 @@ export function BulkSalesPlanExcelModal({
         'success',
         `Шаблон Excel скачан (${templateMeta.rowsCount} SKU)`,
         mode === 'liskani_269'
-          ? 'Содержит все 269 размерных SKU LISKANI: цены, себестоимость и 12 месяцев.'
-          : `Содержит ${templateMeta.rowsCount} карточек (${brandDisplayLabel}): цены, себестоимость и 12 месяцев.`
+          ? hasCost
+            ? 'Содержит все 269 размерных SKU LISKANI: цены, себестоимость и 12 месяцев.'
+            : 'Содержит все 269 размерных SKU LISKANI: цены и 12 месяцев.'
+          : hasCost
+          ? `Содержит ${templateMeta.rowsCount} карточек (${brandDisplayLabel}): цены, себестоимость и 12 месяцев.`
+          : `Содержит ${templateMeta.rowsCount} карточек (${brandDisplayLabel}): цены и 12 месяцев.`
       );
     } catch {
       notify?.('error', 'Не удалось сформировать шаблон Excel (.xlsx)');
@@ -225,12 +262,15 @@ export function BulkSalesPlanExcelModal({
   };
 
   const handleReadFile = async (file: File) => {
+    const seq = ++readSeqRef.current;
     setParseError(null);
     setShowUnmatchedDetails(false);
     setIsParsing(true);
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
+      if (seq !== readSeqRef.current) return;
       const parsed = parseSpreadsheetBuffer(buf, file.name);
+      if (seq !== readSeqRef.current) return;
       if (parsed.rows.length < 2) {
         setParseError('Файл пустой или содержит меньше 2 строк.');
         setParsedFile(null);
@@ -249,6 +289,7 @@ export function BulkSalesPlanExcelModal({
         setVolumeMetric(detectedCols.detectedMetricHint);
       }
     } catch (err) {
+      if (seq !== readSeqRef.current) return;
       setParsedFile(null);
       setParseError(
         err instanceof Error
@@ -256,7 +297,9 @@ export function BulkSalesPlanExcelModal({
           : 'Не удалось прочитать файл. Поддерживаются форматы .xlsx и .csv.'
       );
     } finally {
-      setIsParsing(false);
+      if (seq === readSeqRef.current) {
+        setIsParsing(false);
+      }
     }
   };
 
@@ -276,9 +319,14 @@ export function BulkSalesPlanExcelModal({
   };
 
   const handleApply = () => {
-    if (!preview || preview.changedSkusCount === 0) return;
-    onApplyModels(preview.updatedModels, preview);
-    onClose();
+    if (isApplyingRef.current || !preview || preview.changedSkusCount === 0) return;
+    isApplyingRef.current = true;
+    try {
+      onApplyModels(preview.updatedModels, preview);
+      onClose();
+    } finally {
+      isApplyingRef.current = false;
+    }
   };
 
   const unitWord = mode === 'liskani_269' ? 'компл.' : 'шт./пар';

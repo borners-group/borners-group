@@ -129,6 +129,7 @@ export interface BulkImportPreviewResult {
   totalsBefore: BulkImportTotals;
   totalsAfter: BulkImportTotals;
   previewDiffRows: BulkImportDiffRow[];
+  changedModelIds: string[];
   updatedModels: ScenarioModelSpec[];
 }
 
@@ -148,8 +149,14 @@ function escapeXml(raw: string): string {
 
 function unescapeXml(raw: string): string {
   return raw
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const cp = parseInt(hex, 16);
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+    })
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const cp = parseInt(dec, 10);
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+    })
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -183,7 +190,8 @@ export function parseRuNumber(raw: string | number | null | undefined): number |
     return Number.isFinite(raw) ? raw : null;
   }
   const cleaned = String(raw)
-    .replace(/(?:₽|руб\.?|р\.?(?=\s|$)|шт\.?|компл\.?|пар(?=\s|$)|ед\.?|уп\.?)/gi, '')
+    .replace(/(?:₽|руб\.?|р\.?)\s*\/\s*(?:шт|компл|пар|ед|уп)\.?/gi, '')
+    .replace(/(?:₽|руб\.?|р\.?(?=\s|$)|шт\.?|компл\.?|пар\.?(?=\s|$)|ед\.?|уп\.?)/gi, '')
     .replace(/[\u00A0\u202F\s]/g, '')
     .trim();
   if (!cleaned || cleaned === '—' || cleaned === '-' || cleaned === '–') return null;
@@ -447,11 +455,19 @@ function parseWorksheetXml(xml: string, sharedStrings: string[]): string[][] {
       const colIdx = refMatch ? colLetterToIndex(refMatch[1]) : autoColIdx;
       autoColIdx = colIdx + 1;
 
-      const typeMatch = attrs.match(/\bt="([^"]+)"/);
+      const typeMatch = attrs.match(/\bt=["']([^"']+)["']/);
       const cellType = typeMatch ? typeMatch[1] : '';
 
       let value = '';
-      if (cellType === 's') {
+      if (cellType === 'e') {
+        // Ошибка формулы Excel (#DIV/0!, #REF!, #VALUE!, #N/A) — игнорируем, не превращаем в текст/артикул
+        value = '';
+      } else if (cellType === 'b') {
+        const vMatch = body.match(
+          /<(?:[a-zA-Z0-9_]+:)?v(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/
+        );
+        value = vMatch && vMatch[1].trim() === '1' ? 'TRUE' : 'FALSE';
+      } else if (cellType === 's') {
         const vMatch = body.match(
           /<(?:[a-zA-Z0-9_]+:)?v(?:\s(?:[^/>]|\/(?!>))*)?>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?v>/
         );
@@ -508,12 +524,12 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
   const relMap = new Map<string, string>();
   const relsXml = readEntry('xl/_rels/workbook.xml.rels');
   if (relsXml) {
-    const relRe = /<Relationship\b[^>]*>/g;
+    const relRe = /<(?:[a-zA-Z0-9_]+:)?Relationship\b[^>]*>/g;
     let m: RegExpExecArray | null;
     while ((m = relRe.exec(relsXml)) !== null) {
       const tag = m[0];
-      const idM = tag.match(/\bId="([^"]+)"/);
-      const targetM = tag.match(/\bTarget="([^"]+)"/);
+      const idM = tag.match(/\bId=["']([^"']+)["']/);
+      const targetM = tag.match(/\bTarget=["']([^"']+)["']/);
       if (idM && targetM) {
         const target = targetM[1].replace(/^(?:\.\.\/|\.\/|\/)+/, '');
         relMap.set(idM[1], target.startsWith('xl/') ? target : `xl/${target}`);
@@ -521,7 +537,7 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
     }
   }
 
-  const sheetsOrder: Array<{ name: string; path: string }> = [];
+  const sheetsOrder: Array<{ name: string; path: string; isHidden: boolean }> = [];
   const wbXml = readEntry('xl/workbook.xml');
   if (wbXml) {
     const sheetRe = /<(?:[a-zA-Z0-9_]+:)?sheet\b[^>]*>/g;
@@ -529,16 +545,17 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
     let fallbackIdx = 1;
     while ((m = sheetRe.exec(wbXml)) !== null) {
       const tag = m[0];
-      const nameM = tag.match(/\bname="([^"]+)"/);
-      const rIdM = tag.match(/\br:id="([^"]+)"/);
+      const nameM = tag.match(/\bname=["']([^"']+)["']/);
+      const rIdM = tag.match(/(?:\s|:)id=["']([^"']+)["']/);
+      const isHidden = /\bstate=["'](?:hidden|veryHidden)["']/i.test(tag);
       const name = nameM ? unescapeXml(nameM[1]) : `Лист${fallbackIdx}`;
       const path = (rIdM && relMap.get(rIdM[1])) || `xl/worksheets/sheet${fallbackIdx}.xml`;
-      sheetsOrder.push({ name, path });
+      sheetsOrder.push({ name, path, isHidden });
       fallbackIdx += 1;
     }
   }
   if (sheetsOrder.length === 0) {
-    sheetsOrder.push({ name: 'Лист1', path: 'xl/worksheets/sheet1.xml' });
+    sheetsOrder.push({ name: 'Лист1', path: 'xl/worksheets/sheet1.xml', isHidden: false });
   }
 
   const parsedSheets = sheetsOrder
@@ -546,6 +563,7 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
       const xml = readEntry(s.path);
       return {
         name: s.name,
+        isHidden: s.isHidden,
         rows: xml ? parseWorksheetXml(xml, sharedStrings) : [],
       };
     })
@@ -562,14 +580,22 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
     }
   }
 
-  // Выбираем основной лист данных (не «Инструкция» и с распознанными колонками)
+  // Выбираем основной ВИДИМЫЙ лист данных (не «Инструкция» и не скрытый служебный лист, с распознанными колонками)
+  const visibleSheets = parsedSheets.filter((s) => !s.isHidden);
+  const candidateSheets = visibleSheets.length > 0 ? visibleSheets : parsedSheets;
   const primarySheet =
+    candidateSheets.find(
+      (s) =>
+        !normalizeLookupText(s.name).includes('инструкц') &&
+        detectSpreadsheetColumns(s.rows, metadata).headerRowIdx >= 0
+    ) ||
     parsedSheets.find(
       (s) =>
         !normalizeLookupText(s.name).includes('инструкц') &&
         detectSpreadsheetColumns(s.rows, metadata).headerRowIdx >= 0
     ) ||
-    parsedSheets.find((s) => !normalizeLookupText(s.name).includes('инструкц')) ||
+    candidateSheets.find((s) => !normalizeLookupText(s.name).includes('инструкц')) ||
+    candidateSheets[0] ||
     parsedSheets[0] || { name: 'Лист1', rows: [] };
 
   return {
@@ -581,19 +607,21 @@ export function parseXlsxBytes(bytes: Uint8Array, fileName = 'upload.xlsx'): Par
   };
 }
 
-function detectCsvDelimiter(headerLine: string): ',' | ';' | '\t' {
-  let inQuotes = false;
+function detectCsvDelimiter(sampleLines: string[]): ',' | ';' | '\t' {
   let commas = 0;
   let semis = 0;
   let tabs = 0;
-  for (let i = 0; i < headerLine.length; i++) {
-    const ch = headerLine[i];
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if (!inQuotes) {
-      if (ch === ',') commas += 1;
-      else if (ch === ';') semis += 1;
-      else if (ch === '\t') tabs += 1;
+  for (const line of sampleLines) {
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (!inQuotes) {
+        if (ch === ',') commas += 1;
+        else if (ch === ';') semis += 1;
+        else if (ch === '\t') tabs += 1;
+      }
     }
   }
   if (tabs >= semis && tabs >= commas && tabs > 0) return '\t';
@@ -603,8 +631,11 @@ function detectCsvDelimiter(headerLine: string): ',' | ';' | '\t' {
 
 export function parseCsvText(rawText: string, fileName = 'upload.csv'): ParsedSpreadsheet {
   const stripped = rawText.replace(/^\uFEFF/, '');
-  const firstLine = stripped.split(/\r?\n/).find((l) => l.trim().length > 0) || '';
-  const delimiter = detectCsvDelimiter(firstLine);
+  const sampleLines = stripped
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .slice(0, 10);
+  const delimiter = detectCsvDelimiter(sampleLines);
 
   const rows: string[][] = [];
   let row: string[] = [];
@@ -799,7 +830,9 @@ export function detectSpreadsheetColumns(
     let barcodeCol = -1;
     let titleCol = -1;
     let priceCol = -1;
+    let pricePriority = 0;
     let costCol = -1;
+    let costPriority = 0;
     const monthCols = new Map<number, number>();
     let buyoutsHeaderVotes = 0;
     let ordersHeaderVotes = 0;
@@ -815,6 +848,18 @@ export function detectSpreadsheetColumns(
         if (h.includes('заказ')) ordersHeaderVotes += 1;
         continue;
       }
+
+      const isTotalAggregateHeader =
+        /(итого|всего|сумм|годов|общая|total|annual)/i.test(h);
+      const isPurchaseCostHeader =
+        h.includes('цена закуп') || h.includes('закупочн');
+      const isExplicitCostHeader =
+        h.includes('себестоим') ||
+        h.includes('себест') ||
+        h === 'cogs' ||
+        h.includes('unit_cost');
+      const isNonRetailPriceHeader =
+        /(до скидк|старая|зачерк|закуп|оптов|себест|базов|спп)/i.test(h);
 
       if (
         skuIndexCol < 0 &&
@@ -858,23 +903,30 @@ export function detectSpreadsheetColumns(
         (h.includes('название') || h.includes('наименование') || h === 'title' || h === 'модель')
       ) {
         titleCol = c;
-      } else if (
-        costCol < 0 &&
-        (h.includes('себестоим') || h.includes('себест') || h === 'cogs' || h.includes('unit_cost'))
-      ) {
-        costCol = c;
-      } else if (
-        priceCol < 0 &&
-        (h.includes('цена реализации') ||
+      } else if (!isTotalAggregateHeader && (isExplicitCostHeader || isPurchaseCostHeader)) {
+        const prio = isExplicitCostHeader ? 2 : 1;
+        if (prio > costPriority) {
+          costCol = c;
+          costPriority = prio;
+        }
+      } else if (!isTotalAggregateHeader && !isNonRetailPriceHeader) {
+        const isExplicitRetailPrice =
+          h.includes('цена реализации') ||
           h.includes('ррц') ||
+          h.includes('retail_price') ||
+          h.includes('planned_price');
+        const isGenericPrice =
           h === 'цена' ||
           h.startsWith('цена,') ||
           h.startsWith('цена ') ||
-          h.includes('retail_price') ||
-          h.includes('planned_price') ||
-          h === 'price')
-      ) {
-        priceCol = c;
+          h === 'price';
+        if (isExplicitRetailPrice || isGenericPrice) {
+          const prio = isExplicitRetailPrice ? 2 : 1;
+          if (prio > pricePriority) {
+            priceCol = c;
+            pricePriority = prio;
+          }
+        }
       }
     }
 
@@ -1633,7 +1685,8 @@ export function previewBulkSpreadsheetImport(params: {
       totalsBefore: emptyTotals,
       totalsAfter: emptyTotals,
       previewDiffRows: [],
-      updatedModels: models,
+      changedModelIds: [],
+      updatedModels: rawModels,
     };
   }
 
@@ -1829,10 +1882,24 @@ export function previewBulkSpreadsheetImport(params: {
       }
     }
 
-    const updatedModels = models.map((m) => {
-      const modelPatches = patchesByModelId.get(m.id);
-      if (!modelPatches || modelPatches.size === 0) return m;
-      return applyLiskaniSizeVariantsBulkPatch(m, modelPatches, scenarioId);
+    const liskaniTargetScenarioId =
+      scenarioId === 1 || scenarioId === LISKANI_2027_SCENARIO_ID
+        ? LISKANI_2027_SCENARIO_ID
+        : scenarioId;
+    const changedModelIds: string[] = [];
+    // Сохраняем точные ссылки rawModels для всех незатронутых моделей,
+    // чтобы не штамповать updatedAtIso и не перетирать чужие правки при облачном слиянии
+    const updatedModels = rawModels.map((raw, idx) => {
+      const modelPatches = patchesByModelId.get(raw.id);
+      if (!modelPatches || modelPatches.size === 0) return raw;
+      const next = applyLiskaniSizeVariantsBulkPatch(
+        models[idx],
+        modelPatches,
+        liskaniTargetScenarioId
+      );
+      if (next === models[idx]) return raw;
+      changedModelIds.push(raw.id);
+      return next;
     });
 
     const totalsBefore = computeLiskaniTotals(models);
@@ -1856,6 +1923,7 @@ export function previewBulkSpreadsheetImport(params: {
       totalsBefore,
       totalsAfter,
       previewDiffRows,
+      changedModelIds,
       updatedModels,
     };
   }
@@ -1990,9 +2058,11 @@ export function previewBulkSpreadsheetImport(params: {
     }
 
     const nextPacks = [...basePlan.monthlyPacks];
-    const nextReceipts = basePlan.monthlyReceiptsPacks
-      ? [...basePlan.monthlyReceiptsPacks]
-      : [...basePlan.monthlyPacks];
+    // Никогда не придумываем фиктивные поступления на склад при импорте плана продаж (сохраняем честный дефицит закупок)
+    const nextReceipts =
+      Array.isArray(basePlan.monthlyReceiptsPacks) && basePlan.monthlyReceiptsPacks.length === 12
+        ? [...basePlan.monthlyReceiptsPacks]
+        : Array(12).fill(0);
     const nextPrices = priceDidChange
       ? Array(12).fill(Math.round(nextPrice * 100) / 100)
       : [...basePlan.monthlyPricesRub];
@@ -2064,7 +2134,6 @@ export function previewBulkSpreadsheetImport(params: {
                 changedMonthIndices.add(mIdx);
               }
               nextPacks[mIdx] = val;
-              nextReceipts[mIdx] = val;
               const ord =
                 effBuyoutPct <= 0 || effBuyoutPct >= 100
                   ? val
@@ -2086,7 +2155,6 @@ export function previewBulkSpreadsheetImport(params: {
                   ? val
                   : Math.round((val * effBuyoutPct) / 100);
               nextPacks[mIdx] = buy;
-              nextReceipts[mIdx] = buy;
               if (nextOrdersPacks) nextOrdersPacks[mIdx] = val;
               if (nextOrdersRub) nextOrdersRub[mIdx] = Math.round(val * nextPrices[mIdx]);
               if (nextRevOverride) nextRevOverride[mIdx] = Math.round(buy * nextPrices[mIdx]);
@@ -2172,6 +2240,54 @@ export function previewBulkSpreadsheetImport(params: {
       }
     }
 
+    const updatedPlanCore = {
+      monthlyPacks: nextPacks,
+      monthlyReceiptsPacks: nextReceipts,
+      monthlyPricesRub: nextPrices,
+      ...(nextRevOverride ? { monthlyRevenuesRubOverride: nextRevOverride } : {}),
+      ...(nextOrdersPacks ? { monthlyOrdersPacks: nextOrdersPacks } : {}),
+      ...(nextOrdersRub ? { monthlyOrdersRub: nextOrdersRub } : {}),
+    };
+    const isLiskaniModel =
+      normalizePortfolioBrandCode(detectModelBrandPortfolioLabel(baseModel)) === 'LISKANI' ||
+      (Array.isArray(baseModel.liskaniSizeVariants) && baseModel.liskaniSizeVariants.length > 0);
+    const nextPlansByScenario: ScenarioModelSpec['plansByScenario'] = {
+      ...baseModel.plansByScenario,
+      [targetScenId]: {
+        ...basePlan,
+        ...updatedPlanCore,
+        scenarioId: targetScenId,
+      },
+    };
+    // Синхронизируем основные сценарии брендов с холдинговым Сценарием №1 аналогично unifiedBusinessEngine
+    if (isAkusha && (targetScenId === 202706 || targetScenId === 1)) {
+      for (const syncScId of [202706, 1]) {
+        const prevSc = baseModel.plansByScenario[syncScId] || basePlan;
+        nextPlansByScenario[syncScId] = {
+          ...prevSc,
+          ...updatedPlanCore,
+          monthlyReceiptsPacks:
+            Array.isArray(prevSc.monthlyReceiptsPacks) && prevSc.monthlyReceiptsPacks.length === 12
+              ? [...prevSc.monthlyReceiptsPacks]
+              : Array(12).fill(0),
+          scenarioId: syncScId,
+        };
+      }
+    } else if (isLiskaniModel && (targetScenId === LISKANI_2027_SCENARIO_ID || targetScenId === 1)) {
+      for (const syncScId of [LISKANI_2027_SCENARIO_ID, 1]) {
+        const prevSc = baseModel.plansByScenario[syncScId] || basePlan;
+        nextPlansByScenario[syncScId] = {
+          ...prevSc,
+          ...updatedPlanCore,
+          monthlyReceiptsPacks:
+            Array.isArray(prevSc.monthlyReceiptsPacks) && prevSc.monthlyReceiptsPacks.length === 12
+              ? [...prevSc.monthlyReceiptsPacks]
+              : Array(12).fill(0),
+          scenarioId: syncScId,
+        };
+      }
+    }
+
     const updatedModel: ScenarioModelSpec = {
       ...baseModel,
       retailPriceRub: roundedNextPrice,
@@ -2180,19 +2296,7 @@ export function previewBulkSpreadsheetImport(params: {
       ...(nextLiskaniVariants !== undefined
         ? { liskaniSizeVariants: nextLiskaniVariants }
         : {}),
-      plansByScenario: {
-        ...baseModel.plansByScenario,
-        [targetScenId]: {
-          ...basePlan,
-          scenarioId: targetScenId,
-          monthlyPacks: nextPacks,
-          monthlyReceiptsPacks: nextReceipts,
-          monthlyPricesRub: nextPrices,
-          ...(nextRevOverride ? { monthlyRevenuesRubOverride: nextRevOverride } : {}),
-          ...(nextOrdersPacks ? { monthlyOrdersPacks: nextOrdersPacks } : {}),
-          ...(nextOrdersRub ? { monthlyOrdersRub: nextOrdersRub } : {}),
-        },
-      },
+      plansByScenario: nextPlansByScenario,
     };
     updatedById.set(target.id, updatedModel);
 
@@ -2211,7 +2315,9 @@ export function previewBulkSpreadsheetImport(params: {
     });
   }
 
-  const updatedModels = models.map((m) => updatedById.get(m.id) || m);
+  // Сохраняем исходные ссылки rawModels для всех незатронутых карточек
+  const changedModelIds = Array.from(updatedById.keys());
+  const updatedModels = rawModels.map((raw) => updatedById.get(raw.id) || raw);
   const totalsBefore = computeBrandModelsTotals(
     models,
     scenarioId,
@@ -2243,6 +2349,7 @@ export function previewBulkSpreadsheetImport(params: {
     totalsBefore,
     totalsAfter,
     previewDiffRows,
+    changedModelIds,
     updatedModels,
   };
 }

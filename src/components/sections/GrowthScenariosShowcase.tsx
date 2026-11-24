@@ -5884,7 +5884,11 @@ export function GrowthScenariosShowcase({
           hasFinance={hasFinance}
           canEditModel={canEditModel}
           onApplyModels={(updatedModels, previewRes) => {
-            commitModels(updatedModels);
+            const changedSet = new Set(previewRes.changedModelIds);
+            const changedById = new Map(
+              updatedModels.filter((m) => changedSet.has(m.id)).map((m) => [m.id, m])
+            );
+            commitModels((prev) => prev.map((m) => changedById.get(m.id) ?? m));
             notify(
               'success',
               `Массовое обновление применено (${previewRes.changedSkusCount} SKU)`,

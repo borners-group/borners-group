@@ -1320,6 +1320,9 @@ export function useLiveScenarioPortfolio() {
           return !oldM || oldM !== m ? { ...m, updatedAtIso: iso } : m;
         });
         for (const m of next) {
+          const oldM = prevMap.get(m.id);
+          const galChanged = !oldM || oldM.gallery !== m.gallery;
+          if (!galChanged) continue;
           if (Array.isArray(m.gallery)) {
             if (m.gallery.length === 0) {
               void saveModelGalleryToIdb(m.id, []);
