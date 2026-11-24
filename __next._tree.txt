@@ -5,4 +5,4 @@
 :HL["/borners-group/_next/static/media/76b70a1dbe058eb5-s.p.1y4-pdgsjb-pw.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/borners-group/_next/static/media/9a321a2c78eff0b5-s.p.1bkzbscqrt8rl.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 1:[["children",{"s":"__PAGE__","h":160}]]
-0:{"b":"kXn8xLRYm6HN6IQlKc1G2","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"ZWO6GPh7CPcUcwrwJYygF","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
