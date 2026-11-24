@@ -51,6 +51,7 @@ import {
   resetStarterCabinetsFromHolding,
 } from '@/lib/unifiedBusinessEngine';
 import {
+  isGalleryPlaceholderSentinel,
   loadAllModelGalleriesFromIdb,
   loadPortfolioSnapshotWithMetaFromIdb,
   safeGetStorageJson,
@@ -177,6 +178,48 @@ let activeCloudCoordinatorId: number | null = null;
 let moduleBootCloudSyncDone = false;
 let lastFocusCloudPullAtMs = 0;
 
+function countRealGalleryUrls(gallery: ScenarioModelSpec['gallery'] | undefined): number {
+  if (!Array.isArray(gallery)) return 0;
+  return gallery.filter((g) => {
+    const u = typeof g?.url === 'string' ? g.url.trim() : '';
+    const orig = typeof g?.originalUrl === 'string' ? g.originalUrl.trim() : '';
+    if (isGalleryPlaceholderSentinel(u)) return false;
+    return u.length > 0 || (orig.length > 0 && !isGalleryPlaceholderSentinel(orig));
+  }).length;
+}
+
+function hasGalleryPlaceholder(gallery: ScenarioModelSpec['gallery'] | undefined): boolean {
+  return Array.isArray(gallery) && gallery.some((g) => isGalleryPlaceholderSentinel(g?.url));
+}
+
+function rehydrateModelsGalleriesFromMemory(
+  targetModels: ScenarioModelSpec[],
+  memoryModels: ScenarioModelSpec[]
+): ScenarioModelSpec[] {
+  if (!Array.isArray(memoryModels) || memoryModels.length === 0) return targetModels;
+  const memById = new Map<string, ScenarioModelSpec>();
+  for (const mm of memoryModels) {
+    if (mm?.id && countRealGalleryUrls(mm.gallery) > 0) {
+      memById.set(mm.id, mm);
+    }
+  }
+  if (memById.size === 0) return targetModels;
+  return targetModels.map((tm) => {
+    const mm = memById.get(tm.id);
+    if (!mm) return tm;
+    if (countRealGalleryUrls(tm.gallery) > 0) return tm;
+    if (hasGalleryPlaceholder(tm.gallery)) {
+      return { ...tm, gallery: mm.gallery };
+    }
+    const tmTs = tm.updatedAtIso ? Date.parse(tm.updatedAtIso) : NaN;
+    const mmTs = mm.updatedAtIso ? Date.parse(mm.updatedAtIso) : NaN;
+    if (!(Number.isFinite(tmTs) && Number.isFinite(mmTs) && tmTs > mmTs)) {
+      return { ...tm, gallery: mm.gallery };
+    }
+    return tm;
+  });
+}
+
 export function useLiveScenarioPortfolio() {
   const { brandFilter } = usePlatform();
   const [scenarios, setScenarios] =
@@ -297,12 +340,14 @@ export function useLiveScenarioPortfolio() {
       return hydratedModels.map((hm) => {
         const pm = prevById.get(hm.id);
         if (!pm || !Array.isArray(pm.gallery) || pm.gallery.length === 0) return hm;
-        const hmValidCount = Array.isArray(hm.gallery)
-          ? hm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length
-          : 0;
-        const pmValidCount = pm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length;
-        const isExplicitEmptyInStorage = Array.isArray(hm.gallery) && hm.gallery.length === 0;
-        if (!isExplicitEmptyInStorage && pmValidCount > hmValidCount) {
+        const hmValidCount = countRealGalleryUrls(hm.gallery);
+        const pmValidCount = countRealGalleryUrls(pm.gallery);
+        const isExplicitEmptyInStorage =
+          Array.isArray(hm.gallery) && hm.gallery.length === 0;
+        if (
+          (hasGalleryPlaceholder(hm.gallery) && pmValidCount > 0) ||
+          (!isExplicitEmptyInStorage && pmValidCount > hmValidCount)
+        ) {
           return { ...hm, gallery: pm.gallery };
         }
         return hm;
@@ -431,7 +476,10 @@ export function useLiveScenarioPortfolio() {
       const latestLocalModels =
         localMutationSeqRef.current > 0
           ? [...modelsRef.current]
-          : hydratePortfolioModelsFromStorage();
+          : rehydrateModelsGalleriesFromMemory(
+              hydratePortfolioModelsFromStorage(),
+              modelsRef.current
+            );
       const rawLocalUpdatedAtIso = getPortfolioUpdatedAt();
       const localUpdatedAtIso =
         mutatedDuringCloud && !rawLocalUpdatedAtIso
@@ -623,27 +671,21 @@ export function useLiveScenarioPortfolio() {
         if (pm?.id) prevById.set(pm.id, pm);
       }
 
+      let needsRemoteGalleryRefetch = false;
       const nextModels = merged.models.map((rawM) => {
         const normalized = ensureModelUnifiedV11(applyCategoryWbUnitEconomics(rawM));
         const pm = prevById.get(normalized.id);
-        const hasPlaceholderRef =
-          Array.isArray(normalized.gallery) &&
-          normalized.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
-        if (
-          pm &&
-          Array.isArray(pm.gallery) &&
-          pm.gallery.some((g) => typeof g?.url === 'string' && g.url.length > 0)
-        ) {
-          const mergedValidCount = Array.isArray(normalized.gallery)
-            ? normalized.gallery.filter(
-                (g) => Boolean(g?.url && g.url !== '__SUPABASE_GALLERY_REF__')
-              ).length
-            : 0;
+        const hasPlaceholderRef = hasGalleryPlaceholder(normalized.gallery);
+        const mergedValidCount = countRealGalleryUrls(normalized.gallery);
+        if (pm && countRealGalleryUrls(pm.gallery) > 0) {
           const isExplicitEmpty =
             Array.isArray(normalized.gallery) && normalized.gallery.length === 0;
           if (hasPlaceholderRef || (!isExplicitEmpty && mergedValidCount === 0)) {
             return { ...normalized, gallery: pm.gallery };
           }
+        }
+        if (hasPlaceholderRef && mergedValidCount === 0) {
+          needsRemoteGalleryRefetch = true;
         }
         return normalized;
       });
@@ -738,8 +780,17 @@ export function useLiveScenarioPortfolio() {
       emitWindowSync('borners-scenario-models-changed');
       emitWindowSync('borners-scenarios-changed');
       emitWindowSync('borners-active-scenario-changed');
+
+      if (needsRemoteGalleryRefetch) {
+        const seqAtRefetch = localMutationSeqRef.current;
+        void pullPortfolioFromSupabase().then((freshCloud) => {
+          if (freshCloud) {
+            applyCloudSnapshotPayload(freshCloud, seqAtRefetch, false);
+          }
+        });
+      }
     },
-    [emitWindowSync]
+    [emitWindowSync, applyCloudSnapshotPayload]
   );
 
   useEffect(() => {
@@ -816,14 +867,14 @@ export function useLiveScenarioPortfolio() {
             | GalleryMediaItem[]
             | undefined;
           if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
-          const idbValidCount = idbGal.filter(
-            (g) => typeof g?.url === 'string' && g.url.length > 0
-          ).length;
-          const localValidCount = Array.isArray(m.gallery)
-            ? m.gallery.filter((g) => typeof g?.url === 'string' && g.url.length > 0).length
-            : 0;
+          const idbValidCount = countRealGalleryUrls(idbGal);
+          if (idbValidCount === 0) return m;
+          const localValidCount = countRealGalleryUrls(m.gallery);
           const isExplicitEmpty = Array.isArray(m.gallery) && m.gallery.length === 0;
-          if (!isExplicitEmpty && idbValidCount > localValidCount) {
+          if (
+            hasGalleryPlaceholder(m.gallery) ||
+            (!isExplicitEmpty && idbValidCount > localValidCount)
+          ) {
             localChangedFromIdb = true;
             return { ...m, gallery: idbGal };
           }
@@ -1289,8 +1340,17 @@ export function useLiveScenarioPortfolio() {
         const oldM = prev.find((m) => m.id === updated.id);
         const galChanged = !oldM || oldM.gallery !== updated.gallery;
         if (galChanged && Array.isArray(updated.gallery)) {
-          void saveModelGalleryToIdb(updated.id, updated.gallery);
-          void pushModelGalleryToSupabase(updated.id, updated.gallery);
+          const oldHadPhotos = Boolean(oldM && countRealGalleryUrls(oldM.gallery) > 0);
+          const nextHasDataImage = updated.gallery.some(
+            (g) => typeof g?.url === 'string' && g.url.startsWith('data:image/')
+          );
+          if (updated.gallery.length === 0 && oldHadPhotos) {
+            void saveModelGalleryToIdb(updated.id, []);
+            void pushModelGalleryToSupabase(updated.id, [], { explicitDelete: true });
+          } else if (nextHasDataImage) {
+            void saveModelGalleryToIdb(updated.id, updated.gallery);
+            void pushModelGalleryToSupabase(updated.id, updated.gallery);
+          }
         }
         const iso = touchPortfolioUpdatedAt();
         const stampedUpdated: ScenarioModelSpec = { ...updated, updatedAtIso: iso };
@@ -1326,9 +1386,10 @@ export function useLiveScenarioPortfolio() {
           const galChanged = !oldM || oldM.gallery !== m.gallery;
           if (!galChanged) continue;
           if (Array.isArray(m.gallery)) {
-            if (m.gallery.length === 0) {
+            const oldHadPhotos = Boolean(oldM && countRealGalleryUrls(oldM.gallery) > 0);
+            if (m.gallery.length === 0 && oldHadPhotos) {
               void saveModelGalleryToIdb(m.id, []);
-              void pushModelGalleryToSupabase(m.id, []);
+              void pushModelGalleryToSupabase(m.id, [], { explicitDelete: true });
             } else if (
               m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
             ) {

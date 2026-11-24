@@ -5,7 +5,7 @@ import path from "path";
 const isExport = process.env.STATIC_EXPORT === "1";
 const exportBasePath = process.env.EXPORT_BASE_PATH ?? "/borners-platform";
 const buildId =
-  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-bulk-excel-plan-v7";
+  process.env.NEXT_PUBLIC_BUILD_ID || "borners-2027-finance-simplification-v14-tz-v1-bulk-excel-plan-v8";
 
 const defaultSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ocdmyldosplufhhwrrwq.supabase.co";
@@ -14,7 +14,7 @@ const defaultSupabasePublishableKey =
   "sb_publishable_O2S9Pi4aswxjD5ShAhHQ_w_CnUvmZlR";
 
 const releaseNotesSummary =
-  "Добавлено массовое обновление через Excel (.xlsx) и CSV для всех брендов и всех 269 размерных SKU LISKANI: скачивание шаблона с ценами, себестоимостью и помесячным планом продаж (Янв–Дек, выкупы или заказы), предпросмотр «Было → Стало» до сохранения и автопересчёт карточек, закупок и P&L. Обновлены цены и себестоимость всех 269 SKU LISKANI по файлу 2027.";
+  "Исправлено самопроизвольное обнуление загруженных фото карточек при переполнении localStorage (Safari/Chrome) и одновременной работе двух браузеров: запрещена автоматическая очистка облачных фотогалерей при фоновом синке, убраны холостые перезаписи при равенстве таймстампов, добавлена монотонная защита от сдвига часов на устройствах и нейтральная заглушка для не-бельевых категорий BORNERS.";
 
 const versionPayload = {
   buildId,

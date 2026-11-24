@@ -15,6 +15,11 @@ import type {
   ScenarioManualLedgerPlan,
 } from './investmentScheduleEngine.ts';
 import { mergeCloudPortfolioSnapshot } from './portfolioPersistence.ts';
+import {
+  LOCAL_GALLERY_IDB_REF,
+  SUPABASE_GALLERY_REF,
+  isGalleryPlaceholderSentinel,
+} from './safeStorage.ts';
 import { getActiveSupabaseClient } from './supabase.ts';
 
 export const SUPABASE_PORTFOLIO_TABLE = 'borners_portfolio_kv';
@@ -150,6 +155,8 @@ function isMissingColumnError(
 }
 
 const lastSyncedGalleryFingerprintByModelId = new Map<string, string>();
+const explicitlyDeletedGalleryModelIds = new Set<string>();
+let lastKnownCloudUpdatedAtIso = '';
 let latestCorePushSeq = 0;
 let lastLocalCorePushIso = '';
 let lastLocalCorePushRevision: number | null = null;
@@ -178,7 +185,27 @@ export function setLastKnownCoreRevision(rev: number | null): void {
   if (rev === null) {
     lastLocalCorePushRevision = null;
     lastLocalCorePushIso = '';
+    lastKnownCloudUpdatedAtIso = '';
+    explicitlyDeletedGalleryModelIds.clear();
   }
+}
+
+export function resetGallerySyncTrackingForTest(): void {
+  lastSyncedGalleryFingerprintByModelId.clear();
+  explicitlyDeletedGalleryModelIds.clear();
+  lastKnownCloudUpdatedAtIso = '';
+}
+
+function computeMonotonicCloudPushIso(floorIso?: string): string {
+  const nowMs = Date.now();
+  const knownCloudMs = parseIsoTs(lastKnownCloudUpdatedAtIso);
+  const floorMs = parseIsoTs(floorIso);
+  const maxFloor = Math.max(
+    Number.isFinite(knownCloudMs) ? knownCloudMs : 0,
+    Number.isFinite(floorMs) ? floorMs : 0
+  );
+  const nextMs = maxFloor >= nowMs ? maxFloor + 1 : nowMs;
+  return new Date(nextMs).toISOString();
 }
 
 export function getLastKnownWorkspaceRevision(): number | null {
@@ -289,9 +316,46 @@ function stripBase64FromModelForCoreRow(
   model: ScenarioModelSpec,
   failedUploadModelIds?: Set<string>
 ): ScenarioModelSpec {
+  const hasPriorCloudGallery =
+    lastSyncedGalleryFingerprintByModelId.has(model.id) &&
+    lastSyncedGalleryFingerprintByModelId.get(model.id) !== 'EMPTY';
+
   if (!Array.isArray(model.gallery) || model.gallery.length === 0) {
+    // Жёсткая защита: если у модели в облаке уже была фотогалерея и пользователь НЕ удалял её явно,
+    // никогда не затираем ссылку `__SUPABASE_GALLERY_REF__` пустым массивом `[]` (например из-за квоты Safari).
+    if (hasPriorCloudGallery && !explicitlyDeletedGalleryModelIds.has(model.id)) {
+      return {
+        ...model,
+        gallery: [
+          {
+            id: `cloud-ref-${model.id}`,
+            category: 'pack',
+            label: 'Фото',
+            url: SUPABASE_GALLERY_REF,
+            isMain: true,
+          },
+        ],
+      };
+    }
     return model;
   }
+
+  const hasLocalIdbSentinel = model.gallery.some((g) => g?.url === LOCAL_GALLERY_IDB_REF);
+  if (hasLocalIdbSentinel) {
+    if (hasPriorCloudGallery && !explicitlyDeletedGalleryModelIds.has(model.id)) {
+      return {
+        ...model,
+        gallery: model.gallery.map((g) =>
+          g?.url === LOCAL_GALLERY_IDB_REF ? { ...g, url: SUPABASE_GALLERY_REF, originalUrl: '' } : g
+        ),
+      };
+    }
+    return {
+      ...model,
+      gallery: model.gallery.filter((g) => g?.url !== LOCAL_GALLERY_IDB_REF),
+    };
+  }
+
   const hasBase64 = model.gallery.some(
     (g) =>
       (typeof g.url === 'string' && g.url.startsWith('data:image/')) ||
@@ -300,9 +364,6 @@ function stripBase64FromModelForCoreRow(
   if (!hasBase64) return model;
 
   const uploadFailed = Boolean(failedUploadModelIds?.has(model.id));
-  const hasPriorCloudGallery =
-    lastSyncedGalleryFingerprintByModelId.has(model.id) &&
-    lastSyncedGalleryFingerprintByModelId.get(model.id) !== 'EMPTY';
 
   if (uploadFailed && !hasPriorCloudGallery) {
     return {
@@ -331,7 +392,7 @@ function stripBase64FromModelForCoreRow(
       ...g,
       url:
         typeof g.url === 'string' && g.url.startsWith('data:image/')
-          ? '__SUPABASE_GALLERY_REF__'
+          ? SUPABASE_GALLERY_REF
           : g.url,
       originalUrl:
         typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/')
@@ -726,8 +787,44 @@ function mergeAdditiveModelCollections(
       ? Array.from(pdfById.values())
       : undefined;
 
+  const hasRealPhoto = (gal: ScenarioModelSpec['gallery'] | undefined): boolean =>
+    Array.isArray(gal) &&
+    gal.some((g) => {
+      const u = typeof g?.url === 'string' ? g.url.trim() : '';
+      const orig = typeof g?.originalUrl === 'string' ? g.originalUrl.trim() : '';
+      if (isGalleryPlaceholderSentinel(u)) return false;
+      return u.length > 0 || (orig.length > 0 && !isGalleryPlaceholderSentinel(orig));
+    });
+  const hasCloudRef = (gal: ScenarioModelSpec['gallery'] | undefined): boolean =>
+    Array.isArray(gal) && gal.some((g) => g?.url === SUPABASE_GALLERY_REF);
+  const hasAnyPlaceholder = (gal: ScenarioModelSpec['gallery'] | undefined): boolean =>
+    Array.isArray(gal) && gal.some((g) => isGalleryPlaceholderSentinel(g?.url));
+
+  const wReal = hasRealPhoto(winner.gallery);
+  const oReal = hasRealPhoto(other.gallery);
+  const wHasRef = hasCloudRef(winner.gallery);
+  const oHasRef = hasCloudRef(other.gallery);
+  const wTs = parseIsoTs(winner.updatedAtIso);
+  const oTs = parseIsoTs(other.updatedAtIso);
+  const winnerEditedStrictlyLater =
+    Number.isFinite(wTs) &&
+    Number.isFinite(oTs) &&
+    winner.updatedAtIso !== ASYMMETRIC_OLDER_SENTINEL_ISO &&
+    other.updatedAtIso !== ASYMMETRIC_OLDER_SENTINEL_ISO &&
+    wTs > oTs;
+
+  let resolvedGallery = winner.gallery;
+  if (!wReal && hasAnyPlaceholder(winner.gallery) && oReal) {
+    // Заменяем маркер-заглушку на реальные фото со второй стороны
+    resolvedGallery = other.gallery;
+  } else if (!wReal && !wHasRef && (oReal || oHasRef) && !winnerEditedStrictlyLater) {
+    // Если победитель имеет пустую галерею без более свежей правки именно этой модели — сохраняем фото второй стороны
+    resolvedGallery = other.gallery;
+  }
+
   return {
     ...winner,
+    gallery: resolvedGallery,
     wbArticle: winner.wbArticle || other.wbArticle,
     description: winner.description || other.description,
     liskaniSizeVariants:
@@ -1173,7 +1270,8 @@ export function resolveConcurrentWorkspaceConflict(
 
 export async function pushModelGalleryToSupabase(
   modelId: string,
-  gallery: ScenarioModelSpec['gallery']
+  gallery: ScenarioModelSpec['gallery'],
+  options?: { explicitDelete?: boolean }
 ): Promise<boolean> {
   if (isAutomatedOrLocalhostWriteBlocked()) return false;
   const client = getActiveSupabaseClient();
@@ -1182,8 +1280,14 @@ export async function pushModelGalleryToSupabase(
   const nextFp = computeGalleryFingerprint(gallery);
 
   if (gallery.length === 0) {
+    // ЖЁСТКИЙ ИНВАРИАНТ БЕЗОПАСНОСТИ: облачную фотогалерею `photo_gallery:<id>`
+    // можно очистить ТОЛЬКО при явном действии пользователя (`explicitDelete: true`).
+    // Никакой фоновый синк, переполнение квоты Safari или слияние кэшей не могут обнулить фото в БД!
+    if (options?.explicitDelete !== true) {
+      return false;
+    }
+    explicitlyDeletedGalleryModelIds.add(modelId);
     const prevFp = lastSyncedGalleryFingerprintByModelId.get(modelId);
-    // Если фотогалерея этой модели не была в облаке или уже пуста — не шлём лишний UPSERT в Supabase
     if (!prevFp || prevFp === 'EMPTY') {
       lastSyncedGalleryFingerprintByModelId.set(modelId, 'EMPTY');
       return true;
@@ -1212,29 +1316,12 @@ export async function pushModelGalleryToSupabase(
       (typeof g.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
   );
   if (!hasDataImage) {
-    if (
-      lastSyncedGalleryFingerprintByModelId.has(modelId) &&
-      lastSyncedGalleryFingerprintByModelId.get(modelId) !== 'EMPTY'
-    ) {
-      try {
-        const { error } = await client.from(SUPABASE_PORTFOLIO_TABLE).upsert(
-          {
-            key: `${SUPABASE_GALLERY_KEY_PREFIX}${modelId}`,
-            payload: { modelId, gallery: [], items: [] },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'key' }
-        );
-        if (!error) {
-          lastSyncedGalleryFingerprintByModelId.set(modelId, 'EMPTY');
-        }
-        return !error;
-      } catch {
-        return false;
-      }
-    }
+    // Никогда не затираем облачную галерею при получении ссылок `__SUPABASE_GALLERY_REF__`,
+    // `__LOCAL_GALLERY_IDB_REF__` или статических путей без base64.
     return false;
   }
+
+  explicitlyDeletedGalleryModelIds.delete(modelId);
 
   if (lastSyncedGalleryFingerprintByModelId.get(modelId) === nextFp) {
     return true;
@@ -1323,7 +1410,8 @@ async function executePortfolioCorePushOnce(
   emitCloudSaveStatus('saving');
 
   try {
-    // Синхронизируем только те base64-фотогалереи, чей слепок реально изменился (O(1) для неизменённых SKU)
+    // Синхронизируем ТОЛЬКО непустые base64-фотогалереи, чей слепок реально изменился (O(1) для неизменённых SKU).
+    // Фоновый push ядра НИКОГДА не удаляет строки `photo_gallery:<id>` в Supabase!
     const galleryTasks: { modelId: string; promise: Promise<boolean> }[] = [];
     const failedUploadModelIds = new Set<string>();
     for (const m of input.models) {
@@ -1340,15 +1428,6 @@ async function executePortfolioCorePushOnce(
             promise: pushModelGalleryToSupabase(m.id, m.gallery),
           });
         }
-      } else if (
-        Array.isArray(m.gallery) &&
-        lastSyncedGalleryFingerprintByModelId.has(m.id) &&
-        lastSyncedGalleryFingerprintByModelId.get(m.id) !== 'EMPTY'
-      ) {
-        galleryTasks.push({
-          modelId: m.id,
-          promise: pushModelGalleryToSupabase(m.id, m.gallery),
-        });
       }
     }
     if (galleryTasks.length > 0) {
@@ -1369,7 +1448,7 @@ async function executePortfolioCorePushOnce(
     const compactModels = input.models.map((m) =>
       stripBase64FromModelForCoreRow(m, failedUploadModelIds)
     );
-    const nowIso = new Date().toISOString();
+    const nowIso = computeMonotonicCloudPushIso();
     let currentPayload: CloudPortfolioCorePayload = {
       ...input,
       deletedScenarioIds:
@@ -1450,6 +1529,7 @@ async function executePortfolioCorePushOnce(
             ? rpcRes.server_updated_at
             : currentPayload.updatedAtIso;
         lastLocalCorePushIso = serverUpdatedAt;
+        lastKnownCloudUpdatedAtIso = serverUpdatedAt;
 
         if (hadConflictMerge) {
           const hydratedForClient: CloudPortfolioCorePayload = {
@@ -1637,10 +1717,19 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
       const hydratedModels = core.models.map((m) => {
         const hasGalleryRef =
           Array.isArray(m.gallery) &&
-          m.gallery.some((g) => g?.url === '__SUPABASE_GALLERY_REF__');
+          m.gallery.some((g) => isGalleryPlaceholderSentinel(g?.url));
+        const hasRealUrl =
+          Array.isArray(m.gallery) &&
+          m.gallery.some(
+            (g) =>
+              typeof g?.url === 'string' &&
+              g.url.trim().length > 0 &&
+              !isGalleryPlaceholderSentinel(g.url)
+          );
         const cloudGal = galleriesByModelId.get(m.id);
-        if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !Array.isArray(m.gallery))) {
+        if (cloudGal && cloudGal.length > 0 && (hasGalleryRef || !hasRealUrl)) {
           lastSyncedGalleryFingerprintByModelId.set(m.id, computeGalleryFingerprint(cloudGal));
+          explicitlyDeletedGalleryModelIds.delete(m.id);
           return {
             ...m,
             gallery: cloudGal,
@@ -1648,15 +1737,18 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
         }
         if (cloudGal && cloudGal.length === 0) {
           lastSyncedGalleryFingerprintByModelId.set(m.id, 'EMPTY');
-          return {
-            ...m,
-            gallery: [],
-          };
+          if (hasGalleryRef || !hasRealUrl) {
+            return {
+              ...m,
+              gallery: [],
+            };
+          }
+          return m;
         }
         if (hasGalleryRef) {
           return {
             ...m,
-            gallery: m.gallery.filter((g) => g.url !== '__SUPABASE_GALLERY_REF__'),
+            gallery: m.gallery.filter((g) => !isGalleryPlaceholderSentinel(g?.url)),
           };
         }
         return m;
@@ -1664,10 +1756,18 @@ export async function pullPortfolioFromSupabase(): Promise<CloudPortfolioCorePay
 
       const rowUpdatedAt =
         typeof coreRow.updated_at === 'string' ? coreRow.updated_at : '';
+      const resolvedCloudUpdatedAt = core.updatedAtIso || rowUpdatedAt || '';
+      if (resolvedCloudUpdatedAt) {
+        const prevKnownMs = parseIsoTs(lastKnownCloudUpdatedAtIso);
+        const nextKnownMs = parseIsoTs(resolvedCloudUpdatedAt);
+        if (!Number.isFinite(prevKnownMs) || (Number.isFinite(nextKnownMs) && nextKnownMs > prevKnownMs)) {
+          lastKnownCloudUpdatedAtIso = resolvedCloudUpdatedAt;
+        }
+      }
 
       return {
         ...core,
-        updatedAtIso: core.updatedAtIso || rowUpdatedAt || '',
+        updatedAtIso: resolvedCloudUpdatedAt,
         serverRevision: serverRevision ?? undefined,
         models: hydratedModels,
       };

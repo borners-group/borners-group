@@ -13766,6 +13766,190 @@ test('Cloud Sync & Stability Round 6: single-flight сериализация с�
   assert.ok(authGateCode.includes("window.addEventListener('online', handleBrowserOnline)"));
 });
 
+test('223. Защита фотогалерей от самоудаления при переполнении localStorage Safari, равенстве таймстампов (localTs===cloudTs), сдвиге часов и конфликтах двух браузеров (v8)', async () => {
+  const {
+    LOCAL_GALLERY_IDB_REF,
+    SUPABASE_GALLERY_REF,
+    stripModelGalleriesForLocalStorage,
+  } = await import('../src/lib/safeStorage.ts');
+  const {
+    STORAGE_KEY_PORTFOLIO_UPDATED_AT,
+    mergeCloudPortfolioSnapshot,
+    touchPortfolioUpdatedAt,
+  } = await import('../src/lib/portfolioPersistence.ts');
+  const {
+    resolveConcurrentPortfolioConflict,
+    resetGallerySyncTrackingForTest,
+  } = await import('../src/lib/supabaseCloudSync.ts');
+  const { ensureModelUnifiedV11 } = await import('../src/lib/unifiedBusinessEngine.ts');
+  const { S1_100M_SCENARIO_MODELS } = await import('../src/lib/scenarioS1_100M.ts');
+
+  const baseModel = S1_100M_SCENARIO_MODELS[0]!;
+  const realPhotoUrl = 'data:image/jpeg;base64,' + 'B'.repeat(52_000);
+  const modelWithPhoto = {
+    ...baseModel,
+    id: 'scen-borners-custom-pillow-1',
+    code: 'Подушка СS-02 (валик)',
+    title: 'Подушка анатомическая',
+    categoryLabel: 'Подушки',
+    updatedAtIso: '2026-11-23T15:24:08.996Z',
+    gallery: [
+      {
+        id: 'gal-pillow-1',
+        category: 'pack' as const,
+        label: 'Подушка',
+        url: realPhotoUrl,
+        originalUrl: '',
+        isMain: true,
+      },
+    ],
+  };
+
+  // 1. При вытеснении тяжёлых data:image/ из localStorage (квота Safari) вместо пустой строки
+  // ставится маркер __LOCAL_GALLERY_IDB_REF__, который ensureModelUnifiedV11 НЕ превращает в gallery: []
+  const strippedForLs = stripModelGalleriesForLocalStorage([modelWithPhoto], 45_000);
+  assert.equal(strippedForLs[0]!.gallery[0]!.url, LOCAL_GALLERY_IDB_REF);
+  const afterUnified = ensureModelUnifiedV11(strippedForLs[0]!);
+  assert.equal(
+    afterUnified.gallery.length,
+    1,
+    'ensureModelUnifiedV11 не должен удалять маркер вытеснения __LOCAL_GALLERY_IDB_REF__ и превращать его в gallery: []'
+  );
+  assert.equal(afterUnified.gallery[0]!.url, LOCAL_GALLERY_IDB_REF);
+
+  // 2. Главный баг Safari: при равенстве таймстампов (localTs === cloudTs, фокус/перезагрузка после синка)
+  // облако обязано победить, shouldPushLocalToCloud обязан быть false, а фото из облака НЕ должны теряться
+  const strippedEmptyLegacyModel = {
+    ...modelWithPhoto,
+    gallery: [], // имитация старого вытесненного кэша Safari до v8
+  };
+  const tieMergeWithEmptyLegacy = mergeCloudPortfolioSnapshot({
+    localModels: [strippedEmptyLegacyModel],
+    cloudModels: [modelWithPhoto],
+    localUpdatedAtIso: '2026-11-24T11:40:00.000Z',
+    cloudUpdatedAtIso: '2026-11-24T11:40:00.000Z',
+  });
+  assert.equal(
+    tieMergeWithEmptyLegacy.shouldPushLocalToCloud,
+    false,
+    'При равенстве localTs === cloudTs НЕ должен запускаться холостой push в Supabase!'
+  );
+  const mergedPillowTie = tieMergeWithEmptyLegacy.models.find(
+    (m) => m.id === 'scen-borners-custom-pillow-1'
+  )!;
+  assert.equal(
+    mergedPillowTie.gallery[0]?.url,
+    realPhotoUrl,
+    'При равенстве таймстампов фото из облака обязано сохраниться даже если локальный кэш был пустым'
+  );
+
+  // 3. Даже если localUpdatedAtIso новее на уровне всего портфеля (редактировали ДРУГУЮ модель),
+  // нетронутая модель с вытесненной/пустой локальной галереей при том же updatedAtIso обязана спасти фото из облака!
+  const localNewerPortfolioMerge = mergeCloudPortfolioSnapshot({
+    localModels: [strippedEmptyLegacyModel, afterUnified],
+    cloudModels: [modelWithPhoto],
+    localUpdatedAtIso: '2026-11-24T12:05:00.000Z',
+    cloudUpdatedAtIso: '2026-11-24T12:00:00.000Z',
+  });
+  const mergedPillowLocalNewer = localNewerPortfolioMerge.models.find(
+    (m) => m.id === 'scen-borners-custom-pillow-1'
+  )!;
+  assert.equal(
+    mergedPillowLocalNewer.gallery[0]?.url,
+    realPhotoUrl,
+    'Редактирование другой карточки НЕ должно затирать фото нетронутой карточки с вытесненным localStorage'
+  );
+
+  // 4. Явное удаление фото пользователем (updatedAtIso модели строго новее) уважается
+  const explicitlyDeletedPillow = {
+    ...modelWithPhoto,
+    gallery: [],
+    updatedAtIso: '2026-11-24T12:10:00.000Z',
+  };
+  const explicitDelMerge = mergeCloudPortfolioSnapshot({
+    localModels: [explicitlyDeletedPillow],
+    cloudModels: [modelWithPhoto],
+    localUpdatedAtIso: '2026-11-24T12:10:00.000Z',
+    cloudUpdatedAtIso: '2026-11-24T12:00:00.000Z',
+  });
+  assert.equal(
+    explicitDelMerge.models.find((m) => m.id === 'scen-borners-custom-pillow-1')!.gallery.length,
+    0,
+    'Явное удаление фото с более свежим updatedAtIso самой модели должно сохраняться'
+  );
+
+  // 5. Конфликт двух браузеров (resolveConcurrentPortfolioConflict): ссылка __SUPABASE_GALLERY_REF__
+  // или реальное фото на одном устройстве НЕ затирается пустой галереей нетронутой модели с другого устройства
+  const cloudRefModel = {
+    ...modelWithPhoto,
+    gallery: [
+      {
+        id: 'gal-pillow-1',
+        category: 'pack' as const,
+        label: 'Подушка',
+        url: SUPABASE_GALLERY_REF,
+        originalUrl: '',
+        isMain: true,
+      },
+    ],
+  };
+  const conflictMerged = resolveConcurrentPortfolioConflict(
+    {
+      models: [strippedEmptyLegacyModel],
+      updatedAtIso: '2026-11-24T12:01:00.000Z',
+    },
+    {
+      models: [cloudRefModel],
+      updatedAtIso: '2026-11-24T12:00:30.000Z',
+    }
+  );
+  assert.equal(
+    conflictMerged.models[0]?.gallery[0]?.url,
+    SUPABASE_GALLERY_REF,
+    'При конфликте двух браузеров ссылка __SUPABASE_GALLERY_REF__ не должна затираться пустой галереей с тем же updatedAtIso'
+  );
+
+  // 6. Монотонность touchPortfolioUpdatedAt при отставании системных часов Mac на 90 сек
+  const lsMap = new Map<string, string>();
+  const prevWin = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    localStorage: {
+      getItem: (k: string) => (lsMap.has(k) ? lsMap.get(k)! : null),
+      setItem: (k: string, v: string) => lsMap.set(k, String(v)),
+      removeItem: (k: string) => lsMap.delete(k),
+    },
+  };
+  try {
+    const futureCloudIso = new Date(Date.now() + 120_000).toISOString();
+    touchPortfolioUpdatedAt(futureCloudIso);
+    const localEditIso = touchPortfolioUpdatedAt();
+    assert.ok(
+      Date.parse(localEditIso) > Date.parse(futureCloudIso),
+      'touchPortfolioUpdatedAt обязан расти монотонно даже если локальные часы отстают от облака на 2 минуты'
+    );
+    assert.ok(lsMap.get(STORAGE_KEY_PORTFOLIO_UPDATED_AT));
+  } finally {
+    (globalThis as { window?: unknown }).window = prevWin;
+    resetGallerySyncTrackingForTest();
+  }
+
+  // 7. Контрактная проверка: в supabaseCloudSync.ts полностью удалено автоматическое затирание
+  // облачных строк photo_gallery:* при фоновом push и при !hasDataImage ({ items: [], gallery: [] })
+  const cloudSyncCode = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/supabaseCloudSync.ts'),
+    'utf8'
+  );
+  assert.equal(
+    cloudSyncCode.includes('items: []'),
+    false,
+    'Летальная ветка затирания photo_gallery:* ({ gallery: [], items: [] }) должна быть полностью удалена!'
+  );
+  assert.ok(
+    cloudSyncCode.includes('options?.explicitDelete !== true'),
+    'pushModelGalleryToSupabase обязан требовать explicitDelete: true для очистки облачной фотогалереи'
+  );
+});
+
 
 
 

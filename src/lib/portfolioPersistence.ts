@@ -39,6 +39,7 @@ import {
 } from './unifiedBusinessEngine.ts';
 import {
   deleteModelGalleryFromIdb,
+  isGalleryPlaceholderSentinel,
   loadRollingSnapshotsFromIdb,
   safeGetStorageJson,
   safeSetStorageJson,
@@ -78,7 +79,17 @@ export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V1 = 'borners_sales_scenario_
 export const MIGRATION_KEY_BORNERS_SCENARIO_REPAIR_V2 = 'borners_sales_scenario_repair_v2';
 
 export function touchPortfolioUpdatedAt(explicitIso?: string): string {
-  const iso = explicitIso || new Date().toISOString();
+  let iso = explicitIso;
+  if (!iso) {
+    // Монотонная защита от сдвига системных часов на одном из устройств (например, Mac отстаёт на 60–90 сек):
+    // локальная правка после получения более нового облачного снимка никогда не откатывает таймстамп назад
+    const prevIso = getPortfolioUpdatedAt();
+    const prevMs = prevIso ? Date.parse(prevIso) : NaN;
+    const nowMs = Date.now();
+    const monotonicMs =
+      Number.isFinite(prevMs) && prevMs >= nowMs ? prevMs + 1 : nowMs;
+    iso = new Date(monotonicMs).toISOString();
+  }
   safeSetStorageJson(STORAGE_KEY_PORTFOLIO_UPDATED_AT, iso);
   return iso;
 }
@@ -831,18 +842,19 @@ export function syncUserPlansBackup(
     const m = ensureModelUnifiedV11(raw);
     const rawGal = Array.isArray(raw.gallery) ? raw.gallery : m.gallery;
     const isExplicitEmptyGal = Array.isArray(raw.gallery) && raw.gallery.length === 0;
-    const hasBase64InGal =
+    const hasBase64OrSentinelInGal =
       Array.isArray(rawGal) &&
       rawGal.some(
         (g) =>
+          isGalleryPlaceholderSentinel(g?.url) ||
           (typeof g?.url === 'string' && g.url.startsWith('data:image/')) ||
           (typeof g?.originalUrl === 'string' && g.originalUrl.startsWith('data:image/'))
       );
-    // Никогда не дублируем base64-фото в резервном ключе borners_user_saved_plans_v1,
+    // Никогда не дублируем base64-фото или маркеры вытеснения в резервном ключе borners_user_saved_plans_v1,
     // чтобы не удваивать расход квоты localStorage (5 МБ) и не затирать фото при stripOversizedDataUrls
     const backupGallery = isExplicitEmptyGal
       ? []
-      : hasBase64InGal
+      : hasBase64OrSentinelInGal
       ? undefined
       : m.gallery;
 
@@ -939,7 +951,11 @@ export function overlayBackupOntoModels(
         return m;
       }
 
+      const rawHasPlaceholderSentinel =
+        Array.isArray(rawM.gallery) &&
+        rawM.gallery.some((g) => isGalleryPlaceholderSentinel(g?.url));
       const explicitEmptyGallery =
+        !rawHasPlaceholderSentinel &&
         Array.isArray(saved.gallery) &&
         saved.gallery.length === 0 &&
         (!Array.isArray(rawM.gallery) || rawM.gallery.length === 0);
@@ -947,10 +963,16 @@ export function overlayBackupOntoModels(
         Array.isArray(saved.palettes) && saved.palettes.length === 0;
 
       const savedValidPhotos = Array.isArray(saved.gallery)
-        ? saved.gallery.filter((g) => Boolean(g?.url && g.url.trim().length > 0))
+        ? saved.gallery.filter(
+            (g) =>
+              Boolean(g?.url && g.url.trim().length > 0 && !isGalleryPlaceholderSentinel(g.url))
+          )
         : null;
       const mValidPhotosCount = Array.isArray(m.gallery)
-        ? m.gallery.filter((g) => Boolean(g?.url && g.url.trim().length > 0)).length
+        ? m.gallery.filter(
+            (g) =>
+              Boolean(g?.url && g.url.trim().length > 0 && !isGalleryPlaceholderSentinel(g.url))
+          ).length
         : 0;
       const resolvedGallery = explicitEmptyGallery
         ? []
@@ -1754,8 +1776,60 @@ export function mergeCloudPortfolioSnapshot(params: {
 
   const localTs = params.localUpdatedAtIso ? Date.parse(params.localUpdatedAtIso) : NaN;
   const cloudTs = params.cloudUpdatedAtIso ? Date.parse(params.cloudUpdatedAtIso) : NaN;
+  // Строгое сравнение `>`: при равенстве таймстампов (localTs === cloudTs, т.е. повторный фокус/pull
+  // того же облачного снимка) побеждает облако и лишний push в Supabase НЕ запускается!
   const isLocalNewer =
-    Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs >= cloudTs);
+    Number.isFinite(localTs) && (!Number.isFinite(cloudTs) || localTs > cloudTs);
+
+  const getRealGalleryItems = (gal: ScenarioModelSpec['gallery'] | undefined) =>
+    Array.isArray(gal)
+      ? gal.filter((g) => {
+          const u = typeof g?.url === 'string' ? g.url.trim() : '';
+          const orig = typeof g?.originalUrl === 'string' ? g.originalUrl.trim() : '';
+          if (isGalleryPlaceholderSentinel(u)) return false;
+          return u.length > 0 || (orig.length > 0 && !isGalleryPlaceholderSentinel(orig));
+        })
+      : [];
+
+  const hasPlaceholderGallery = (gal: ScenarioModelSpec['gallery'] | undefined) =>
+    Array.isArray(gal) && gal.some((g) => isGalleryPlaceholderSentinel(g?.url));
+
+  // Защита фотографий карточек при слиянии:
+  // 1) если на победившей стороне остался маркер вытеснения (__LOCAL_GALLERY_IDB_REF__ / __SUPABASE_GALLERY_REF__),
+  //    а на второй стороне есть реальные фото — ВСЕГДА восстанавливаем реальные фото;
+  // 2) если на победившей стороне фото отсутствуют, а на второй стороне есть реальные фото и победившая сторона
+  //    НЕ редактировала эту конкретную модель строго позже (updatedAtIso равен или отсутствует) — спасаем фото!
+  const rescueGalleryFromOther = (
+    winner: ScenarioModelSpec,
+    other: ScenarioModelSpec | undefined
+  ): { model: ScenarioModelSpec; rescued: boolean } => {
+    if (!other) return { model: winner, rescued: false };
+    const otherReal = getRealGalleryItems(other.gallery);
+    if (otherReal.length === 0) return { model: winner, rescued: false };
+
+    const winnerReal = getRealGalleryItems(winner.gallery);
+    if (winnerReal.length > 0) return { model: winner, rescued: false };
+
+    if (hasPlaceholderGallery(winner.gallery)) {
+      return {
+        model: { ...winner, gallery: otherReal },
+        rescued: true,
+      };
+    }
+
+    const wModTs = winner.updatedAtIso ? Date.parse(winner.updatedAtIso) : NaN;
+    const oModTs = other.updatedAtIso ? Date.parse(other.updatedAtIso) : NaN;
+    const winnerEditedStrictlyLater =
+      Number.isFinite(wModTs) && Number.isFinite(oModTs) && wModTs > oModTs;
+    if (winnerEditedStrictlyLater) {
+      return { model: winner, rescued: false };
+    }
+
+    return {
+      model: { ...winner, gallery: otherReal },
+      rescued: true,
+    };
+  };
 
   // Независимое по-полевое спасение заполненной экономики и планов продаж (AKU-017..031, BRN-DLY-01..07 и др.):
   // если на победившей стороне цена ИЛИ себестоимость ИЛИ % выкупа ИЛИ план продаж сценария равен 0,
@@ -1867,9 +1941,11 @@ export function mergeCloudPortfolioSnapshot(params: {
           x.id === lm.id || x.code.trim().toUpperCase() === lm.code.trim().toUpperCase()
       );
       if (cm && !resolvePerModelLocalWins(lm, cm)) {
-        return rescueFilledEconomicsFromOther(cm, lm).model;
+        const econRes = rescueFilledEconomicsFromOther(cm, lm);
+        return rescueGalleryFromOther(econRes.model, lm).model;
       }
-      return rescueFilledEconomicsFromOther(lm, cm).model;
+      const econRes = rescueFilledEconomicsFromOther(lm, cm);
+      return rescueGalleryFromOther(econRes.model, cm).model;
     });
     for (const cm of cleanCloud) {
       const exists = merged.some(
@@ -1894,11 +1970,13 @@ export function mergeCloudPortfolioSnapshot(params: {
     );
     if (lm && resolvePerModelLocalWins(lm, cm)) {
       rescuedFromLocalCount += 1;
-      return rescueFilledEconomicsFromOther(lm, cm).model;
+      const econRes = rescueFilledEconomicsFromOther(lm, cm);
+      return rescueGalleryFromOther(econRes.model, cm).model;
     }
-    const res = rescueFilledEconomicsFromOther(cm, lm);
-    if (res.rescued) rescuedFromLocalCount += 1;
-    return res.model;
+    const econRes = rescueFilledEconomicsFromOther(cm, lm);
+    const galRes = rescueGalleryFromOther(econRes.model, lm);
+    if (econRes.rescued || galRes.rescued) rescuedFromLocalCount += 1;
+    return galRes.model;
   });
   let addedLocalMissingInCloud = rescuedFromLocalCount > 0;
 

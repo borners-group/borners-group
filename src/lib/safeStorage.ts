@@ -61,6 +61,13 @@ export function compactGalleryDataUrls<T>(value: T): T {
   return value;
 }
 
+export const LOCAL_GALLERY_IDB_REF = '__LOCAL_GALLERY_IDB_REF__';
+export const SUPABASE_GALLERY_REF = '__SUPABASE_GALLERY_REF__';
+
+export function isGalleryPlaceholderSentinel(url: unknown): boolean {
+  return url === LOCAL_GALLERY_IDB_REF || url === SUPABASE_GALLERY_REF;
+}
+
 /**
  * Рекурсивно уменьшает только экстремально тяжёлые base64-строки (неcжатые фото/аудио/PDF/документы > 650 КБ),
  * чтобы JSON гарантированно помещался в квоту localStorage (5 МБ) и никогда не подменял фото чужой заглушкой.
@@ -87,6 +94,46 @@ export function stripOversizedDataUrls<T>(value: T, maxDataUrlLen = 650_000): T 
 }
 
 /**
+ * Облегчает base64-фото в реестре моделей (`borners_tz_models_v1`) для localStorage,
+ * заменяя вытесненные в IndexedDB/облако `data:image/` на маркер `__LOCAL_GALLERY_IDB_REF__`
+ * вместо пустой строки `""`, чтобы `ensureModelUnifiedV11` и синхронизация НИКОГДА не принимали
+ * сжатие квоты Safari/Chrome за «пользователь удалил все фото» (`gallery: []`).
+ */
+export function stripModelGalleriesForLocalStorage<T>(value: T, maxDataUrlLen: number): T {
+  if (!Array.isArray(value)) {
+    return stripOversizedDataUrls(value, maxDataUrlLen);
+  }
+  return value.map((item) => {
+    if (!item || typeof item !== 'object') {
+      return stripOversizedDataUrls(item, maxDataUrlLen);
+    }
+    const rec = item as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      if (k === 'gallery' && Array.isArray(v)) {
+        out[k] = v.map((g) => {
+          if (!g || typeof g !== 'object') return g;
+          const gRec = g as Record<string, unknown>;
+          const u = typeof gRec.url === 'string' ? gRec.url : '';
+          const orig = typeof gRec.originalUrl === 'string' ? gRec.originalUrl : '';
+          const stripUrl = u.startsWith('data:image/') && u.length > maxDataUrlLen;
+          const stripOrig = orig.startsWith('data:image/') && orig.length > maxDataUrlLen;
+          if (!stripUrl && !stripOrig) return gRec;
+          return {
+            ...gRec,
+            url: stripUrl ? LOCAL_GALLERY_IDB_REF : u,
+            originalUrl: stripOrig ? '' : orig,
+          };
+        });
+      } else {
+        out[k] = stripOversizedDataUrls(v, maxDataUrlLen);
+      }
+    }
+    return out;
+  }) as unknown as T;
+}
+
+/**
  * Надёжное сохранение в localStorage:
  * 1) Очищает устаревшие ключи прошлых версий и убирает дубли base64 в originalUrl
  * 2) Сначала вызывает removeItem(key), чтобы браузер освободил старый буфер памяти перед записью нового
@@ -97,6 +144,11 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
   cleanupLegacyStorageKeys();
 
   const compacted = compactGalleryDataUrls(data);
+  const stripForKey = (val: T, maxLen: number): T =>
+    key === 'borners_tz_models_v1'
+      ? stripModelGalleriesForLocalStorage(val, maxLen)
+      : stripOversizedDataUrls(val, maxLen);
+
   let prevRaw: string | null = null;
   try {
     prevRaw = window.localStorage.getItem(key);
@@ -122,7 +174,7 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
     // поэтому заранее облегчаем гигантские data: URL, оставляя полные копии фото в IndexedDB
     const payload =
       raw.length > 2_300_000
-        ? JSON.stringify(stripOversizedDataUrls(compacted, 45_000))
+        ? JSON.stringify(stripForKey(compacted, 45_000))
         : raw;
 
     window.localStorage.setItem(key, payload);
@@ -131,7 +183,7 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
     const thresholds = [180_000, 90_000, 45_000, 15_000, 0];
     for (const maxLen of thresholds) {
       try {
-        const slim = JSON.stringify(stripOversizedDataUrls(compacted, maxLen));
+        const slim = JSON.stringify(stripForKey(compacted, maxLen));
         window.localStorage.removeItem(key);
         window.localStorage.setItem(key, slim);
         return true;
@@ -144,7 +196,7 @@ export function safeSetStorageJson<T>(key: string, data: T): boolean {
     if (key === 'borners_tz_models_v1') {
       try {
         window.localStorage.removeItem('borners_user_saved_plans_v1');
-        const slim = JSON.stringify(stripOversizedDataUrls(compacted, 0));
+        const slim = JSON.stringify(stripForKey(compacted, 0));
         window.localStorage.setItem(key, slim);
         return true;
       } catch {
@@ -168,7 +220,11 @@ export function safeGetStorageJson<T>(key: string): T | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as T;
     if (raw.length > 4_600_000) {
-      const healed = stripOversizedDataUrls(compactGalleryDataUrls(parsed), 350_000);
+      const compacted = compactGalleryDataUrls(parsed);
+      const healed =
+        key === 'borners_tz_models_v1'
+          ? stripModelGalleriesForLocalStorage(compacted, 350_000)
+          : stripOversizedDataUrls(compacted, 350_000);
       safeSetStorageJson(key, healed);
       return healed;
     }

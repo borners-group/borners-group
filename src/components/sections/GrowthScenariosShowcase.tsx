@@ -81,6 +81,7 @@ import { ScenarioModelCardScreen } from '@/components/sections/ScenarioModelCard
 import { ScenarioSalesPlanScreen } from '@/components/sections/ScenarioSalesPlanScreen';
 import { PdfConstructorModal } from '@/components/sections/PdfConstructorModal';
 import {
+  isGalleryPlaceholderSentinel,
   loadAllModelGalleriesFromIdb,
   loadPortfolioSnapshotWithMetaFromIdb,
   safeGetStorageJson,
@@ -882,13 +883,26 @@ export function GrowthScenariosShowcase({
           const oldM = prevMap.get(m.id);
           const galChanged = !oldM || oldM.gallery !== m.gallery;
           if (!galChanged) continue;
-          if (
-            Array.isArray(m.gallery) &&
-            (m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/')) ||
-              m.gallery.length === 0)
-          ) {
-            void saveModelGalleryToIdb(m.id, m.gallery);
-            void pushModelGalleryToSupabase(m.id, m.gallery);
+          if (Array.isArray(m.gallery)) {
+            const oldHadPhotos = Boolean(
+              oldM &&
+                Array.isArray(oldM.gallery) &&
+                oldM.gallery.some(
+                  (g) =>
+                    typeof g?.url === 'string' &&
+                    g.url.trim().length > 0 &&
+                    !isGalleryPlaceholderSentinel(g.url)
+                )
+            );
+            if (m.gallery.length === 0 && oldHadPhotos) {
+              void saveModelGalleryToIdb(m.id, []);
+              void pushModelGalleryToSupabase(m.id, [], { explicitDelete: true });
+            } else if (
+              m.gallery.some((g) => typeof g?.url === 'string' && g.url.startsWith('data:image/'))
+            ) {
+              void saveModelGalleryToIdb(m.id, m.gallery);
+              void pushModelGalleryToSupabase(m.id, m.gallery);
+            }
           }
         }
         safeSetStorageJson(STORAGE_KEY_MODELS, next);
@@ -1135,15 +1149,23 @@ export function GrowthScenariosShowcase({
         return hydratedModels.map((hm) => {
           const pm = prevById.get(hm.id);
           if (!pm || !Array.isArray(pm.gallery) || pm.gallery.length === 0) return hm;
+          const hmHasPlaceholder =
+            Array.isArray(hm.gallery) &&
+            hm.gallery.some((g) => isGalleryPlaceholderSentinel(g?.url));
           const hmValidCount = Array.isArray(hm.gallery)
-            ? hm.gallery.filter((g) => Boolean(g?.url && g.url.length > 0)).length
+            ? hm.gallery.filter(
+                (g) => Boolean(g?.url && g.url.length > 0 && !isGalleryPlaceholderSentinel(g.url))
+              ).length
             : 0;
           const pmValidCount = pm.gallery.filter((g) =>
-            Boolean(g?.url && g.url.length > 0)
+            Boolean(g?.url && g.url.length > 0 && !isGalleryPlaceholderSentinel(g.url))
           ).length;
           const isExplicitEmptyInStorage =
             Array.isArray(hm.gallery) && hm.gallery.length === 0;
-          if (!isExplicitEmptyInStorage && pmValidCount > hmValidCount) {
+          if (
+            (hmHasPlaceholder && pmValidCount > 0) ||
+            (!isExplicitEmptyInStorage && pmValidCount > hmValidCount)
+          ) {
             return { ...hm, gallery: pm.gallery };
           }
           return hm;
@@ -1280,13 +1302,25 @@ export function GrowthScenariosShowcase({
               | undefined;
             if (!Array.isArray(idbGal) || idbGal.length === 0) return m;
             const idbValidCount = idbGal.filter(
-              (g) => typeof g?.url === 'string' && g.url.length > 0
+              (g) =>
+                typeof g?.url === 'string' &&
+                g.url.length > 0 &&
+                !isGalleryPlaceholderSentinel(g.url)
             ).length;
+            if (idbValidCount === 0) return m;
+            const localHasPlaceholder =
+              Array.isArray(m.gallery) &&
+              m.gallery.some((g) => isGalleryPlaceholderSentinel(g?.url));
             const localValidCount = Array.isArray(m.gallery)
-              ? m.gallery.filter((g) => typeof g?.url === 'string' && g.url.length > 0).length
+              ? m.gallery.filter(
+                  (g) =>
+                    typeof g?.url === 'string' &&
+                    g.url.length > 0 &&
+                    !isGalleryPlaceholderSentinel(g.url)
+                ).length
               : 0;
             const isExplicitEmpty = Array.isArray(m.gallery) && m.gallery.length === 0;
-            if (!isExplicitEmpty && idbValidCount > localValidCount) {
+            if (localHasPlaceholder || (!isExplicitEmpty && idbValidCount > localValidCount)) {
               changed = true;
               return { ...m, gallery: idbGal };
             }

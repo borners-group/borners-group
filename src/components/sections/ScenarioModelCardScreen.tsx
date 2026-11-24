@@ -595,7 +595,9 @@ export function ScenarioModelCardScreen({
     try {
       const cleanExisting = model.gallery.filter((g) => {
         const u = (g.url || g.originalUrl || '').trim();
-        if (!u) return false;
+        if (!u || u === '__SUPABASE_GALLERY_REF__' || u === '__LOCAL_GALLERY_IDB_REF__') {
+          return false;
+        }
         if (
           model.code !== '244995893' &&
           (u.includes('borners-core-modal.svg') || u.includes('244995893_main.webp'))

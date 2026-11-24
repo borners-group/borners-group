@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { PackColor, resolvePublicAssetUrl } from '@/lib/scenarioData';
+import { isGalleryPlaceholderSentinel } from '@/lib/safeStorage';
 
 export function BoxerPackStackSvg({
   colors,
@@ -9,12 +10,16 @@ export function BoxerPackStackSvg({
   brandLabel = 'BORNERS',
   category = 'pack',
   customPhotoUrl,
+  productCategoryLabel,
+  productTitle,
 }: {
   colors: PackColor[];
   large?: boolean;
   brandLabel?: string;
   category?: 'pack' | 'single' | 'waistband' | 'fabric' | 'fit' | 'video';
   customPhotoUrl?: string;
+  productCategoryLabel?: string;
+  productTitle?: string;
 }) {
   const upperBrand = (brandLabel || 'BORNERS').toUpperCase();
   const isLiskani =
@@ -29,6 +34,7 @@ export function BoxerPackStackSvg({
 
   const safePhotoUrl =
     customPhotoUrl &&
+    !isGalleryPlaceholderSentinel(customPhotoUrl) &&
     !(
       (isLiskani || isAkusha || isNaTele || brandLabel.toUpperCase().includes('FUKAI')) &&
       (customPhotoUrl.includes('borners-core-modal.svg') ||
@@ -49,6 +55,40 @@ export function BoxerPackStackSvg({
           alt={brandLabel}
           className="h-full w-full object-contain"
         />
+      </div>
+    );
+  }
+
+  // Для не-бельевых категорий BORNERS/FUKAI (подушки, костюмы, носки и т.д.)
+  // при отсутствии загруженного фото показываем нейтральную заглушку, а не мужские боксеры
+  const catAndTitle = `${productCategoryLabel || ''} ${productTitle || ''}`.trim().toLowerCase();
+  const isExplicitNonUnderwearItem =
+    !isLiskani &&
+    !isAkusha &&
+    !isNaTele &&
+    category === 'pack' &&
+    catAndTitle.length > 0 &&
+    !/(боксер|слип|трус|бриф|плавк|семейн|бель)/.test(catAndTitle);
+  if (isExplicitNonUnderwearItem) {
+    return (
+      <div
+        className={`relative w-full flex flex-col items-center justify-center gap-1.5 select-none rounded-[12px] border border-dashed border-[#D6D3CB] dark:border-[#34322E] bg-[#FAF9F6] dark:bg-[#181715] px-4 text-center ${
+          large ? 'h-[260px]' : 'h-[155px]'
+        }`}
+      >
+        <div className="h-9 w-9 rounded-full bg-white dark:bg-[#22211E] border border-[#E4E1DA] dark:border-[#34322E] flex items-center justify-center text-[#8A867E]">
+          <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <circle cx="9" cy="10" r="1.5" />
+            <path d="M21 15l-5-5-8 8" />
+          </svg>
+        </div>
+        <div className="text-[12px] font-medium text-[#5C5953] dark:text-[#A8A49B] line-clamp-1">
+          {productCategoryLabel || 'Нет фото'}
+        </div>
+        <div className="text-[10.5px] text-[#8A867E] dark:text-[#78746C]">
+          Нажмите «+ Фото», чтобы загрузить
+        </div>
       </div>
     );
   }

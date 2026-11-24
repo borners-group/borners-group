@@ -615,6 +615,8 @@ export function ProductCatalogView() {
         const u = (g.url || g.originalUrl || '').trim();
         return (
           Boolean(u) &&
+          u !== '__SUPABASE_GALLERY_REF__' &&
+          u !== '__LOCAL_GALLERY_IDB_REF__' &&
           !u.includes('borners-core-modal.svg') &&
           !u.includes('244995893_main.webp')
         );
@@ -1588,10 +1590,23 @@ export function ProductCatalogView() {
                   : computeModelScenarioMetrics(mod, activeScen);
                 const unitCfg = getBrandUnitConfig(mod);
                 const actingMeta = getActingSkuByWbOrVendor(mod.code, mod.title);
+                const hasValidDisplayUrl = (g: ScenarioModelSpec['gallery'][number]) => {
+                  const u = (g?.url || g?.originalUrl || '').trim();
+                  return (
+                    Boolean(u) &&
+                    u !== '__SUPABASE_GALLERY_REF__' &&
+                    u !== '__LOCAL_GALLERY_IDB_REF__'
+                  );
+                };
                 const mainGallery =
-                  mod.gallery.find((g) => g.isMain && Boolean(g.url || g.originalUrl)) ||
-                  mod.gallery.find((g) => Boolean(g.url || g.originalUrl));
-                const mainPhotoUrl = mainGallery?.url || mainGallery?.originalUrl || '';
+                  mod.gallery.find((g) => g.isMain && hasValidDisplayUrl(g)) ||
+                  mod.gallery.find((g) => hasValidDisplayUrl(g));
+                const rawMainUrl = mainGallery?.url || mainGallery?.originalUrl || '';
+                const mainPhotoUrl =
+                  rawMainUrl === '__SUPABASE_GALLERY_REF__' ||
+                  rawMainUrl === '__LOCAL_GALLERY_IDB_REF__'
+                    ? ''
+                    : rawMainUrl;
                 const colors = mod.palettes[0]?.colors || [];
                 const categoryText = mod.categoryLabel || unitCfg.categoryDefault;
                 const canEditThisModel = canEditModel(mod);
@@ -1657,6 +1672,8 @@ export function ProductCatalogView() {
                           colors={colors}
                           brandLabel={displayBrand}
                           customPhotoUrl={mainPhotoUrl}
+                          productCategoryLabel={categoryText}
+                          productTitle={mod.title}
                         />
 
                         {/* Top-right quiet actions (always present & clickable in DOM) */}
